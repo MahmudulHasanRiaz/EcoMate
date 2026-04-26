@@ -1,0 +1,82 @@
+P47am-v4 - Replace cmdk with plain searchable list (guaranteed mouse click)
+
+Problem
+- Mouse click still fails with cmdk-based combobox.
+- Likely caused by cmdk/portal/stacking context interactions.
+
+Scope
+- src/components/products/category-combobox.tsx
+
+Fix (robust)
+- Replace cmdk Command/CommandItem usage with a plain Input + filtered list in Popover.
+- This removes cmdk event handling and guarantees mouse selection.
+
+Patch (exact steps)
+
+1) Replace cmdk imports with Input and ScrollArea (optional) or simple div.
+   Remove:
+     Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
+   Add:
+     import { Input } from "@/components/ui/input";
+
+2) Add query state and filteredOptions memo:
+
+   const [query, setQuery] = React.useState("");
+
+   const filteredOptions = React.useMemo(() => {
+     const q = query.trim().toLowerCase();
+     if (!q) return allOptions;
+     return allOptions.filter(opt => opt.name.toLowerCase().includes(q));
+   }, [allOptions, query]);
+
+3) Replace the <Command> block inside PopoverContent with:
+
+   <div className="p-2">
+     <Input
+       value={query}
+       onChange={(e) => setQuery(e.target.value)}
+       placeholder="Search category..."
+       className="h-9"
+       onKeyDown={(e) => {
+         if (e.key === 'Enter' && filteredOptions.length > 0) {
+           onChange(filteredOptions[0].id);
+           setOpen(false);
+         }
+       }}
+     />
+   </div>
+   <div className="max-h-[300px] overflow-y-auto p-1">
+     {filteredOptions.length === 0 ? (
+       <div className="py-6 text-center text-sm text-muted-foreground">No results found.</div>
+     ) : (
+       filteredOptions.map((opt) => (
+         <button
+           key={opt.id}
+           type="button"
+           onClick={() => {
+             onChange(opt.id);
+             setOpen(false);
+           }}
+           className={cn(
+             "w-full text-left rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground",
+             opt.level === 1 && "pl-8",
+             value === opt.id && "bg-accent text-accent-foreground"
+           )}
+         >
+           <span className="inline-flex items-center gap-2">
+             <Check className={cn("h-4 w-4", value === opt.id ? "opacity-100" : "opacity-0")} />
+             <span className="truncate">{opt.name}</span>
+           </span>
+         </button>
+       ))
+     )}
+   </div>
+
+Notes
+- This removes cmdk entirely to avoid its pointer event quirks.
+- Mouse selection is guaranteed via native button onClick.
+- Enter selects the first match (optional but keeps keyboard flow).
+
+Test
+- Open dropdown, type search, click item: should select.
+- Press Enter: selects first filtered item.

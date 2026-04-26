@@ -1,0 +1,133 @@
+P47bc - Purchases relation fixes + Product upload persistence (local only)
+
+Context
+- Purchases module still mixes old Prisma relation names (items/productionSteps/payments/logs/supplier).
+- Schema uses PascalCase relations (PurchaseOrderItem, ProductionStep, PurchasePayment, PurchaseOrderLog, Supplier).
+- Purchase overview qty uses items sum; but mapDbPoToAppPo still returns itemsCount (undefined).
+- Live image 404 is due to uploads not being written in container (permissions/bind mount).
+
+Scope (coder local changes only)
+- src/server/modules/purchases.ts
+- src/services/partners.ts
+- docker/entrypoint.sh (new)
+- Dockerfile
+- public/uploads/.gitkeep (new)
+
+------------------------------------------------------------
+A) Purchases: fix Prisma relation names + items mapping
+------------------------------------------------------------
+1) Update purchaseOrderWithRelations include (canonical)
+File: src/server/modules/purchases.ts
+Set include exactly like:
+
+export const purchaseOrderWithRelations = {
+  include: {
+    Supplier: true,
+    PurchaseOrderItem: {
+      include: {
+        product: true,
+        ProductVariant: true,
+        FabricLotUsage: {
+          include: {
+            InventoryItem: {
+              include: { Product: true, ProductVariant: true, StockLocation: true }
+            }
+          }
+        }
+      }
+    },
+    PurchaseOrderLog: { orderBy: { timestamp: 'desc' as any } },
+    PurchasePayment: { include: { Vendor: true, ProductionStep: true } },
+    ProductionStep: { include: { Vendor: true }, orderBy: { stepType: 'asc' as any } },
+  }
+};
+
+2) Replace ALL old relation names in purchases.ts
+Mapping (Prisma field -> use this name):
+- supplier -> Supplier
+- items -> PurchaseOrderItem
+- logs -> PurchaseOrderLog
+- payments -> PurchasePayment
+- productionSteps -> ProductionStep
+- fabricLotUsages -> FabricLotUsage
+- productionStep (in includes) -> ProductionStep
+- vendor (in includes) -> Vendor
+- variant (inside PurchaseOrderItem include) -> ProductVariant
+- inventoryItem (inside FabricLotUsage include) -> InventoryItem
+- product / Product / StockLocation names must match schema exactly
+
+Search & fix (non-exhaustive areas that MUST be updated):
+- updateThreePieceFabricPlanningCore:
+  include: { items: true, productionSteps: true } -> { PurchaseOrderItem: true, ProductionStep: true }
+  po.items -> po.PurchaseOrderItem
+  po.productionSteps -> po.ProductionStep
+  update po logs: logs -> PurchaseOrderLog
+  update po itemsCount -> items
+  findUnique include block -> use purchaseOrderWithRelations.include
+
+- updateThreePieceStepCostsCore / finalize / receiving / addPayment / any other
+  replace include + access to the mapped relations above.
+
+- mapDbPoToAppPo:
+  itemsCount: po.itemsCount -> items: po.items
+  pindiOfFab/damages/wastage, logs, payments, productionSteps -> use ProductionStep / PurchaseOrderLog / PurchasePayment.
+
+- getPurchases search:
+  where: { supplier: { name: ... } } -> { Supplier: { name: ... } }
+  include: { supplier: true } -> { Supplier: true }
+
+Tip: After replacements, run:
+  rg "supplier|items: |items\\.|payments|productionSteps|fabricLotUsages|logs|vendor|variant" src/server/modules/purchases.ts
+and verify only valid Prisma fields remain.
+
+3) Fix partners service mapping
+File: src/services/partners.ts
+Change:
+  items: po.itemsCount
+To:
+  items: po.items
+
+------------------------------------------------------------
+B) Upload persistence on production (images 404)
+------------------------------------------------------------
+Goal: Ensure /app/public/uploads is writable for nextjs user (uid 1001).
+
+1) Add entrypoint to fix permissions at runtime
+Create file: docker/entrypoint.sh
+Contents:
+#!/bin/sh
+set -e
+UPLOAD_DIR="/app/public/uploads"
+mkdir -p "$UPLOAD_DIR"
+chown -R 1001:1001 "$UPLOAD_DIR"
+exec su-exec 1001:1001 "$@"
+
+2) Update Dockerfile (runner stage)
+- Install su-exec
+- Add entrypoint
+- Remove USER nextjs (entrypoint will drop privileges)
+
+Patch in Dockerfile runner stage:
+RUN apk add --no-cache su-exec
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
+Remove (or comment) the line:
+USER nextjs
+
+3) Ensure uploads dir exists in repo
+Create file: public/uploads/.gitkeep
+
+------------------------------------------------------------
+Local verification (coder)
+------------------------------------------------------------
+Purchases:
+- Open purchases page, stats should show non-zero counts for existing POs.
+- Create/update a PO, verify overview counts update.
+
+Uploads:
+- Create product with image, refresh page: image loads (no 404).
+
+Note
+- No commit/push here; owner will handle.

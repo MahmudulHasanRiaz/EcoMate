@@ -1,0 +1,4 @@
+
+> nextn@0.1.0 worker
+> tsx scripts/bullmq-worker.ts
+

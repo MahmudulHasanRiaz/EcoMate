@@ -1,0 +1,55 @@
+UPDATE 19 - Invoice lots layout refinement + stronger image fallback (final polish)
+
+Scope: ONLY items listed here. Keep changes minimal.
+
+1) Lots layout: make it visually clear (not cramped)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> formatLots
+
+Goal: A clean sub-line with both vertical + horizontal alignment.
+Replace the current nested <table> with a compact grid block:
+
+Example HTML (inline styles):
+<div style="margin-top:4px;border:1px solid #e2e8f0;border-radius:4px;overflow:hidden;">
+  <div style="display:grid;grid-template-columns:1.5fr .5fr .5fr .5fr;background:#f8fafc;font-weight:600;font-size:10px;color:#475569;padding:3px 6px;">
+    <div>Lot</div><div style="text-align:right;">J</div><div style="text-align:right;">O</div><div style="text-align:right;">S</div>
+  </div>
+  ${rows}
+</div>
+
+Rows template:
+<div style="display:grid;grid-template-columns:1.5fr .5fr .5fr .5fr;font-size:10px;color:#334155;padding:3px 6px;border-top:1px solid #e2e8f0;">
+  <div>${lot}</div>
+  <div style="text-align:right;">${j || '-'}</div>
+  <div style="text-align:right;">${o || '-'}</div>
+  <div style="text-align:right;">${s || '-'}</div>
+</div>
+
+Keep existing grouping and SUM logic (J/O/S totals).
+This layout keeps it readable at a glance.
+
+2) Image fallback: variant placeholder should NOT block product image
+File: src/services/purchases.ts
+
+Fix:
+- Add a small helper `isPlaceholderImage(url)`:
+  return true if:
+    url is falsy OR
+    url === DEFAULT_IMAGE_PLACEHOLDER OR
+    url.includes('/placeholder') OR
+    url.includes('placehold.co') OR
+    url.includes('placehold.it')
+- When picking imageUrl:
+  use variant image only if NOT placeholder;
+  else fallback to product image if NOT placeholder;
+  else null.
+
+3) Client-side safety (optional but recommended)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+
+Fix:
+- In safeImgUrl, also drop URLs that match placeholder patterns
+  (same checks as server helper, e.g. includes 'placehold.co').
+- If url is placeholder, return null (so <img> not rendered).
+
+Deliver back: summary + confirm invoice lots look clean + image shows parent product when variant missing.

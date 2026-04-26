@@ -1,0 +1,49 @@
+UPDATE P40d - Woo webhook duplicate cleanup (paginate list to kill stale hooks)
+
+Scope: ONLY src/server/modules/woo-sync.ts. Minimal change.
+
+Problem:
+- We still see repeated webhook calls (200 then many 401). Likely due to duplicate/stale webhooks.
+- ensureWooWebhook only lists first page (per_page=30), so old hooks beyond page 1 are never deleted.
+- Auto-heal recreates new webhook but does not remove all stale ones ? multiple deliveries with different secrets.
+
+Fix:
+1) Paginate webhook listing and collect ALL hooks
+File: src/server/modules/woo-sync.ts, function ensureWooWebhook
+- Change per_page to 100.
+- Fetch pages until empty or less than per_page (cap at 10 pages to be safe).
+Example:
+```
+const perPage = 100;
+let page = 1;
+const hooks: any[] = [];
+while (page <= 10) {
+  const pageUrl = new URL(listUrl.toString());
+  pageUrl.searchParams.set('per_page', String(perPage));
+  pageUrl.searchParams.set('page', String(page));
+  const res = await fetch(pageUrl.toString());
+  if (!res.ok) { console.error('[WOO_WEBHOOK_LIST_FAILED]', await res.text()); return; }
+  const batch = await res.json();
+  if (!Array.isArray(batch) || batch.length === 0) break;
+  hooks.push(...batch);
+  if (batch.length < perPage) break;
+  page += 1;
+}
+```
+- Use this `hooks` array for all filtering/cleanup instead of the single-page list.
+
+2) Force-recreate should delete ALL matching order.created hooks across ALL pages
+- Keep existing forceRecreate logic but now it will iterate over full `createdHooks` list.
+- Add a log: `[WOO_WEBHOOK_FORCE] Deleting ${createdHooks.length} order.created hooks.`
+
+3) Keep behavior the same otherwise
+- No change to URL matching rules.
+- No change to secret generation rules.
+
+Deliver back:
+- Summary + file touched
+- Log sample showing total hooks deleted
+
+Manual verify (optional):
+- After one forceRecreate, Woo should show only ONE order.created webhook for this integration.
+- New orders should result in a single webhook delivery (no 401 repeats).

@@ -1,0 +1,32 @@
+P47ai — Assigned-to-Me filter fallback
+
+Problem
+- "Assigned to Me" shows empty results even when orders are assigned to the current user.
+- staffIdForFilters may be undefined (missing publicMetadata.staffId or currentStaffData), so assignedToId is not set correctly.
+
+Fix (client only)
+File: src/app/dashboard/orders/client-page.tsx
+
+1) Add a fallback that resolves staffId from the staff list (matching clerkId).
+
+Add this near staffIdForFilters:
+
+const staffIdFromList = React.useMemo(() => {
+  if (!user?.id) return undefined;
+  return allStaff.find((s) => s.clerkId === user.id)?.id;
+}, [allStaff, user?.id]);
+
+const staffIdForFilters =
+  currentStaffData?.id ||
+  loggedInStaff?.id ||
+  (user?.publicMetadata?.staffId as string | undefined) ||
+  staffIdFromList;
+
+2) Keep the existing "missing staff" toast logic as-is; it will now resolve once allStaff loads.
+
+Expected result
+- Assigned-to-Me uses the correct StaffMember.id even if metadata is missing.
+- Filter returns orders assigned to the logged-in staff.
+
+Optional debug (remove after verify)
+console.debug('[ASSIGNEE_FILTER]', { staffIdForFilters, staffIdFromList, clerkId: user?.id });

@@ -1,0 +1,16 @@
+UPDATE PXXe - Add summary counts to task.txt
+
+Scope: ONLY update draft/task.txt. No code changes.
+
+Required
+1) Add a “Summary” section (top or bottom) with counts:
+   - Verified Done
+   - Done (Unverified)
+   - Known Issues / Blocked
+   - Corrections / Deprecated
+
+2) Ensure counts match the actual number of entries in each section.
+
+Deliver back
+- Updated draft/task.txt
+- Counts you added.

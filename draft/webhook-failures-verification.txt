@@ -1,0 +1,35 @@
+Webhook Failures UI Verification Evidence
+Date: 2026-01-22
+
+1. Permissions Verification (P36b)
+----------------------------------
+Confirmed that Admin and Manager roles have 'integrations' module access.
+Moderator role correctly denied access.
+Evidence: 
+- Local verification script (check-perms.ts) results:
+  - ROLE=Admin | INTEGRATIONS={"create":true,"read":true,"update":true,"delete":true} | PAGE_ACCESS=true
+  - ROLE=Manager | INTEGRATIONS={"create":true,"read":true,"update":true,"delete":true} | PAGE_ACCESS=true
+  - ROLE=Moderator | INTEGRATIONS=undefined | PAGE_ACCESS=false
+
+2. Navigation Verification
+--------------------------
+- Settings -> Integrations -> "Webhook Failures" button correctly links to /dashboard/webhook-failures.
+- Sidebar link visible to Admin/Manager and correctly navigates to the failures page.
+
+3. UI Functionality Verification (P34)
+--------------------------------------
+- Page loads successfully for Admin.
+- Table displays failed webhooks with ID, Source, Date, and Error.
+- Filtering by Source and Order ID confirmed (logic verified in server/modules/webhooks).
+- Replay button triggers /api/webhooks/failures/[id]/replay.
+- Toast notifications appear on replay success/failure.
+
+4. Backend logic Verification (P32 / P35)
+-----------------------------------------
+- Replay logic correctly retries processing and logs "Manual Replay" note.
+- Circuit Breaker (P35/P35b) logic verified:
+  - Fails count correctly in Redis.
+  - Circuit opens after 3 failures in 5 minutes.
+  - Circuit only resets on absolute 100% success (no partial failures).
+
+Status: ALL PASSED

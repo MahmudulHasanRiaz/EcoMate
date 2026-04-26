@@ -1,0 +1,95 @@
+P47aa - Incomplete Convert Prefill Fix (phone + product title/image)
+
+Problem
+- Convert modal shows blank phone (lead detail returns phoneNormalized but UI reads lead.phone).
+- Resolved SKU items show variant name only (e.g., "40") and no image because variant.image is empty and product data isn’t used.
+
+Goal
+- Prefill phone reliably from lead payload/normalized phone.
+- Resolved items show product title + image (fallback from product) even for variants.
+
+Apply these EXACT changes
+
+1) API: normalize phone/name/address in lead detail response
+File: src/app/api/orders/incomplete/[id]/route.ts
+- After `if (!lead) return apiError(...)`, add:
+```
+const payload = (lead.payload || {}) as any;
+const derivedPhone = String(lead.phoneNormalized || payload.phone || '').trim();
+const derivedName = String(lead.name || '').trim() || [payload.firstName, payload.lastName].filter(Boolean).join(' ').trim();
+const derivedAddress = String(lead.address || '').trim() || [payload.address1, payload.address2, payload.city, payload.state, payload.postcode, payload.country].filter(Boolean).join(', ').trim();
+```
+- Then in apiSuccess return, add these fields so front-end can use them:
+```
+return apiSuccess({
+  ...lead,
+  phone: derivedPhone,
+  name: derivedName,
+  address: derivedAddress,
+  businessName: lead.business?.name || '',
+  businessPhone: lead.business?.phone || '',
+  businessAddress: lead.business?.address || '',
+  storeUrl: lead.integration?.storeUrl || ''
+});
+```
+
+2) UI: use derived phone for display + prefill
+File: src/app/dashboard/orders/incomplete/page.tsx
+- Add helper near deriveLeadName/deriveLeadAddress:
+```
+const deriveLeadPhone = (lead: IncompleteLead | IncompleteLeadDetail) => {
+  const raw = String((lead as any).phone || (lead as any).phoneNormalized || (lead as any)?.payload?.phone || '').trim();
+  const meta = normalizeBdPhoneForStorage(raw);
+  return meta.isValid ? meta.last11 : (meta.value || raw);
+};
+```
+- Replace any direct `leadDetail.phone` display with `deriveLeadPhone(leadDetail)`.
+- In leadPrefill:
+```
+customerPhone: deriveLeadPhone(convertLead),
+```
+
+3) SKU resolve: include product data for variants + image fallback
+File: src/app/api/orders/incomplete/resolve-skus/route.ts
+- Update variant query to include product name + image:
+```
+const variants = await prisma.productVariant.findMany({
+  where: { sku: { in: skuList } },
+  select: {
+    id: true,
+    sku: true,
+    productId: true,
+    price: true,
+    salePrice: true,
+    name: true,
+    image: true,
+    product: { select: { name: true, image: true } }
+  }
+});
+```
+- When building items for variants:
+```
+if (variant) {
+  const productName = variant.product?.name || variant.sku;
+  const displayName = variant.name ? `${productName} - ${variant.name}` : productName;
+  const price = Number(variant.salePrice ?? variant.price ?? 0);
+  const image = variant.image || variant.product?.image || '';
+  return [{
+    productId: variant.productId,
+    variantId: variant.id,
+    sku: variant.sku,
+    name: displayName,
+    price,
+    quantity: 1,
+    image
+  }];
+}
+```
+
+4) Rebuild app & test
+- Rebuild the app image and restart.
+- Test: open an incomplete lead, click Convert. Phone should prefill. Item should show product title + image.
+
+Notes
+- This does not change DB schema.
+- It fixes both the missing phone and blank product metadata in convert modal.

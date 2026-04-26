@@ -1,0 +1,65 @@
+UPDATE P04 - PM2 runtime config + worker runbook (Phase 2 Infra)
+
+Scope: add PM2 ecosystem config and deployment runbook. No app logic changes.
+
+Goal:
+- Single source of truth for production process management.
+- Web runs in cluster mode (configurable).
+- BullMQ worker runs as a separate process.
+- Clear runbook for starting/stopping/reloading.
+
+1) Add PM2 ecosystem file
+File: ecosystem.config.cjs (root)
+Create with 2 apps:
+```
+module.exports = {
+  apps: [
+    {
+      name: 'fashionary-web',
+      script: 'npm',
+      args: 'start',
+      exec_mode: 'cluster',
+      instances: process.env.WEB_CONCURRENCY || 1,
+      env: {
+        NODE_ENV: 'production',
+        PORT: process.env.PORT || 9002
+      },
+      max_memory_restart: '700M',
+      time: true
+    },
+    {
+      name: 'fashionary-worker',
+      script: 'npm',
+      args: 'run worker',
+      exec_mode: 'fork',
+      instances: 1,
+      env: {
+        NODE_ENV: 'production'
+      },
+      max_memory_restart: '500M',
+      time: true
+    }
+  ]
+};
+```
+
+Notes:
+- WEB_CONCURRENCY controls scaling (default 1).
+- Worker stays single instance unless explicitly scaled.
+- PORT only needed for web; PM2 cluster shares port.
+
+2) Add ops runbook (text, project-safe)
+File: draft/pm2-runbook.txt
+Include:
+- Build: `npm run build`
+- Start: `pm2 start ecosystem.config.cjs`
+- Reload (zero‑downtime): `pm2 reload ecosystem.config.cjs --only fashionary-web`
+- Restart worker: `pm2 restart fashionary-worker`
+- Logs: `pm2 logs fashionary-web` / `pm2 logs fashionary-worker`
+- Stop: `pm2 stop ecosystem.config.cjs`
+- Schedule daily job (one-time): `npm run worker` running is required; then run `npx tsx scripts/schedule-cron.ts` once after deploy.
+
+Deliver back:
+- Summary + files touched
+- Confirm PM2 ecosystem config added
+- Provide runbook content summary

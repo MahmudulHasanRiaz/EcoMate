@@ -1,0 +1,22 @@
+﻿UPDATE P27 - Reduce StaffInvite lookups in auth flow (minimal)
+
+Scope: ONLY src/server/modules/staff-auth.ts. Keep changes minimal. No refactors.
+
+Problem:
+pg_stat shows expensive StaffInvite SELECT. Current code calls getInviteForEmail on every auth even when role already known.
+
+Fix:
+1) Gate invite lookup
+- In getStaffAuthDetails(), only call getInviteForEmail if role is still unknown.
+- Replace:
+  const invite = await getInviteForEmail(primaryEmail);
+  if (!role && invite?.role) role = invite.role;
+with:
+  const invite = role ? null : await getInviteForEmail(primaryEmail);
+  if (!role && invite?.role) role = invite.role;
+
+2) Keep behavior identical when role is missing (invite still used).
+
+Deliver back:
+- Summary + file touched
+- (Optional) note if StaffInvite query count drops in next pg_stat run.

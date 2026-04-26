@@ -1,0 +1,39 @@
+P47ak — Prisma staffPayment/staffIncome relation alias fix
+
+Symptoms (from logs)
+- staffPayment.aggregate where { staff: ... } fails: Unknown argument `staff`.
+- staffIncome.findMany include { order: ... } fails: Unknown field `order`.
+
+Root cause
+- prisma/schema.prisma still uses legacy relation field names:
+  - StaffPayment has StaffMember (capital), not staff
+  - StaffIncome has Order (capital), not order
+
+Fix (schema-only; no DB migration required)
+Edit root prisma/schema.prisma (NOT src/prisma/schema.prisma):
+
+A) StaffPayment model
+Rename relation field:
+  StaffMember StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  -> staff StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+B) StaffIncome model
+Rename relation field:
+  Order Order? @relation(fields: [orderId], references: [id])
+  -> order Order? @relation(fields: [orderId], references: [id])
+
+(Optional)
+If code uses StaffIncome.staff (already expected), also rename:
+  StaffMember StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  -> staff StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+2) Regenerate Prisma client
+- Local: npx prisma generate
+- Docker: docker compose exec app npx prisma@6.19.1 generate
+
+3) Restart dev/app
+
+Expected result
+- /api/staff aggregate works (staffPayment.aggregate where staff).
+- /api/staff/clerk works (staffIncome include order).
+- Staff list loads, Assigned-to-me filter can resolve.

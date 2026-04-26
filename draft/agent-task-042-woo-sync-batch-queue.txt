@@ -1,0 +1,95 @@
+﻿UPDATE P42 - Woo Sync batch job + shared SKU map (high impact)
+
+Scope: Woo sync only. Minimal, safe refactor.
+
+Problem:
+- syncOneWooOrder runs per order, resolving SKU + product info each time.
+- When queue is enabled, each job repeats same DB work.
+- This causes heavy DB load on large imports.
+
+Goal:
+- Process Woo orders in batches (per page) so SKU map + product info are loaded once.
+- Use BullMQ job "sync-order-batch" (one job per page).
+- Keep existing syncOneWooOrder for safety but allow precomputed cache.
+
+Steps:
+
+1) Add batch queue function
+File: src/server/queues/index.ts
+- Add:
+```
+export async function enqueueStockSyncBatchJob(data: any) {
+  const queue = getQueue('stock-sync');
+  if (!queue) return false;
+  await queue.add('sync-order-batch', data, {
+    removeOnComplete: 100,
+    removeOnFail: 500,
+  });
+  return true;
+}
+```
+
+2) Add batch processor in worker
+File: scripts/bullmq-worker.ts
+- In stock-sync worker:
+```
+if (job.name === 'sync-order-batch') {
+  const { batch, integration } = job.data;
+  if (!Array.isArray(batch) || !integration) return { ok: false };
+  const { syncWooOrdersBatch } = await import('@/server/modules/woo-sync');
+  await syncWooOrdersBatch(batch, integration);
+  return { ok: true, count: batch.length };
+}
+```
+- Keep existing sync-order handler (backward compat).
+
+3) Add syncWooOrdersBatch helper
+File: src/server/modules/woo-sync.ts
+- New export:
+```
+export async function syncWooOrdersBatch(batch: WooOrder[], integration: any) {
+  const skus = Array.from(new Set(batch.flatMap(wo =>
+    (wo.line_items || []).map((li: any) => (li.sku || '').trim()).filter(Boolean)
+  )));
+  const skuMap = await resolveSkuMap(skus);
+  const productIds = Array.from(new Set(Array.from(skuMap.values()).map(v => v.productId)));
+  const productInfos = productIds.length
+    ? await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        include: {
+          variants: { include: { inventoryItems: true } },
+          comboItems: { include: { child: { include: { inventoryItems: true } }, variant: { include: { inventoryItems: true } } } },
+          inventoryItems: true,
+        },
+      })
+    : [];
+  const productInfoMap = new Map(productInfos.map(p => [p.id, p]));
+
+  for (const wo of batch) {
+    await syncOneWooOrder(wo, integration, skuMap, productInfoMap);
+  }
+}
+```
+
+4) Update syncOneWooOrder signature
+File: src/server/modules/woo-sync.ts
+- Change to:
+```
+export async function syncOneWooOrder(wo: WooOrder, integration: any, skuMap?: Map<string, any>, productInfoMap?: Map<string, any>)
+```
+- If skuMap/productInfoMap not provided, fallback to current per-order resolution.
+- Use provided cache if present.
+
+5) Use batch job in importWooOrders
+File: src/server/modules/woo-sync.ts
+- Replace per-order enqueue:
+```
+const queued = await enqueueStockSyncBatchJob({ batch, integration });
+if (!queued) await syncWooOrdersBatch(batch, integration);
+```
+- Remove per-order enqueue loop.
+
+Deliver back:
+- Summary + files touched
+- Confirm worker handles sync-order-batch
+- Confirm syncOneWooOrder still works standalone

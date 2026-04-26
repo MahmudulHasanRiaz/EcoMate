@@ -1,0 +1,41 @@
+UPDATE P36f - Re-verify Webhook Failures after integrations permission fix
+
+Scope: Verification only. No code changes unless a new bug is found.
+
+Goal:
+- Confirm Admin access works after integrations permission was added to server presets.
+- Confirm API returns 200 (no 403) and UI shows no permission toast.
+
+Steps:
+1) Clear auth cache
+- Restart dev server (stop/start) to clear in-memory staff-auth cache.
+- If Redis is enabled, delete staff auth cache key for current user:
+  redis-cli DEL staff-auth:<clerkUserId>
+
+2) Login as Admin and open:
+  /dashboard/webhook-failures
+- Confirm page renders (no Access Denied screen).
+- Confirm no red toast “Missing permission: integrations.read”.
+
+3) Network checks
+- GET /api/webhooks/failures should return 200.
+- Try Replay on one item (if any) -> POST /api/webhooks/failures/{id}/replay returns 200.
+
+4) Evidence
+- Save short evidence log (status codes + timestamps) to:
+  draft/webhook-failures-verification-2.txt
+- Update draft/task.txt:
+  - P32 -> DONE-VERIFIED with evidence file
+  - P34 -> DONE-VERIFIED with evidence file
+  - P36/36e -> mark verified if not already
+
+If ANY 403 persists:
+- Do NOT fix. Report:
+  - The exact 403 response body
+  - The current user role from Clerk publicMetadata
+  - Whether staff-auth cache was cleared
+
+Deliver back:
+- Confirmation of results
+- draft/webhook-failures-verification-2.txt path
+- Updated task.txt

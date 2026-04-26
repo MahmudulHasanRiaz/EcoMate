@@ -1,0 +1,108 @@
+UPDATE P18 - Task module policy + permissions (creator/admin/manager flow)
+
+Scope: Tasks module + permissions wiring. Keep changes minimal. No UI redesign.
+
+Requirements (confirmed):
+- Anyone can create tasks.
+- Only Admin + all “Manager” roles can assign/reassign others.
+- Non‑manager users can update ONLY status.
+- Visibility: Creator + Admin/Manager always see; assignee sees when assigned.
+- Global (no business scoping).
+
+Part A) Permissions + page access wiring (tasks)
+1) Add tasks permission to StaffMemberUI
+File: src/types/index.ts
+- In StaffMemberUI.permissions, add:
+  tasks: Permission | boolean;
+
+2) Add tasks to permission presets
+File: src/lib/staff-permissions.ts
+- Add 'tasks' to modules array.
+- Add tasks to all role presets:
+  Admin/Manager: full access (allTrue)
+  All other standard roles: create+read+update, no delete (perm(true, true, true, false))
+  Custom: noAccess
+- Update customPermissions + defaultPermissions to include tasks.
+
+3) Add tasks to PERMISSIONS (used by usePermissions)
+File: src/lib/permissions.ts
+- Add tasks to EMPTY_PERMISSIONS object.
+- Add tasks to every role in PERMISSIONS:
+  Admin/Manager: FULL_ACCESS
+  All other standard roles: CREATE_READ_UPDATE
+  Custom: NO_ACCESS
+
+4) Add tasks to page access registry
+File: src/lib/page-access.ts
+- Add 'pages.tasks' to PAGE_ACCESS_KEYS + PAGE_ACCESS_LIST.
+- Add MODULE_PAGE_FALLBACK: 'pages.tasks': 'tasks'.
+- Add pages.tasks to ROLE_PAGE_ACCESS for all roles (Admin, Manager, Moderator, Seller, Packing Assistant, Call Assistant, Call Centre Manager, Courier Manager, Courier Call Assistant, Partner, Vendor/Supplier, Cutting Master, Marketer, Finance Manager, Custom).
+
+5) Show tasks module in Staff permission editor
+File: src/app/dashboard/staff/page.tsx
+- Add 'tasks' to permissionModules list.
+
+6) Remove forced Tasks visibility
+File: src/app/dashboard/layout-client.tsx
+- Replace:
+  access: hasPageAccess(..., permissions?.tasks) || true
+  with:
+  access: hasPageAccess(..., permissions?.tasks)
+
+Part B) Server policy (assign + update rules)
+1) Expand manager role check
+File: src/server/modules/tasks.ts
+- Update canManageTasks to include Manager roles:
+  Admin, Manager, CallCentreManager, CourierManager, FinanceManager
+
+2) Enforce assignment rules on CREATE
+File: src/app/api/tasks/route.ts
+- Determine isManagerRole using StaffRole values above.
+- If not manager:
+  force assignedToId = auth.staff.id (ignore any provided assignedToId).
+  Example:
+    const isManagerRole = ...
+    const assignedToId = isManagerRole ? body.assignedToId : auth.staff.id;
+    const input = { ...body, assignedToId, createdById: auth.staff.id };
+
+3) Enforce status‑only updates for non‑manager
+File: src/app/api/tasks/[id]/route.ts
+- After access check (creator/assignee), apply:
+  if (!isManagerRole) {
+     const input: UpdateTaskInput = { status: body.status, updatedBy: auth.staff.id };
+     return NextResponse.json(await updateTask(id, input));
+  }
+- Managers keep full update as now.
+
+4) Report access for manager roles
+File: src/app/api/tasks/report/route.ts
+- isAdminOrManager should use the same manager role list as above.
+
+Part C) Client UX guardrails (minimal)
+1) Task create/edit dialog: disable assignment for non‑managers
+File: src/app/dashboard/tasks/page.tsx
+- Use Clerk user metadata to detect role + staffId:
+  import { useUser } from '@clerk/nextjs';
+  const { user } = useUser();
+  const role = user?.publicMetadata?.role as string | undefined;
+  const staffId = user?.publicMetadata?.staffId as string | undefined;
+  const isManagerRole = ['Admin','Manager','Call Centre Manager','Courier Manager','Finance Manager'].includes(role || '');
+- In TaskDialog:
+  - If !isManagerRole, set assignedToId to staffId (fallback to 'unassigned') and disable the Select.
+  - Only fetch staff list when isManagerRole is true.
+
+2) Task Report page: restrict staff filter for non‑managers
+File: src/app/dashboard/tasks/report/page.tsx
+- Use useUser role + staffId.
+- If not manager:
+  - set staffId state to staffId on mount
+  - hide/disable Staff Select (show static label “Me”)
+  - avoid getStaffMembers() call
+
+Deliver back:
+- Summary + files touched
+- Confirm rules:
+  * Any user can create
+  * Only manager roles can assign/reassign
+  * Non‑managers can update status only
+  * Creator/admin/manager/assignee visibility enforced

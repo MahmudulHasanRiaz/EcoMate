@@ -1,0 +1,124 @@
+P47bi - Purchase payment + dual-role partner final hardening
+
+Scope:
+- Fix only the remaining correctness gaps from P47bh.
+- Do not change unrelated modules.
+- Do not include commit/push instructions.
+
+--------------------------------------------------------------------
+1) Fix dual-role create payload safety (critical)
+--------------------------------------------------------------------
+Problem:
+- `handleSave` currently forwards mixed payload fields to both endpoints.
+- Supplier API writes `body` directly to Prisma Supplier create/update, so extra vendor-only fields
+  (e.g. `type`) can break create/update.
+- Secondary create response is not checked; UI can show success even when dual-create fails.
+
+File:
+- `src/app/dashboard/partners/page.tsx`
+
+Required implementation:
+
+A) Build explicit payloads per model (no raw spread forwarding)
+- Supplier payload shape:
+  `{ name, contactPerson, email, phone, address }`
+- Vendor payload shape:
+  `{ name, contactPerson, email, phone, type }`
+
+B) Primary save
+- If dialog is supplier mode, call supplier API with supplier payload only.
+- If dialog is vendor mode, call vendor API with vendor payload only.
+
+C) Secondary dual-create save
+- If `alsoCreate && !isEdit`:
+  - Supplier->Vendor: send only vendor payload
+  - Vendor->Supplier: send only supplier payload
+- Validate `secondaryResponse.ok`; if false, parse message and throw.
+
+D) Keep current UX rules
+- Vendor+alsoCreate: require real address for supplier record.
+- Supplier+alsoCreate: require at least 1 vendor type.
+
+Acceptance:
+- Vendor->Supplier dual create no longer sends `type` to supplier endpoint.
+- Supplier->Vendor dual create no longer sends `address` to vendor endpoint.
+- If second create fails, user gets error toast; no false success.
+
+--------------------------------------------------------------------
+2) Pending check must not change paymentStatus (critical)
+--------------------------------------------------------------------
+Problem:
+- In `applyPartnerPaymentCore`, check payments (`Pending`) can still trigger status changes:
+  e.g., Unpaid -> Partial.
+
+File:
+- `src/server/modules/purchases.ts`
+
+Function:
+- `applyPartnerPaymentCore`
+
+Required implementation:
+
+A) Supplier flow (PO loop)
+- Keep payment row creation and check-passing item creation as is.
+- For status recalculation/update:
+  - only execute when `isCashLike === true`
+  - for `isCheck`, skip `purchaseOrder.update({ paymentStatus })`
+
+B) Vendor flow (ProductionStep loop)
+- Same rule: only cash-like methods can change `paymentStatus`.
+- For check method, skip `productionStep.update({ paymentStatus })`.
+
+Acceptance:
+- Check payment with `Pending` creates payment/check item but does NOT alter PO/Step paymentStatus.
+- Status changes only after check is marked Passed (existing updateCheckStatus flow).
+
+--------------------------------------------------------------------
+3) Ledger must use cleared allocation only (critical)
+--------------------------------------------------------------------
+Problem:
+- `totalAllocated` currently includes pending check allocations.
+- This can debit AP / credit cash-like account before check is Passed.
+
+File:
+- `src/server/modules/purchases.ts`
+
+Function:
+- `applyPartnerPaymentCore`
+
+Required implementation:
+
+A) Split allocation trackers
+- Keep one tracker for operational FIFO consumption (existing `remaining` behavior stays).
+- Add/rename a cleared tracker, e.g. `totalClearedAllocated`.
+- Increment cleared tracker only by `effectiveAllocation` (cash/direct/mobile).
+
+B) Ledger posting must use cleared tracker
+- Replace AP debit amount from old totalAllocated to `totalClearedAllocated`.
+- Return payload can expose both values if needed; at minimum ensure ledger uses cleared only.
+
+Acceptance:
+- Pending checks do not create AP debit via this function.
+- Cash/direct/mobile payments still post immediately.
+
+--------------------------------------------------------------------
+4) Verification checklist (local manual)
+--------------------------------------------------------------------
+A) Dual-create payload safety
+1. Add Vendor + check "Also create as Supplier"
+2. Submit with address -> succeeds
+3. Confirm supplier row created with address, no API error
+4. Force secondary failure case (duplicate name/email) -> ensure error toast appears
+
+B) Pending check behavior
+1. Create partner payment with method `Check`
+2. Verify PO/Step paymentStatus unchanged immediately
+3. Verify check-passing item exists
+4. Mark check `Passed` from check module
+5. Verify PO/Step paymentStatus now updates correctly
+
+C) Ledger behavior
+1. Before payment: note AP balance
+2. Create pending check payment -> AP should not reduce yet
+3. Mark check Passed -> AP should reduce then
+

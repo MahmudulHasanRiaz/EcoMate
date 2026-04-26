@@ -1,0 +1,106 @@
+UPDATE P13 - Expense approval workflow (print → manager approve → finance pay)
+
+Scope: Expense module + print view. Keep changes minimal. No refactors beyond this flow.
+
+Goal (per client):
+1) Expense entry can be printed for manager signature.
+2) Manager approves.
+3) Finance manager verifies and pays.
+4) Accounting stays correct (accrual: expense+AP on approval, settlement on payment).
+
+Phase A — Schema & Migration
+1) Add enum:
+   enum ExpenseApprovalStatus { Submitted Approved Rejected }
+
+2) Add fields to Expense:
+   approvalStatus   ExpenseApprovalStatus @default(Approved)
+   submittedById    String?
+   submittedByName  String?
+   submittedAt      DateTime?
+   approvedById     String?
+   approvedByName   String?
+   approvedAt       DateTime?
+   rejectedById     String?
+   rejectedByName   String?
+   rejectedAt       DateTime?
+   rejectionNote    String?
+   paidById         String?
+   paidByName       String?
+
+3) Migration:
+   npx prisma migrate dev -n add_expense_approval_flow
+   npx prisma generate
+   IMPORTANT: keep default Approved to avoid breaking existing records.
+
+Phase B — Server Logic (Accounting correctness)
+Files: src/server/modules/expenses.ts
+
+1) Include new fields in ExpenseDTO + mapDbExpenseToDto.
+2) Add approval guard in postExpenseLedger:
+   - If approvalStatus !== 'Approved', do NOT post expense/AP or settlement.
+   - If approvalStatus becomes Rejected, delete ledger entries for postingGroup
+     expense:{id} and expenseSettlement:{id}.
+3) When approvalStatus changes to Approved:
+   - Set approvedById/Name/At.
+   - Post ledger entries (expense + AP).
+4) When approvalStatus changes to Rejected:
+   - Set rejectedById/Name/At + rejectionNote.
+   - Clear any payment fields (isPaid = false, paidAt null, paidFromAccountId null).
+   - Remove ledger entries + checkPassingItem for this expense.
+5) Check Passing sync:
+   - Only create/upsert CheckPassingItem if approvalStatus === Approved AND check > 0 AND checkDate exists.
+   - Otherwise delete CheckPassingItem.
+
+Phase C — API & Permissions
+Files:
+- src/app/api/expenses/route.ts
+- src/app/api/expenses/[id]/route.ts
+
+Rules:
+- Only Manager/Admin can approve/reject.
+- Only FinanceManager/Admin can mark paid.
+
+Implementation:
+1) Allow PATCH to accept:
+   approvalStatus, rejectionNote, isPaid, paidFromAccountId, payableAccountId, paidAt, check/checkDate/checkNo
+2) Enforce role checks in PATCH:
+   - If approvalStatus changes:
+       allow only Manager/Admin.
+   - If isPaid changes to true:
+       allow only FinanceManager/Admin.
+3) For create:
+   - Manual expenses default to approvalStatus = Submitted.
+   - System expenses (staffPaymentId) may set Approved directly.
+
+Phase D — UI (Expenses page)
+File: src/app/dashboard/expenses/client-page.tsx
+
+1) Show approvalStatus badge in list rows:
+   Submitted / Approved / Rejected
+2) Row actions:
+   - Submit for Approval (if status not Submitted/Approved)
+   - Approve (Manager/Admin only)
+   - Reject (Manager/Admin only, prompt for reason)
+   - Mark Paid (FinanceManager/Admin only, opens edit dialog with isPaid=true)
+3) Disable payment fields in ExpenseForm unless approvalStatus === Approved.
+4) Add status + approval metadata to view (submitted/approved/paid by).
+
+Phase E — Print (signature workflow)
+Files:
+- src/app/print/expenses/page.tsx
+- src/app/print/expenses/client-page.tsx
+
+1) Add approval status + submitted/approved/paid metadata in header.
+2) Signature boxes (full‑width):
+   - Prepared By (submittedByName)
+   - Manager Approval (approvedByName + date)
+   - Finance Payment (paidByName + paidAt)
+3) Keep current print layout; just extend metadata + signature area.
+
+Deliver back:
+- Migration name
+- Files touched
+- Manual verify:
+  - Create expense → status Submitted → print works
+  - Manager approves → status Approved → ledger posted
+  - Finance marks paid → settlement posted, check passing item created if check used

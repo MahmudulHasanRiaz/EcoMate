@@ -1,0 +1,41 @@
+UPDATE PXXd - Task.txt accuracy pass (mandatory)
+
+Scope: ONLY update draft/task.txt. No code changes.
+
+Why
+- task.txt still references non-existent task.md.
+- Attendance evidence path is wrong.
+- Evidence format not aligned with required standard.
+
+Required edits in draft/task.txt
+1) Replace all “task.md” evidence
+- For P01-1..P01-6: set Evidence to “Awaiting verification” (no fake refs).
+- Keep status as DONE-UNVERIFIED.
+
+2) Fix P02-3 evidence path
+- Replace `src/api/attendance/route.ts` with:
+  - `src/app/api/attendance/route.ts`
+  - `src/server/modules/attendance.ts`
+- Add 1 command evidence line + timestamp, e.g.:
+  - `rg --line-number "getAttendanceRecords" src/app/api/attendance/route.ts src/server/modules/attendance.ts` (YYYY-MM-DD HH:MM)
+
+3) Upgrade evidence format for DONE-VERIFIED items
+- For each DONE-VERIFIED item (P02-1..P02b, BUILD-FIX-1):
+  - Add file path(s)
+  - Add one command output line (rg/ls-tree) + timestamp
+
+Example evidence line format:
+Evidence:
+- File: src/app/api/staff/[id]/route.ts
+- Cmd: rg --line-number "includeHistory" src/app/api/staff/[id]/route.ts (2026-01-18 15:20)
+
+4) BUILD-LEGACY entry
+- Add top 3 error categories from latest `npx tsc --noEmit` output, with timestamp.
+- Keep Status: BLOCKED.
+
+5) Update summary counts
+- Ensure counts match sections after edits.
+
+Deliver back
+- Updated draft/task.txt
+- Short summary: what moved or changed, and new count totals.

@@ -1,0 +1,2061 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_DATABASE_URL")
+  extensions = [pg_trgm]
+}
+
+model Account {
+  id                                         String              @id @default(cuid())
+  name                                       String              @unique
+  type                                       AccountType
+  group                                      String?             // e.g. 'LIQUID' for payment-eligible accounts
+  createdAt                                  DateTime            @default(now())
+  updatedAt                                  DateTime            @updatedAt
+  CourierPayment                             CourierPayment[]
+  Expense_Expense_paidFromAccountIdToAccount Expense[]           @relation("Expense_paidFromAccountIdToAccount")
+  Expense_Expense_payableAccountIdToAccount  Expense[]           @relation("Expense_payableAccountIdToAccount")
+  ExpenseCategory                            ExpenseCategory[]
+  LedgerEntry                                LedgerEntry[]
+  Order_Order_paidFromAccountIdToAccount     Order[]             @relation("Order_paidFromAccountIdToAccount")
+  Order_Order_shippingPaidAccountIdToAccount Order[]             @relation("Order_shippingPaidAccountIdToAccount")
+  OrderPaymentEvent                          OrderPaymentEvent[]
+  OrderTransaction                           OrderTransaction[]
+  PurchasePayment                            PurchasePayment[]
+  StaffPayment                               StaffPayment[]
+  CashDrawer                                 CashDrawer?
+  CutoffSettlement                           CutoffSettlement[]
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AttendanceRecord {
+  id                 String           @id @default(cuid())
+  staffId            String
+  date               DateTime         @db.Date
+  status             AttendanceStatus
+  checkInTime        DateTime?
+  checkOutTime       DateTime?
+  expectedMinutes    Int?
+  totalWorkDuration  Int?
+  totalBreakDuration Int?
+  totalInactiveDuration Int? @default(0)
+  isWeekend          Boolean          @default(false)
+  isHoliday          Boolean          @default(false)
+  overtimeMinutes    Int?
+  overtimeBonusAmount Float?          @default(0)
+  leaveRequestId     String?
+  staff              StaffMember      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  leaveRequest       LeaveRequest?    @relation(fields: [leaveRequestId], references: [id])
+  breaks             BreakRecord[]
+  inactiveRecords    AttendanceInactiveRecord[]
+  editLogs           AttendanceEditLog[]
+
+  @@unique([staffId, date])
+  @@index([date])
+  @@index([leaveRequestId])
+}
+
+model Attribute {
+  id        String   @id @default(cuid())
+  name      String
+  options   String[]
+  productId String
+  Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, name])
+}
+
+model BreakRecord {
+  id               String           @id @default(cuid())
+  attendanceId     String
+  startTime        DateTime
+  endTime          DateTime?
+  AttendanceRecord AttendanceRecord @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+}
+
+model AttendanceInactiveRecord {
+  id               String           @id @default(cuid())
+  attendanceId     String
+  startTime        DateTime
+  endTime          DateTime?
+  AttendanceRecord AttendanceRecord @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+}
+
+model Business {
+  id                     String                   @id @default(cuid())
+  name                   String                   @unique
+  logo                   String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  address                String?
+  phone                  String?
+  CourierIntegration     CourierIntegration[]
+  CourierPayment         CourierPayment[]
+  Expense                Expense[]
+  LedgerEntry            LedgerEntry[]
+  MarketingAttribution   MarketingAttribution[]
+  MarketingCampaign      MarketingCampaign[]
+  MarketingSpend         MarketingSpend[]
+  Order                  Order[]
+  OrderFinancialSnapshot OrderFinancialSnapshot[]
+  OrderPaymentEvent      OrderPaymentEvent[]
+  OrderTransaction       OrderTransaction[]
+  OrderRestriction       OrderRestriction[]
+  WooCheckoutLead        WooCheckoutLead[]
+  WooCommerceIntegration WooCommerceIntegration[]
+  StaffMember            StaffMember[]            @relation("StaffBusinessAccess")
+  CashDrawer             CashDrawer[]
+  CashDrawerTransfer     CashDrawerTransfer[]
+}
+
+model Category {
+  id              String            @id @default(cuid())
+  name            String            @unique
+  parentId        String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  Category        Category?         @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_Category  Category[]        @relation("CategoryToCategory")
+  Product         Product[]
+  ProductCategory ProductCategory[] @relation("ProductCategoryToCategory")
+}
+
+model ProductCategory {
+  productId  String
+  categoryId String
+  Product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  Category   Category @relation("ProductCategoryToCategory", fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+  @@index([categoryId])
+}
+
+model CheckPassingItem {
+  id             String             @id @default(cuid())
+  source         CheckPassingSource
+  sourceId       String
+  passingDate    DateTime
+  amount         Float
+  status         CheckStatus
+  checkNo        String?
+  referenceId    String?
+  referenceLabel String?
+  referenceUrl   String?
+  payee          String?
+  type           String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([source, sourceId])
+  @@index([checkNo])
+  @@index([passingDate, source, id])
+  @@index([passingDate, status])
+  @@index([payee])
+  @@index([referenceLabel])
+  @@index([source, sourceId])
+}
+
+model CheckPassingLog {
+  id             String       @id @default(cuid())
+  source         String
+  sourceId       String
+  previousStatus CheckStatus?
+  newStatus      CheckStatus
+  note           String?
+  userName       String
+  userId         String?
+  createdAt      DateTime     @default(now())
+
+  @@index([createdAt])
+  @@index([source, sourceId])
+}
+
+model ComboProductItem {
+  parentId  String
+  childId   String
+  variantId String?
+  id        Int             @id @default(autoincrement())
+  child     Product         @relation("ComboProductItem_childIdToProduct", fields: [childId], references: [id], onDelete: Cascade)
+  parent    Product         @relation("ComboProductItem_parentIdToProduct", fields: [parentId], references: [id], onDelete: Cascade)
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@unique([parentId, childId, variantId])
+}
+
+model CourierDispatchLog {
+  id              String         @id @default(cuid())
+  orderId         String
+  businessId      String?
+  courierName     CourierService
+  status          String
+  message         String?
+  requestPayload  Json?
+  responsePayload Json?
+  createdAt       DateTime       @default(now())
+  Order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([orderId])
+}
+
+model CourierIntegration {
+  id           String         @id @default(cuid())
+  businessId   String
+  courierName  CourierService
+  status       String
+  credentials  Json
+  deliveryType Int?
+  itemType     Int?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  Business     Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, courierName])
+}
+
+model CourierPayment {
+  id                String                  @id @default(cuid())
+  courierService    String
+  businessId        String
+  amount            Float
+  paymentDate       DateTime
+  referenceNo       String?
+  note              String?
+  createdBy         String
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  direction         CourierPaymentDirection @default(Received)
+  receivedAccountId String?
+  Business          Business                @relation(fields: [businessId], references: [id])
+  Account           Account?                @relation(fields: [receivedAccountId], references: [id])
+
+  @@index([courierService, businessId, paymentDate])
+}
+
+model Customer {
+  id              String            @id @default(cuid())
+  name            String
+  email           String?
+  phone           String            @unique
+  joinDate        DateTime
+  address         String
+  district        String
+  country         String
+  ip              String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  CustomerAddress CustomerAddress[]
+  Order           Order[]
+}
+
+model CustomerAddress {
+  id         String   @id @default(cuid())
+  customerId String
+  address    String
+  district   String
+  country    String
+  isDefault  Boolean  @default(false)
+  lastUsedAt DateTime @default(now())
+  Customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+model Expense {
+  id                                         String                @id @default(cuid())
+  date                                       DateTime
+  amount                                     Float
+  notes                                      String?
+  isAdExpense                                Boolean               @default(false)
+  platform                                   OrderPlatform?
+  createdAt                                  DateTime              @default(now())
+  updatedAt                                  DateTime              @updatedAt
+  categoryId                                 String
+  businessId                                 String?
+  isPaid                                     Boolean               @default(true)
+  paidAt                                     DateTime?
+  paidFromAccountId                          String?
+  payableAccountId                           String?
+  staffPaymentId                             String?               @unique
+  check                                      Float                 @default(0)
+  checkDate                                  DateTime?
+  checkStatus                                CheckStatus?
+  checkNo                                    String?
+  approvalStatus                             ExpenseApprovalStatus @default(Approved)
+  submittedById                              String?
+  submittedByName                            String?
+  submittedAt                                DateTime?
+  approvedById                               String?
+  approvedByName                             String?
+  approvedAt                                 DateTime?
+  rejectedById                               String?
+  rejectedByName                             String?
+  rejectedAt                                 DateTime?
+  rejectionNote                              String?
+  paidById                                   String?
+  paidByName                                 String?
+  branchId                                   String?
+  Business                                   Business?             @relation(fields: [businessId], references: [id])
+  ExpenseCategory                            ExpenseCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  Account_Expense_paidFromAccountIdToAccount Account?              @relation("Expense_paidFromAccountIdToAccount", fields: [paidFromAccountId], references: [id])
+  Account_Expense_payableAccountIdToAccount  Account?              @relation("Expense_payableAccountIdToAccount", fields: [payableAccountId], references: [id])
+  StaffPayment                               StaffPayment?         @relation(fields: [staffPaymentId], references: [id])
+  Branch                                     Branch?               @relation(fields: [branchId], references: [id])
+
+  @@index([businessId, date])
+  @@index([categoryId, date])
+  @@index([checkDate, checkStatus])
+  @@index([checkNo])
+  @@index([isAdExpense, date])
+  @@index([branchId, date])
+}
+
+model ExpenseCategory {
+  id               String    @id @default(cuid())
+  name             String    @unique
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  expenseAccountId String?
+  Expense          Expense[]
+  Account          Account?  @relation(fields: [expenseAccountId], references: [id])
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  code      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  Expense   Expense[]
+}
+
+model ExportJob {
+  id          String          @id @default(cuid())
+  type        ExportJobType
+  status      ExportJobStatus @default(Queued)
+  createdById String?
+  businessId  String?
+  params      Json?
+  filePath    String?
+  fileName    String?
+  error       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  completedAt DateTime?
+}
+
+model FabricLotUsage {
+  id                String            @id @default(cuid())
+  poId              String
+  itemId            String
+  part              FabricPart
+  inventoryItemId   String
+  yards             Int
+  unitCost          Float             @default(0)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  InventoryItem     InventoryItem     @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  PurchaseOrderItem PurchaseOrderItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  PurchaseOrder     PurchaseOrder     @relation(fields: [poId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([itemId])
+  @@index([poId])
+}
+
+model InventoryItem {
+  id                   String                 @id @default(cuid())
+  productId            String
+  variantId            String?
+  locationId           String
+  quantity             Int
+  lotNumber            String
+  receivedDate         DateTime
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  unitCost             Float                  @default(0)
+  reservedQuantity     Int                    @default(0)
+  FabricLotUsage       FabricLotUsage[]
+  StockLocation        StockLocation          @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  Product              Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ProductVariant       ProductVariant?        @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  InventoryMovement    InventoryMovement[]
+  OrderStockAllocation OrderStockAllocation[]
+  ProductionStep       ProductionStep[]
+
+  @@unique([productId, variantId, locationId, lotNumber])
+  @@index([productId, variantId])
+  @@index([productId, variantId, locationId])
+}
+
+model InventoryMovement {
+  id              String                @id @default(cuid())
+  inventoryItemId String
+  type            InventoryMovementType
+  quantityChange  Int
+  balance         Int
+  notes           String?
+  user            String
+  reference       String?
+  timestamp       DateTime              @default(now())
+  InventoryItem   InventoryItem         @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  StockTransfer   StockTransfer?        @relation(fields: [reference], references: [id])
+
+  @@index([timestamp])
+}
+
+model Issue {
+  id          String        @id @default(cuid())
+  orderId     String?
+  title       String
+  description String
+  status      IssueStatus   @default(Open)
+  priority    IssuePriority @default(Medium)
+  createdBy   String
+  assignedTo  String?
+  createdAt   DateTime      @default(now())
+  resolvedAt  DateTime?
+  StaffMember StaffMember?  @relation(fields: [assignedTo], references: [id])
+  Order       Order?        @relation(fields: [orderId], references: [id])
+  IssueLog    IssueLog[]
+
+  @@index([assignedTo])
+  @@index([orderId])
+  @@index([priority])
+  @@index([status])
+}
+
+model IssueLog {
+  id        String   @id @default(cuid())
+  issueId   String
+  timestamp DateTime @default(now())
+  user      String
+  action    String
+  Issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+}
+
+model LedgerEntry {
+  id                  String    @id @default(cuid())
+  date                DateTime
+  description         String
+  sourceTransactionId String
+  accountId           String
+  debit               Float
+  credit              Float
+  createdAt           DateTime  @default(now())
+  businessId          String?
+  entryNumber         String?
+  postingGroup        String?
+  snapshotId          String?
+  Account             Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  Business            Business? @relation(fields: [businessId], references: [id])
+
+  @@unique([postingGroup, accountId])
+  @@index([accountId, date])
+  @@index([businessId, date])
+  @@index([entryNumber])
+  @@index([postingGroup])
+  @@index([snapshotId])
+  @@index([sourceTransactionId])
+}
+
+model LedgerEntrySequence {
+  id         String   @id @default(cuid())
+  dateKey    String   @unique
+  lastNumber Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model MarketingAttribution {
+  id                String            @id @default(cuid())
+  campaignId        String
+  orderId           String
+  businessId        String?
+  marketerId        String?
+  attributedAt      DateTime          @default(now())
+  Business          Business?         @relation(fields: [businessId], references: [id])
+  MarketingCampaign MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  StaffMember       StaffMember?      @relation(fields: [marketerId], references: [id])
+  Order             Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, orderId])
+  @@index([businessId])
+  @@index([marketerId])
+}
+
+model MarketingCampaign {
+  id                   String                 @id @default(cuid())
+  name                 String
+  businessId           String?
+  marketerId           String?
+  trackedProductIds    String[]               @default([])
+  channel              String?
+  objective            String?
+  status               String?
+  budget               Float                  @default(0)
+  startDate            DateTime?              @db.Date
+  endDate              DateTime?              @db.Date
+  notes                String?
+  shortCode            String?                @unique
+  targetCpr            Float?
+  maxCpr               Float?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  MarketingAttribution MarketingAttribution[]
+  Business             Business?              @relation(fields: [businessId], references: [id])
+  StaffMember          StaffMember?           @relation(fields: [marketerId], references: [id])
+  MarketingSpend       MarketingSpend[]
+
+  @@index([businessId, status])
+  @@index([marketerId])
+  @@index([startDate, endDate])
+}
+
+model MarketingSpend {
+  id                String            @id @default(cuid())
+  campaignId        String
+  businessId        String?
+  date              DateTime          @db.Date
+  amount            Float
+  notes             String?
+  createdById       String?
+  expenseId         String?
+  createdAt         DateTime          @default(now())
+  Business          Business?         @relation(fields: [businessId], references: [id])
+  MarketingCampaign MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  StaffMember       StaffMember?      @relation(fields: [createdById], references: [id])
+
+  @@index([businessId, date])
+  @@index([campaignId, date])
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  staffId     String
+  title       String
+  description String
+  time        DateTime         @default(now())
+  read        Boolean          @default(false)
+  href        String
+  icon        NotificationIcon @default(Bell)
+  StaffMember StaffMember      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, read])
+  @@index([time])
+}
+
+model Order {
+  id                                           String                  @id @default(cuid())
+  customerName                                 String
+  customerEmail                                String?
+  customerPhone                                String
+  date                                         DateTime
+  status                                       OrderStatus
+  total                                        Float
+  shipping                                     Float?
+  discount                                     Float?
+  customerNote                                 String?
+  officeNote                                   String?
+  createdBy                                    String?
+  confirmedBy                                  String?
+  businessId                                   String?
+  businessName                                 String?
+  businessLogo                                 String?
+  paymentMethod                                PaymentMethod
+  paidAmount                                   Float
+  createdAt                                    DateTime                @default(now())
+  updatedAt                                    DateTime                @updatedAt
+  shippingAddress                              Json?
+  assignedToId                                 String?
+  orderDay                                     String?
+  orderNumber                                  String?                 @unique
+  orderSerial                                  Int?
+  courierConsignmentId                         String?
+  courierDispatchedAt                          DateTime?
+  courierMeta                                  Json?
+  courierService                               CourierService?
+  courierStatus                                String?
+  courierTrackingCode                          String?
+  rawPayload                                   Json?
+  source                                       String?
+  platform                                     String?
+  transactionId                                String?
+  senderPhone                                  String?
+  actualCodAmount                              Float?
+  courierChargesSource                         CourierChargesSource    @default(Config)
+  chargesLastUpdated                           DateTime?
+  chargesUpdatedBy                             String?
+  courierCodCharge                             Float?
+  courierDeliveryCharge                        Float?
+  courierNetPayable                            Float?
+  isStockDeducted                              Boolean                 @default(false)
+  isStockReserved                              Boolean                 @default(false)
+  stockReservedFrom                            String?
+  exchangeSourceOrderId                        String?
+  isExchange                                   Boolean                 @default(false)
+  parentOrderId                                String?
+  type                                         OrderType               @default(REGULAR)
+  allocatedDiscount                            Float?
+  allocatedShipping                            Float?
+  allocatedSubtotal                            Float?
+  paidFromAccountId                            String?
+  shippingPaid                                 Boolean                 @default(false)
+  shippingPaidAccountId                        String?
+  shippingPaidAmount                           Float                   @default(0)
+  ipHash                                       String?
+  statusUpdatedAt                              DateTime?
+  isDeleted                                    Boolean                 @default(false)
+  deletedAt                                    DateTime?
+  deletedById                                  String?
+  deleteNote                                   String?
+  showroomId                                   String?
+  CourierDispatchLog                           CourierDispatchLog[]
+  Issue                                        Issue[]
+  MarketingAttribution                         MarketingAttribution[]
+  assignedTo                                   StaffMember?            @relation(fields: [assignedToId], references: [id])
+  Business                                     Business?               @relation(fields: [businessId], references: [id])
+  Customer                                     Customer                @relation(fields: [customerPhone], references: [phone], onDelete: SetNull)
+  Account_Order_paidFromAccountIdToAccount     Account?                @relation("Order_paidFromAccountIdToAccount", fields: [paidFromAccountId], references: [id])
+  Order                                        Order?                  @relation("OrderToOrder", fields: [parentOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_Order                                  Order[]                 @relation("OrderToOrder")
+  Account_Order_shippingPaidAccountIdToAccount Account?                @relation("Order_shippingPaidAccountIdToAccount", fields: [shippingPaidAccountId], references: [id])
+  Showroom                                     Showroom?               @relation(fields: [showroomId], references: [id])
+  OrderFinancialSnapshot                       OrderFinancialSnapshot?
+  OrderLog                                     OrderLog[]
+  OrderPaymentEvent                            OrderPaymentEvent[]
+  OrderTransaction                             OrderTransaction[] @relation("OrderTransactions")
+  products                                     OrderProduct[]
+  OrderStockAllocation                         OrderStockAllocation[]
+  StaffIncome                                  StaffIncome[]
+  WebhookFailure                               WebhookFailure[]
+
+  @@index([businessId, date])
+  @@index([businessId])
+  @@index([businessId, status, date])
+  @@index([courierService, status, courierDispatchedAt])
+  @@index([createdAt])
+  @@index([customerName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([customerPhone(ops: raw("gin_trgm_ops"))], map: "Order_customerPhone_gin_idx", type: Gin)
+  @@index([customerPhone])
+  @@index([isDeleted])
+  @@index([orderDay, orderSerial])
+  @@index([orderNumber(ops: raw("gin_trgm_ops"))], map: "Order_orderNumber_gin_idx", type: Gin)
+  @@index([platform])
+  @@index([showroomId])
+  @@index([status, date])
+}
+
+model OrderFinancialSnapshot {
+  id                String    @id @default(cuid())
+  orderId           String    @unique
+  businessId        String?
+  statusAtSnapshot  String
+  revenue           Float     @default(0)
+  cogs              Float     @default(0)
+  courierExpense    Float     @default(0)
+  courierReceivable Float     @default(0)
+  courierPayable    Float     @default(0)
+  cashReceived      Float     @default(0)
+  returnFeeRevenue  Float     @default(0)
+  netProfit         Float     @default(0)
+  cogsEstimated     Boolean   @default(false)
+  computedAt        DateTime  @default(now())
+  Business          Business? @relation(fields: [businessId], references: [id])
+  Order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model OrderLog {
+  id          String       @id @default(cuid())
+  orderId     String
+  title       String
+  description String
+  user        String
+  timestamp   DateTime     @default(now())
+  meta        Json?
+  userId      String?
+  Order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  StaffMember StaffMember? @relation(fields: [userId], references: [id])
+
+  @@index([orderId])
+  @@index([userId])
+}
+
+model OrderPaymentEvent {
+  id         String    @id @default(cuid())
+  orderId    String
+  businessId String?
+  eventType  String
+  amount     Float
+  accountId  String?
+  createdAt  DateTime  @default(now())
+  Account    Account?  @relation(fields: [accountId], references: [id])
+  Business   Business? @relation(fields: [businessId], references: [id])
+  Order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([orderId])
+}
+
+model OrderProduct {
+  id                 String   @id @default(cuid())
+  orderId            String
+  productId          String
+  quantity           Int
+  price              Float
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  sku                String?
+  variantId          String?
+  siteDiscount       Float    @default(0)
+  componentBreakdown Json?
+  order              Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, productId])
+}
+
+model OrderRestriction {
+  id                     String                  @id @default(cuid())
+  targetType             String
+  targetHash             String
+  scope                  String
+  integrationId          String?
+  businessId             String?
+  message                String?
+  supportPhone           String?
+  expiresAt              DateTime?
+  createdByStaffId       String?
+  sourceOrderId          String?
+  sourceCustomerId       String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  Business               Business?               @relation(fields: [businessId], references: [id])
+  StaffMember            StaffMember?            @relation(fields: [createdByStaffId], references: [id])
+  WooCommerceIntegration WooCommerceIntegration? @relation(fields: [integrationId], references: [id])
+
+  @@index([expiresAt])
+  @@index([integrationId])
+  @@index([scope])
+  @@index([targetHash, targetType])
+}
+
+model OrderStockAllocation {
+  id              String        @id @default(cuid())
+  orderId         String
+  inventoryItemId String
+  productId       String
+  variantId       String?
+  quantity        Int
+  unitCost        Float         @default(0)
+  totalCost       Float         @default(0)
+  action          String
+  createdAt       DateTime      @default(now())
+  InventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  Order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([orderId])
+}
+
+model Product {
+  id                    String              @id @default(cuid())
+  name                  String
+  description           String?
+  price                 Float
+  inventory             Int
+  image                 String?
+  categoryId            String?
+  ornaFabric            Float?
+  jamaFabric            Float?
+  selowarFabric         Float?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  sku                   String              @unique
+  slug                  String?             @unique
+  shortDescription      String?
+  productType           ProductType         @default(simple)
+  tags                  String?
+  weight                Float?
+  length                Float?
+  width                 Float?
+  height                Float?
+  salePrice             Float?
+  isPublished           Boolean             @default(true)
+  wholesaleEnabled      Boolean             @default(false)
+  wholesaleVisible      Boolean             @default(false)
+  wholesalePrice        Float?
+  wholesaleMinQuantity  Int?
+  wholesalePackQuantity Int?
+  wholesaleUnitLabel    String?
+  wholesaleNote         String?
+  Attribute             Attribute[]
+  comboChildren         ComboProductItem[]  @relation("ComboProductItem_childIdToProduct")
+  comboItems            ComboProductItem[]  @relation("ComboProductItem_parentIdToProduct")
+  InventoryItem         InventoryItem[]
+  OrderProduct          OrderProduct[]
+  Category              Category?           @relation(fields: [categoryId], references: [id])
+  ProductCategory       ProductCategory[]
+  ProductLog            ProductLog[]
+  variants              ProductVariant[]
+  PurchaseOrderItem     PurchaseOrderItem[]
+
+  @@index([wholesaleEnabled, wholesaleVisible])
+  @@index([categoryId, wholesaleEnabled, wholesaleVisible])
+}
+
+model ProductLog {
+  id        String   @id @default(cuid())
+  productId String
+  timestamp DateTime @default(now())
+  user      String
+  action    String
+  details   String?
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductVariant {
+  id                    String              @id @default(cuid())
+  name                  String
+  sku                   String              @unique
+  productId             String
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  price                 Float?
+  salePrice             Float?
+  attributes            Json?
+  image                 String?
+  wholesalePrice        Float?
+  wholesaleMinQuantity  Int?
+  wholesalePackQuantity Int?
+  ComboProductItem      ComboProductItem[]
+  InventoryItem         InventoryItem[]
+  product               Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  PurchaseOrderItem     PurchaseOrderItem[]
+}
+
+model ProductionStep {
+  id                     String                 @id @default(cuid())
+  poId                   String
+  stepType               ProductionStepType
+  vendorId               String?
+  costAmount             Float                  @default(0)
+  paidAmount             Float                  @default(0)
+  inputQty               Float                  @default(0)
+  outputQty              Float                  @default(0)
+  damagedQty             Float                  @default(0)
+  wastageQty             Float                  @default(0)
+  pindiOfFab             Int?
+  invoiceUrl             String?
+  generatedInvoiceNumber String?
+  isApproved             Boolean                @default(false)
+  fabricInventoryId      String?
+  assignedStaffId        String?
+  cuttingType            ProductionCuttingType?
+  paymentAmount          Float                  @default(0)
+  ratePerQty             Float                  @default(0)
+  note                   String?
+  paymentStatus          PaymentStatus          @default(Unpaid)
+  StaffMember            StaffMember?           @relation(fields: [assignedStaffId], references: [id])
+  InventoryItem          InventoryItem?         @relation(fields: [fabricInventoryId], references: [id])
+  PurchaseOrder          PurchaseOrder          @relation(fields: [poId], references: [id], onDelete: Cascade)
+  Vendor                 Vendor?                @relation(fields: [vendorId], references: [id])
+  PurchasePayment        PurchasePayment[]
+  createdAt              DateTime               @default(now())
+
+  @@unique([poId, stepType])
+  @@index([createdAt])
+}
+
+model PurchaseOrder {
+  id                String                @id @default(cuid())
+  supplierId        String
+  date              DateTime
+  status            PurchaseOrderStatus
+  type              PurchaseType          @default(three_piece)
+  total             Float
+  items             Int
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  finalReceivedQty  Int?                  @default(0)
+  paymentStatus     PaymentStatus         @default(Unpaid)
+  currentStep       ProductionCurrentStep @default(PLANNING)
+  offlineInvoiceUrl String?
+  FabricLotUsage    FabricLotUsage[]
+  ProductionStep    ProductionStep[]
+  Supplier          Supplier              @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  PurchaseOrderItem PurchaseOrderItem[]
+  PurchaseOrderLog  PurchaseOrderLog[]
+  PurchasePayment   PurchasePayment[]
+}
+
+model PurchaseOrderItem {
+  id                  String           @id @default(cuid())
+  poId                String
+  productId           String
+  quantity            Int
+  unitCost            Float
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  cuttingCost         Float            @default(0)
+  finalQty            Int?
+  jamaRate            Float            @default(0)
+  jamaYards           Float            @default(0)
+  ornaRate            Float            @default(0)
+  ornaYards           Float            @default(0)
+  printingCost        Float            @default(0)
+  selowarRate         Float            @default(0)
+  selowarYards        Float            @default(0)
+  variantId           String?
+  pindaCount          Int?             @default(1)
+  pindaBreakdown      Json?
+  receivedQty         Int              @default(0)
+  generalWastageQty   Int              @default(0)
+  cuttingDamagedQty   Int              @default(0)
+  printingDamagedQty  Int              @default(0)
+  finishingWastageQty Int              @default(0)
+  FabricLotUsage      FabricLotUsage[]
+  PurchaseOrder       PurchaseOrder    @relation(fields: [poId], references: [id], onDelete: Cascade)
+  product             Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ProductVariant      ProductVariant?  @relation(fields: [variantId], references: [id])
+}
+
+model PurchaseOrderLog {
+  id            String              @id @default(cuid())
+  poId          String
+  status        PurchaseOrderStatus
+  description   String
+  user          String
+  timestamp     DateTime            @default(now())
+  PurchaseOrder PurchaseOrder       @relation(fields: [poId], references: [id], onDelete: Cascade)
+}
+
+model PurchasePayment {
+  id                 String          @id @default(cuid())
+  poId               String
+  vendorId           String?
+  paymentFor         String
+  cash               Float
+  check              Float
+  checkDate          DateTime?
+  checkStatus        CheckStatus?
+  physicalInvoiceUrl String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  productionStepId   String?
+  paidFromAccountId  String?
+  paymentMethod      String?
+  checkNo            String?
+  Account            Account?        @relation(fields: [paidFromAccountId], references: [id])
+  PurchaseOrder      PurchaseOrder   @relation(fields: [poId], references: [id], onDelete: Cascade)
+  ProductionStep     ProductionStep? @relation(fields: [productionStepId], references: [id])
+  Vendor             Vendor?         @relation(fields: [vendorId], references: [id])
+
+  @@index([checkDate, checkStatus])
+  @@index([checkDate])
+  @@index([checkNo])
+  @@index([paymentFor])
+  @@index([vendorId])
+}
+
+model StaffIncome {
+  id            String            @id @default(cuid())
+  staffId       String
+  orderId       String?
+  action        StaffIncomeAction
+  amount        Float
+  notes         String?
+  referenceDate DateTime?         @db.Date
+  createdAt     DateTime          @default(now())
+  order         Order?            @relation(fields: [orderId], references: [id])
+  staff         StaffMember       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, orderId, action])
+  @@unique([staffId, action, referenceDate])
+  @@index([orderId])
+  @@index([staffId, createdAt])
+  @@index([staffId])
+}
+
+model StaffInvite {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  role        StaffRole
+  permissions Json
+  businessIds Json
+  invitedBy   String
+  token       String       @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  phone       String?
+  status      InviteStatus @default(Pending)
+}
+
+model StaffMember {
+  id                                  String                 @id @default(cuid())
+  clerkId                             String                 @unique
+  name                                String
+  email                               String                 @unique
+  role                                StaffRole
+  lastLogin                           DateTime
+  paymentType                         String
+  salaryDetails                       Json?
+  commissionDetails                   Json?
+  weekendDays                         Json?
+  overtimeEligible                    Boolean                @default(false)
+  overtimeBonusPercent                Float                  @default(0)
+  permissions                         Json
+  createdAt                           DateTime               @default(now())
+  updatedAt                           DateTime               @updatedAt
+  phone                               String                 @unique
+  staffCode                           String                 @unique
+  designation                         String?
+  workType                            StaffWorkType          @default(Remote)
+  jobStartDate                            DateTime?              @db.Date
+  jobEndDate                              DateTime?              @db.Date
+  AttendanceRecord                    AttendanceRecord[]
+  Issue                               Issue[]
+  MarketingAttribution                MarketingAttribution[]
+  MarketingCampaign                   MarketingCampaign[]
+  MarketingSpend                      MarketingSpend[]
+  Notification                        Notification[]
+  Order                               Order[]
+  OrderLog                            OrderLog[]
+  OrderRestriction                    OrderRestriction[]
+  ProductionStep                      ProductionStep[]
+  StaffIncome                         StaffIncome[]
+  payments                            StaffPayment[]
+  Task_Task_assignedToIdToStaffMember Task[]                 @relation("Task_assignedToIdToStaffMember")
+  Task_Task_createdByIdToStaffMember  Task[]                 @relation("Task_createdByIdToStaffMember")
+  TaskLog                             TaskLog[]
+  accessibleBusinesses                Business[]             @relation("StaffBusinessAccess")
+  StaffFine                           StaffFine[]
+  assignedIncompleteLeads             WooCheckoutLead[]      @relation("WooLeadAssignedTo")
+  assignedIncompleteLeadsByMe         WooCheckoutLead[]      @relation("WooLeadAssignedBy")
+  LeaveBalance                        LeaveBalance[]
+  LeaveRequest                        LeaveRequest[]
+  StaffShiftOverride                  StaffShiftOverride[]
+  cashDrawersCreated                 CashDrawer[] @relation("CashDrawerCreator")
+  cashDrawerTransfersCreated         CashDrawerTransfer[] @relation("CashDrawerTransferCreator")
+  AttendanceEditsMade                 AttendanceEditLog[]    @relation("AttendanceEditedBy")
+
+  CreatedTransactions                 OrderTransaction[]     @relation("CreatedTransactions")
+  ApprovedTransactions                OrderTransaction[]     @relation("ApprovedTransactions")
+  RejectedTransactions                OrderTransaction[]     @relation("RejectedTransactions")
+
+  AccessibleShowrooms                 ShowroomAccess[]
+  OpenedSessions                      CashDrawerSession[]    @relation("SessionOpenedBy")
+  ClosedSessions                      CashDrawerSession[]    @relation("SessionClosedBy")
+  AdjustmentsCreated                  CashDrawerAdjustment[] @relation("AdjustmentCreatedBy")
+}
+
+enum StaffFineStatus {
+  Active
+  Voided
+}
+
+model StaffFine {
+  id          String          @id @default(cuid())
+  staffId     String
+  date        DateTime        @db.Date
+  amount      Float
+  reason      String
+  notes       String?
+  status      StaffFineStatus @default(Active)
+
+  // Audit
+  createdById   String?
+  createdByName String?
+  voidedAt      DateTime?
+  voidedById    String?
+  voidedByName  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, date])
+  @@index([staffId, status])
+}
+
+model StaffPayment {
+  id                String       @id @default(cuid())
+  staffId           String
+  date              DateTime     @db.Date
+  amount            Float
+  notes             String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  paidAt            DateTime?
+  paidFromAccountId String?
+  check             Float        @default(0)
+  checkDate         DateTime?
+  checkStatus       CheckStatus?
+  checkNo           String?
+  Expense           Expense?
+  Account           Account?     @relation(fields: [paidFromAccountId], references: [id])
+  staff             StaffMember  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([checkDate, checkStatus])
+  @@index([checkNo])
+  @@index([date])
+  @@index([staffId, createdAt])
+  @@index([staffId, date])
+}
+
+model StockLocation {
+  id                                                        String          @id @default(cuid())
+  name                                                      String          @unique
+  createdAt                                                 DateTime        @default(now())
+  updatedAt                                                 DateTime        @updatedAt
+  InventoryItem                                             InventoryItem[]
+  StockTransfer_StockTransfer_fromLocationIdToStockLocation StockTransfer[] @relation("StockTransfer_fromLocationIdToStockLocation")
+  StockTransfer_StockTransfer_toLocationIdToStockLocation   StockTransfer[] @relation("StockTransfer_toLocationIdToStockLocation")
+  Showroom                                                  Showroom?
+}
+
+model StockTransfer {
+  id                                                        String              @id @default(cuid())
+  fromLocationId                                            String
+  toLocationId                                              String
+  user                                                      String
+  notes                                                     String?
+  transferDate                                              DateTime            @default(now())
+  InventoryMovement                                         InventoryMovement[]
+  StockLocation_StockTransfer_fromLocationIdToStockLocation StockLocation       @relation("StockTransfer_fromLocationIdToStockLocation", fields: [fromLocationId], references: [id], onDelete: Cascade)
+  StockLocation_StockTransfer_toLocationIdToStockLocation   StockLocation       @relation("StockTransfer_toLocationIdToStockLocation", fields: [toLocationId], references: [id], onDelete: Cascade)
+}
+
+model Supplier {
+  id            String          @id @default(cuid())
+  name          String          @unique
+  contactPerson String
+  email         String
+  phone         String
+  address       String
+  creditBalance Float           @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  PurchaseOrder PurchaseOrder[]
+}
+
+model Task {
+  id                                         String       @id @default(cuid())
+  title                                      String
+  description                                String?
+  status                                     TaskStatus   @default(ToDo)
+  priority                                   TaskPriority @default(Medium)
+  dueDate                                    DateTime?
+  assignedToId                               String?
+  createdById                                String
+  createdAt                                  DateTime     @default(now())
+  updatedAt                                  DateTime     @updatedAt
+  completedAt                                DateTime?
+  startedAt                                  DateTime?
+  totalDuration                              Int?         @default(0)
+  StaffMember_Task_assignedToIdToStaffMember StaffMember? @relation("Task_assignedToIdToStaffMember", fields: [assignedToId], references: [id])
+  StaffMember_Task_createdByIdToStaffMember  StaffMember  @relation("Task_createdByIdToStaffMember", fields: [createdById], references: [id], onDelete: Cascade)
+  TaskLog                                    TaskLog[]
+
+  @@index([assignedToId])
+  @@index([createdById])
+  @@index([status])
+}
+
+model TaskLog {
+  id          String      @id @default(cuid())
+  taskId      String
+  userId      String
+  action      String
+  details     String?
+  timestamp   DateTime    @default(now())
+  Task        Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  StaffMember StaffMember @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+}
+
+model Vendor {
+  id              String            @id @default(cuid())
+  name            String            @unique
+  type            String
+  contactPerson   String
+  email           String
+  phone           String
+  creditBalance   Float             @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  ProductionStep  ProductionStep[]
+  PurchasePayment PurchasePayment[]
+}
+
+model WebhookFailure {
+  id                     String                  @id @default(cuid())
+  source                 String
+  integrationId          String?
+  orderId                String?
+  externalOrderId        String?
+  payload                Json?
+  error                  String
+  createdAt              DateTime                @default(now())
+  firstSeenAt            DateTime                @default(now())
+  lastSeenAt             DateTime                @default(now())
+  occurrences            Int                     @default(1)
+  resolvedAt             DateTime?
+  resolvedById           String?
+  resolvedNote           String?
+  status                 WebhookFailureStatus    @default(Open)
+  WooCommerceIntegration WooCommerceIntegration? @relation(fields: [integrationId], references: [id])
+  Order                  Order?                  @relation(fields: [orderId], references: [id])
+
+  @@index([createdAt])
+  @@index([integrationId])
+  @@index([orderId])
+  @@index([source])
+  @@index([status, createdAt])
+}
+
+model WooCheckoutLead {
+  id                 String                 @id @default(cuid())
+  integrationId      String
+  businessId         String
+  uid                String?
+  phoneNormalized    String?
+  name               String?
+  address            String?
+  skuList            Json?
+  payload            Json?
+  status             String                 @default("OPEN")
+  occurrences        Int                    @default(1)
+  firstSeenAt        DateTime               @default(now())
+  lastSeenAt         DateTime               @default(now())
+  completedAt        DateTime?
+  fingerprint        String?                @unique
+  ipHash             String?
+  userAgent          String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  convertedAt        DateTime?
+  convertedOrderId   String?
+  convertedByStaffId String?
+  assignedToStaffId  String?
+  assignedByStaffId  String?
+  assignedAt         DateTime?
+  business           Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  integration        WooCommerceIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  assignedTo         StaffMember?           @relation("WooLeadAssignedTo", fields: [assignedToStaffId], references: [id], onDelete: SetNull)
+  assignedBy         StaffMember?           @relation("WooLeadAssignedBy", fields: [assignedByStaffId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([convertedAt])
+  @@index([convertedOrderId])
+  @@index([integrationId])
+  @@index([lastSeenAt])
+  @@index([phoneNormalized])
+  @@index([status])
+  @@index([assignedToStaffId])
+  @@index([status, assignedToStaffId, lastSeenAt])
+}
+
+model WooCommerceIntegration {
+  id                       String             @id @default(cuid())
+  businessId               String
+  storeName                String
+  storeUrl                 String
+  consumerKey              String
+  consumerSecret           String
+  status                   String             @default("Active")
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  webhookSecret            String?
+  webhookUrl               String?
+  apiKey                   String?            @unique
+  debounceMs               Int?               @default(1200)
+  dedupeMinutes            Int?               @default(10)
+  autoSyncEnabled          Boolean            @default(true)
+  incompleteEnabled        Boolean            @default(false)
+  restrictionDurationType  String             @default("days")
+  restrictionDurationValue Int?               @default(1)
+  restrictionEnabled       Boolean            @default(false)
+  restrictionMessage       String?
+  restrictionScope         String             @default("site")
+  restrictionSupportPhone  String?
+  retrySeconds             Int?               @default(15)
+  settings                 Json?
+  supportPhone             String?
+  orderRestrictions        OrderRestriction[]
+  webhookFailures          WebhookFailure[]
+  incompleteLeads          WooCheckoutLead[]
+  business                 Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  skuMappings              WooSkuMapping[]
+}
+
+model WooSkuMapping {
+  id             String                 @id @default(cuid())
+  integrationId  String
+  sku            String
+  targets        Json
+  lastVerifiedAt DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  integration    WooCommerceIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, sku])
+  @@index([integrationId])
+  @@index([sku])
+}
+
+enum AccountType {
+  Asset
+  Liability
+  Equity
+  Revenue
+  Expense
+}
+
+enum AttendanceStatus {
+  Present
+  Absent
+  OnLeave
+  Late
+}
+
+enum CheckPassingSource {
+  Purchase
+  Expense
+  Staff
+  CutoffSettlement
+}
+
+enum CheckStatus {
+  Pending
+  Passed
+  Bounced
+  Cancelled
+}
+
+enum CourierPaymentDirection {
+  Received
+  Paid
+}
+
+enum CourierService {
+  Pathao
+  RedX
+  Steadfast
+  Carrybee
+}
+
+enum ExpenseApprovalStatus {
+  Submitted
+  Approved
+  Rejected
+}
+
+enum ExportJobStatus {
+  Queued
+  Processing
+  Completed
+  Failed
+}
+
+enum ExportJobType {
+  OrdersCsv
+}
+
+enum FabricPart {
+  JAMA
+  ORNA
+  SELOWAR
+}
+
+enum InventoryMovementType {
+  Received
+  Sold
+  Adjusted
+  Returned
+  Transfer
+}
+
+enum InviteStatus {
+  Pending
+  Accepted
+  Revoked
+}
+
+enum IssuePriority {
+  Low
+  Medium
+  High
+}
+
+enum IssueStatus {
+  Open
+  In_Progress @map("In Progress")
+  Resolved
+  Closed
+}
+
+enum NotificationIcon {
+  Bell
+  ShoppingCart
+  Warehouse
+  Archive
+  AlertCircle
+  User
+}
+
+enum OrderPlatform {
+  TikTok
+  Messenger
+  Facebook
+  Instagram
+  Website
+  Call
+}
+
+enum OrderStatus {
+  New
+  Confirmed
+  Confirmed_Waiting    @map("Confirmed Waiting")
+  Packing_Hold         @map("Packing Hold")
+  Canceled
+  C2C
+  Hold
+  No_Response          @map("No Response")
+  In_Courier           @map("In-Courier")
+  RTS__Ready_to_Ship_  @map("RTS (Ready to Ship)")
+  Shipped
+  Delivered
+  Return_Pending       @map("Return Pending")
+  Returned
+  Paid_Return          @map("Paid Return")
+  Partial
+  Incomplete
+  Incomplete_Cancelled @map("Incomplete-Cancelled")
+  Draft
+  Damaged
+}
+
+enum OrderType {
+  REGULAR
+  PARTIAL_RETURN
+  EXCHANGE
+}
+
+enum PaymentMethod {
+  CashOnDelivery
+  bKash
+  Nagad
+  PaidShippingCOD
+  PartialPaidCOD
+  Cash
+  Bank
+  Rocket
+}
+
+enum StaffWorkType {
+  Office
+  Remote
+}
+
+enum PaymentStatus {
+  Unpaid
+  Partial
+  Paid
+}
+
+enum ProductType {
+  simple
+  variable
+  combo
+  piece    @map("3-piece")
+}
+
+enum ProductionCurrentStep {
+  PLANNING
+  FABRIC
+  PRINTING
+  CUTTING
+  COMPLETED
+}
+
+enum ProductionCuttingType {
+  INTERNAL
+  EXTERNAL
+}
+
+enum ProductionStepType {
+  FABRIC
+  PRINTING
+  CUTTING
+  FINISHING
+}
+
+enum PurchaseOrderStatus {
+  Draft
+  FabricOrdered
+  Printing
+  Cutting
+  Received
+  PartialReceived
+  Cancelled
+}
+
+enum PurchaseType {
+  general
+  three_piece
+}
+
+enum StaffIncomeAction {
+  Created
+  Confirmed
+  Packed
+  Salary
+  Cutting
+  WeekendBonus
+  OvertimeBonus
+  Manual
+}
+
+enum StaffRole {
+  SuperAdmin
+  Admin
+  Manager
+  ProjectManager
+  OfficeAssistant
+  PackingAssistant
+  Moderator
+  Seller
+  CallAssistant
+  CallCentreManager
+  CourierManager
+  CourierCallAssistant
+  Vendor_Supplier      @map("Vendor/Supplier")
+  Custom
+  CuttingMan
+  Marketer
+  FinanceManager
+  ModaratorManager
+}
+
+enum TaskPriority {
+  Low
+  Medium
+  High
+  Urgent
+}
+
+enum TaskStatus {
+  ToDo
+  InProgress
+  InReview
+  Done
+  Cancelled
+}
+
+enum WebhookFailureStatus {
+  Open
+  Resolved
+  Ignored
+}
+
+model DatabaseBackupLog {
+  id        String   @id @default(cuid())
+  key       String?
+  kind      String   // scheduled|manual|safety|restore
+  status    String   // success|failed|running
+  sizeBytes Int?
+  error     String?
+  createdAt DateTime @default(now())
+  finishedAt DateTime?
+}
+
+enum LeaveRequestStatus {
+  Pending
+  ManagerApproved
+  AdminApproved
+  Rejected
+  Cancelled
+}
+
+model LeaveType {
+  id               String         @id @default(cuid())
+  name             String         @unique
+  isPaid           Boolean        @default(true)
+  annualAllocation Int            @default(0)
+  maxCarryForward  Int            @default(0)
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  LeaveBalance     LeaveBalance[]
+  LeaveRequest     LeaveRequest[]
+}
+
+model LeaveBalance {
+  id          String      @id @default(cuid())
+  staffId     String
+  leaveTypeId String
+  year        Int
+  allocated   Int         @default(0)
+  used        Int         @default(0)
+  carried     Int         @default(0)
+  staff       StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType   @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, leaveTypeId, year])
+  @@index([staffId])
+}
+
+model LeaveRequest {
+  id                String             @id @default(cuid())
+  staffId           String
+  leaveTypeId       String
+  fromDate          DateTime           @db.Date
+  toDate            DateTime           @db.Date
+  days              Int
+  reason            String?
+  status            LeaveRequestStatus @default(Pending)
+  managerApprovedAt DateTime?
+  adminApprovedAt   DateTime?
+  rejectedAt        DateTime?
+  rejectedBy        String?
+  createdAt         DateTime           @default(now())
+  staff             StaffMember        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  leaveType         LeaveType          @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  AttendanceRecord  AttendanceRecord[]
+
+  @@index([staffId])
+  @@index([status])
+}
+
+model ShiftTemplate {
+  id                     String     @id @default(cuid())
+  name                   String
+  role                   StaffRole?
+  startTime              String
+  endTime                String
+  lateGraceMinutes       Int        @default(0)
+  earlyLeaveGraceMinutes Int        @default(0)
+  isActive               Boolean    @default(true)
+  createdAt              DateTime   @default(now())
+}
+
+model StaffShiftOverride {
+  id                     String      @id @default(cuid())
+  staffId                String
+  startTime              String
+  endTime                String
+  lateGraceMinutes       Int         @default(0)
+  earlyLeaveGraceMinutes Int         @default(0)
+  isActive               Boolean     @default(true)
+  createdAt              DateTime    @default(now())
+  staff                  StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+}
+
+model AttendanceEditLog {
+  id           String           @id @default(cuid())
+  attendanceId String
+  editedById   String
+  reason       String
+  oldCheckIn   DateTime?
+  newCheckIn   DateTime?
+  oldCheckOut  DateTime?
+  newCheckOut  DateTime?
+  oldStatus    String?
+  newStatus    String?
+  oldInactiveDuration Int?
+  newInactiveDuration Int?
+  oldOvertimeMinutes  Int?
+  newOvertimeMinutes  Int?
+  createdAt    DateTime         @default(now())
+  attendance   AttendanceRecord @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  editedBy     StaffMember      @relation("AttendanceEditedBy", fields: [editedById], references: [id])
+
+  @@index([attendanceId])
+}
+
+
+enum CourierChargesSource {
+  Config
+  Invoice
+}
+
+model CourierInvoice {
+  id              String               @id @default(cuid())
+  courierService  String
+  invoiceNumber   String
+  invoiceDate     DateTime?
+  businessId      String?
+  totalRows       Int                  @default(0)
+  matchedRows     Int                  @default(0)
+  mismatchRows    Int                  @default(0)
+  totalCollected  Float                @default(0)
+  totalFee        Float                @default(0)
+  totalBilled     Float                @default(0)
+  importedBy      String
+  importedAt      DateTime             @default(now())
+  
+  items           CourierInvoiceItem[]
+
+  @@unique([invoiceNumber, courierService])
+  @@index([courierService])
+  @@index([businessId])
+}
+
+model CourierInvoiceItem {
+  id                    String         @id @default(cuid())
+  invoiceId             String
+  orderId               String?
+  orderNumber           String?
+  consignmentId         String?
+
+  collectableAmount     Float?
+  collectedAmount       Float?
+  codFee                Float?
+  deliveryFee           Float?
+  additionalCharge      Float?
+  discount              Float?
+  totalFee              Float?
+  billingAmount         Float?
+
+  deliveryStatus        String?
+  paymentStatus         String?
+  payoutMethod          String?
+  createdDate           DateTime?
+  deliveredDate         DateTime?
+  invoicedDate          DateTime?
+
+  mismatchReason        String?
+  dueMismatchAmount     Float?
+  billingMismatchAmount Float?
+
+  raw                   Json?          // Stores the exact row from CSV
+
+  invoice               CourierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([orderNumber])
+  @@index([consignmentId])
+}
+
+model CashDrawer {
+  id          String   @id @default(cuid())
+  name        String
+  accountId   String   @unique
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  businessId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  Account     Account  @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  Business    Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  CreatedBy   StaffMember? @relation("CashDrawerCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  TransfersOut CashDrawerTransfer[] @relation("TransfersFrom")
+  TransfersIn  CashDrawerTransfer[] @relation("TransfersTo")
+
+  Showroom     Showroom?
+  Sessions     CashDrawerSession[]
+  Adjustments  CashDrawerAdjustment[]
+
+  @@index([businessId])
+}
+
+model CashDrawerTransfer {
+  id           String   @id @default(cuid())
+  fromDrawerId String
+  toDrawerId   String
+  amount       Float
+  notes        String?
+  postingGroup String
+  businessId   String?
+  createdAt    DateTime @default(now())
+  createdById  String?
+
+  FromDrawer   CashDrawer @relation("TransfersFrom", fields: [fromDrawerId], references: [id], onDelete: NoAction)
+  ToDrawer     CashDrawer @relation("TransfersTo", fields: [toDrawerId], references: [id], onDelete: NoAction)
+  Business     Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  CreatedBy    StaffMember? @relation("CashDrawerTransferCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([fromDrawerId])
+  @@index([toDrawerId])
+}
+
+model Showroom {
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  locationId         String   @unique
+  cashDrawerId       String   @unique
+  defaultInvoiceNote String?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  StockLocation      StockLocation @relation(fields: [locationId], references: [id])
+  CashDrawer         CashDrawer    @relation(fields: [cashDrawerId], references: [id])
+  Accesses           ShowroomAccess[]
+  Orders             Order[]
+}
+
+model ShowroomAccess {
+  id                 String   @id @default(cuid())
+  showroomId         String
+  staffId            String
+  createdAt          DateTime @default(now())
+
+  Showroom           Showroom     @relation(fields: [showroomId], references: [id], onDelete: Cascade)
+  StaffMember        StaffMember  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([showroomId, staffId])
+}
+
+model CashDrawerSession {
+  id                 String   @id @default(cuid())
+  cashDrawerId       String
+  openedById         String?
+  closedById         String?
+  openedAt           DateTime @default(now())
+  closedAt           DateTime?
+  openingBalance     Float
+  closingBalance     Float?
+  status             String   @default("Open")
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  CashDrawer         CashDrawer   @relation(fields: [cashDrawerId], references: [id])
+  OpenedBy           StaffMember? @relation("SessionOpenedBy", fields: [openedById], references: [id])
+  ClosedBy           StaffMember? @relation("SessionClosedBy", fields: [closedById], references: [id])
+
+  @@index([cashDrawerId])
+}
+
+model CashDrawerAdjustment {
+  id                 String   @id @default(cuid())
+  cashDrawerId       String
+  createdById        String?
+  amount             Float
+  reason             String
+  postingGroup       String
+  createdAt          DateTime @default(now())
+
+  CashDrawer         CashDrawer   @relation(fields: [cashDrawerId], references: [id])
+  CreatedBy          StaffMember? @relation("AdjustmentCreatedBy", fields: [createdById], references: [id])
+
+  @@index([cashDrawerId])
+}
+
+model OrderTransaction {
+  id              String   @id @default(cuid())
+  orderId         String
+  businessId      String?
+  amount          Float
+  paymentMethod   PaymentMethod
+  paymentType     String?  // e.g., "Full", "Partial"
+  reference       String?  // Phone / Tnx ID / Bank Ac number
+  status          String   @default("Pending") // Pending, Approved, Rejected
+  accountId       String?  // The account to deposit into
+  
+  createdBy       String?
+  approvedBy      String?
+  rejectedBy      String?
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  Order           Order    @relation("OrderTransactions", fields: [orderId], references: [id], onDelete: Cascade)
+  Business        Business? @relation(fields: [businessId], references: [id])
+  Account         Account? @relation(fields: [accountId], references: [id])
+  StaffCreator    StaffMember? @relation("CreatedTransactions", fields: [createdBy], references: [id])
+  StaffApprover   StaffMember? @relation("ApprovedTransactions", fields: [approvedBy], references: [id])
+  StaffRejecter   StaffMember? @relation("RejectedTransactions", fields: [rejectedBy], references: [id])
+
+  @@index([orderId])
+  @@index([status])
+  @@index([businessId])
+}
+
+// ─── Cut-Off Accounting Boundary ───────────────────────────────────
+
+enum CutoffStatus {
+  DRAFT
+  VALIDATED
+  APPLIED
+  SUPERSEDED
+}
+
+model CutoffRevision {
+  id                     String       @id @default(cuid())
+  revisionNumber         Int          @default(1)
+  cutoffDate             DateTime     @db.Date
+  status                 CutoffStatus @default(DRAFT)
+  notes                  String?
+
+  // Validation
+  validatedAt            DateTime?
+  validationReport       Json?
+
+  // Application
+  appliedAt              DateTime?
+  appliedById            String?
+  appliedByName          String?
+
+  // Supersession
+  supersededAt           DateTime?
+  supersededById         String?
+  supersededByRevisionId String?
+
+  // Audit
+  createdById            String?
+  createdByName          String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  OpeningBalance           OpeningBalance[]
+  OpeningInventorySnapshot OpeningInventorySnapshot[]
+  OpeningWipEntry          OpeningWipEntry[]
+  CutoffSettlement         CutoffSettlement[]
+  AuditLog                 CutoffAuditLog[]
+
+  @@index([status])
+  @@index([cutoffDate])
+}
+
+model OpeningBalance {
+  id              String   @id @default(cuid())
+  revisionId      String
+  entityType      String   // 'supplier' | 'vendor' | 'customer' | 'staff' | 'account'
+  entityId        String
+  entityName      String   // Denormalized for readability
+
+  suggestedAmount Float    @default(0)
+  finalAmount     Float    @default(0)
+  isOverridden    Boolean  @default(false)
+  overrideReason  String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  CutoffRevision  CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@unique([revisionId, entityType, entityId])
+  @@index([revisionId])
+  @@index([entityType, entityId])
+}
+
+model CutoffSettlement {
+  id                 String          @id @default(cuid())
+  revisionId         String
+  entityType         String          // 'supplier' | 'vendor'
+  entityId           String          // supplierId or vendorId
+
+  cash               Float           @default(0)
+  check              Float           @default(0)
+  checkDate          DateTime?
+  checkStatus        CheckStatus?
+  checkNo            String?
+  paidFromAccountId  String?
+  paymentMethod      String?
+
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  CutoffRevision     CutoffRevision  @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  Account            Account?        @relation(fields: [paidFromAccountId], references: [id])
+
+  @@index([revisionId])
+  @@index([entityType, entityId])
+  @@index([checkDate, checkStatus])
+}
+
+model OpeningInventorySnapshot {
+  id              String   @id @default(cuid())
+  revisionId      String
+  productId       String
+  variantId       String?
+
+  totalQuantity   Int      @default(0)
+  totalValue      Float    @default(0)
+  lotCount        Int      @default(1)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  CutoffRevision  CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  Lots            OpeningInventoryLot[]
+
+  @@unique([revisionId, productId, variantId])
+  @@index([revisionId])
+}
+
+model OpeningInventoryLot {
+  id              String   @id @default(cuid())
+  snapshotId      String
+  lotNumber       String
+  quantity        Int      @default(0)
+  unitCost        Float    @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  OpeningInventorySnapshot OpeningInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+}
+
+model OpeningWipEntry {
+  id              String   @id @default(cuid())
+  revisionId      String
+  productId       String
+  variantId       String?
+  currentStep     String   // PLANNING | FABRIC | PRINTING | CUTTING
+  quantity        Int      @default(0)
+  estimatedCost   Float    @default(0)
+  notes           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  CutoffRevision  CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@unique([revisionId, productId, variantId, currentStep])
+  @@index([revisionId])
+}
+
+model CutoffAuditLog {
+  id              String   @id @default(cuid())
+  revisionId      String
+  action          String   // CREATED | VALIDATED | APPLIED | SUPERSEDED | BALANCE_OVERRIDDEN | LOT_EDITED
+  detail          Json?
+  performedById   String?
+  performedByName String?
+  createdAt       DateTime @default(now())
+
+  CutoffRevision  CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@index([revisionId])
+  @@index([createdAt])
+}

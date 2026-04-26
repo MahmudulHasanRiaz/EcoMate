@@ -1,0 +1,33 @@
+UPDATE P29 - Safe migration + rollout runbook (doc only)
+
+Scope: Documentation only. No code/migrations executed.
+
+Goal:
+- Provide a safe, repeatable migration/runbook process for large index additions and schema changes.
+- Ensure no data loss and minimal downtime.
+
+Required outputs:
+1) Create draft/safe-migration-runbook.txt
+   Must include:
+   - Pre-flight checklist (backup, off-peak, maintenance window, feature flags).
+   - Prisma vs raw SQL: when to use each.
+   - CREATE INDEX CONCURRENTLY guidance (with examples).
+   - Stepwise rollout: create index -> validate -> deploy code using index.
+   - Rollback steps (drop index concurrently, revert code).
+   - “No data loss” policy with examples.
+
+2) Update draft/task.txt
+   Add entry under Done (Unverified):
+     ID: P29
+     Title: Safe Migration + Rollout Runbook (Doc Only)
+     Status: DONE-UNVERIFIED
+     Evidence: draft/safe-migration-runbook.txt
+
+Deliver back:
+- Confirm file created.
+- Paste first ~20 lines of draft/safe-migration-runbook.txt.
+
+Notes:
+- Do NOT modify prisma/schema.prisma.
+- Do NOT run migrations.
+- This is documentation only.

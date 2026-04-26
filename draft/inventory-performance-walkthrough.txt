@@ -1,0 +1,50 @@
+# Inventory Client Fixes Walkthrough
+
+## Summary of Changes
+1.  **Inventory Dashboard**: Implemented global server-side statistics to replace incorrect client-side calculations. Fixed type errors in `getProducts` usage.
+2.  **Audit Page**: Added cursor-based pagination with a "Load More" button to handle large inventories without crashing.
+3.  **Purchase Page**: Optimized `refreshInventoryLots` to fetch only the recent 50 lots, preventing performance bottlenecks.
+4.  **CSV Export**: Fixed CSV special character handling.
+
+## Files Touched
+- src/app/dashboard/inventory/client-page.tsx
+- src/app/dashboard/inventory/audit/client-page.tsx
+- src/app/dashboard/purchases/[id]/client-page.tsx
+- src/server/modules/inventory.ts
+- src/services/inventory.ts
+
+## Key Diffs
+1.  **inventory/client-page.tsx**:
+    - Removed `overviewStats` derived state.
+    - Added `stats` prop usage for global totals.
+    - Updated `getProducts` to `getProductsPaged`.
+    - Removed duplicate `productById`.
+
+2.  **audit/client-page.tsx**:
+    - Added `loadItems` function with `nextCursor`.
+    - Added "Load More" button in UI.
+    - Fixed closing tags structure.
+
+3.  **purchases/[id]/client-page.tsx**:
+    - Changed `pageSize=1000` to `pageSize=50` in `refreshInventoryLots`.
+    - Added `|| []` default for `inventoryLots` state.
+
+## Verification Steps
+### Inventory Page
+1.  Navigate to `/dashboard/inventory`.
+2.  Verify "Total Items" matches server totals.
+3.  Scroll list to verify content.
+4.  Export Summary CSV and check formatting.
+
+### Audit Page
+1.  Navigate to `/dashboard/inventory/audit`.
+2.  Select location.
+3.  Scroll to bottom and click "Load More".
+4.  Verify new items append correctly.
+
+### Purchase Page
+1.  Open Purchase Order.
+2.  Open Fabric step (Internal).
+3.  Open Lot Dialog.
+4.  Verify quick load (only 50 items).
+5.  Search for older lot to confirm server search.

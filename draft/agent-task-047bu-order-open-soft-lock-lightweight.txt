@@ -1,0 +1,265 @@
+P47bu - Lightweight Order Open Soft-Lock + Override + Audit Log
+
+Objective
+- Prevent simultaneous blind editing/view collisions on orders.
+- If user A has an order open, user B must see that lock in order list and be warned before opening.
+- User B may override and open anyway.
+- Override must be written to `OrderLog` with who held it and who overrode.
+- Keep solution lightweight (Redis TTL lock, minimal DB writes, responsive UI).
+
+Scope
+- `src/server/modules/order-open-lock.ts` (new)
+- `src/app/api/orders/locks/route.ts` (new)
+- `src/app/api/orders/locks/heartbeat/route.ts` (new)
+- `src/app/api/orders/locks/release/route.ts` (new)
+- `src/services/order-open-locks.ts` (new)
+- `src/app/dashboard/orders/client-page.tsx`
+- `src/components/orders/order-details-view.tsx`
+- `src/app/dashboard/orders/[id]/page.tsx`
+- `src/types/index.ts`
+
+Do not
+- No Prisma schema migration.
+- No polling per row.
+- No DB writes on heartbeat.
+- No commit/push instructions.
+
+--------------------------------------------------------------------
+1) Backend lock module (Redis-first, lightweight)
+--------------------------------------------------------------------
+
+Create: `src/server/modules/order-open-lock.ts`
+
+Implement a small lock service using `getRedisClient()` from `@/server/queues/redis`.
+
+Lock model (JSON in Redis key `order:open-lock:<orderId>`):
+- `orderId: string`
+- `token: string`
+- `staffId: string`
+- `staffName: string`
+- `staffCode?: string | null`
+- `openedAt: string` (ISO)
+- `lastSeenAt: string` (ISO)
+
+Constants:
+- `LOCK_TTL_SEC = 75`
+- `HEARTBEAT_SEC = 20`
+
+Required exports:
+1. `listOrderOpenLocks(orderIds: string[])`
+   - Uses Redis `mget`/pipeline.
+   - Returns map `{ [orderId]: lockPayload }` for active locks only.
+   - If Redis unavailable, return empty map (fail-open, no crash).
+
+2. `acquireOrderOpenLock(params)`
+   - input: `{ orderId, staffId, staffName, staffCode?, force?: boolean, requestToken?: string }`
+   - behavior:
+     - if no lock: acquire and return `{ success: true, acquired: true, lock }`
+     - if same `staffId`: refresh TTL, return success (same user should not block self)
+     - if locked by another and `force !== true`: return `{ success: false, code: 'LOCKED', lock }`
+     - if locked by another and `force === true`: replace lock, return `{ success: true, acquired: true, overridden: true, previousLock, lock }`
+   - Use minimal Redis ops; avoid DB calls here.
+
+3. `heartbeatOrderOpenLock(params)`
+   - input: `{ orderId, token, staffId }`
+   - refresh only if current lock token matches.
+   - updates `lastSeenAt` and TTL.
+   - returns `{ success: boolean, active?: boolean }`.
+
+4. `releaseOrderOpenLock(params)`
+   - input: `{ orderId, token, staffId }`
+   - remove only if token matches current lock owner.
+   - safe no-op otherwise.
+
+5. `withFallbackMemoryLock` optional
+   - only if Redis unavailable; in-memory map TTL is acceptable.
+   - keep tiny and fail-open preferred over complexity.
+
+--------------------------------------------------------------------
+2) Lock APIs
+--------------------------------------------------------------------
+
+All routes require `enforcePermission('orders', 'read')`.
+
+Use actor from staff auth:
+- prefer `staff.id`, `staff.name`, `staff.staffCode`.
+
+2.1 Create `src/app/api/orders/locks/route.ts`
+
+GET:
+- query: `ids=orderId1,orderId2,...`
+- sanitize max 100 IDs.
+- call `listOrderOpenLocks(ids)`.
+- return `apiSuccess({ locks })`.
+
+POST (acquire):
+- body: `{ orderId: string, force?: boolean, requestToken?: string }`
+- call `acquireOrderOpenLock(...)`.
+- if locked by another and not forced: return `apiError('Order is currently open by another user', 409, { code: 'LOCKED', lock })`
+- if forced and override happened:
+  - create one `OrderLog` row:
+    - title: `Open lock overridden`
+    - description: `Order was open by <previous.staffName>; overridden by <actorName>.`
+    - user: actor name
+    - userId: actor id
+    - meta: `{ previousLock, newLock }`
+- return `apiSuccess(result)`.
+
+2.2 Create `src/app/api/orders/locks/heartbeat/route.ts`
+- POST body: `{ orderId, token }`
+- call `heartbeatOrderOpenLock({ orderId, token, staffId })`
+- if mismatch/expired: return 409 with `code: 'LOCK_EXPIRED'`
+- else `apiSuccess({ active: true })`.
+
+2.3 Create `src/app/api/orders/locks/release/route.ts`
+- POST body: `{ orderId, token }`
+- call release; always return `apiSuccess({ released: true })`.
+
+--------------------------------------------------------------------
+3) Client service wrapper
+--------------------------------------------------------------------
+
+Create: `src/services/order-open-locks.ts`
+
+Functions:
+- `getOrderOpenLocks(orderIds: string[])`
+- `acquireOrderOpenLock(orderId: string, force = false)`
+- `heartbeatOrderOpenLock(orderId: string, token: string)`
+- `releaseOrderOpenLock(orderId: string, token: string)`
+
+Use `handleApiResponse` and throw typed errors for 409 lock conflicts with payload.
+
+Error shape for conflict should preserve:
+- `code: 'LOCKED'`
+- `lock` payload.
+
+--------------------------------------------------------------------
+4) Orders list page integration (minimal + responsive)
+--------------------------------------------------------------------
+
+File: `src/app/dashboard/orders/client-page.tsx`
+
+4.1 Lock badge state
+- Add state map: `openLocksByOrderId`.
+- Poll only for visible orders:
+  - `visibleOrderIds` from current rendered orders.
+  - call `getOrderOpenLocks(visibleOrderIds)` every 20s.
+  - do not poll when list empty.
+
+4.2 Show lock indicator in list/card
+- In table row and mobile card:
+  - if order locked by another user:
+    - show tiny badge/chip: `Open by <name>`
+  - if locked by current user:
+    - show muted chip: `Opened by you`
+- Keep compact and non-intrusive.
+
+4.3 Intercept open action
+- Replace direct `setViewOrderId(order.id)` flow with async `tryOpenOrder(orderId)`.
+- `tryOpenOrder`:
+  - call `acquireOrderOpenLock(orderId, false)`.
+  - if success: store `{orderId, token}` in state and open sheet.
+  - if 409 LOCKED: open lightweight override dialog with lock owner summary.
+
+4.4 Override dialog
+- Use existing `AlertDialog` or `Dialog` with minimal markup.
+- Show:
+  - lock owner name (+ staffCode if available)
+  - lock start/last seen (relative time or timestamp)
+  - short warning text
+- Buttons:
+  - `Cancel`
+  - `Override & Open`
+- On confirm:
+  - call `acquireOrderOpenLock(orderId, true)`.
+  - if success open sheet with returned token.
+
+4.5 Release on close
+- When sheet closes, call `releaseOrderOpenLock` with stored token.
+- On page unload, best-effort release using `navigator.sendBeacon` fallback or `fetch(..., { keepalive: true })`.
+
+--------------------------------------------------------------------
+5) Order details view heartbeat (for sheet + direct URL)
+--------------------------------------------------------------------
+
+File: `src/components/orders/order-details-view.tsx`
+
+Extend props:
+- from: `{ orderId, onClose? }`
+- to: `{ orderId, onClose?, lockToken?: string, lockManagedExternally?: boolean }`
+
+Behavior:
+- If `lockManagedExternally` and `lockToken` provided:
+  - start heartbeat every 20s.
+  - do not re-acquire.
+- If opened from direct route (`/dashboard/orders/[id]`) without token:
+  - acquire lock on mount.
+  - if conflict: show same lightweight override prompt before showing details.
+  - if override accepted, force acquire and continue.
+- On unmount: release lock if this component owns it.
+
+UI fallback:
+- If lock conflict and user cancels override, show a clean blocked state card with back button.
+
+--------------------------------------------------------------------
+6) Direct order page pass-through
+--------------------------------------------------------------------
+
+File: `src/app/dashboard/orders/[id]/page.tsx`
+
+No complex logic needed.
+- Keep rendering `OrderDetailsView`.
+- It will self-manage lock when no token is passed.
+
+--------------------------------------------------------------------
+7) Types
+--------------------------------------------------------------------
+
+File: `src/types/index.ts`
+
+Add lightweight types:
+- `OrderOpenLock`
+- `OrderOpenLockAcquireResult`
+
+No changes to Prisma models.
+
+--------------------------------------------------------------------
+8) Performance/Safety constraints (must follow)
+--------------------------------------------------------------------
+
+- Lock storage: Redis only (ephemeral), not SQL.
+- Heartbeat only while details is open.
+- Poll lock status only for currently visible list items.
+- No order log write except override event.
+- Handle Redis failures gracefully (fail-open, no app crash).
+
+--------------------------------------------------------------------
+9) Mandatory verification
+--------------------------------------------------------------------
+
+A) Basic lock
+1. User A opens order X -> sees details.
+2. User B list shows `Open by User A` for order X.
+
+B) Conflict popup
+1. User B clicks order X.
+2. Popup appears with User A info.
+3. Cancel keeps order closed.
+
+C) Override
+1. User B clicks `Override & Open`.
+2. Order opens for B.
+3. In order history/log, one entry exists:
+   - previous opener
+   - overriding user
+
+D) Heartbeat/expiry
+1. Keep order open > 2 minutes; ensure lock remains active.
+2. Close tab/sheet and wait > 75s; lock disappears from list.
+
+E) Same user multi-open
+1. Same user opening same order from another tab should not get blocked.
+
+F) Responsive
+1. Verify popup and lock badge on mobile/tablet/desktop layouts.
+

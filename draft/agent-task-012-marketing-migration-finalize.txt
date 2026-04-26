@@ -1,0 +1,35 @@
+UPDATE P12-2f - Finalize Marketing migration (no code changes)
+
+Scope: migration + prisma generate only. No code edits.
+
+Goal:
+- Create a proper migration for Marketing tables so other environments can apply it.
+- Generate Prisma client after migration.
+
+Steps:
+1) Stop dev server (to release file locks).
+
+2) Check status:
+   npx prisma migrate status
+
+3) Try normal migration create-only:
+   npx prisma migrate dev -n add_marketing_module --create-only
+
+4) If step #3 fails due to drift/reset:
+   (Fallback) Generate SQL diff against current migrations and save it as a new migration.
+   PowerShell commands:
+   $stamp = Get-Date -Format yyyyMMddHHmmss
+   $folder = "prisma/migrations/${stamp}_add_marketing_module"
+   New-Item -ItemType Directory -Path $folder | Out-Null
+   npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --script | Out-File -FilePath "$folder/migration.sql" -Encoding utf8
+   npx prisma migrate deploy
+
+5) Generate Prisma client:
+   npx prisma generate
+
+6) Restart dev server.
+
+Deliver back:
+- Migration folder name created
+- Output of `npx prisma migrate status`
+- Confirmation `npx prisma generate` succeeded

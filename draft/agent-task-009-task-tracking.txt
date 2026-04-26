@@ -1,0 +1,32 @@
+UPDATE PXX - Task tracking hygiene (required for audit)
+
+Scope: Process only. No code changes.
+
+Problem
+- Current status file is a mixed dump (requirements + claims) with no ?verified vs unverified? status and no evidence links.
+- Some claims are false/contradictory (e.g., ?Removed legacy src/dashboard? is not acceptable).
+
+Required output
+1) Create/maintain `draft/task.txt` as the single source of truth for status.
+2) Use this format for EACH item:
+   - ID: (e.g., P01b-2)
+   - Title:
+   - Status: TODO | IN-PROGRESS | DONE-UNVERIFIED | DONE-VERIFIED | BLOCKED
+   - Evidence: file paths + command output + timestamp (e.g., `npx tsc --noEmit` or specific file diff)
+   - Notes/Assumptions:
+
+3) Split into sections:
+   - Verified Done
+   - Done (unverified)
+   - In progress
+   - Blocked / needs client decision
+   - Deprecated / incorrect (log corrections here)
+
+4) Correct the following claims in task.txt:
+   - ?Removed legacy src/dashboard folder? -> mark as ERROR (should not be removed). Restoration required.
+   - ?Increased pageSize cap to 1000 for partners dropdown? -> mark as TEMP/HOTFIX and flag for future search-based dropdown.
+   - Any item without evidence -> move to DONE-UNVERIFIED.
+
+Deliver back
+- Path to `draft/task.txt`
+- A short summary (counts per status category).

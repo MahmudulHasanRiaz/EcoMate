@@ -1,0 +1,219 @@
+﻿P47u - Incomplete Leads Lifecycle Cleanup + Convert UX + Not Converted Status
+
+Why this is needed (tell coder)
+- Leads can remain OPEN even after a real order exists (e.g., webhook/complete call missed).
+- Convert is one-click; we need an edit modal.
+- We need NOT_CONVERTED (analytics) instead of only delete/cancel.
+
+Scope
+- Minimal schema impact: status is String, so no migration needed.
+- Files: ONLY the ones listed below.
+
+------------------------------------------------------------
+1) Auto-close OPEN leads when a real order already exists (server-side cleanup)
+File: src/app/api/orders/incomplete/route.ts
+
+Add a cleanup step BEFORE building payload:
+
+Implementation outline:
+
+```ts
+const TTL_MINUTES = 60; // keep modest; can tune later
+const cutoff = new Date(Date.now() - TTL_MINUTES * 60 * 1000);
+
+// 1) load open leads (already present)
+const leads = await prisma.wooCheckoutLead.findMany({ ... status: 'OPEN' ... });
+
+// 2) build phone+business sets
+const phones = Array.from(new Set(leads.map(l => l.phoneNormalized).filter(Boolean)));
+const businesses = Array.from(new Set(leads.map(l => l.businessId).filter(Boolean)));
+
+// 3) find recent real orders matching these phones+businesses
+let recentOrders: Array<{ businessId: string; customerPhone: string }> = [];
+if (phones.length && businesses.length) {
+  recentOrders = await prisma.order.findMany({
+    where: {
+      businessId: { in: businesses },
+      customerPhone: { in: phones },
+      createdAt: { gt: cutoff },
+      status: { notIn: ['Cancelled', 'Canceled'] },
+    },
+    select: { businessId: true, customerPhone: true }
+  });
+}
+
+// 4) mark matching leads as COMPLETED
+if (recentOrders.length) {
+  const keySet = new Set(recentOrders.map(o => `${o.businessId}::${o.customerPhone}`));
+  const toClose = leads.filter(l => l.phoneNormalized && keySet.has(`${l.businessId}::${l.phoneNormalized}`));
+  if (toClose.length) {
+    await prisma.wooCheckoutLead.updateMany({
+      where: { id: { in: toClose.map(l => l.id) } },
+      data: { status: 'COMPLETED', completedAt: new Date() }
+    });
+  }
+}
+
+// 5) re-query OPEN leads after cleanup (or filter in-memory)
+const finalLeads = toClose?.length
+  ? await prisma.wooCheckoutLead.findMany({ ... same query ... })
+  : leads;
+```
+
+Then use `finalLeads` to build payload.
+
+------------------------------------------------------------
+2) Add NOT_CONVERTED action (analytics-friendly terminal state)
+File: src/app/api/orders/incomplete/[id]/route.ts
+
+Update PATCH handler:
+- allow actions: cancel, not_converted
+- map:
+  - cancel -> status: 'CANCELLED'
+  - not_converted -> status: 'NOT_CONVERTED'
+- both set completedAt: new Date()
+
+Suggested patch:
+
+```ts
+const action = String(body?.action || 'cancel').toLowerCase();
+const statusMap: Record<string, string> = {
+  cancel: 'CANCELLED',
+  not_converted: 'NOT_CONVERTED',
+};
+const nextStatus = statusMap[action];
+if (!nextStatus) return apiError('Unsupported action', 400);
+
+const lead = await prisma.wooCheckoutLead.update({
+  where: { id: params.id },
+  data: { status: nextStatus, completedAt: new Date() },
+});
+```
+
+------------------------------------------------------------
+3) Treat NOT_CONVERTED as terminal guard
+File: src/app/api/woo/incomplete-orders/route.ts
+
+In hasRecentCompletion terminal statuses list, add NOT_CONVERTED:
+
+From:
+```ts
+status: { in: ['COMPLETED', 'CONVERTED', 'CANCELLED'] },
+```
+To:
+```ts
+status: { in: ['COMPLETED', 'CONVERTED', 'CANCELLED', 'NOT_CONVERTED'] },
+```
+
+------------------------------------------------------------
+4) Convert flow: add edit modal (name/phone/address/skus) and NOT_CONVERTED button
+File: src/app/dashboard/orders/incomplete/page.tsx
+
+Goal:
+- Convert should open a modal with editable fields.
+- Provide actions:
+  - Convert (calls convert API with edited data)
+  - Not Converted (calls PATCH with action not_converted)
+  - Cancel (existing cancel, or leave as cancel action elsewhere)
+
+Implementation plan:
+
+A) State additions:
+```ts
+const [isConvertOpen, setIsConvertOpen] = React.useState(false);
+const [convertTarget, setConvertTarget] = React.useState<IncompleteLeadDetail | null>(null);
+const [convertForm, setConvertForm] = React.useState({
+  name: '',
+  phone: '',
+  address: '',
+  skuCsv: '',
+});
+```
+
+B) Open convert modal:
+- Replace direct handleConvert(order) call.
+- On Convert button click:
+  1) fetch detail via getIncompleteLead(order.id)
+  2) prefill convertForm:
+     - name: detail.name
+     - phone: detail.phone
+     - address: detail.address
+     - skuCsv: detail.skuList -> join by comma
+  3) set convertTarget, open modal
+
+Helper:
+```ts
+function skuListToCsv(list: any[] | undefined) {
+  if (!Array.isArray(list)) return '';
+  return list.map((s: any) => (typeof s === 'string' ? s : (s?.sku || s?.SKU || ''))).filter(Boolean).join(', ');
+}
+```
+
+C) Convert submit:
+- Parse skuCsv -> skuList array:
+```ts
+const skuList = convertForm.skuCsv
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+```
+- call convertIncompleteLead(convertTarget.id, {
+    name: convertForm.name,
+    phone: convertForm.phone,
+    address: convertForm.address,
+    skuList,
+  })
+- on success: close modal, remove from list, toast
+
+D) NOT_CONVERTED action inside convert modal:
+- add a secondary destructive/outline button:
+```ts
+await fetch(`/api/orders/incomplete/${convertTarget.id}`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ action: 'not_converted' }),
+});
+```
+- close modal and remove from list on success
+
+E) UI placement:
+- Add a Convert Dialog near bottom of component (like existing detail dialog).
+- Keep existing detail dialog.
+
+------------------------------------------------------------
+5) Minor: show more lead data in list (safe enrichment)
+File: src/app/dashboard/orders/incomplete/page.tsx
+
+In table and card views, add:
+- address (muted small)
+- storeUrl or businessName (already partially there)
+
+Use:
+```tsx
+{order.address && (
+  <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{order.address}</p>
+)}
+```
+
+------------------------------------------------------------
+Manual verification checklist
+
+A) Lifecycle cleanup
+1) Place a real order for a phone.
+2) Go to Incomplete Orders.
+3) That phone’s lead should auto-disappear within the TTL window.
+
+B) Convert modal
+1) Open Convert.
+2) Edit name/phone/address/sku list.
+3) Convert -> new order should reflect edits.
+
+C) Not Converted
+1) Click Convert.
+2) Click Not Converted.
+3) Lead should disappear and remain hidden on refresh.
+
+Notes / constraints
+- No migration required.
+- Keep cleanup TTL modest to avoid heavy queries.
+- This is a pragmatic fix for real-world missed completion calls.

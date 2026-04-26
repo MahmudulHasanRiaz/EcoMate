@@ -1,0 +1,47 @@
+P47ae — Prisma relation alias fix (accessibleBusinesses / assignedTo / staff / breaks)
+
+Problem (3 Prisma Validation errors)
+- StaffMember includes accessibleBusinesses, but schema defines Business.
+- Order select includes assignedTo, but schema defines StaffMember.
+- AttendanceRecord includes staff/breaks, but schema defines StaffMember/BreakRecord.
+
+Best fix (match schema aliases to code)
+
+1) Update prisma/schema.prisma
+
+A) StaffMember model
+Rename the relation field:
+  Business Business[] @relation("StaffBusinessAccess")
+  -> accessibleBusinesses Business[] @relation("StaffBusinessAccess")
+
+B) Order model
+Rename the relation field:
+  StaffMember StaffMember? @relation(fields: [assignedToId], references: [id])
+  -> assignedTo StaffMember? @relation(fields: [assignedToId], references: [id])
+
+C) AttendanceRecord model
+Rename both relation fields:
+  StaffMember StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  -> staff StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  BreakRecord BreakRecord[]
+  -> breaks BreakRecord[]
+
+Notes
+- These are Prisma field aliases only; no DB schema change needed.
+
+2) Regenerate Prisma Client
+- Local:
+  npx prisma generate
+
+- Container/Server:
+  docker compose exec app npx prisma@6.19.1 generate
+
+3) Restart dev/app
+- Local dev: restart dev server
+- Production: rebuild/restart app container if needed
+
+Expected result
+- Dashboard no longer throws accessibleBusinesses / assignedTo / staff / breaks errors
+- Orders list API works again
+- Attendance widget error goes away

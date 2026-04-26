@@ -1,0 +1,27 @@
+UPDATE P02c - Full restore of legacy src/dashboard tree
+
+Scope: ONLY restore missing legacy files. No refactors.
+
+Finding
+- src/dashboard exists but contains ONLY:
+  - src/dashboard/staff/page.tsx
+  - src/dashboard/staff/[id]/page.tsx
+  This looks incomplete; original legacy tree likely had more pages.
+
+Required fix
+1) Restore full src/dashboard tree from git history
+- Identify the last commit that had the full legacy tree:
+  - Use: git log --name-status -- src/dashboard
+- Restore the entire folder from that commit:
+  - git restore --source=<commit> -- src/dashboard
+    (or git checkout <commit> -- src/dashboard)
+- Do NOT modify any restored files; only restore.
+
+2) Verify
+- List restored paths:
+  - git ls-tree -r HEAD -- src/dashboard
+- Confirm more than just staff pages are present.
+
+Deliver back
+- Confirmation of full restore (list of restored paths or count).
+- Note if no additional files existed historically (show git log evidence).

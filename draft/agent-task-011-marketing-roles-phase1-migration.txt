@@ -1,0 +1,29 @@
+UPDATE P12-1c - Prisma migration + client generate for new roles
+
+Scope: ONLY migration/generate. No code changes.
+
+1) Stop dev server
+- Ensure no node/next process is locking Prisma engine.
+
+2) Create migration for StaffRole enum change
+Run (from repo root):
+```
+npx prisma migrate dev -n add_marketer_finance_roles
+```
+If it complains about drift because db push already applied:
+```
+npx prisma migrate dev -n add_marketer_finance_roles --create-only
+```
+Then apply with:
+```
+npx prisma migrate deploy
+```
+
+3) Generate Prisma client
+```
+npx prisma generate
+```
+
+Deliver back:
+- Migration folder name under prisma/migrations
+- Confirm prisma generate succeeded

@@ -1,0 +1,37 @@
+UPDATE P44b - Production readiness verification (raw evidence)
+
+Scope: verification only. No code changes unless a new blocker is found.
+Goal: replace summary-only evidence with raw command outputs.
+
+1) Build (raw output)
+- Run:
+  npm run build
+- Save full output to: draft/p44-build-raw.txt
+
+2) Prisma migrate status (raw output)
+- Run:
+  npx prisma migrate status
+- Save output to: draft/p44-migrate-status-raw.txt
+
+3) Redis + Worker live check (raw output)
+- Verify Redis ping:
+  "C:\Program Files\Memurai\memurai-cli.exe" ping
+- Check queue counts:
+  node -e "require('dotenv').config(); const {Queue}=require('bullmq'); const url=process.env.REDIS_URL||'redis://127.0.0.1:6379'; (async()=>{ const q=new Queue('stock-sync',{connection:{url}}); const c=await q.getJobCounts(); console.log(c); const jobs=await q.getJobs(['completed','failed'],0,5); console.log(jobs.map(j=>({id:j.id,name:j.name,finishedOn:j.finishedOn,failedReason:j.failedReason}))); await q.close(); })().catch(e=>{console.error(e); process.exit(1);});"
+- Save combined output to: draft/p44-redis-worker-verify-raw.txt
+
+4) Smoke tests (raw output)
+- Run these (while dev server is running):
+  curl -i http://localhost:9002/api/settings/integrations/woo
+  curl -i -X POST http://localhost:9002/api/orders/import/woo
+  curl -i "http://localhost:9002/api/webhooks/failures?pageSize=20"
+  curl -i http://localhost:9002/api/analytics
+  curl -i "http://localhost:9002/api/accounting/ledger?pageSize=10"
+- Save output to: draft/p44-smoke-raw.txt
+
+5) Tracker update
+- draft/task.txt: keep P44 DONE-VERIFIED, but add evidence lines to the raw files above.
+
+Deliver back:
+- The four raw files
+- Note any blockers with exact error text

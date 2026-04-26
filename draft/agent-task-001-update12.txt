@@ -1,0 +1,46 @@
+UPDATE 12 - Fix build error in invoice template (malformed HTML + stray backtick)
+
+Issue: client-page.tsx fails to parse around Cutting invoice due to malformed template string.
+
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> itemsHtml
+
+Fixes required:
+1) Remove the stray template literal terminator after the PRINTING block.
+   Currently there is an extra "`;
+                `;" just before "if (type === 'CUTTING')".
+   Keep only one closing `; for the PRINTING block.
+
+2) Normalize tag syntax in CUTTING + FINISHING blocks (and summary/meta HTML inside handleGenerateWorkOrder):
+   - Replace `< div >` with `<div>`
+   - Replace `< table ... >` with `<table ...>`
+   - Replace `</table >` with `</table>`
+   - Replace `</thead >` with `</thead>`
+   - Replace `< table style = "..." >` with `<table style="...">`
+   - Replace `</div >` with `</div>`
+
+3) Fix CUTTING header markup (missing thead/tr):
+   Ensure this structure:
+   <table ...>
+     <thead>
+       <tr>
+         <th>Product</th>
+         <th>Qty</th>
+         <th>Jama</th>
+         <th>Orna</th>
+         <th>Selowar</th>
+         ...
+       </tr>
+     </thead>
+     <tbody>
+       ...rows...
+     </tbody>
+   </table>
+
+4) Fix FINISHING wrapper markup:
+   The opening table tag must be `<table style="table-layout:fixed;">` and closing `</table>`.
+   The wrapper `<div>` should be properly opened/closed.
+
+No logic changes; only markup/templating fixes.
+
+Deliver back: summary + confirm build passes.

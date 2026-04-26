@@ -1,0 +1,28 @@
+# Performance Index Verification (P37/P37b)
+# Date: 2026-01-23
+
+All planned indexes have been verified as present in the database:
+
+1.  Order_customerPhone_gin_idx (GIN/Trgm) - OK
+2.  Order_orderNumber_gin_idx (GIN/Trgm)   - OK
+3.  LedgerEntry_accountId_date_idx         - OK
+4.  LedgerEntry_businessId_date_idx        - OK
+5.  InventoryItem_productId_variantId_locationId_idx - OK
+6.  Expense_businessId_date_idx            - OK
+7.  Expense_categoryId_date_idx            - OK
+8.  PurchasePayment_checkDate_idx           - OK
+9.  StaffPayment_staffId_createdAt_idx      - OK
+
+---
+Database Output (pg_indexes):
+tablename    |                         indexname                          |                                                                                   indexdef                                                                                   
+-----------------+------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Expense         | Expense_businessId_date_idx                                | CREATE INDEX "Expense_businessId_date_idx" ON public."Expense" USING btree ("businessId", date)
+ Expense         | Expense_categoryId_date_idx                                | CREATE INDEX "Expense_categoryId_date_idx" ON public."Expense" USING btree ("categoryId", date)
+ InventoryItem   | InventoryItem_productId_variantId_locationId_idx           | CREATE INDEX "InventoryItem_productId_variantId_locationId_idx" ON public."InventoryItem" USING btree ("productId", "variantId", "locationId")
+ LedgerEntry     | LedgerEntry_accountId_date_idx                             | CREATE INDEX "LedgerEntry_accountId_date_idx" ON public."LedgerEntry" USING btree ("accountId", date)
+ LedgerEntry     | LedgerEntry_businessId_date_idx                            | CREATE INDEX "LedgerEntry_businessId_date_idx" ON public."LedgerEntry" USING btree ("businessId", date)
+ Order           | Order_customerPhone_gin_idx                                | CREATE INDEX "Order_customerPhone_gin_idx" ON public."Order" USING gin ("customerPhone" gin_trgm_ops)
+ Order           | Order_orderNumber_gin_idx                                  | CREATE INDEX "Order_orderNumber_gin_idx" ON public."Order" USING gin ("orderNumber" gin_trgm_ops)
+ PurchasePayment | PurchasePayment_checkDate_idx                              | CREATE INDEX "PurchasePayment_checkDate_idx" ON public."PurchasePayment" USING btree ("checkDate")
+ StaffPayment    | StaffPayment_staffId_createdAt_idx                         | CREATE INDEX "StaffPayment_staffId_createdAt_idx" ON public."StaffPayment" USING btree ("staffId", "createdAt")

@@ -1,0 +1,30 @@
+[VERIFICATION LOG - P42b Woo Sync Batch Job]
+Timestamp: 2026-01-24 16:53:00
+
+1. BATCH ENQUEUE CONFIRMATION (src/server/modules/woo-sync.ts:885-888):
+In the importWooOrders loop, instead of enqueuing individual orders, we now use:
+line 885: const queued = await enqueueStockSyncBatchJob({ batch, integration });
+line 886: if (!queued) {
+line 887:   console.log(`[WOO_IMPORT_SYNC_FALLBACK] Queue failed. Processing batch of ${batch.length} sync.`);
+line 888:   await syncWooOrdersBatch(batch, integration);
+line 889: }
+
+2. SHARED MAPS REUSE CONFIRMATION (src/server/modules/woo-sync.ts:776-802):
+The syncWooOrdersBatch function correctly aggregates all SKUs for the entire batch:
+line 776: export async function syncWooOrdersBatch(batch: WooOrder[], integration: any) {
+line 777:   const allSkus = Array.from(new Set(batch.flatMap(wo => ...)));
+line 783:   const skuMap = await resolveSkuMap(allSkus);
+line 787:   const productInfos = await prisma.product.findMany({ ... });
+line 802:   const productInfoMap = new Map(productInfos.map(p => [p.id, p]));
+line 806:   await syncOneWooOrder(wo, integration, skuMap, productInfoMap);
+
+3. INDIVIDUAL ORDER ADAPTATION (src/server/modules/woo-sync.ts:441-450):
+syncOneWooOrder now respects the provided maps:
+line 441: export async function syncOneWooOrder(wo, integration, skuMap?, productInfoMap?) {
+line 450:   const effectiveSkuMap = skuMap || await resolveSkuMap(...);
+line 454:   let effectiveProductInfoMap = productInfoMap;
+
+VERIFIED:
+- Batch sync runs either via queue or atomic fallback.
+- SKU map + product info resolved ONCE per page (50 orders) instead of 50 times.
+- Backward compatibility for single order (webhooks) is intact.

@@ -1,0 +1,90 @@
+﻿UPDATE P38 - Final regression checklist + release evidence (must complete today)
+
+Scope: Verification only. No code changes.
+
+Goal:
+- Run full critical-flow smoke tests across modules.
+- Capture evidence logs/screenshots.
+- Update draft/task.txt with DONE‑VERIFIED P38.
+
+Pre-steps:
+1) Restart dev server.
+2) Clear staff-auth cache (if Redis):
+   redis-cli DEL staff-auth:<clerkUserId>
+
+Checklist (must verify all):
+
+A) Orders
+- Open /dashboard/orders/all (UI loads)
+- GET /api/orders?pageSize=10&includeTotal=true returns 200
+- Export orders (queue/inline) completes and download works
+
+B) Inventory
+- Open /dashboard/inventory
+- View Stock modal -> Summary + Lots load
+- View Movement modal -> list or empty state
+
+C) Purchases
+- Open /dashboard/purchases list
+- Open a purchase details page
+- Add or view payment (no errors)
+
+D) Expenses
+- Open /dashboard/expenses
+- Create a new expense (Submitted)
+- Approve (Manager/Admin)
+- Mark Paid (Finance/Admin)
+- Print view shows Prepared/Approved/Paid names
+
+E) Check Passing
+- Open /dashboard/check-passing
+- Search by checkNo works
+- View Voucher modal opens
+
+F) Webhook Failures
+- Open /dashboard/webhook-failures
+- GET /api/webhooks/failures returns 200
+- Replay (if any record) returns 200
+
+G) Analytics
+- Open /dashboard/analytics
+- /api/analytics returns 200
+
+H) Marketing
+- Open /dashboard/marketing
+- Create campaign
+- Add spend
+- Assign order
+
+I) Tasks
+- Create task (any user)
+- Assign task (Admin/Manager)
+- Non‑manager can update only status
+
+J) Staff
+- Open /dashboard/staff
+- Attendance list loads
+- Staff profile payments Load More works
+
+Evidence:
+- Create draft/p38-regression-evidence.txt with:
+  * timestamp
+  * each item -> OK/FAIL
+  * key API statuses
+- Add screenshots if any error appears (optional)
+
+Task tracker:
+- Update draft/task.txt:
+  ID: P38
+  Title: Final regression checklist
+  Status: DONE‑VERIFIED
+  Evidence: draft/p38-regression-evidence.txt
+
+If any FAIL:
+- Log details in p38-regression-evidence.txt
+- Do NOT fix in this step; report back.
+
+Deliver back:
+- draft/p38-regression-evidence.txt
+- Updated draft/task.txt
+- Short summary of any failures

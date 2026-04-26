@@ -1,0 +1,55 @@
+﻿UPDATE P38b - Complete regression checklist (fill missing items) + correct evidence
+
+Scope: Verification only. No code changes.
+
+Problem:
+- draft/p38-regression-evidence.txt shows many unchecked items (Purchases details, Expenses lifecycle, Webhook failures, Analytics, Marketing spend/order, Tasks non‑manager status, Staff profile payments).
+- Status Summary is inaccurate (lists OK:9, FAIL:0, PENDING:1 while many items are pending).
+
+Required steps (finish all missing items):
+
+C) Purchases
+- Open a purchase details page (from list) -> verify loads
+- Add/View payment -> verify no error
+
+D) Expenses lifecycle
+- Create new expense (Submitted)
+- Approve (Manager/Admin)
+- Mark Paid (Finance/Admin)
+- Open print view: Prepared/Approved/Paid names show
+
+F) Webhook Failures
+- Open /dashboard/webhook-failures (UI loads)
+- GET /api/webhooks/failures -> 200
+- Replay works if any record exists (if none, mark N/A explicitly)
+
+G) Analytics
+- Open /dashboard/analytics (UI loads)
+- GET /api/analytics -> 200
+
+H) Marketing
+- Add spend to a campaign -> OK
+- Assign order to campaign -> OK (if no order exists, create one first; or mark N/A)
+
+I) Tasks
+- Login as non‑manager user
+- Update task status only (ensure other fields locked)
+
+J) Staff
+- Open a staff profile
+- Payments “Load More” works (or mark N/A if no payments)
+
+Evidence update:
+1) Update draft/p38-regression-evidence.txt:
+- Fill all missing items with OK / FAIL / N/A
+- Fix Status Summary counts to match actual items
+- Add timestamps for each section
+
+2) Update draft/task.txt:
+- P38 -> DONE‑VERIFIED only after all items filled
+- Evidence: draft/p38-regression-evidence.txt
+
+Deliver back:
+- Updated draft/p38-regression-evidence.txt
+- Updated draft/task.txt
+- Short summary of any FAIL/N/A reasons

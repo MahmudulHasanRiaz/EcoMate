@@ -1,0 +1,73 @@
+UPDATE P40h - Skip auto-heal while ensureWooWebhook is running (inflight lock)
+
+Scope: src/server/modules/woo-sync.ts + src/app/api/webhooks/woo/[id]/route.ts only.
+
+Problem:
+- Manual sync calls ensureWooWebhook to create the correct hook.
+- At the same time, stale retry hits 401 and triggers auto-heal, which can rotate secret and recreate again.
+- This race causes "two created" events in a short window.
+
+Fix:
+1) Add inflight lock in ensureWooWebhook
+File: src/server/modules/woo-sync.ts
+- At top-level (module scope), add:
+  const wooWebhookEnsureInflight = new Map<string, number>();
+  const WOO_WEBHOOK_ENSURE_INFLIGHT_TTL_MS = 60 * 1000;
+
+- Add helpers:
+```
+async function markEnsureInflight(integrationId: string) {
+  const now = Date.now();
+  wooWebhookEnsureInflight.set(integrationId, now);
+  const redis = getRedisClient();
+  if (redis) await redis.set(`woo:webhook:ensure_inflight:${integrationId}`, String(now), 'EX', 60);
+}
+
+async function clearEnsureInflight(integrationId: string) {
+  wooWebhookEnsureInflight.delete(integrationId);
+  const redis = getRedisClient();
+  if (redis) await redis.del(`woo:webhook:ensure_inflight:${integrationId}`);
+}
+```
+
+- In ensureWooWebhook, wrap the body with try/finally:
+```
+await markEnsureInflight(integration.id);
+try {
+  ...existing logic...
+} finally {
+  await clearEnsureInflight(integration.id);
+}
+```
+
+2) Auto-heal guard checks inflight
+File: src/app/api/webhooks/woo/[id]/route.ts
+- Add helper:
+```
+async function isEnsureInflight(integrationId: string) {
+  const now = Date.now();
+  const mem = wooWebhookEnsureInflightMap.get(integrationId);
+  if (mem && now - mem < 60 * 1000) return true;
+  const redis = getRedisClient();
+  if (redis) {
+    const v = await redis.get(`woo:webhook:ensure_inflight:${integrationId}`);
+    if (v) return true;
+  }
+  return false;
+}
+```
+- Add map near top in route file:
+  const wooWebhookEnsureInflightMap = new Map<string, number>();
+
+- In triggerWooWebhookAutoHeal, before other guards:
+```
+if (await isEnsureInflight(integrationId)) {
+  console.log('[WOO_WEBHOOK_AUTOHEAL_SKIP_INFLIGHT]', integrationId);
+  return;
+}
+```
+
+Deliver back:
+- Summary + files touched
+- Confirm log [WOO_WEBHOOK_AUTOHEAL_SKIP_INFLIGHT]
+- Behavior: manual sync -> ensureWooWebhook runs; stale 401 won't trigger auto-heal during that window.

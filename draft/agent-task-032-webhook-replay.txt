@@ -1,0 +1,42 @@
+UPDATE P32 - Webhook failures visibility + replay (safe, minimal)
+
+Scope: Webhook failure list + replay endpoints only. Keep changes minimal. No refactors.
+
+Goal:
+- Provide a safe way to view webhook failures and replay them manually.
+- Avoid heavy scans on every request.
+
+1) Add failure list API
+File: src/app/api/webhooks/failures/route.ts (NEW)
+- GET with cursor pagination (createdAt desc, id desc)
+- Filters: source, integrationId, orderId (optional), date range (from/to)
+- Response: { items, nextCursor }
+- Permissions: admin/manager only (use enforcePermission('integrations' or 'admin'?). If no integration permission, use admin role check.)
+
+2) Add replay endpoint
+File: src/app/api/webhooks/failures/[id]/replay/route.ts (NEW)
+- POST: fetch WebhookFailure by id, parse payload, call appropriate handler based on source:
+  - source startsWith 'woo' -> call existing woo webhook handler logic (reuse internal helper if any)
+  - source startsWith 'courier' or 'pathao' -> call courier webhook handler if applicable
+- If no handler available, return 400 "Replay not supported for this source".
+- Log replay attempt in WebhookFailure table? (optional: append note via update)
+
+3) Add minimal UI access (optional)
+File: src/app/dashboard/settings/integrations/page.tsx (or existing integrations UI)
+- Add link/button "Webhook Failures" (no UI build if not desired now)
+
+4) Update task tracker
+File: draft/task.txt
+- Add P32 entry under Done (Unverified):
+  ID: P32
+  Title: Webhook Failure List + Replay (Manual)
+  Status: DONE-UNVERIFIED
+  Evidence: api/webhooks/failures, api/webhooks/failures/[id]/replay
+
+Notes:
+- Use minimal select: id, source, integrationId, orderId, externalOrderId, createdAt, error
+- Avoid exposing raw payload unless admin confirms (optional). If exposed, mask secrets.
+
+Deliver back:
+- Summary + files touched
+- Manual verify: list loads, replay returns 200 for woo sources

@@ -1,0 +1,249 @@
+P47x - Incomplete Leads: Payload Hydration + Not Converted Button
+
+Goal
+- Incomplete list should show whatever user typed (name/address/etc) when phone is valid.
+- Add an explicit "Not Converted" action in the list/details UI (analytics-friendly terminal state).
+
+Why this is needed
+- `checkout.js` now sends rich payload, but `/api/orders/incomplete` does not hydrate `name`/`address` from payload.
+- `handleNotConverted` exists in the page but is not wired to any button.
+
+Scope (edit only these files)
+- src/app/api/orders/incomplete/route.ts
+- src/app/dashboard/orders/incomplete/page.tsx
+
+----------------------------------------------------------------------
+1) Backend: hydrate name/address from payload in the incomplete list API
+----------------------------------------------------------------------
+File: src/app/api/orders/incomplete/route.ts
+
+Add helpers near the top (below imports is fine):
+
+```ts
+function deriveLeadName(lead: any): string {
+  const name = String(lead?.name || '').trim();
+  if (name) return name;
+
+  const p = (lead?.payload || {}) as any;
+  const first = String(p?.firstName || '').trim();
+  const last = String(p?.lastName || '').trim();
+  const full = [first, last].filter(Boolean).join(' ').trim();
+  return full || 'Unknown';
+}
+
+function deriveLeadAddress(lead: any): string {
+  const address = String(lead?.address || '').trim();
+  if (address) return address;
+
+  const p = (lead?.payload || {}) as any;
+  const parts = [
+    p?.address1,
+    p?.address2,
+    p?.city,
+    p?.state,
+    p?.postcode,
+    p?.country,
+  ]
+    .map((x) => String(x || '').trim())
+    .filter(Boolean);
+
+  return parts.join(', ');
+}
+```
+
+Then update the payload mapping at the bottom.
+
+Replace:
+
+```ts
+name: lead.name || 'Unknown',
+address: lead.address || '',
+```
+
+With:
+
+```ts
+name: deriveLeadName(lead),
+address: deriveLeadAddress(lead),
+payload: lead.payload || {},
+```
+
+So the mapped object should include `payload`.
+
+Notes
+- This keeps the list UX consistent even when `lead.name` / `lead.address` are empty.
+- We are not changing DB writes here, only response shaping.
+
+----------------------------------------------------------------------
+2) Frontend: add a safe derive fallback + wire "Not Converted"
+----------------------------------------------------------------------
+File: src/app/dashboard/orders/incomplete/page.tsx
+
+2.1) Add local derive helpers (defensive UI)
+Place these inside the component, near other helpers:
+
+```ts
+const deriveLeadName = (lead: IncompleteLead | IncompleteLeadDetail) => {
+  const name = String(lead?.name || '').trim();
+  if (name) return name;
+  const p = (lead as any)?.payload || {};
+  const first = String(p?.firstName || '').trim();
+  const last = String(p?.lastName || '').trim();
+  const full = [first, last].filter(Boolean).join(' ').trim();
+  return full || 'Unknown';
+};
+
+const deriveLeadAddress = (lead: IncompleteLead | IncompleteLeadDetail) => {
+  const address = String(lead?.address || '').trim();
+  if (address) return address;
+  const p = (lead as any)?.payload || {};
+  const parts = [
+    p?.address1,
+    p?.address2,
+    p?.city,
+    p?.state,
+    p?.postcode,
+    p?.country,
+  ]
+    .map((x: any) => String(x || '').trim())
+    .filter(Boolean);
+  return parts.join(', ');
+};
+```
+
+2.2) Use the derived values in the list UI
+
+In both `renderTable()` and `renderCards()`:
+
+Replace usages of:
+- `order.name || 'Unknown'` with `deriveLeadName(order)`
+- `order.address` with `deriveLeadAddress(order)`
+
+Example (table customer cell):
+
+```tsx
+const displayName = deriveLeadName(order);
+const displayAddress = deriveLeadAddress(order);
+
+<p className="font-bold">{displayName}</p>
+...
+{displayAddress && (
+  <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{displayAddress}</p>
+)}
+```
+
+2.3) Use derived values when opening the convert dialog
+
+In the `NewOrderDialog` `leadPrefill` mapping, update:
+
+Replace:
+
+```tsx
+customerName: convertLead.name || '',
+customerAddress: convertLead.address || '',
+```
+
+With:
+
+```tsx
+customerName: deriveLeadName(convertLead),
+customerAddress: deriveLeadAddress(convertLead),
+```
+
+Also update the detail modal display:
+- show `deriveLeadName(leadDetail)`
+- show `deriveLeadAddress(leadDetail)`
+
+----------------------------------------------------------------------
+3) Wire the "Not Converted" button in the UI
+----------------------------------------------------------------------
+We already have `handleNotConverted`, but no trigger.
+Add a button with confirm so it’s hard to click by mistake.
+
+3.1) In the table row actions (renderTable)
+Add this near the Convert button, gated by delete permission:
+
+```tsx
+{canOrders('delete') && (
+  <AlertDialog>
+    <AlertDialogTrigger asChild>
+      <Button variant="outline" size="sm" className="text-amber-600 border-amber-300 hover:bg-amber-50">
+        Not Converted
+      </Button>
+    </AlertDialogTrigger>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Mark as Not Converted?</AlertDialogTitle>
+        <AlertDialogDescription>
+          This will close the lead for analytics without creating an order.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Go Back</AlertDialogCancel>
+        <AlertDialogAction onClick={() => handleNotConverted(order.id)}>
+          Confirm
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+)}
+```
+
+3.2) In the mobile card actions (renderCards)
+Add the same Not Converted alert button.
+
+3.3) In the Lead Details dialog footer
+Add Not Converted next to Convert to Order:
+
+```tsx
+{leadDetail && canOrders('delete') && leadDetail.status === 'OPEN' && (
+  <AlertDialog>
+    <AlertDialogTrigger asChild>
+      <Button variant="outline" className="text-amber-600 border-amber-300 hover:bg-amber-50">
+        Not Converted
+      </Button>
+    </AlertDialogTrigger>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Mark as Not Converted?</AlertDialogTitle>
+        <AlertDialogDescription>
+          This will close the lead for analytics without creating an order.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Go Back</AlertDialogCancel>
+        <AlertDialogAction onClick={() => handleNotConverted(leadDetail.id)}>
+          Confirm
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+)}
+```
+
+----------------------------------------------------------------------
+4) Verification checklist (must do)
+----------------------------------------------------------------------
+
+4.1) API response now contains derived values
+- Hit: `/api/orders/incomplete` (while logged in)
+- Confirm each item has:
+  - `name` populated (from payload if needed)
+  - `address` populated (from payload if needed)
+  - `payload` present
+
+4.2) UI now shows more than phone
+- On checkout, fill name + address fields + phone
+- Leave checkout
+- In dashboard incomplete list:
+  - Name should show
+  - Address should show
+
+4.3) Not Converted works
+- Click Not Converted on a lead
+- It should disappear after refresh
+- It should not reopen quickly due to terminal guard
+
+4.4) Typecheck
+- Run: `npx tsc --noEmit`
+

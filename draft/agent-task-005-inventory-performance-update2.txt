@@ -1,0 +1,62 @@
+UPDATE P03c - Inventory performance follow-up (post verification)
+
+Scope: ONLY fix items listed here. No refactors. Keep changes minimal.
+
+1) Inventory Audit refresh bug (post-submit)
+File: src/app/dashboard/inventory/audit/client-page.tsx
+Problem: handleSubmit sets items to the full response object from getAuditItems (now paginated), causing runtime issues.
+Fix:
+- After successful submit, refresh using the paginated shape:
+  Option A (preferred): await loadItems(true) and let it reset cursor/items.
+  Option B: const data = await getAuditItems(...); setItems(data.items || []); setCursor(data.nextCursor ?? null);
+- Ensure counts reset and hasChanges=false.
+
+2) Audit pagination stability (cursor + orderBy)
+File: src/server/modules/inventory.ts
+Function: getAuditItemsPaginated
+Fix:
+- Add stable tie-break order: orderBy [{ product: { name: 'asc' } }, { id: 'asc' }]
+- Keep cursor { id } and nextCursor from last item.
+
+3) Inventory status filter UI + export alignment
+File: src/app/dashboard/inventory/client-page.tsx
+Fix:
+- Add a Status dropdown near location filter with options:
+  Active (value: active), Low Stock (value: low-stock), All (value: all).
+- Wire it to setStatusFilter and trigger fetchAllData.
+- Export Summary: replace `lowStock=true` with `status=...` and include lowStockThreshold param.
+
+File: src/app/api/inventory/route.ts
+- No new params needed (status + lowStockThreshold already supported). Do NOT add lowStock param.
+
+4) Product selection scalability (remove 1000-load)
+File: src/app/dashboard/inventory/client-page.tsx
+Problem: init loads 1000 products; dialogs render allProducts in <Select>, not scalable.
+Fix:
+- Remove getProductsPaged({ pageSize: 1000 }) from init().
+- Replace the two product <Select> dropdowns (Adjust/Transfer dialogs) with an async search combo:
+  - Add local state: productSearchTerm, productResults[], productCursor.
+  - Fetch via getProductsPaged({ search: term, pageSize: 50, cursor }) on open + on search change.
+  - Keep "Load more" in the dropdown if nextCursor exists.
+  - When a product is selected, update productById cache for that product only.
+- Variant dropdown should update based on selected product (use productById).
+
+5) Purchases lot refresh filter (smaller payload)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Fix:
+- refreshInventoryLots() should include productId/variantId/locationId when activeLotItem exists.
+  Example:
+    const params = new URLSearchParams({ pageSize: '50' });
+    if (activeLotItem?.productId) params.set('productId', activeLotItem.productId);
+    if (activeLotItem?.variantId) params.set('variantId', activeLotItem.variantId);
+    if (activeLotItem?.locationId) params.set('locationId', activeLotItem.locationId);
+  - Keep pageSize=50.
+
+Deliver back:
+- Summary + files touched
+- Quick manual verify:
+  - Audit page Load More + submit refresh works
+  - Inventory status filter affects list
+  - Export summary respects status filter
+  - Product dropdown loads by search (no 1000 fetch)
+  - Lot refresh requests are scoped (network confirms)

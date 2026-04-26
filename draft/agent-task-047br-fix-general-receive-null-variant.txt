@@ -1,0 +1,60 @@
+P47br - Fix general receive crash for simple products (variantId null)
+
+Problem
+- Production error on Receive Stock for general purchase with simple product:
+  Invalid prisma.inventoryItem.findUnique() ... Argument `variantId` must not be null.
+- Root cause: receive flow uses compound `findUnique` on key `(productId, variantId, locationId, lotNumber)`.
+  Prisma runtime rejects `null` in this `findUnique` input for this path.
+
+Scope
+- File: `src/server/modules/purchases.ts`
+- Function: `receivePurchaseOrderStockCore`
+- No unrelated refactor.
+
+Required code change
+1) In `receivePurchaseOrderStockCore`, locate this block inside `if (qtyToReceive > 0)`:
+
+```ts
+const inventoryItem = await tx.inventoryItem.findUnique({
+  where: {
+    productId_variantId_locationId_lotNumber: {
+      productId: poItem.productId,
+      variantId: poItem.variantId,
+      locationId: locationId,
+      lotNumber: lotNumber
+    }
+  }
+});
+```
+
+2) Replace it with null-safe lookup using `findFirst`:
+
+```ts
+const inventoryItem = await tx.inventoryItem.findFirst({
+  where: {
+    productId: poItem.productId,
+    variantId: poItem.variantId ?? null,
+    locationId: locationId,
+    lotNumber: lotNumber,
+  },
+  orderBy: { receivedDate: 'asc' },
+});
+```
+
+Why
+- `findFirst` supports nullable filters (`variantId: null`) correctly.
+- For simple products (`No Variant`) this prevents crash and reuses existing lot row.
+
+3) Keep create path unchanged:
+- `variantId: poItem.variantId ?? null` remains correct.
+
+Validation (must run)
+1) `npx tsc --noEmit`
+2) Create a general PO with a simple product (no variant), then receive stock.
+3) Confirm:
+- No prisma error modal.
+- Inventory quantity increases.
+- Inventory movement row is created.
+
+Optional hardening (only if duplicates exist for same lot)
+- If historical duplicate lot rows are found for same `(productId, variantId=null, locationId, lotNumber)`, keep using oldest row now; separate cleanup can be done later.

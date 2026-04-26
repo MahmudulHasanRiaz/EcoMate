@@ -1,0 +1,20 @@
+# SMS Queue Fallback Configuration
+
+By default, the system enforces a queue-first policy for all external SMS sends. If the queue (Redis/BullMQ) is unavailable, SMS sends will fail to prevent blocking request threads with synchronous HTTP calls.
+
+## Allowing Synchronous Fallback (Dev Only)
+
+To allow synchronous SMS sending when the queue is unavailable (primarily for local development or emergency debugging), set the following environment variable:
+
+```powershell
+# Windows (Permanent)
+setx ALLOW_SYNC_SMS "true"
+
+# PowerShell (Current Session)
+$env:ALLOW_SYNC_SMS = "true"
+```
+
+### Important Notes:
+1. **Restart Server**: You must restart the development server (`npm run dev`) after setting the environment variable for it to take effect.
+2. **Production Risk**: DO NOT enable this in production unless absolutely necessary, as it can cause significant performance degradation and potential timeouts during load spikes.
+3. **Logging**: When fallback is active, a warning `[SMS_QUEUE_UNAVAILABLE] Falling back: true` will be logged for every synchronous send.

@@ -1,0 +1,23 @@
+﻿UPDATE P06 - Woo sync hardening + stock audit scheduling
+
+Scope: ONLY Woo sync reliability/perf. No UI changes.
+
+1) Queue + dedup
+- File: src/server/modules/woo-sync.ts + src/server/queues/index.ts
+  - Ensure enqueueStockSyncJob uses a stable jobId (integrationId|sku|status) to dedupe.
+  - Add per-integration concurrency limit in worker (BullMQ Worker opts).
+
+2) Circuit breaker/backoff
+- Track repeated 4xx/5xx per integration in Redis.
+- If threshold exceeded, pause sync for that integration for N minutes.
+
+3) Batch SKU map warming
+- Before bulk sync, prefetch sku mappings in batch (use wooSkuMapping table) to reduce per-SKU HTTP calls.
+
+4) Stock audit schedule
+- Add BullMQ scheduled job (every 12h) to run runStockStatusAudit.
+- Keep dashboard fallback ensureStockStatusAuditFallback.
+
+Deliver back
+- Summary + files touched
+- Manual test: bulk sync queue size, status logs, and audit job runs on schedule.

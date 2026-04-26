@@ -1,0 +1,64 @@
+P47v - Incomplete Orders SSR Auth/Base URL Fix
+
+Problem
+- /dashboard/orders/incomplete reload triggers: "Failed to fetch incomplete orders".
+- Root cause: SSR fetch uses absolute base URL via getBaseUrl(), which does NOT forward auth cookies to internal /api routes. enforcePermission then returns 401/403 and res.ok becomes false.
+
+Scope
+- Minimal, safe change: ONLY src/services/orders.ts
+
+Changes to apply
+
+1) Make API base URL SSR-safe (relative on server)
+File: src/services/orders.ts
+
+Replace this line near the top:
+```ts
+const API_BASE_URL = `${getBaseUrl()}/api`;
+```
+
+With this:
+```ts
+// On the server, use a relative base URL so Next forwards cookies to internal APIs.
+// On the client, absolute is fine but relative also works; keep existing behavior for clarity.
+const API_BASE_URL = typeof window === 'undefined' ? '/api' : `${getBaseUrl()}/api`;
+```
+
+2) Ensure cookies are included on client-side fetches
+File: src/services/orders.ts
+
+Add `credentials: 'include'` to these fetch calls:
+
+A) getIncompleteOrders
+```ts
+const res = await fetch(`${API_BASE_URL}/orders/incomplete`, {
+  credentials: 'include',
+  next: { revalidate: 60, tags: ['orders', 'incomplete-orders'] },
+});
+```
+
+B) getIncompleteLead
+```ts
+const res = await fetch(`${API_BASE_URL}/orders/incomplete/${id}`, {
+  credentials: 'include',
+  next: { revalidate: 30, tags: ['incomplete-orders', `incomplete:${id}`] },
+});
+```
+
+C) convertIncompleteLead
+```ts
+const res = await fetch(`${API_BASE_URL}/orders/incomplete/${id}/convert`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify(input || {}),
+});
+```
+
+3) Verify locally
+- Run: npx tsc --noEmit
+- Reload /dashboard/orders/incomplete while logged in
+- Expected: no console error; /api/orders/incomplete returns 200 in server logs
+
+Notes
+- This pattern may be needed in other services that run on the server AND call protected /api routes.

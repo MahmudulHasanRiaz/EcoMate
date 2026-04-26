@@ -1,0 +1,40 @@
+P47af — Prisma client sync fixes (StaffMember id + Order.products relation)
+
+Why this is needed
+- staffMember.upsert fails with "Argument id is missing" because StaffMember.id has no default and create() doesn't provide it.
+- order.findMany fails with "Unknown field products" because the Order model relation is still named OrderProduct in schema.
+
+Fix (schema only, no DB data loss)
+
+1) Update prisma/schema.prisma
+
+A) StaffMember id default
+- Find model StaffMember
+- Change:
+  id String @id
+  -> id String @id @default(cuid())
+
+B) Order products relation alias
+- Find model Order
+- Change the relation list field:
+  OrderProduct OrderProduct[]
+  -> products OrderProduct[]
+
+Notes
+- These are Prisma client-level changes.
+- Adding @default(cuid()) avoids needing to pass id in create() calls.
+
+2) Regenerate Prisma client
+- Local: npx prisma generate
+- Docker: docker compose exec app npx prisma@6.19.1 generate
+
+3) Restart app/dev server
+- Local: restart npm run dev
+- Docker: rebuild/restart app container if needed
+
+4) Sanity check
+- Reload dashboard: staff auth should succeed (no missing id error).
+- Orders list should load (products relation available).
+
+Important
+- Make sure edits are done in prisma/schema.prisma (root), not src/prisma/schema.prisma.

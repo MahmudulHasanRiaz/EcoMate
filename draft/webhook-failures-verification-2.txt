@@ -1,0 +1,27 @@
+### Webhook Failures Verification Log - Part 2
+Timestamp: 2026-01-23 17:10:00
+
+#### Environment:
+- URL: /dashboard/webhook-failures
+- Role: Admin
+- Cache Status: Reset (Server restarted)
+
+#### Results:
+1. Page Rendering: SUCCESS
+   - Title: "Webhook Failures" visible
+   - Table Headers: "Created At", "Source", "Integration/Order", "Error", "Actions"
+   - Message: "No webhook failures found matching your filters" (Empty state)
+   - No "Access Denied" screen visible.
+   - No red toasts for permission errors.
+
+2. API Checks:
+   - GET /api/webhooks/failures?pageSize=20 -> 200 OK
+   - API confirmed via browser fetch: { status: 200, ok: true }
+
+3. Permissions:
+   - Module: integrations
+   - Action: read
+   - Result: ALLOWED (Server preset correctly applied)
+
+#### Conclusion:
+P36f Verified. The integrations permission fix in server-side presets (P36e) has resolved the 403 error for Admin users.

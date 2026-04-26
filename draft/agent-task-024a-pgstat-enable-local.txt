@@ -1,0 +1,28 @@
+﻿UPDATE P24a - Enable pg_stat_statements on local dev (approved)
+
+Scope: DB config + restart + baseline report. No app code changes.
+
+Steps (Windows local):
+1) Backup config:
+   Copy-Item "C:\Program Files\PostgreSQL\18\data\postgresql.conf" "C:\Program Files\PostgreSQL\18\data\postgresql.conf.bak-$(Get-Date -Format yyyyMMddHHmmss)"
+
+2) Edit config (add pg_stat_statements):
+   - Open C:\Program Files\PostgreSQL\18\data\postgresql.conf
+   - Find shared_preload_libraries
+   - Set to:
+     shared_preload_libraries = 'pg_stat_statements'
+   (If already has values, append with comma.)
+
+3) Restart service:
+   Restart-Service postgresql-x64-18
+
+4) Enable extension (psql):
+   psql -U postgres -d <your_db> -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+
+5) Capture baseline report:
+   psql -U postgres -d <your_db> -c "SELECT now() AS captured_at, calls, total_exec_time, mean_exec_time, rows, query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) ORDER BY total_exec_time DESC LIMIT 20;" | Out-File -FilePath "draft\pg-stat-report.txt" -Encoding utf8
+
+Deliver back:
+- Confirm restart done
+- Attach draft/pg-stat-report.txt
+- Note any errors

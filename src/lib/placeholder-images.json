@@ -1,0 +1,34 @@
+{
+  "placeholderImages": [
+    {
+      "id": "1",
+      "description": "Default Placeholder",
+      "imageUrl": "https://placehold.co/600x400/e2e8f0/e2e8f0",
+      "imageHint": "placeholder"
+    },
+    {
+      "id": "2",
+      "description": "Slim Fit Denim Jeans",
+      "imageUrl": "https://images.unsplash.com/photo-1621059591080-d5db06386b53?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxkZW5pbSUyMGplYW5zfGVufDB8fHx8MTc2MjY1MjYyMHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "denim jeans"
+    },
+    {
+      "id": "3",
+      "description": "Cashmere V-Neck Sweater",
+      "imageUrl": "https://images.unsplash.com/photo-1715865717741-432e6c617e67?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxncmF5JTIwc3dlYXRlcnxlbnwwfHx8fDE3NjI3NTIwOTJ8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "gray sweater"
+    },
+    {
+      "id": "4",
+      "description": "Leather Biker Jacket",
+      "imageUrl": "https://images.unsplash.com/photo-1553640662-9ab20b8fa2ea?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxsZWF0aGVyJTIwamFja2V0fGVufDB8fHx8MTc2MjcyMjY2NHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "leather jacket"
+    },
+    {
+      "id": "5",
+      "description": "Linen Blend Blazer",
+      "imageUrl": "https://images.unsplash.com/photo-1748500192026-fee2ba823904?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxiZWlnZSUyMGJsYXplcnxlbnwwfHx8fDE3NjI2NjE2MTR8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "beige blazer"
+    }
+  ]
+}

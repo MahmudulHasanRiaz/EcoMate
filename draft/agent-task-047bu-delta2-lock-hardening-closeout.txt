@@ -1,0 +1,110 @@
+P47bu-delta2 - Lock hardening closeout (remaining 4 gaps only)
+
+Goal
+- Close only the remaining lock-flow gaps found in review.
+- Keep current architecture unchanged.
+- No schema migration.
+- No commit/push instructions.
+
+Scope (only these files)
+- `src/app/dashboard/orders/client-page.tsx`
+
+Out of scope
+- No changes in purchase/staff/fines modules.
+- No UI redesign.
+- No refactor outside lock-entry behavior and polling.
+
+--------------------------------------------------------------------
+1) HIGH: Fix mobile/card "View Details" lock bypass
+--------------------------------------------------------------------
+
+Problem
+- Mobile actions still use direct `Link` for "View Details", bypassing lock check.
+
+Required
+1. In `src/app/dashboard/orders/client-page.tsx` mobile card actions:
+   - Replace:
+     - `DropdownMenuItem asChild` + `Link href=/dashboard/orders/{id}`
+   - With:
+     - `DropdownMenuItem onSelect={() => handleOpenOrder(order.id)}`
+
+Acceptance
+- Mobile/card "View Details" always goes through lock acquire flow.
+- Override dialog appears when locked by another user.
+
+--------------------------------------------------------------------
+2) HIGH: Restore desktop new-tab behavior while keeping lock flow
+--------------------------------------------------------------------
+
+Problem
+- Customer cell is a plain clickable `div`; native Ctrl/Cmd-click open-in-new-tab is broken.
+
+Required
+1. In desktop table customer cell in `client-page.tsx`:
+   - Use real `<Link href={`/dashboard/orders/${order.id}`}>...</Link>`.
+   - In `onClick`, intercept ONLY normal left-click:
+     - if `metaKey || ctrlKey || shiftKey || altKey` => do not prevent default.
+     - if non-left click => do not prevent default.
+     - else `preventDefault()` and call `handleOpenOrder(order.id)`.
+
+Acceptance
+- Normal click opens with lock flow.
+- Ctrl/Cmd-click opens new tab naturally.
+- Right click / open-in-new-tab works.
+
+--------------------------------------------------------------------
+3) MEDIUM: Poll lock state from visible filtered orders (not allOrders)
+--------------------------------------------------------------------
+
+Problem
+- Polling currently uses `allOrders.slice(0, 50)`.
+- This can poll irrelevant IDs and keeps stale lock badges.
+
+Required
+1. Build poll IDs from rendered list:
+   - `visibleOrders.slice(0, 50).map(o => o.id)`
+2. Lock polling effect should depend on visible IDs.
+3. If no visible IDs:
+   - clear lock map (`setOpenLocks({})`) and skip interval.
+4. On each poll result:
+   - replace visible lock map with fresh result (drop stale entries).
+
+Acceptance
+- Lock badges only reflect currently rendered/filtered orders.
+- No stale lock badge after filter/pagination changes.
+
+--------------------------------------------------------------------
+4) MEDIUM: Fix `statusColors` typing conflict in this file
+--------------------------------------------------------------------
+
+Problem
+- `statusColors: Record<OrderStatus, string>` causes TS mismatch with enum-style keys.
+
+Required
+1. In `client-page.tsx`, change to safe typing:
+   - `const statusColors: Partial<Record<OrderStatus, string>> = { ... }`
+   - keep existing fallback usages:
+     - `statusColors[order.status as OrderStatus] || "bg-gray-500/20 text-gray-700"`
+
+Acceptance
+- No TS error from `client-page.tsx` status map typing.
+
+--------------------------------------------------------------------
+5) Verification (mandatory)
+--------------------------------------------------------------------
+
+A) Static
+1. `npx tsc --noEmit --pretty false`
+2. Confirm no TypeScript error from:
+   - `src/app/dashboard/orders/client-page.tsx`
+
+B) Functional
+1. Desktop normal click on order row => lock flow opens details.
+2. Desktop Ctrl/Cmd-click => opens new tab (no JS interception).
+3. Mobile/card menu "View Details" => lock flow (not direct navigation).
+4. User A opens order, User B tries opening:
+   - sees lock warning dialog.
+   - override works.
+5. Filter orders so previous locked order is not visible:
+   - lock badge should disappear from current list.
+

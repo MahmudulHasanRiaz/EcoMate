@@ -1,0 +1,45 @@
+UPDATE P36e - Fix integrations permission in server presets (Webhook Failures 403)
+
+Scope: ONLY src/lib/staff-permissions.ts. Minimal changes.
+
+Problem:
+- Webhook Failures API returns 403 for Admin because server-side permissions (from getPresetPermissions) do NOT include integrations module.
+- staff-auth uses presets from src/lib/staff-permissions.ts, not src/lib/permissions.ts.
+
+Fix:
+1) Add integrations to modules list
+File: src/lib/staff-permissions.ts
+- Add 'integrations' to modules[] (near marketing/tasks).
+
+2) Add integrations permission to each preset
+- For Admin: allTrue will cover it once modules list includes integrations.
+- For Manager: set integrations: perm(true, true, true, true) (FULL).
+- For other roles: mirror values from src/lib/permissions.ts:
+  * Moderator: NO_ACCESS
+  * Seller: NO_ACCESS
+  * Packing Assistant: NO_ACCESS
+  * Call Assistant: NO_ACCESS
+  * Call Centre Manager: NO_ACCESS
+  * Courier Manager: NO_ACCESS
+  * Courier Call Assistant: NO_ACCESS
+  * Vendor/Supplier: NO_ACCESS
+  * Partner: NO_ACCESS
+  * Cutting Master: NO_ACCESS
+  * Marketer: NO_ACCESS
+  * Finance Manager: NO_ACCESS
+  * Custom: noAccess
+  * defaultPermissions: readOnly? (Match current default policy; safest is readOnly=false noAccess to avoid accidental access.)
+
+3) Ensure defaultPermissions includes integrations
+- Add `integrations: readOnly` ONLY if you want fallback read access.
+- If unsure, set `integrations: noAccess` to be safe.
+
+4) Confirm no type errors
+- Run quick check in file: ensure every preset object includes integrations to avoid missing field.
+
+Deliver back:
+- Summary + file touched
+- Confirm Webhook Failures API returns 200 for Admin (integrations.read true)
+
+Note:
+- Do NOT change src/lib/permissions.ts in this step (client already has integrations).

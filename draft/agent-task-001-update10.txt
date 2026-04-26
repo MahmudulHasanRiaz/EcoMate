@@ -1,0 +1,46 @@
+UPDATE 10 - Resolve Prisma migration failure (P3018) + regenerate client
+
+Goal: fix Save failure in Printing step due to Prisma client out-of-sync.
+Scope: no code changes unless schema is missing (it already exists). Focus on DB + Prisma.
+
+Step 0: Stop dev server (important)
+- Stop `npm run dev` / Node process before running migrations.
+
+Step 1: Check DB columns exist (Postgres)
+Run:
+```
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'PurchaseOrderItem'
+  AND column_name IN ('printingDamagedQty','cuttingDamagedQty','finishingWastageQty');
+
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'ProductionStep'
+  AND column_name = 'note';
+```
+Use:
+`npx prisma db execute --stdin`
+
+Step 2: Check migration status
+- Run: `npx prisma migrate status`
+
+Decision:
+A) If columns EXIST but migrate status shows failed / pending for 20260115195000_add_three_piece_fields:
+   - Mark it applied: `npx prisma migrate resolve --applied 20260115195000_add_three_piece_fields`
+
+B) If columns do NOT exist:
+   - Apply migrations: `npx prisma migrate deploy`
+   - Re-check Step 1 to confirm columns exist.
+
+Step 3: Regenerate Prisma client
+- Run: `npx prisma generate`
+
+Step 4: Clear build cache and restart
+- Delete `.next` (optional but safe): `Remove-Item -Recurse -Force .next`
+- Start dev server: `npm run dev`
+
+Deliver back:
+- Output of migrate status
+- Whether columns existed
+- Confirmation printing step save works now

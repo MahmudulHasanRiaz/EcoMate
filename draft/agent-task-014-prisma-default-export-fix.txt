@@ -1,0 +1,23 @@
+UPDATE P14a - Fix prisma default export mismatch (app-settings build error)
+
+Scope: ONLY src/lib/prisma.ts. Keep changes minimal. No refactors.
+
+Problem:
+Build error: "Export default doesn't exist in target module" from src/server/utils/app-settings.ts.
+Cause: src/lib/prisma.ts only exports named `prisma`, but many files import default.
+
+Fix:
+1) Add a default export to src/lib/prisma.ts (keep existing named export).
+   - At the bottom of the file, after the global cache block, add:
+     export default prisma;
+
+Do NOT change import lines elsewhere.
+
+Verify:
+1) rg -n "export default prisma" src/lib/prisma.ts
+   - Expect exactly 1 match.
+2) Build should pass this error.
+
+Deliver back:
+- Summary + file touched
+- rg output

@@ -1,0 +1,167 @@
+P47l - Incomplete capture not firing on leave (fix via no-preflight beacon)
+
+Why this is happening
+- Your logs show plugin-config calls but ZERO hits to /api/woo/incomplete-orders.
+- On page leave (pagehide/visibilitychange), browsers often drop CORS preflight requests.
+- Our incomplete POST currently requires Authorization header + JSON content-type, which triggers preflight.
+- Result: unload capture silently never sends.
+
+Fix strategy (minimal and robust)
+- For incomplete capture ONLY, avoid preflight entirely.
+- Send apiKey in query param and use a simple Content-Type (text/plain).
+- Backend accepts apiKey from query param and parses text/plain JSON.
+
+Scope
+- Backend: src/app/api/woo/incomplete-orders/route.ts (only)
+- Plugin: draft/fashionary-woo-plugin/assets/js/checkout.js (only)
+- No schema changes.
+
+Step 1) Backend: accept apiKey via query param and parse text/plain JSON
+File: src/app/api/woo/incomplete-orders/route.ts
+
+A. Add helper to resolve apiKey without consuming the body:
+```
+async function resolveIntegrationFromRequest(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  let token: string | null = null;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  }
+  if (!token) {
+    token = req.nextUrl.searchParams.get('apiKey');
+  }
+  if (!token) return null;
+
+  const integration = await prisma.wooCommerceIntegration.findUnique({
+    where: { apiKey: token },
+    include: { business: true },
+  });
+  return integration;
+}
+```
+
+B. Replace the current auth line:
+```
+const integration = await validateWooApiKey(req);
+```
+with:
+```
+const integration = await resolveIntegrationFromRequest(req);
+```
+(You can keep validateWooApiKey imported; not required to remove.)
+
+C. Replace JSON-only parsing with text parsing that supports text/plain beacons:
+Replace this block:
+```
+let body;
+try {
+  body = await req.json();
+} catch {
+  return NextResponse.json({ error: "Invalid JSON" }, { status: 400, headers: corsHeaders });
+}
+```
+with:
+```
+let body: any = {};
+try {
+  const raw = await req.text();
+  if (raw) {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      const params = new URLSearchParams(raw);
+      body = Object.fromEntries(params.entries());
+    }
+  }
+} catch (e) {
+  console.error('[WooIncomplete:PARSE]', e);
+  return NextResponse.json({ error: 'Invalid body' }, { status: 400, headers: corsHeaders });
+}
+```
+
+D. Add a very small debug log (keep it):
+Just before normalizeBdPhone:
+```
+console.log('[WOO_INCOMPLETE_HIT]', integration.id, body?.phone ? 'hasPhone' : 'noPhone');
+```
+
+Step 2) Plugin: make incomplete capture a simple CORS request (no preflight)
+File: draft/fashionary-woo-plugin/assets/js/checkout.js
+
+A. Replace sendIncomplete with a no-preflight version:
+Replace the whole function:
+```
+function sendIncomplete(payload, useBeacon) {
+    const url = API_URL + '/incomplete-orders';
+    const body = JSON.stringify(payload);
+    return fetch(url, {
+        method: 'POST',
+        headers: {
+            'Authorization': 'Bearer ' + API_KEY,
+            'Content-Type': 'application/json'
+        },
+        body,
+        keepalive: !!useBeacon,
+        mode: 'cors',
+        credentials: 'omit'
+    }).catch(() => null);
+}
+```
+with:
+```
+function sendIncomplete(payload, useBeacon) {
+    if (!API_URL || !API_KEY) return null;
+    const url = API_URL + '/incomplete-orders?apiKey=' + encodeURIComponent(API_KEY);
+    const body = JSON.stringify(payload || {});
+
+    // Use a simple content-type to avoid preflight.
+    const headers = { 'Content-Type': 'text/plain;charset=UTF-8' };
+
+    // Keepalive helps on pagehide; no Authorization header to avoid preflight.
+    return fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+        keepalive: !!useBeacon,
+        mode: 'cors',
+        credentials: 'omit'
+    })
+    .then(() => console.log('[FASHIONARY_INCOMPLETE_SENT]', useBeacon ? 'beacon' : 'debounce'))
+    .catch((e) => { console.warn('[FASHIONARY_INCOMPLETE_ERR]', e); return null; });
+}
+```
+
+B. Do not change restriction-check logic. It can keep Authorization.
+
+Step 3) Bump plugin version to flush cache
+File: draft/fashionary-woo-plugin/fashionary-woo-plugin.php
+Change:
+```
+Version: 1.0.2
+```
+To:
+```
+Version: 1.0.3
+```
+
+Step 4) Rebuild plugin zip
+Command:
+```
+Compress-Archive -Path draft/fashionary-woo-plugin -DestinationPath draft/fashionary-woo-plugin.zip -Force
+```
+
+Step 5) Verification checklist (must follow)
+1) In Woo checkout page, open browser devtools Console:
+   - You should see: Fashionary Config Loaded
+2) Type a VALID BD phone and leave the page:
+   - You should see: [FASHIONARY_INCOMPLETE_SENT] beacon
+3) In app dev logs, you should see:
+   - [WOO_INCOMPLETE_HIT] <integrationId> hasPhone
+4) In app DB, leads should exist:
+   - WooCheckoutLead count should increase.
+5) /dashboard/orders/incomplete should show the new lead.
+
+If still no hits
+- The plugin JS may not be loading on that checkout theme.
+- Confirm by checking Console for Fashionary Config Loaded.
+- If missing, we will add a blocks-checkout specific enqueue hook next.

@@ -1,0 +1,49 @@
+UPDATE P28 - Data retention & partitioning plan (document only, no DB changes)
+
+Scope: Documentation + SQL templates only. No schema changes. No data migrations. Keep production safe.
+
+Goal:
+- Prepare a safe, phased partitioning strategy for large tables (Orders, LedgerEntry, OrderPaymentEvent, InventoryMovement, Notification, WebhookFailure).
+- Keep retention indefinite while keeping queries fast.
+- Provide a runbook that can be executed later (off-peak) with CREATE TABLE PARTITION and backfill steps.
+
+Required outputs:
+1) Create draft/partitioning-plan.txt
+   Include:
+   - Why partitioning is needed (growth, query speed, vacuum, index bloat).
+   - Tables to partition (priority order):
+     1) Order (by date)
+     2) LedgerEntry (by date)
+     3) OrderPaymentEvent (by paymentDate)
+     4) InventoryMovement (by timestamp)
+     5) Notification (by createdAt)
+     6) WebhookFailure (by createdAt)
+   - Partition strategy: RANGE by month (or year) + rolling future partitions (create 12 months ahead).
+   - Query impact: add constraint exclusion + check indexes per partition.
+   - Archival policy: none (indefinite) but allow optional cold export later.
+   - Risks + mitigation (lock time, data copy, rollback).
+
+2) Create scripts/partitioning-runbook.sql
+   - Only comments + safe template commands (NOT executed).
+   - Include:
+     - create parent partitioned table example for Order/ledger.
+     - create 12 future partitions example.
+     - attach existing tables steps (documented; no actual swap commands without manual review).
+     - index creation per partition.
+   - Add warnings at top: "DO NOT RUN WITHOUT REVIEW".
+
+3) Update draft/task.txt
+   - Add P28 entry under Done (Unverified) or Planned:
+     ID: P28
+     Title: Partitioning Plan + Runbook (Doc Only)
+     Status: DONE-UNVERIFIED (no DB change)
+     Evidence: draft/partitioning-plan.txt, scripts/partitioning-runbook.sql
+
+Deliver back:
+- Confirm files created.
+- Paste the first ~20 lines of both new files for verification.
+
+Notes:
+- Do NOT modify prisma/schema.prisma.
+- Do NOT run migrations.
+- This step is planning only.

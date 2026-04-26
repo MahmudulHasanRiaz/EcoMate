@@ -1,0 +1,12 @@
+Command: rg -n "getInventoryPaginated" src/services/inventory.ts; rg -n "Load More" src/app/dashboard/inventory/audit/client-page.tsx; rg -n "pageSize=50" src/app/dashboard/purchases/[id]/client-page.tsx; rg -n "stats\." src/app/dashboard/inventory/client-page.tsx | head -n 5
+
+Output:
+src/services/inventory.ts:6:  getInventoryPaginated,
+src/services/inventory.ts:32:  return await getInventoryPaginated(params || {});
+src/app/dashboard/inventory/audit/client-page.tsx:335:                     Load More
+src/app/dashboard/purchases/[id]/client-page.tsx:526:            const res = await fetch(`/api/inventory/lots?pageSize=50&t=${Date.now()}`, { cache: 'no-store' });
+src/app/dashboard/inventory/client-page.tsx:1036:              <TableRow className={stats.available <
+src/app/dashboard/inventory/client-page.tsx:1481:              <div className="text-2xl font-bold">αº│{stats.potentialProfit.toLocaleString()}</div>
+
+Note: "head -n 5" was used to trim the stats usage output.
+Note: "αº│" are artifacts from the grep output formatting in the context, original code contains {stats.potentialProfit.toLocaleString()}.

@@ -1,0 +1,185 @@
+P47dn - P47dm Hard Closeout (Must Finish, No Partial Claim)
+
+Context
+- This is a strict follow-up to P47dm.
+- Do NOT report "done" unless every item below is completed with proof.
+- Keep all currently working behavior intact:
+  - Woo webhook auto-ingest
+  - publish-mode stock guard
+  - lock + optimistic concurrency + realtime sync
+  - existing print token flow
+- Do NOT revert unrelated changes.
+
+==================================================
+0) Verified Remaining Gaps (Must Fix All)
+==================================================
+
+1) Pathao sync path still bypasses normalization
+- File: `src/server/modules/courier/pathao.ts`
+- In refresh/sync block, status still comes from `mapPathaoStatusToOrderStatus(...)` directly.
+- Must use canonical normalization (`normalizeStatusInput`) before DB write.
+
+2) Print API permission handling implemented incorrectly
+- Files:
+  - `src/app/api/print/bulk/route.ts`
+  - `src/app/api/print/bulk/[token]/route.ts`
+  - `src/app/api/print/bulk/orders/route.ts`
+- Current code discards `enforcePermission` response and returns a custom 403 JSON.
+- Must return `error` object from `enforcePermission` exactly (`if (!allowed) return error;`).
+
+3) Bulk print no-selection guard regression
+- File: `src/app/dashboard/orders/client-page.tsx`
+- `handleBulkPrint` currently lacks `selectedOrders.length === 0` guard.
+- Must restore explicit toast + early return.
+
+4) Print page fallback missing
+- File: `src/app/print/bulk/client-page.tsx`
+- If `/api/print/bulk/orders` fails, page currently fails hard.
+- Must implement fallback to per-order fetch (`getOrderById`) so print still works.
+
+5) Courier verification script gives false confidence
+- File: `scripts/verify-courier-status-mapping.ts`
+- Current script uses mock mapping logic, not real module behavior.
+- Must rewrite to validate real normalization path and catch mismatch in sync flow.
+
+==================================================
+1) Required Fixes
+==================================================
+
+A) Pathao normalization parity (webhook + sync both)
+File:
+- `src/server/modules/courier/pathao.ts`
+
+Required:
+1. In refresh/sync flow, replace:
+   - direct `mapPathaoStatusToOrderStatus(statusSlug)`
+   with:
+   - `normalizeStatusInput(mapPathaoStatusToOrderStatus(statusSlug))`
+2. Ensure DB `status` write uses normalized internal enum key only.
+3. Keep stock movement logic unchanged.
+
+Acceptance:
+- No display-label status writes (`In-Courier`, `Return Pending`) into `order.status`.
+- Both Pathao webhook and Pathao refresh/sync paths use same normalization principle.
+
+--------------------------------------------------
+
+B) Correct permission return handling
+Files:
+- `src/app/api/print/bulk/route.ts`
+- `src/app/api/print/bulk/[token]/route.ts`
+- `src/app/api/print/bulk/orders/route.ts`
+
+Required:
+1. Use standard pattern:
+```ts
+const { allowed, error } = await enforcePermission('orders', 'read');
+if (!allowed) return error;
+```
+2. Remove custom `NextResponse.json({ message: error || 'Unauthorized' }, { status: 403 })` branches.
+
+Acceptance:
+- Permission failure behavior matches all other order routes consistently.
+
+--------------------------------------------------
+
+C) Restore no-selection guard in bulk print
+File:
+- `src/app/dashboard/orders/client-page.tsx`
+
+Required:
+1. In `handleBulkPrint`, first guard:
+   - if no selected orders -> destructive toast + return.
+2. Keep existing >300 warning and >2000 block behavior.
+
+Acceptance:
+- Clicking bulk print with zero selected orders never calls print API.
+
+--------------------------------------------------
+
+D) Add robust fallback in print page
+File:
+- `src/app/print/bulk/client-page.tsx`
+
+Required:
+1. Primary path:
+   - fetch token IDs
+   - call `/api/print/bulk/orders`
+2. If primary fetch fails:
+   - fallback to `Promise.all(orderIds.map(getOrderById))`
+   - filter null and continue rendering.
+3. Log fallback clearly for debugging.
+
+Acceptance:
+- Print page still works even if bulk orders endpoint temporarily fails.
+
+--------------------------------------------------
+
+E) Rewrite courier mapping verification script to test real path
+File:
+- `scripts/verify-courier-status-mapping.ts`
+
+Required:
+1. Do NOT use local mock mapper duplicates.
+2. Import/use real normalization surface and real mapped samples.
+3. Cover at least:
+   - Pathao: pending, delivered, partial_delivered, cancelled, returned
+   - Carrybee: order.picked, order.delivered, order.delivery-failed, order.returned-to-merchant
+4. Assert resolved value equals canonical internal enum key.
+5. Exit non-zero on any mismatch.
+
+Acceptance:
+- Script can fail if sync path regresses again.
+
+==================================================
+2) Verification (Mandatory)
+==================================================
+
+Run from:
+```powershell
+cd E:\fashionary\Fashionary
+```
+
+1) Typecheck
+```powershell
+npm run typecheck
+```
+
+2) Status matrix
+```powershell
+npx tsx scripts/verify-order-status-matrix.ts
+```
+
+3) Courier mapping (rewritten real test)
+```powershell
+npx tsx scripts/verify-courier-status-mapping.ts
+```
+
+4) Webhook regression
+```powershell
+npx tsx scripts/check-woo-hook-details.ts
+npx tsx scripts/check-woo-deliveries.ts
+```
+
+5) Manual checks
+- Bulk print with 0 selected -> must show "No Orders Selected", no API call.
+- Bulk print with 301 selected -> warning dialog must appear.
+- Bulk print with 2001 selected -> blocked.
+- Bulk print with 120+ selected -> token URL opens and print page loads.
+- If `/api/print/bulk/orders` is forced to fail (simulate), fallback still renders print page.
+
+==================================================
+3) Required Output (Strict)
+==================================================
+
+Return exactly:
+1. Files changed
+2. Diff snippets for each of the 5 fixes above
+3. `npm run typecheck` output
+4. `verify-order-status-matrix.ts` output
+5. rewritten `verify-courier-status-mapping.ts` output
+6. webhook check outputs
+7. manual verification notes (0, 301, 2001, 120+, fallback test)
+8. Explicit statement: "All 5 residual gaps from P47dm are closed."
+
+If any one item is incomplete, do NOT claim completion.

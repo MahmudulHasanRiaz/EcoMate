@@ -1,0 +1,34 @@
+P47am-v3 - Category combobox click fix (z-index/pointer-events + cmdk)
+
+Problem
+- Mouse clicks still do not select items. Screenshot shows underlying UI (e.g., "480" chip) bleeding over the dropdown, implying the popover is behind another stacking context.
+
+Scope
+- src/components/products/category-combobox.tsx
+
+Fix
+1) Force popover to render above all page layers.
+2) Ensure pointer-events are enabled on the popover content and list.
+
+Patch (exact edits)
+
+A) PopoverContent: raise z-index and ensure pointer events
+- <PopoverContent className="w-[200px] p-0 shadow-md" align="start">
++ <PopoverContent className="w-[200px] p-0 shadow-md z-[9999] pointer-events-auto" align="start">
+
+B) CommandList: ensure pointer events
+- <CommandList className="max-h-[300px]">
++ <CommandList className="max-h-[300px] pointer-events-auto">
+
+C) Optional: ensure each item can receive clicks
+- className={cn("cursor-pointer", ...)}
++ className={cn("cursor-pointer pointer-events-auto", ...)}
+
+Notes
+- Keep the v2 cmdk value/keywords + onSelect logic.
+- The goal is to guarantee the dropdown is topmost and clickable.
+
+Test
+- Open Products page, open category dropdown.
+- Confirm no underlying elements overlap the dropdown.
+- Click item with mouse ? dropdown closes, filter changes.

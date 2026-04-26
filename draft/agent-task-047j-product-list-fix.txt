@@ -1,0 +1,100 @@
+P47j - Product list empty + New Product page stuck (commands for coder)
+
+Symptoms
+- Products list shows empty even though DB has products.
+- /dashboard/products/new stays loading.
+
+Likely root causes
+1) /api/products crashes when Product.image is not valid JSON (legacy rows may store a plain URL string). mapProduct does JSON.parse without try/catch -> 500 -> list empty.
+2) New Product page waits on getCategories() which uses NEXT_PUBLIC_API_URL. If that URL points to a dead tunnel, fetch can hang. It should use same base resolver as other server actions and always finalize loading.
+
+Fix steps (apply EXACT changes)
+
+1) Make product image parsing safe in /api/products
+File: src/app/api/products/route.ts
+- Add helper near top (after normalizeUrl):
+```
+function parseImageList(raw?: string | null) {
+  if (!raw || typeof raw !== 'string') return [] as any[];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    const trimmed = raw.trim();
+    return trimmed ? [{ url: trimmed, id: trimmed.split('/').pop() || trimmed }] : [];
+  }
+}
+```
+- In mapProduct, replace:
+```
+const images: ProductImage[] =
+  p.image && typeof p.image === 'string'
+    ? JSON.parse(p.image)
+    : [];
+```
+with:
+```
+const images: ProductImage[] = parseImageList(p.image) as ProductImage[];
+```
+- In lookup mode mapping (mode === 'lookup'), replace the JSON.parse try/catch with:
+```
+const images = parseImageList(p.image) as any[];
+```
+
+2) Make getCategories use same base URL resolver + cookie forwarding
+File: src/services/products.ts
+- Update getCategories to:
+```
+export async function getCategories(): Promise<Category[]> {
+  try {
+    const url = `${getBaseUrl()}/api/products/categories`;
+    const headers = new Headers();
+    try {
+      const cookieHeader = (await cookies())
+        .getAll()
+        .map((c) => `${c.name}=${c.value}`)
+        .join('; ');
+      if (cookieHeader) headers.set('cookie', cookieHeader);
+    } catch {}
+
+    const res = await fetch(url, { headers, cache: 'no-store' });
+    return handleApiResponse<Category[]>(res).catch(() => []);
+  } catch (error) {
+    console.error('Failed to fetch categories:', error);
+    return [];
+  }
+}
+```
+(Requires getBaseUrl + handleApiResponse already imported at top; if not, add import from '@/lib/api-helper'.)
+
+3) Ensure New Product page always exits loading
+File: src/app/dashboard/products/new/page.tsx
+- Replace current Promise.all block with:
+```
+React.useEffect(() => {
+  setIsLoading(true);
+  Promise.all([
+    getProducts(),
+    getCategories()
+  ])
+    .then(([productsData, categoriesData]) => {
+      setAllProducts(productsData || []);
+      setAllCategories(categoriesData || []);
+    })
+    .catch((err) => {
+      console.error('[PRODUCT_NEW_LOAD_ERROR]', err);
+      toast({ variant: 'destructive', title: 'Failed to load product data' });
+    })
+    .finally(() => setIsLoading(false));
+}, []);
+```
+
+Notes
+- This fix keeps legacy image rows from breaking /api/products and stops infinite loading when API URLs are wrong.
+- After change: rebuild app + worker + run prisma migrate deploy (if any new migrations).
+
+Tests
+- Open /dashboard/products: should list existing products.
+- Open /dashboard/products/new: should load categories and product list.
+- Check /api/products in browser (auth) should return 200 with items.
+

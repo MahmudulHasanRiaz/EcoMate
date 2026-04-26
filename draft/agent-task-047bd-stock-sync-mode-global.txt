@@ -1,0 +1,134 @@
+P47bd - Global Stock Sync Mode (Inventory vs Published)
+
+Goal (Global)
+- Add ONE global setting “Stock Sync Mode: Yes/No” (not per-integration).
+- YES (inventory-based) = current behavior (instock/outofstock from qty).
+- NO (published-based) = Woo stock_status uses Product.isPublished (true => instock, false => outofstock).
+- In NO mode: orders can be created/imported as New without stock.
+- Stock reservation + stock deduction MUST still happen on Confirm (same as before).
+- Combo rules: use combo’s own publish state for Woo status; Confirm must ensure ALL components have stock (if any component missing, block Confirm).
+
+Scope
+- UI: src/app/dashboard/settings/integrations/page.tsx (Woo settings page)
+- Settings store: appSetting key "general" (JSON)
+- Logic: src/server/modules/stock-sync.ts, src/server/modules/orders.ts, src/server/modules/woo-sync.ts
+- Optional helper: src/server/utils/app-settings.ts
+- Git: add /public/uploads/ to .gitignore
+
+1) Global setting stored in General settings (no migration)
+File: src/server/utils/app-settings.ts
+- Extend GeneralSettings type:
+  stockSyncMode?: 'inventory' | 'publish'
+- Add default in generalDefaults:
+  stockSyncMode: 'inventory'
+- Return it in getGeneralSettings() with fallback to default.
+
+File: src/app/api/settings/general/route.ts
+- Extend GeneralSettingsPayload:
+  stockSyncMode?: 'inventory' | 'publish'
+- Add to defaults object:
+  stockSyncMode: 'inventory'
+- Ensure POST merges it and preserves value.
+
+2) UI control on Woo settings page (global toggle)
+File: src/app/dashboard/settings/integrations/page.tsx
+- Fetch general settings once:
+  GET /api/settings/general
+- Show a top section “Stock Sync Mode”
+  Options:
+    Yes (Inventory Based) => value 'inventory'
+    No  (Published Based) => value 'publish'
+- Add a small “Save Stock Sync Mode” button that POSTs to /api/settings/general
+  body: { stockSyncMode }
+- After save, toast success.
+
+3) Apply mode to Woo stock push (ALL entry points)
+File: src/server/modules/stock-sync.ts
+- Add helper:
+  async function getStockSyncMode(): Promise<'inventory' | 'publish'> {
+    const settings = await getGeneralSettings();
+    return settings.stockSyncMode === 'publish' ? 'publish' : 'inventory';
+  }
+- When mode === 'publish':
+  - Status MUST be based on Product.isPublished (NOT qty).
+  - For variable products, use parent product.isPublished for variations.
+  - For combo products, use parent product.isPublished for its SKU.
+
+Where to change:
+A) pushStockStatusForSku()
+  - If mode === 'publish', find product/variant by sku,
+    set status = product.isPublished ? 'instock' : 'outofstock',
+    then push (skip qty calculation).
+
+B) pushStockStatusForSkus()
+  - REQUIRED (currently missing in code): if mode === 'publish', ignore qty totals.
+  - For each product:
+      status = product.isPublished ? 'instock' : 'outofstock'
+    and push for product/variation SKUs.
+  - This is used by bulk sync (e.g., /api/products/sync-stock).
+
+C) runStockStatusAudit()
+  - If mode === 'publish', DO NOT compute qty.
+  - Instead iterate products and push isPublished-based statuses (same as B).
+
+D) triggerStockStatusSync() / maybeTriggerStockSync()
+  - If mode === 'publish', still allow push but base status on isPublished (no qty).
+
+4) Order flow changes (NO mode only)
+File: src/server/modules/orders.ts
+- Add helper:
+  async function getAvailableQty(productId: string, variantId: string | null): Promise<number>
+  -> sum of (quantity - reservedQuantity) from InventoryItem.
+  -> For combo: min of components.
+
+- Add helper:
+  async function ensureOrderStockAvailable(tx, orderId)
+  -> checks every order item:
+     - simple/variant: qty <= available
+     - combo: for each component, qty <= available
+  -> if any shortage => throw Error('Insufficient stock to confirm this order.')
+
+- In createOrder():
+  If mode === 'publish' AND status === 'New':
+    - Skip handleStockReservation() and handleComboStockReservation().
+
+- In updateOrderStatus():
+  Before Confirmed (or any STOCK_DEDUCT_STATUSES):
+    - If mode === 'publish':
+        call ensureOrderStockAvailable().
+- In updateOrderDetails(): (CRITICAL)
+  - This path is used by Order Details + list + scan updates.
+  - Before Confirmed (or any STOCK_DEDUCT_STATUSES):
+    - If mode === 'publish':
+        call ensureOrderStockAvailable().
+  - Also skip any NEW-status stock reservation when mode === 'publish'.
+
+- Important: ALL status changes must go through these functions.
+  Verify scan page, orders list, order details, sidebar actions call the same server path.
+  If any direct prisma update exists for status, replace it with updateOrderStatus/updateOrderDetails.
+
+5) Woo import (NO mode)
+File: src/server/modules/woo-sync.ts
+- In syncOneWooOrder():
+  When upserted.status === 'New':
+    If mode === 'publish', do NOT reserve stock.
+
+Notes
+- No schema migrations required.
+- Keep existing stock behavior when mode = YES.
+- When mode = NO, only Confirm should require stock.
+
+Local Verification Steps
+1) Set Stock Sync Mode = No
+2) Published product => Woo stock_status becomes instock
+3) Unpublished product => Woo stock_status becomes outofstock
+4) New order (manual or Woo import) succeeds even if stock=0
+5) Confirm order with stock=0 => blocked with error
+6) Confirm order with stock>0 => succeeds, stock deducts
+7) Combo confirm: any component missing => blocked
+
+Do NOT do deploy commands here. Owner will handle push/pull.
+6) .gitignore
+File: .gitignore
+Add:
+  /public/uploads/

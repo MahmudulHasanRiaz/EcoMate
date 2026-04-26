@@ -1,0 +1,33 @@
+﻿UPDATE P22d - Fix Next 15 dynamic params in exports routes (await params)
+
+Scope: ONLY these two files. Keep changes minimal. No refactors.
+
+Problem:
+Next 15 requires awaiting dynamic params in route handlers.
+Currently using params.id directly, causing "params should be awaited" errors.
+
+Files:
+1) src/app/api/exports/[id]/route.ts
+2) src/app/api/exports/[id]/download/route.ts
+
+Fix (both files):
+- Change handler signature to accept params as Promise:
+  export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+
+- Inside handler, replace usage of params.id with:
+  const { id } = await params;
+
+- Use `id` for getExportJobById and any comparisons.
+
+Example (apply similarly in both files):
+```
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const job = await getExportJobById(id);
+  ...
+}
+```
+
+Deliver back:
+- Summary + files touched
+- Confirm no “params should be awaited” error in logs

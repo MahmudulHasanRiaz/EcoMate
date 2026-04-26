@@ -1,0 +1,117 @@
+P47ci - Final delta: PO lot-number safety + variant image first-click reliability
+
+Objective
+- Close two remaining practical issues:
+  1) General purchase receive lot matching must remain backward-compatible and stable.
+  2) Variant image upload (file-picker click) must work on first attempt and stay visible across variant accordion switching.
+
+Scope (only these files)
+- `src/server/modules/purchases.ts`
+- `src/app/dashboard/products/new/page.tsx`
+- `src/app/dashboard/products/[id]/edit/page.tsx`
+- `src/components/ui/image-uploader.tsx` (only if needed for same-file reselect reliability)
+
+Do not touch unrelated modules.
+
+--------------------------------------------------------------------
+1) Fix lot number compatibility in general receive flow
+--------------------------------------------------------------------
+
+File: `src/server/modules/purchases.ts`
+
+Problem:
+- Recent change moved lot number to raw `po.id`, while historical inventory lots use `PO-<poId>`.
+- This can split lots / fail to match existing stock lines.
+
+Required:
+1. Use canonical new lot number:
+   - `const canonicalLotNumber = \`PO-${po.id}\`;`
+   - same for fresh PO: `const canonicalLotNumber = \`PO-${freshPo.id}\`;`
+2. Backward compatibility read:
+   - while searching existing inventory items, match BOTH:
+     - `canonicalLotNumber`
+     - legacy raw `po.id` / `freshPo.id`
+   - Example where clause pattern:
+     - `OR: [{ lotNumber: canonicalLotNumber }, { lotNumber: po.id }]`
+3. Write-path standardization:
+   - all new inventory writes must use canonical `PO-<id>` format.
+
+Acceptance:
+- Receiving same PO multiple times updates the same lot record (no accidental duplicate lots by format drift).
+
+--------------------------------------------------------------------
+2) Fix variant image first-click + persistence across accordion switch
+--------------------------------------------------------------------
+
+Files:
+- `src/app/dashboard/products/new/page.tsx`
+- `src/app/dashboard/products/[id]/edit/page.tsx`
+
+Root cause:
+- For variant file selection, form field value is saved as `__file__:<variationId>`, but UI `images` source only reads URL string.
+- So selected file preview disappears (looks like not selected) when re-rendering or switching accordion item.
+
+Required implementation:
+1. In each variant image `render` block, compute preview source with pending file support:
+   - `const pendingFile = variantImageFilesRef.current[variationId];`
+   - `const currentUrl = ...` (existing logic for real URL)
+   - `const images = pendingFile ? [pendingFile] : (currentUrl ? [{ id: currentUrl, url: currentUrl }] : []);`
+2. Keep existing behavior:
+   - file upload -> `setVariantImageFile(variationId, file)` + `field.onChange(__file__ marker)`
+   - library selection -> clear pending file + set direct URL
+   - clear action -> clear both pending file and field value
+3. Ensure switching to another variant accordion and back does NOT lose previously selected unsaved file previews.
+
+--------------------------------------------------------------------
+3) Optional reliability hardening for click-select
+--------------------------------------------------------------------
+
+File: `src/components/ui/image-uploader.tsx` (only if needed)
+
+Issue:
+- Selecting the same file again may not trigger `onChange` if input value is unchanged.
+
+Hardening:
+1. Before opening file picker, clear current input value:
+   - inside click handler before `.click()`: `fileInputRef.current.value = ''`
+2. After handling `onChange`, optionally clear input value again.
+
+This ensures first-click/same-file reselection reliability.
+
+--------------------------------------------------------------------
+4) Verification checklist (mandatory)
+--------------------------------------------------------------------
+
+A) Variant file upload reliability
+1. Product New page: generate multiple variants.
+2. Variant A -> select image via click (not drag) once.
+3. Confirm image preview appears immediately on first selection.
+4. Open Variant B then back to A; preview must persist.
+5. Repeat on Edit page too.
+
+B) Drag + click parity
+1. Verify both drag-drop and click-select behave consistently for variants.
+
+C) General receive lot compatibility
+1. Create general PO.
+2. Receive part quantity (first receive).
+3. Receive remaining later (second receive).
+4. Confirm inventory updates same lot (`PO-<id>` canonical) without split due to old format.
+
+D) Compile
+```powershell
+npx tsc --noEmit --pretty false
+```
+Must pass.
+
+--------------------------------------------------------------------
+5) Required reply format
+--------------------------------------------------------------------
+
+Reply with:
+1) Exact files changed
+2) Confirmation of canonical + legacy lot read compatibility
+3) Confirmation that variant click-upload works first time in both New and Edit pages
+4) `tsc` result
+
+No commit/push instruction needed in this task.

@@ -1,0 +1,25 @@
+import type { OrderStatus } from '@/types';
+
+export const ORDER_STATUSES: OrderStatus[] = [
+  'Draft',
+  'New',
+  'Confirmed',
+  'Confirmed_Waiting',
+  'Packing_Hold',
+  'Canceled',
+  'C2C',
+  'Hold',
+  'No_Response',
+  'No Response',
+  'In_Courier',
+  'RTS__Ready_to_Ship_',
+  'Shipped',
+  'Delivered',
+  'Return_Pending',
+  'Returned',
+  'Paid_Return',
+  'Partial',
+  'Incomplete',
+  'Incomplete_Cancelled',
+  'Damaged',
+];

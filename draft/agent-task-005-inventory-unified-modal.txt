@@ -1,0 +1,84 @@
+UPDATE P03j - Unify “View Lots” + “Details/Breakdown” into a single Tabs modal
+
+Scope: ONLY implement this unified modal in inventory page. Keep changes minimal.
+
+Decision: Use Tabs (Summary + Lots). Parent shows ALL variants; Variant row shows ONLY that variant.
+
+1) Replace separate actions with one “View Stock” action
+File: src/app/dashboard/inventory/client-page.tsx
+Change:
+- Replace “View Lots” and “Details/Breakdown” menu items with a single “View Stock” item.
+- For parent row:
+  onClick={() => openDialog('stock', buildProductItem(pid))}
+- For variant row:
+  onClick={() => openDialog('stock', repItem)}
+
+2) Add new dialog mode: stock
+File: src/app/dashboard/inventory/client-page.tsx
+Change:
+- Extend DialogMode type to include 'stock'.
+- The stock dialog replaces old breakdown and lots dialogs.
+- Keep existing movement dialog unchanged.
+
+3) Data rules (critical)
+Parent row (product-level):
+- Use productId only, variantId MUST be undefined.
+- Summary = sum across all variants of product.
+- Lots = all lots for product across variants.
+
+Variant row (variant-level):
+- Use productId + variantId.
+- Summary = only that variant.
+- Lots = only that variant.
+
+4) Stock dialog UI (Tabs)
+Layout:
+<Tabs defaultValue="summary">
+  <TabsList>
+    <TabsTrigger value="summary">Summary</TabsTrigger>
+    <TabsTrigger value="lots">Lots</TabsTrigger>
+  </TabsList>
+  <TabsContent value="summary">…</TabsContent>
+  <TabsContent value="lots">…</TabsContent>
+</Tabs>
+
+Summary tab content:
+- Header: Product name, optional Variant label (name/sku/attributes).
+- Location totals table:
+  Columns: Location, Quantity
+- Optional: Total row at bottom.
+- If no data, show “No stock found for this selection.”
+
+Lots tab content:
+- Use existing lots table/cards rendering.
+- For parent: fetch lots for product (no variantId)
+- For variant: fetch lots for product+variant
+
+5) Data fetching changes
+File: src/app/dashboard/inventory/client-page.tsx
+
+A) When dialogState.mode === 'stock':
+- Fetch summary via /api/inventory:
+  - params: productId + (variantId if present) + locationId=all
+- Aggregate by locationName.
+- Store in state `stockSummaryRows`.
+
+B) Fetch lots via /api/inventory/lots:
+- params: productId + (variantId if present) + locationId=all
+- Reuse existing lotStateByKey caching.
+- When switching tabs to Lots, if not loaded, trigger loadLotsForSelection.
+
+6) Remove old breakdown dialog
+- Remove UI block for dialogState.mode === 'breakdown'.
+- Remove “View Lots” dialog UI block if unused (stock tab will render lots).
+- Keep movement dialog unchanged.
+
+7) Loading states
+- Use the existing loading logic from P03g for the new stock dialog.
+
+Deliver back:
+- Summary + files touched
+- Manual verify:
+  - Parent “View Stock” shows all variants summed.
+  - Variant “View Stock” shows only that variant.
+  - Tabs switch Summary/Lots correctly.

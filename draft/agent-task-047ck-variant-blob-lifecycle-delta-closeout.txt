@@ -1,0 +1,92 @@
+P47ck - Variant blob lifecycle delta closeout (final 2 gaps)
+
+Goal
+- Close the two remaining gaps from P47cj:
+  1) Edit page must not create inline blob URLs.
+  2) ImageUploader unmount cleanup must revoke latest blob URLs (not stale empty map).
+
+Scope (only these files)
+- `src/app/dashboard/products/[id]/edit/page.tsx`
+- `src/components/ui/image-uploader.tsx`
+
+No unrelated edits.
+
+--------------------------------------------------------------------
+1) Edit page: remove inline createObjectURL
+--------------------------------------------------------------------
+
+File: `src/app/dashboard/products/[id]/edit/page.tsx`
+
+Current bug:
+- still uses `URL.createObjectURL(pendingFile)` directly in render.
+
+Required:
+1. Match New page behavior exactly:
+   - `images = pendingFile ? [pendingFile] : (currentUrl ? [{ id: currentUrl, url: currentUrl }] : []);`
+2. Do not generate blob URL in page render.
+3. Keep existing `setVariantImageFile + __file__ marker` flow unchanged.
+
+Acceptance:
+- Edit page variant preview still appears first-click.
+- Preview persists across accordion switches.
+
+--------------------------------------------------------------------
+2) Uploader: fix unmount cleanup stale capture
+--------------------------------------------------------------------
+
+File: `src/components/ui/image-uploader.tsx`
+
+Current bug:
+- unmount cleanup effect has `[]` deps and reads stale `blobUrlMap` from initial render.
+
+Required robust pattern:
+1. Add ref to track latest map:
+   - `const blobUrlMapRef = useRef<Record<string, string>>({});`
+2. Whenever map updates, sync ref:
+   - `blobUrlMapRef.current = blobUrlMap;`
+3. Unmount cleanup must revoke from ref, not stale state:
+   - `Object.values(blobUrlMapRef.current).forEach(URL.revokeObjectURL)`
+4. Ensure remove-path cleanup still revokes deleted keys.
+
+Optional improvement:
+- In object URL lifecycle effect, use functional `setBlobUrlMap(prev => ...)` to avoid stale reads.
+
+Acceptance:
+- Blob URLs revoked on remove and on unmount with current/latest set.
+
+--------------------------------------------------------------------
+3) Verification (mandatory)
+--------------------------------------------------------------------
+
+Run:
+```powershell
+npx tsc --noEmit --pretty false
+```
+
+Sanity grep:
+```powershell
+rg -n "URL\\.createObjectURL\\(" src/app/dashboard/products/[id]/edit/page.tsx
+rg -n "blobUrlMapRef|revokeObjectURL" src/components/ui/image-uploader.tsx
+```
+
+Expected:
+- no `URL.createObjectURL(` in edit page
+- uploader has ref-backed cleanup and revoke usage
+- tsc passes
+
+Manual quick test:
+1. Edit page -> variant image click-select first time.
+2. Switch accordion panels and return.
+3. Preview remains visible; no broken image.
+
+--------------------------------------------------------------------
+4) Required reply format
+--------------------------------------------------------------------
+
+Reply with:
+1) Exact files changed
+2) `tsc` result
+3) grep outputs summary
+4) confirmation that both final gaps are closed
+
+No commit/push instructions in this task.

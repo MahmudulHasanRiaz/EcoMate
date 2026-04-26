@@ -1,0 +1,69 @@
+UPDATE 25 - Fix blank first print + render barcodes + shrink lots block
+
+Scope: ONLY items listed here. Keep changes minimal.
+
+1) Print blank on first click (about:blank)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> after w.document.write/html and before printing
+
+Fix:
+- Wait for DOM ready + images + barcode + one paint frame before printing.
+- Add helper:
+  const waitForDomReady = () => new Promise((resolve) => {
+    if (w.document.readyState === 'complete') return resolve(null);
+    w.addEventListener('load', () => resolve(null), { once: true });
+  });
+  const waitForPaint = () => new Promise((resolve) => w.requestAnimationFrame(() => setTimeout(resolve, 50)));
+- Then:
+  Promise.race([
+    Promise.all([waitForDomReady(), waitForImages(), waitForBarcode()]).then(waitForPaint),
+    timeout
+  ]).then(safePrint);
+
+Goal: Print preview loads with content on first click.
+
+2) Barcode rendering (currently missing)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: formatLots + waitForBarcode
+
+Fix:
+- Change barcode SVG to use JsBarcode attributes:
+  <svg class="lot-barcode"
+       jsbarcode-value="${v.number}"
+       jsbarcode-format="CODE128"
+       jsbarcode-displayValue="false"
+       jsbarcode-height="14"
+       jsbarcode-width="1.0"></svg>
+- In waitForBarcode, call:
+  (w as any).JsBarcode(".lot-barcode").init();
+- Keep the existing script load listener.
+
+3) Lots block too tall
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: formatLots
+
+Fix:
+- Reduce padding + font size:
+  header/rows: font-size:9px; padding:2px 6px; line-height:1.1
+- Reduce margins:
+  wrapper margin-top:2px; margin-bottom:4px
+- Move barcode inline to avoid extra height:
+  For the Lot cell, wrap lot number + barcode in a flex row:
+  <div style="display:flex;align-items:center;gap:6px;">
+     <span>${v.number}</span>
+     <svg ...></svg>
+  </div>
+
+4) Rem logic for your workflow
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: formatLots
+
+Fix:
+- Use a safe formula that works whether lot.quantity is original or already reduced:
+  const rem = v.stock >= allocated ? (v.stock - allocated) : v.stock;
+- This shows 20 when lot was 100 and 80 allocated, regardless of when stock was deducted.
+
+Deliver back: summary + verify
+- First print shows content (no blank).
+- Barcodes visible.
+- Lots block compact enough for multi-product pages.

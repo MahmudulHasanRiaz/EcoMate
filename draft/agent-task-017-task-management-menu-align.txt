@@ -1,0 +1,84 @@
+UPDATE P17 - Task module + menu grouping alignment (safe, minimal)
+
+Scope: Sidebar/menu grouping + permissions only. No UI redesigns beyond grouping. Keep all features intact.
+
+Why:
+- Tasks module exists but is NOT wired into permissions/page-access (menu uses `|| true`).
+- Menu grouping should match the provided template while preserving app routes.
+
+Phase A) Permissions + Page Access for Tasks
+1) Add tasks to Staff permissions type
+File: src/types/index.ts
+- In StaffMemberUI.permissions, add:
+  tasks: Permission | boolean;
+
+2) Add tasks to staff permissions presets
+File: src/lib/staff-permissions.ts
+- Add 'tasks' to modules array.
+- Presets:
+  Admin: tasks = full (allTrue)
+  Manager: tasks = full
+  Moderator/Seller/Packing Assistant/Call Assistant/Call Centre Manager/Courier Manager/Courier Call Assistant: tasks = readOnly
+  Partner/Vendor/Supplier: tasks = noAccess
+  Cutting Master: tasks = noAccess
+  Marketer/Finance Manager: tasks = readOnly
+  Custom: keep defaultPermissions to include tasks (noAccess)
+
+3) Add tasks to page access registry
+File: src/lib/page-access.ts
+- Add 'pages.tasks' to PAGE_ACCESS_KEYS.
+- Add to PAGE_ACCESS_LIST: { key: 'pages.tasks', label: 'Tasks', routes: '/dashboard/tasks*' }.
+- Add to MODULE_PAGE_FALLBACK: 'pages.tasks': 'tasks'.
+- Add to ROLE_PAGE_ACCESS for roles that should see tasks (same as presets above).
+
+4) Show tasks in Staff permissions UI
+File: src/app/dashboard/staff/page.tsx
+- Add 'tasks' to permissionModules list so Admin can edit task permission.
+
+Phase B) Menu grouping alignment (match template)
+File: src/app/dashboard/layout-client.tsx
+1) Remove the hard-coded `|| true` from Tasks access:
+   { href: "/dashboard/tasks", ..., access: hasPageAccess(pageAccess, 'pages.tasks', permissions?.tasks) }
+
+2) Keep group titles as:
+   - Dashboard (top single item)
+   - Operations & Inventory
+   - Finance
+   - CRM & Analytics
+   - System (new, for Settings)
+
+3) Adjust items to align template (no feature removal):
+   Operations & Inventory:
+     Orders (sub: All, Incomplete)
+     Packing Orders
+     Inventory
+     Products (sub: All, Categories)
+     Courier (sub: All Couriers, Steadfast, Carrybee, Pathao, Courier Report)
+   Finance:
+     Purchases
+     Expenses (sub: All, Categories)
+     Check Passing
+     Partners
+     Accounting
+   CRM & Analytics:
+     Analytics
+     Customers
+     Marketing
+     Staff & Attendance (convert to a collapsible group):
+       - Staff
+       - Attendance
+     Issues
+     Tasks
+   System:
+     Settings
+
+4) Keep access gating intact for all items (use hasPageAccess).
+
+Phase C) Verification
+1) Confirm Tasks menu only appears when tasks access is true.
+2) Sidebar groups render as above; routes still reachable.
+3) Staff permission editor shows Tasks module.
+
+Deliver back:
+- Summary + files touched
+- Confirmation screenshots not required; just state menu items order + access behavior

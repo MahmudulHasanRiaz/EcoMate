@@ -1,0 +1,73 @@
+P47as - Seller/Moderator Add Order permission fix
+
+Goal
+- Ensure Seller/Moderator can see the "Add Order" button (orders.create = true).
+- Make role mapping case-insensitive so Clerk metadata values like "seller"/"moderator" still resolve.
+
+Scope
+- src/lib/staff-permissions.ts
+- src/server/modules/staff-auth.ts
+- src/hooks/use-permissions.tsx
+
+1) Enable Moderator order creation
+File: src/lib/staff-permissions.ts
+Change Moderator preset:
+
+// BEFORE
+Moderator: {
+  orders: perm(false, true, true, false),
+  ...
+}
+
+// AFTER
+Moderator: {
+  orders: perm(true, true, true, false),
+  ...
+}
+
+2) Server-side role normalization (case-insensitive)
+File: src/server/modules/staff-auth.ts
+Replace normalizeRole with:
+
+const normalizeRole = (role?: string | null) => {
+  if (!role) return undefined;
+  const trimmed = role.trim();
+  if (dbRoleToUiRole[trimmed]) return dbRoleToUiRole[trimmed];
+  const key = Object.keys(dbRoleToUiRole).find(
+    (k) => k.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (key) return dbRoleToUiRole[key];
+  const uiKey = Object.values(dbRoleToUiRole).find(
+    (v) => v.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (uiKey) return uiKey;
+  return trimmed;
+};
+
+3) Client-side role normalization (permissions hook)
+File: src/hooks/use-permissions.tsx
+Add helper:
+
+const normalizeRole = (rawRole?: string) => {
+  if (!rawRole) return undefined;
+  const mapped = (dbToUiRole[rawRole] ?? rawRole).trim();
+  if (PERMISSIONS[mapped as StaffRole]) return mapped as StaffRole;
+  const key = Object.keys(PERMISSIONS).find(
+    (r) => r.toLowerCase() === mapped.toLowerCase()
+  );
+  return key as StaffRole | undefined;
+};
+
+Replace:
+const role = (rawRole && dbToUiRole[rawRole] ? dbToUiRole[rawRole] : rawRole) as StaffRole | undefined;
+with:
+const role = normalizeRole(rawRole);
+
+4) Restart
+npm run dev
+npm run worker
+
+Verify
+- Login as Seller/Moderator.
+- Go to /dashboard/orders.
+- "Add Order" button is visible.

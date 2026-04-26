@@ -1,0 +1,305 @@
+﻿prisma.config.ts(5,5): error TS2353: Object literal may only specify known properties, and 'seed' does not exist in type 'PrismaConfig'.
+scripts/backfill-finance.ts(57,11): error TS7022: 'orders' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+scripts/backfill-finance.ts(75,55): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+scripts/backfill-finance.ts(75,60): error TS7006: Parameter 'item' implicitly has an 'any' type.
+scripts/backfill-finance.ts(105,11): error TS7022: 'orders' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+scripts/backfill-finance.ts(187,11): error TS7022: 'orders' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+scripts/bullmq-worker.ts(125,33): error TS2322: Type 'null' is not assignable to type 'string | NestedStringFilter<"StaffMember"> | undefined'.
+scripts/discovery.ts(39,76): error TS18046: 'e' is of type 'unknown'.
+src/app/api/customers/[id]/route.ts(51,49): error TS2345: Argument of type '{ name?: string | undefined; email?: string | null | undefined; phone?: string | undefined; address?: string | undefined; district?: string | undefined; country?: string | undefined; }' is not assignable to parameter of type 'Partial<Omit<Customer, "id" | "totalOrders" | "totalSpent" | "joinDate">>'.
+  Types of property 'email' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | undefined'.
+      Type 'null' is not assignable to type 'string | undefined'.
+src/app/api/customers/route.ts(41,47): error TS2345: Argument of type '{ name: string; phone: string; address: string; district: string; country: string; email?: string | null | undefined; }' is not assignable to parameter of type 'CustomerCreateInput'.
+  Types of property 'email' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | undefined'.
+      Type 'null' is not assignable to type 'string | undefined'.
+src/app/api/issues/[id]/route.ts(45,13): error TS2367: This comparison appears to be unintentional because the types '"ok" | "blocked"' and '"allowed"' have no overlap.
+src/app/api/issues/[id]/route.ts(79,29): error TS2339: Property 'staff' does not exist on type 'never'.
+src/app/api/issues/[id]/route.ts(79,49): error TS2339: Property 'staff' does not exist on type 'never'.
+src/app/api/products/route.ts(54,35): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/app/api/staff/[id]/payments/route.ts(90,62): error TS2339: Property 'staffPayable' does not exist on type '{ cash: string; receivable: string; courierReceivable: string; accountsPayable: string; courierPayable: string; customerAdvance: string; inventory: string; wip: string; revenue: string; salesReturn: string; ... 4 more ...; operating: string; }'.
+src/app/api/staff/route.ts(148,35): error TS2677: A type predicate's type must be assignable to its parameter's type.
+  Type '{ data: { id: string; imageUrl?: string | null | undefined; }[]; }' is not assignable to type 'PaginatedResourceResponse<User[]>'.
+    Type '{ data: { id: string; imageUrl?: string | null | undefined; }[]; }' is not assignable to type 'ResourceResponse<User[]>'.
+      Types of property 'data' are incompatible.
+        Type '{ id: string; imageUrl?: string | null | undefined; }[]' is not assignable to type 'User[]'.
+          Type '{ id: string; imageUrl?: string | null | undefined; }' is missing the following properties from type 'User': passwordEnabled, totpEnabled, backupCodeEnabled, twoFactorEnabled, and 33 more.
+src/app/api/staff/route.ts(149,31): error TS18047: 'res' is possibly 'null'.
+src/app/api/tasks/report/route.ts(41,38): error TS2322: Type 'undefined' is not assignable to type 'string | null'.
+src/app/dashboard/account/page.tsx(264,78): error TS2339: Property 'invitedName' does not exist on type 'StaffMemberUI'.
+src/app/dashboard/account/page.tsx(278,44): error TS2339: Property 'invitedPhone' does not exist on type 'StaffMemberUI'.
+src/app/dashboard/account/page.tsx(281,83): error TS2339: Property 'invitedPhone' does not exist on type 'StaffMemberUI'.
+src/app/dashboard/account/page.tsx(314,38): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: {}, context?: any): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | Promise<...> | Component<...> | null | undefined', gave the following error.
+    Type '{ children: Element[]; }' has no properties in common with type 'IntrinsicAttributes'.
+  Overload 2 of 2, '(props: {}): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | Promise<...> | Component<...> | null | undefined', gave the following error.
+    Type '{ children: Element[]; }' has no properties in common with type 'IntrinsicAttributes'.
+src/app/dashboard/account/page.tsx(319,42): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: {}, context?: any): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | Promise<...> | Component<...> | null | undefined', gave the following error.
+    Type '{ children: Element[]; data: { status: OrderStatus; value: number; fill: string; }[]; dataKey: string; nameKey: string; innerRadius: number; paddingAngle: number; }' is not assignable to type 'IntrinsicAttributes'.
+      Property 'children' does not exist on type 'IntrinsicAttributes'.
+  Overload 2 of 2, '(props: {}): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | Promise<...> | Component<...> | null | undefined', gave the following error.
+    Type '{ children: Element[]; data: { status: OrderStatus; value: number; fill: string; }[]; dataKey: string; nameKey: string; innerRadius: number; paddingAngle: number; }' is not assignable to type 'IntrinsicAttributes'.
+      Property 'children' does not exist on type 'IntrinsicAttributes'.
+src/app/dashboard/account/page.tsx(325,55): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: Omit<ClassAttributes<HTMLDivElement> & HTMLAttributes<HTMLDivElement> & Pick<Omit<Props, "payload" | "ref"> & { ...; }, "payload" | "verticalAlign"> & { ...; }, "ref"> & RefAttributes<...>, context?: any): string | ... 8 more ... | undefined', gave the following error.
+    Property 'payload' is missing in type '{ nameKey: string; }' but required in type 'Omit<ClassAttributes<HTMLDivElement> & HTMLAttributes<HTMLDivElement> & Pick<Omit<Props, "payload" | "ref"> & { ...; }, "payload" | "verticalAlign"> & { ...; }, "ref">'.
+  Overload 2 of 2, '(props: Omit<ClassAttributes<HTMLDivElement> & HTMLAttributes<HTMLDivElement> & Pick<Omit<Props, "payload" | "ref"> & { ...; }, "payload" | "verticalAlign"> & { ...; }, "ref"> & RefAttributes<...>): string | ... 8 more ... | undefined', gave the following error.
+    Property 'payload' is missing in type '{ nameKey: string; }' but required in type 'Omit<ClassAttributes<HTMLDivElement> & HTMLAttributes<HTMLDivElement> & Pick<Omit<Props, "payload" | "ref"> & { ...; }, "payload" | "verticalAlign"> & { ...; }, "ref">'.
+src/app/dashboard/accounting/checks/_components/check-details-dialog.tsx(57,94): error TS18048: 'payment.id' is possibly 'undefined'.
+src/app/dashboard/accounting/checks/_components/check-details-dialog.tsx(73,79): error TS2339: Property 'poId' does not exist on type 'EnrichedPayment'.
+src/app/dashboard/analytics/client-page.tsx(303,64): error TS2741: Property 'payload' is missing in type '{ nameKey: string; }' but required in type 'Omit<ClassAttributes<HTMLDivElement> & HTMLAttributes<HTMLDivElement> & Pick<Omit<Props, "payload" | "ref"> & { ...; }, "payload" | "verticalAlign"> & { ...; }, "ref">'.
+src/app/dashboard/courier/client-page.tsx(579,37): error TS2339: Property 'businessName' does not exist on type 'ReturnPendingOrder'.
+src/app/dashboard/customers/[id]/page.tsx(43,7): error TS2739: Type '{ New: string; Confirmed: string; Canceled: string; Hold: string; 'In-Courier': string; 'RTS (Ready to Ship)': string; Shipped: string; Delivered: string; Returned: string; 'Packing Hold': string; 'Return Pending': string; Partial: string; Incomplete: string; 'Incomplete-Cancelled': string; }' is missing the following properties from type 'Record<OrderStatus, string>': Draft, Damaged
+src/app/dashboard/customers/client-page.tsx(108,56): error TS18046: 'page' is of type 'unknown'.
+src/app/dashboard/customers/client-page.tsx(111,74): error TS2339: Property 'nextCursor' does not exist on type '{}'.
+src/app/dashboard/customers/client-page.tsx(358,57): error TS2339: Property 'totalCustomers' does not exist on type '{}'.
+src/app/dashboard/customers/client-page.tsx(370,57): error TS2339: Property 'repeatCustomers' does not exist on type '{}'.
+src/app/dashboard/expenses/client-page.tsx(545,89): error TS2339: Property 'name' does not exist on type 'string'.
+src/app/dashboard/expenses/client-page.tsx(566,52): error TS18048: 'expense.check' is possibly 'undefined'.
+src/app/dashboard/expenses/client-page.tsx(698,59): error TS2339: Property 'name' does not exist on type 'string'.
+src/app/dashboard/expenses/client-page.tsx(712,37): error TS2322: Type '"secondary" | "destructive" | "success"' is not assignable to type '"default" | "secondary" | "destructive" | "outline" | null | undefined'.
+  Type '"success"' is not assignable to type '"default" | "secondary" | "destructive" | "outline" | null | undefined'.
+src/app/dashboard/inventory/audit/client-page.tsx(74,17): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+src/app/dashboard/inventory/audit/client-page.tsx(79,26): error TS2345: Argument of type '(prev: AuditItem[]) => ({ id: string; productId: string; variantId: string | undefined; quantity: number; reservedQuantity: number; locationId: string; locationName: string; lotNumber: string; ... 13 more ...; sourceItemIds: string[]; } | AuditItem)[]' is not assignable to parameter of type 'SetStateAction<AuditItem[]>'.
+  Type '(prev: AuditItem[]) => ({ id: string; productId: string; variantId: string | undefined; quantity: number; reservedQuantity: number; locationId: string; locationName: string; lotNumber: string; ... 13 more ...; sourceItemIds: string[]; } | AuditItem)[]' is not assignable to type '(prevState: AuditItem[]) => AuditItem[]'.
+    Type '({ id: string; productId: string; variantId: string | undefined; quantity: number; reservedQuantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; ... 12 more ...; sourceItemIds: string[]; } | AuditItem)[]' is not assignable to type 'AuditItem[]'.
+      Type '{ id: string; productId: string; variantId: string | undefined; quantity: number; reservedQuantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; ... 12 more ...; sourceItemIds: string[]; } | AuditItem' is not assignable to type 'AuditItem'.
+        Type '{ id: string; productId: string; variantId: string | undefined; quantity: number; reservedQuantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; ... 12 more ...; sourceItemIds: string[]; }' is not assignable to type 'AuditItem'.
+          Property 'category' is missing in type '{ id: string; productId: string; variantId: string | undefined; quantity: number; reservedQuantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; ... 12 more ...; sourceItemIds: string[]; }' but required in type '{ productName: string; variantName?: string | undefined; sku: string; category: string; }'.
+src/app/dashboard/inventory/client-page.tsx(227,9): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+src/app/dashboard/inventory/client-page.tsx(247,8): error TS2304: Cannot find name 'DialogTrigger'.
+src/app/dashboard/inventory/client-page.tsx(247,41): error TS2304: Cannot find name 'DialogTrigger'.
+src/app/dashboard/inventory/client-page.tsx(502,9): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+src/app/dashboard/inventory/client-page.tsx(1158,27): error TS2304: Cannot find name 'productById'.
+src/app/dashboard/inventory/client-page.tsx(1270,20): error TS2304: Cannot find name 'getVariantName'.
+src/app/dashboard/inventory/client-page.tsx(2149,29): error TS18047: 'dialogState.selectedItem' is possibly 'null'.
+src/app/dashboard/orders/[id]/page.tsx(881,21): error TS2322: Type '{ open: boolean; onOpenChange: (open: boolean) => void; orderToEdit: Order; onSuccess: () => void; }' is not assignable to type 'IntrinsicAttributes & { open: boolean; onOpenChange: (open: boolean) => void; onOrderCreated?: (() => void) | undefined; orderToEdit?: any; baseOrderForExchange?: any; }'.
+  Property 'onSuccess' does not exist on type 'IntrinsicAttributes & { open: boolean; onOpenChange: (open: boolean) => void; onOrderCreated?: (() => void) | undefined; orderToEdit?: any; baseOrderForExchange?: any; }'.
+src/app/dashboard/orders/client-page.tsx(1718,17): error TS2304: Cannot find name 'handleInlineAssign'.
+src/app/dashboard/orders/client-page.tsx(1720,17): error TS2304: Cannot find name 'handleInlineStatus'.
+src/app/dashboard/products/client-page.tsx(437,41): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/app/dashboard/products/new/page.tsx(128,36): error TS2554: Expected 1 arguments, but got 0.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(3,10): error TS2304: Cannot find name 'poId'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(4,23): error TS2304: Cannot find name 'addPurchasePayment'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(5,9): error TS18004: No value exists in scope for the shorthand property 'poId'. Either declare one or provide an initializer.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(7,15): error TS2304: Cannot find name 'actorName'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(10,9): error TS2304: Cannot find name 'setPurchaseOrder'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(11,9): error TS2304: Cannot find name 'toast'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(13,9): error TS2304: Cannot find name 'toast'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(18,10): error TS2304: Cannot find name 'poId'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(21,23): error TS2304: Cannot find name 'deletePurchasePayment'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(21,56): error TS2304: Cannot find name 'poId'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(23,9): error TS2304: Cannot find name 'setPurchaseOrder'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(24,9): error TS2304: Cannot find name 'toast'.
+src/app/dashboard/purchases/[id]/client-page.tsx_snippet.ts(26,9): error TS2304: Cannot find name 'toast'.
+src/app/dashboard/purchases/new/page.tsx(691,48): error TS2345: Argument of type '{ type: PurchaseType; supplierId: string; items: GeneralOrderItem[] | { lotAllocations: { part: string; inventoryItemId: string; yards: number; }[]; id: string; ... 9 more ...; lineTotal: number; }[]; ... 4 more ...; fabricInventoryId: undefined; }' is not assignable to parameter of type 'CreatePurchaseOrderPayload'.
+  Types of property 'items' are incompatible.
+    Type 'GeneralOrderItem[] | { lotAllocations: { part: string; inventoryItemId: string; yards: number; }[]; id: string; productId: string; variantId?: string | undefined; quantity: number; ... 6 more ...; lineTotal: number; }[]' is not assignable to type 'GeneralOrderItem[] | ThreePieceItemInput[]'.
+      Type '{ lotAllocations: { part: string; inventoryItemId: string; yards: number; }[]; id: string; productId: string; variantId?: string | undefined; quantity: number; jamaYards: number; jamaRate: number; ... 4 more ...; lineTotal: number; }[]' is not assignable to type 'GeneralOrderItem[] | ThreePieceItemInput[]'.
+        Type '{ lotAllocations: { part: string; inventoryItemId: string; yards: number; }[]; id: string; productId: string; variantId?: string | undefined; quantity: number; jamaYards: number; jamaRate: number; ... 4 more ...; lineTotal: number; }[]' is not assignable to type 'GeneralOrderItem[]'.
+          Property 'unitCost' is missing in type '{ lotAllocations: { part: string; inventoryItemId: string; yards: number; }[]; id: string; productId: string; variantId?: string; quantity: number; jamaYards: number; jamaRate: number; ornaYards: number; ornaRate: number; selowarYards: number; selowarRate: number; lineTotal: number; }' but required in type 'GeneralOrderItem'.
+src/app/dashboard/purchases/new/page.tsx(981,25): error TS2353: Object literal may only specify known properties, and 'printingCost' does not exist in type 'ThreePieceOrderItem'.
+src/app/dashboard/purchases/new/page.tsx(986,37): error TS2345: Argument of type '(prev: ThreePieceOrderItemDraft[]) => ThreePieceOrderItem[]' is not assignable to parameter of type 'SetStateAction<ThreePieceOrderItemDraft[]>'.
+  Type '(prev: ThreePieceOrderItemDraft[]) => ThreePieceOrderItem[]' is not assignable to type '(prevState: ThreePieceOrderItemDraft[]) => ThreePieceOrderItemDraft[]'.
+    Type 'ThreePieceOrderItem[]' is not assignable to type 'ThreePieceOrderItemDraft[]'.
+      Type 'ThreePieceOrderItem' is not assignable to type 'ThreePieceOrderItemDraft'.
+        Property 'lotAllocations' is missing in type 'ThreePieceOrderItem' but required in type '{ lotAllocations: LotAllocationsByPart; }'.
+src/app/dashboard/settings/courier/page.tsx(282,30): error TS2339: Property 'clientId' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(282,48): error TS2339: Property 'clientSecret' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(282,70): error TS2339: Property 'username' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(282,88): error TS2339: Property 'password' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(288,30): error TS2339: Property 'clientId' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(288,48): error TS2339: Property 'clientSecret' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(288,70): error TS2339: Property 'clientContext' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(296,37): error TS2339: Property 'clientId' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(297,41): error TS2339: Property 'clientSecret' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(298,37): error TS2339: Property 'username' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(299,37): error TS2339: Property 'password' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(307,37): error TS2339: Property 'clientId' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(308,41): error TS2339: Property 'clientSecret' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(309,42): error TS2339: Property 'clientContext' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(310,36): error TS2339: Property 'baseUrl' does not exist on type '{}'.
+src/app/dashboard/settings/courier/page.tsx(464,46): error TS2345: Argument of type '() => { name: string; label: string; placeholder: string; type: string; required: boolean; }[] | ({ name: string; label: string; placeholder: string; required?: undefined; type?: undefined; section?: undefined; } | ... 4 more ... | { ...; })[]' is not assignable to parameter of type '() => FieldDef[]'.
+  Type '{ name: string; label: string; placeholder: string; type: string; required: boolean; }[] | ({ name: string; label: string; placeholder: string; required?: undefined; type?: undefined; section?: undefined; } | ... 4 more ... | { ...; })[]' is not assignable to type 'FieldDef[]'.
+    Type '({ name: string; label: string; placeholder: string; required?: undefined; type?: undefined; section?: undefined; } | { name: string; label: string; placeholder: string; required: boolean; type?: undefined; section?: undefined; } | { ...; } | { ...; } | { ...; } | { ...; })[]' is not assignable to type 'FieldDef[]'.
+      Type '{ name: string; label: string; placeholder: string; required?: undefined; type?: undefined; section?: undefined; } | { name: string; label: string; placeholder: string; required: boolean; type?: undefined; section?: undefined; } | { ...; } | { ...; } | { ...; } | { ...; }' is not assignable to type 'FieldDef'.
+        Type '{ name: string; label: string; placeholder: string; type: string; section: string; required?: undefined; }' is not assignable to type 'FieldDef'.
+          Types of property 'section' are incompatible.
+            Type 'string' is not assignable to type '"credentials" | "webhook" | undefined'.
+src/app/dashboard/staff/[id]/page.tsx(60,7): error TS2739: Type '{ New: string; Confirmed: string; Canceled: string; Hold: string; 'In-Courier': string; 'RTS (Ready to Ship)': string; Shipped: string; Delivered: string; Returned: string; 'Return Pending': string; Partial: string; 'Packing Hold': string; Incomplete: string; 'Incomplete-Cancelled': string; }' is missing the following properties from type 'Record<OrderStatus, string>': Draft, Damaged
+src/app/dashboard/staff/page.tsx(193,49): error TS2345: Argument of type 'boolean | Permission | Record<string, boolean> | undefined' is not assignable to parameter of type 'boolean | Permission | undefined'.
+  Type 'Record<string, boolean>' is not assignable to type 'boolean | Permission | undefined'.
+    Type 'Record<string, boolean>' is missing the following properties from type 'Permission': create, read, update, delete
+src/app/dashboard/staff/page.tsx(240,13): error TS2322: Type '{ amount: number | undefined; frequency: string | undefined; } | undefined' is not assignable to type '{ amount: number; frequency: string; } | undefined'.
+  Type '{ amount: number | undefined; frequency: string | undefined; }' is not assignable to type '{ amount: number; frequency: string; }'.
+    Types of property 'amount' are incompatible.
+      Type 'number | undefined' is not assignable to type 'number'.
+        Type 'undefined' is not assignable to type 'number'.
+src/app/dashboard/staff/page.tsx(307,90): error TS2345: Argument of type 'boolean | Permission | Record<string, boolean> | undefined' is not assignable to parameter of type 'boolean | Permission | undefined'.
+  Type 'Record<string, boolean>' is not assignable to type 'boolean | Permission | undefined'.
+    Type 'Record<string, boolean>' is missing the following properties from type 'Permission': create, read, update, delete
+src/app/dashboard/webhook-failures/page.tsx(46,69): error TS2339: Property 'read' does not exist on type 'boolean | Permission'.
+  Property 'read' does not exist on type 'false'.
+src/app/dashboard/webhook-failures/page.tsx(57,17): error TS2353: Object literal may only specify known properties, and 'status' does not exist in type 'GetWebhookFailuresParams'.
+src/app/dashboard/webhook-failures/page.tsx(252,76): error TS2339: Property 'lastSeenAt' does not exist on type 'WebhookFailure'.
+src/app/dashboard/webhook-failures/page.tsx(253,76): error TS2339: Property 'lastSeenAt' does not exist on type 'WebhookFailure'.
+src/app/dashboard/webhook-failures/page.tsx(262,66): error TS2339: Property 'status' does not exist on type 'WebhookFailure'.
+src/app/dashboard/webhook-failures/page.tsx(262,110): error TS2339: Property 'status' does not exist on type 'WebhookFailure'.
+src/app/dashboard/webhook-failures/page.tsx(265,58): error TS2339: Property 'status' does not exist on type 'WebhookFailure'.
+src/app/dashboard/webhook-failures/page.tsx(285,50): error TS2339: Property 'occurrences' does not exist on type 'WebhookFailure'.
+src/app/dashboard/webhook-failures/page.tsx(304,50): error TS2339: Property 'status' does not exist on type 'WebhookFailure'.
+src/app/dashboard/webhook-failures/page.tsx(307,53): error TS2322: Type '"xs"' is not assignable to type '"default" | "lg" | "sm" | "icon" | null | undefined'.
+src/app/dashboard/webhook-failures/page.tsx(315,53): error TS2322: Type '"xs"' is not assignable to type '"default" | "lg" | "sm" | "icon" | null | undefined'.
+src/app/track-order/[query]/page.tsx(20,7): error TS2739: Type '{ New: string; Confirmed: string; 'Packing Hold': string; Canceled: string; Hold: string; 'In-Courier': string; 'RTS (Ready to Ship)': string; Shipped: string; Delivered: string; 'Return Pending': string; Returned: string; Partial: string; Incomplete: string; 'Incomplete-Cancelled': string; }' is missing the following properties from type 'Record<OrderStatus, string>': Draft, Damaged
+src/components/orders/new-order-dialog.tsx(785,51): error TS2345: Argument of type '{ customerName: string; customerPhone: string; status: any; platform: string | undefined; items: { productId: string; variantId: string | null; quantity: number; price: number; }[]; source: string; ... 11 more ...; shippingAddress: { ...; }; }' is not assignable to parameter of type 'OrderUpdateInput'.
+  Type '{ customerName: string; customerPhone: string; status: any; platform: string | undefined; items: { productId: string; variantId: string | null; quantity: number; price: number; }[]; source: string; ... 11 more ...; shippingAddress: { ...; }; }' is not assignable to type '{ shippingAddress?: Partial<{ address: string; city?: string | undefined; district: string; cityName?: string | undefined; zoneName?: string | undefined; carrybeeCityId?: string | number | undefined; ... 6 more ...; country: string; }> | undefined; products?: OrderProduct[] | undefined; items?: OrderProduct[] | unde...'.
+    Types of property 'items' are incompatible.
+      Type '{ productId: string; variantId: string | null; quantity: number; price: number; }[]' is not assignable to type 'OrderProduct[]'.
+        Type '{ productId: string; variantId: string | null; quantity: number; price: number; }' is missing the following properties from type 'OrderProduct': name, image
+src/components/ui/calendar.tsx(57,9): error TS2353: Object literal may only specify known properties, and 'IconLeft' does not exist in type 'Partial<CustomComponents>'.
+src/components/ui/calendar.tsx(57,22): error TS7031: Binding element 'className' implicitly has an 'any' type.
+src/components/ui/calendar.tsx(60,23): error TS7031: Binding element 'className' implicitly has an 'any' type.
+src/components/ui/chart.tsx(119,7): error TS2339: Property 'payload' does not exist on type 'Omit<Omit<Props<ValueType, NameType>, PropertiesReadFromContext> & { active?: boolean | undefined; allowEscapeViewBox?: AllowInDimension | undefined; ... 17 more ...; wrapperStyle?: CSSProperties | undefined; } & ClassAttributes<...> & HTMLAttributes<...> & { ...; }, "ref">'.
+src/components/ui/chart.tsx(124,7): error TS2339: Property 'label' does not exist on type 'Omit<Omit<Props<ValueType, NameType>, PropertiesReadFromContext> & { active?: boolean | undefined; allowEscapeViewBox?: AllowInDimension | undefined; ... 17 more ...; wrapperStyle?: CSSProperties | undefined; } & ClassAttributes<...> & HTMLAttributes<...> & { ...; }, "ref">'.
+src/components/ui/chart.tsx(188,25): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/components/ui/chart.tsx(188,31): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/components/ui/chart.tsx(264,45): error TS2344: Type '"payload" | "verticalAlign"' does not satisfy the constraint '"string" | "result" | "id" | "order" | "cursor" | "name" | "path" | "href" | "origin" | "k" | "seed" | "media" | "spacing" | "height" | "width" | "rotate" | "scale" | "fill" | "stroke" | ... 427 more ... | "onBBoxUpdate"'.
+  Type '"payload"' is not assignable to type '"string" | "result" | "id" | "order" | "cursor" | "name" | "path" | "href" | "origin" | "k" | "seed" | "media" | "spacing" | "height" | "width" | "rotate" | "scale" | "fill" | "stroke" | ... 427 more ... | "onBBoxUpdate"'.
+src/components/ui/chart.tsx(275,19): error TS2339: Property 'length' does not exist on type '{}'.
+src/components/ui/chart.tsx(288,18): error TS2339: Property 'map' does not exist on type '{}'.
+src/components/ui/chart.tsx(288,23): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/dashboard/staff/[id]/page.tsx(39,7): error TS2739: Type '{ New: string; Confirmed: string; Canceled: string; Hold: string; 'In-Courier': string; 'RTS (Ready to Ship)': string; Shipped: string; Delivered: string; Returned: string; 'Return Pending': string; Partial: string; 'Packing Hold': string; Incomplete: string; 'Incomplete-Cancelled': string; }' is missing the following properties from type 'Record<OrderStatus, string>': Draft, Damaged
+src/dashboard/staff/[id]/page.tsx(108,38): error TS2345: Argument of type '{ items: AttendanceRecord[]; nextCursor: string | null; }' is not assignable to parameter of type 'SetStateAction<AttendanceRecord[]>'.
+src/dashboard/staff/page.tsx(98,9): error TS2345: Argument of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; } | { ...; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; } | (() => { ...; })'.
+  Type '{ orders: { create: false; read: true; update: false; delete: false; }; packingOrders: { create: false; read: true; update: true; delete: false; }; products: { create: false; read: true; update: false; delete: false; }; ... 12 more ...; accounting: { ...; }; }' is not assignable to type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; } | (() => { ...; })'.
+    Type '{ orders: { create: false; read: true; update: false; delete: false; }; packingOrders: { create: false; read: true; update: true; delete: false; }; products: { create: false; read: true; update: false; delete: false; }; ... 12 more ...; accounting: { ...; }; }' is missing the following properties from type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }': courierManagement, marketing, tasks, integrations
+src/dashboard/staff/page.tsx(135,49): error TS2345: Argument of type 'boolean | Permission | Record<string, boolean> | undefined' is not assignable to parameter of type 'boolean | Permission | undefined'.
+  Type 'Record<string, boolean>' is not assignable to type 'boolean | Permission | undefined'.
+    Type 'Record<string, boolean>' is missing the following properties from type 'Permission': create, read, update, delete
+src/dashboard/staff/page.tsx(221,90): error TS2345: Argument of type 'boolean | Permission | Record<string, boolean> | undefined' is not assignable to parameter of type 'boolean | Permission | undefined'.
+  Type 'Record<string, boolean>' is not assignable to type 'boolean | Permission | undefined'.
+    Type 'Record<string, boolean>' is missing the following properties from type 'Permission': create, read, update, delete
+src/hooks/use-permissions.tsx(29,13): error TS2304: Cannot find name 'forcedPermissions'.
+src/hooks/use-permissions.tsx(30,28): error TS2304: Cannot find name 'forcedPermissions'.
+src/hooks/use-permissions.tsx(71,25): error TS2304: Cannot find name 'forcedPermissions'.
+src/lib/permissions.ts(52,44): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(58,62): error TS2345: Argument of type '{ orders: Permission; packingOrders: { create: false; delete: false; read: boolean; update: boolean; }; products: Permission; inventory: Permission; customers: Permission; ... 13 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: { create: false; delete: false; read: boolean; update: boolean; }; products: Permission; inventory: Permission; customers: Permission; ... 13 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(64,40): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(70,56): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(76,66): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(82,58): error TS2345: Argument of type '{ orders: { create: false; delete: false; read: boolean; update: boolean; }; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; ... 13 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: { create: false; delete: false; read: boolean; update: boolean; }; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; ... 13 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(88,72): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(94,58): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: { ...; }; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: { ...; }; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(100,42): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: { ...; }; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: { ...; }; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(106,56): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(112,44): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/permissions.ts(118,58): error TS2345: Argument of type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' is not assignable to parameter of type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+  Property 'integrations' is missing in type '{ orders: Permission; packingOrders: Permission; products: Permission; inventory: Permission; customers: Permission; purchases: Permission; ... 12 more ...; tasks: Permission; }' but required in type '{ orders: boolean | Permission; packingOrders: boolean | Permission; products: boolean | Permission; inventory: boolean | Permission; ... 16 more ...; pageAccess?: Record<...> | undefined; }'.
+src/lib/placeholder-data.ts(105,5): error TS2741: Property 'approvalStatus' is missing in type '{ id: string; date: string; category: string; amount: number; notes: string; isAdExpense: true; businessId: string; business: string; platform: "Facebook"; }' but required in type 'Expense'.
+src/lib/placeholder-data.ts(106,5): error TS2741: Property 'approvalStatus' is missing in type '{ id: string; date: string; category: string; amount: number; notes: string; isAdExpense: false; }' but required in type 'Expense'.
+src/lib/placeholder-data.ts(107,5): error TS2741: Property 'approvalStatus' is missing in type '{ id: string; date: string; category: string; amount: number; notes: string; isAdExpense: false; }' but required in type 'Expense'.
+src/lib/placeholder-data.ts(108,5): error TS2741: Property 'approvalStatus' is missing in type '{ id: string; date: string; category: string; amount: number; notes: string; isAdExpense: false; }' but required in type 'Expense'.
+src/lib/placeholder-data.ts(109,5): error TS2741: Property 'approvalStatus' is missing in type '{ id: string; date: string; category: string; amount: number; notes: string; isAdExpense: false; }' but required in type 'Expense'.
+src/lib/placeholder-data.ts(130,9): error TS2353: Object literal may only specify known properties, and 'reservedQuantity' does not exist in type 'Product'.
+src/lib/placeholder-data.ts(232,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(233,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(234,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(235,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(236,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(265,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(266,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(267,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(268,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(297,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(298,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(325,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(326,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(353,13): error TS2739: Type '{ title: string; timestamp: string; description: string; user: string; }' is missing the following properties from type 'OrderLog': id, orderId
+src/lib/placeholder-data.ts(395,5): error TS2741: Property 'reservedQuantity' is missing in type '{ id: string; productId: string; productName: string; sku: string; quantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; }' but required in type 'InventoryItem'.
+src/lib/placeholder-data.ts(396,5): error TS2741: Property 'reservedQuantity' is missing in type '{ id: string; productId: string; productName: string; sku: string; quantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; }' but required in type 'InventoryItem'.
+src/lib/placeholder-data.ts(397,5): error TS2741: Property 'reservedQuantity' is missing in type '{ id: string; productId: string; productName: string; sku: string; quantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; }' but required in type 'InventoryItem'.
+src/lib/placeholder-data.ts(398,5): error TS2741: Property 'reservedQuantity' is missing in type '{ id: string; productId: string; productName: string; sku: string; quantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; }' but required in type 'InventoryItem'.
+src/lib/placeholder-data.ts(399,5): error TS2741: Property 'reservedQuantity' is missing in type '{ id: string; productId: string; productName: string; sku: string; quantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; }' but required in type 'InventoryItem'.
+src/lib/placeholder-data.ts(400,5): error TS2741: Property 'reservedQuantity' is missing in type '{ id: string; productId: string; productName: string; sku: string; quantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; }' but required in type 'InventoryItem'.
+src/lib/placeholder-data.ts(401,5): error TS2741: Property 'reservedQuantity' is missing in type '{ id: string; productId: string; productName: string; sku: string; quantity: number; locationId: string; locationName: string; lotNumber: string; receivedDate: string; }' but required in type 'InventoryItem'.
+src/lib/placeholder-data.ts(558,64): error TS2739: Type '{ New: number; Confirmed: number; 'Packing Hold': number; Canceled: number; Hold: number; 'In-Courier': number; 'RTS (Ready to Ship)': number; Shipped: number; Delivered: number; 'Return Pending': number; Returned: number; Partial: number; Incomplete: number; 'Incomplete-Cancelled': number; }' is missing the following properties from type 'Record<OrderStatus, number>': Draft, Damaged
+src/lib/placeholder-data.ts(581,66): error TS2739: Type '{ New: number; Confirmed: number; 'Packing Hold': number; Canceled: number; Hold: number; 'In-Courier': number; 'RTS (Ready to Ship)': number; Shipped: number; Delivered: number; 'Return Pending': number; Returned: number; Partial: number; Incomplete: number; 'Incomplete-Cancelled': number; }' is missing the following properties from type 'Record<OrderStatus, number>': Draft, Damaged
+src/lib/placeholder-data.ts(607,62): error TS2739: Type '{ New: number; Confirmed: number; 'Packing Hold': number; Canceled: number; Hold: number; 'In-Courier': number; 'RTS (Ready to Ship)': number; Shipped: number; Delivered: number; 'Return Pending': number; Returned: number; Partial: number; Incomplete: number; 'Incomplete-Cancelled': number; }' is missing the following properties from type 'Record<OrderStatus, number>': Draft, Damaged
+src/lib/placeholder-data.ts(627,62): error TS2739: Type '{ New: number; Confirmed: number; 'Packing Hold': number; Canceled: number; Hold: number; 'In-Courier': number; 'RTS (Ready to Ship)': number; Shipped: number; Delivered: number; 'Return Pending': number; Returned: number; Partial: number; Incomplete: number; 'Incomplete-Cancelled': number; }' is missing the following properties from type 'Record<OrderStatus, number>': Draft, Damaged
+src/lib/placeholder-data.ts(644,62): error TS2739: Type '{ New: number; Confirmed: number; 'Packing Hold': number; Canceled: number; Hold: number; 'In-Courier': number; 'RTS (Ready to Ship)': number; Shipped: number; Delivered: number; 'Return Pending': number; Returned: number; Partial: number; Incomplete: number; 'Incomplete-Cancelled': number; }' is missing the following properties from type 'Record<OrderStatus, number>': Draft, Damaged
+src/lib/placeholder-data.ts(661,63): error TS2739: Type '{ New: number; Confirmed: number; 'Packing Hold': number; Canceled: number; Hold: number; 'In-Courier': number; 'RTS (Ready to Ship)': number; Shipped: number; Delivered: number; 'Return Pending': number; Returned: number; Partial: number; Incomplete: number; 'Incomplete-Cancelled': number; }' is missing the following properties from type 'Record<OrderStatus, number>': Draft, Damaged
+src/server/modules/analytics-cache-part.ts(2,17): error TS2304: Cannot find name 'buildAnalyticsCacheKey'.
+src/server/modules/analytics-cache-part.ts(5,17): error TS2304: Cannot find name 'analyticsCache'.
+src/server/modules/analytics-cache-part.ts(8,19): error TS2304: Cannot find name 'getRedisClient'.
+src/server/modules/analytics-cache-part.ts(13,54): error TS2304: Cannot find name 'AnalyticsData'.
+src/server/modules/analytics-cache-part.ts(14,17): error TS2304: Cannot find name 'analyticsCache'.
+src/server/modules/analytics-cache-part.ts(14,58): error TS2304: Cannot find name 'ANALYTICS_CACHE_TTL_MS'.
+src/server/modules/analytics-cache-part.ts(22,24): error TS2304: Cannot find name 'getRealAnalyticsData'.
+src/server/modules/analytics-cache-part.ts(23,5): error TS2304: Cannot find name 'analyticsCache'.
+src/server/modules/analytics-cache-part.ts(23,46): error TS2304: Cannot find name 'ANALYTICS_CACHE_TTL_MS'.
+src/server/modules/analytics-cache-part.ts(26,62): error TS2304: Cannot find name 'ANALYTICS_CACHE_TTL_SEC'.
+src/server/modules/marketing.ts(167,20): error TS2345: Argument of type 'OrderStatus' is not assignable to parameter of type '"Canceled" | "Incomplete" | "IncompleteCancelled"'.
+  Type '"New"' is not assignable to type '"Canceled" | "Incomplete" | "IncompleteCancelled"'.
+src/server/modules/marketing.ts(317,16): error TS2345: Argument of type 'OrderStatus' is not assignable to parameter of type '"Canceled" | "Incomplete" | "IncompleteCancelled"'.
+  Type '"New"' is not assignable to type '"Canceled" | "Incomplete" | "IncompleteCancelled"'.
+src/server/modules/purchases.ts_snippet.ts(16,41): error TS2304: Cannot find name 'getActorName'.
+src/server/modules/purchases.ts_snippet.ts(22,30): error TS2304: Cannot find name 'prisma'.
+src/server/modules/purchases.ts_snippet.ts(22,57): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/server/modules/purchases.ts_snippet.ts(26,19): error TS2304: Cannot find name 'ensureDefaultAccounts'.
+src/server/modules/purchases.ts_snippet.ts(28,54): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/server/modules/purchases.ts_snippet.ts(29,41): error TS2304: Cannot find name 'ACCOUNT_LABELS'.
+src/server/modules/purchases.ts_snippet.ts(35,60): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/server/modules/purchases.ts_snippet.ts(56,39): error TS2304: Cannot find name 'resolveLedgerEntryNumber'.
+src/server/modules/purchases.ts_snippet.ts(82,19): error TS2304: Cannot find name 'recomputePaymentStatusTx'.
+src/server/modules/purchases.ts_snippet.ts(87,26): error TS2304: Cannot find name 'purchaseOrderWithRelations'.
+src/server/modules/purchases.ts_snippet.ts(91,15): error TS2304: Cannot find name 'revalidateTags'.
+src/server/modules/purchases.ts_snippet.ts(92,60): error TS2304: Cannot find name 'mapDbPoToAppPo'.
+src/server/modules/purchases.ts_snippet.ts(97,43): error TS2304: Cannot find name 'resolvePurchaseErrorMessage'.
+src/server/modules/purchases.ts_snippet.ts(103,15): error TS2304: Cannot find name 'prisma'.
+src/server/modules/purchases.ts_snippet.ts(103,42): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/server/modules/purchases.ts_snippet.ts(111,19): error TS2304: Cannot find name 'recomputePaymentStatusTx'.
+src/server/modules/purchases.ts_snippet.ts(114,15): error TS2304: Cannot find name 'revalidateTags'.
+src/server/modules/purchases.ts_snippet.ts(115,31): error TS2304: Cannot find name 'getPurchaseOrderById'.
+src/server/modules/sms-notifications.ts(133,9): error TS2353: Object literal may only specify known properties, and 'poId' does not exist in type 'PurchaseOrderSelect<DefaultArgs>'.
+src/server/modules/sms-notifications.ts(152,29): error TS2551: Property 'supplier' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; date: Date; type: PurchaseType; status: PurchaseOrderStatus; total: number; supplierId: string; ... 4 more ...; offlineInvoiceUrl: string | null; }'. Did you mean 'supplierId'?
+src/server/modules/sms-notifications.ts(156,31): error TS2339: Property 'productionSteps' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; date: Date; type: PurchaseType; status: PurchaseOrderStatus; total: number; supplierId: string; ... 4 more ...; offlineInvoiceUrl: string | null; }'.
+src/server/modules/sms-notifications.ts(156,53): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/server/modules/sms-notifications.ts(157,58): error TS2551: Property 'supplier' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; date: Date; type: PurchaseType; status: PurchaseOrderStatus; total: number; supplierId: string; ... 4 more ...; offlineInvoiceUrl: string | null; }'. Did you mean 'supplierId'?
+src/server/modules/sms-notifications.ts(160,30): error TS2339: Property 'productionSteps' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; date: Date; type: PurchaseType; status: PurchaseOrderStatus; total: number; supplierId: string; ... 4 more ...; offlineInvoiceUrl: string | null; }'.
+src/server/modules/sms-notifications.ts(160,52): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/server/modules/sms-notifications.ts(161,57): error TS2551: Property 'supplier' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; date: Date; type: PurchaseType; status: PurchaseOrderStatus; total: number; supplierId: string; ... 4 more ...; offlineInvoiceUrl: string | null; }'. Did you mean 'supplierId'?
+src/server/modules/sms-notifications.ts(164,23): error TS2551: Property 'supplier' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; date: Date; type: PurchaseType; status: PurchaseOrderStatus; total: number; supplierId: string; ... 4 more ...; offlineInvoiceUrl: string | null; }'. Did you mean 'supplierId'?
+src/server/modules/sms-notifications.ts(168,20): error TS2339: Property 'poId' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; date: Date; type: PurchaseType; status: PurchaseOrderStatus; total: number; supplierId: string; ... 4 more ...; offlineInvoiceUrl: string | null; }'.
+src/server/modules/sms-notifications.ts(169,24): error TS2551: Property 'supplier' does not exist on type '{ id: string; createdAt: Date; updatedAt: Date; date: Date; type: PurchaseType; status: PurchaseOrderStatus; total: number; supplierId: string; ... 4 more ...; offlineInvoiceUrl: string | null; }'. Did you mean 'supplierId'?
+src/server/modules/woo-sync.ts(557,46): error TS7006: Parameter 'ci' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(559,47): error TS7006: Parameter 'acc' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(559,52): error TS7006: Parameter 'i' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(560,45): error TS7006: Parameter 'acc' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(560,50): error TS7006: Parameter 'i' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(567,31): error TS7006: Parameter 'v' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(568,31): error TS7006: Parameter 'v' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(571,42): error TS7006: Parameter 'acc' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(571,47): error TS7006: Parameter 'i' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(572,40): error TS7006: Parameter 'acc' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(572,45): error TS7006: Parameter 'i' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(674,23): error TS18048: 'skuMap' is possibly 'undefined'.
+src/server/modules/woo-sync.ts(678,29): error TS18048: 'productInfoMap' is possibly 'undefined'.
+src/server/modules/woo-sync.ts(682,41): error TS7006: Parameter 'v' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(683,41): error TS7006: Parameter 'v' implicitly has an 'any' type.
+src/server/modules/woo-sync.ts(697,59): error TS7006: Parameter 'comp' implicitly has an 'any' type.

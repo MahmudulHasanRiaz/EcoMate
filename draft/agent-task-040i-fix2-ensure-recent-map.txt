@@ -1,0 +1,17 @@
+UPDATE P40i-b - Fix recent-ensure memory map (missing)
+
+Scope: ONLY src/server/modules/woo-sync.ts. Minimal change.
+
+Problem:
+- Recent ensure guard uses wooWebhookEnsureRecentMap, but markWebhookEnsured never sets it.
+- This means the guard only works when Redis is available; in-memory path is missing.
+
+Fix:
+File: src/server/modules/woo-sync.ts
+- In markWebhookEnsured(), add:
+  wooWebhookEnsureRecentMap.set(integrationId, Date.now());
+- Place it before Redis set so memory always updates.
+
+Deliver back:
+- Summary + file touched
+- Confirm guard now works without Redis

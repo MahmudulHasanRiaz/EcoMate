@@ -1,0 +1,31 @@
+UPDATE PXXb - Fix task.txt accuracy + evidence
+
+Scope: ONLY update draft/task.txt content. No code changes.
+
+Issues to fix
+1) Invalid evidence references:
+- "task.md" does not exist. Replace with real evidence (file paths + command output).
+
+2) Wrong path in P02-3 evidence:
+- Use `src/app/api/attendance/route.ts` and `src/server/modules/attendance.ts` (not src/api).
+
+3) Build verification claim needs a status line
+- Add a new entry under "Blocked / Needs decision" (or similar):
+  ID: BUILD-TS
+  Title: TypeScript build status
+  Status: BLOCKED
+  Evidence: `npx tsc --noEmit` exit code + top 3 error categories + timestamp
+  Notes: Existing legacy/type errors (do not fix here).
+
+4) Evidence format standardization
+- For each DONE-VERIFIED item, include:
+  - At least 1 file path
+  - 1 command output line (e.g., `rg --line-number "includeHistory" src/app/api/staff/[id]/route.ts`)
+  - Timestamp
+
+5) Summary counts
+- Update counts after corrections.
+
+Deliver back
+- Updated draft/task.txt
+- Short summary of changes (what moved between Verified/Unverified/Blocked).

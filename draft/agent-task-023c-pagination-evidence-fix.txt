@@ -1,0 +1,60 @@
+﻿UPDATE P23c - Strict evidence rewrite (task.txt must include actual command outputs)
+
+Scope: ONLY draft/task.txt updates. No code changes.
+
+Problem:
+- P23b claims strict verification but task.txt lacks actual command outputs.
+- Evidence lines must include real command output text, not just the command.
+
+Action (MANDATORY):
+1) Run the exact commands below and capture their outputs.
+2) Update draft/task.txt evidence lines to include the actual output snippets and timestamp for each P01 item.
+3) Do NOT change any code in src/. Only update task.txt.
+
+Commands to run (copy/paste as-is):
+
+# Orders
+rg -n "cursor|includeTotal|orderBy" src/server/modules/orders.ts
+rg -n "cursor|includeTotal" src/app/api/orders/route.ts
+rg -n "nextCursor" src/services/orders.ts
+rg -n "cursor" src/app/dashboard/orders/client-page.tsx
+
+# Expenses
+rg -n "cursor|includeTotal|groupBy" src/server/modules/expenses.ts
+rg -n "cursor|includeTotal" src/app/api/expenses/route.ts
+rg -n "nextCursor" src/services/expenses.ts
+rg -n "cursor" src/app/dashboard/expenses/client-page.tsx
+
+# Issues
+rg -n "cursor|includeTotal|orderBy" src/server/modules/issues.ts
+rg -n "cursor|includeTotal" src/app/api/issues/route.ts
+rg -n "nextCursor" src/services/issues.ts
+rg -n "cursor" src/app/dashboard/issues/client-page.tsx
+
+# Partners
+rg -n "cursor|includeTotal|orderBy" src/server/modules/partners.ts
+rg -n "cursor|includeTotal" src/app/api/partners/suppliers/route.ts
+rg -n "cursor|includeTotal" src/app/api/partners/vendors/route.ts
+rg -n "nextCursor" src/services/partners.ts
+rg -n "cursor" src/app/dashboard/partners/page.tsx
+
+# Product Logs
+rg -n "cursor|includeTotal|orderBy" src/server/modules/products.ts
+rg -n "cursor|includeTotal" src/app/api/products/[id]/logs/route.ts
+rg -n "nextCursor" src/services/product-logs.ts
+rg -n "cursor" src/app/dashboard/products/[id]/page.tsx
+
+# Courier Return Pending
+rg -n "cursor|includeTotal|orderBy" src/server/modules/courier/reconciliation.ts
+rg -n "cursor|includeTotal" src/app/api/courier/return-pending/route.ts
+rg -n "cursor" src/app/dashboard/courier/client-page.tsx
+
+Task.txt update rules:
+- For each P01 item, replace generic evidence lines with:
+  "Cmd: <exact command> (YYYY-MM-DD HH:MM) -> <first 1-2 matching lines>"
+- Keep at least 2 evidence lines per P01 item (server + api or service + ui).
+- Update Last Updated and Summary counts ONLY if they change; do not alter other sections.
+
+Deliver back:
+- Updated draft/task.txt
+- Short note: "Evidence outputs embedded".

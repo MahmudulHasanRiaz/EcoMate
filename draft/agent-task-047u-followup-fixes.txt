@@ -1,0 +1,74 @@
+﻿P47u-b - Follow-up Fixes (compile blockers + cleanup edge cases)
+
+Findings (why this is needed)
+1) Incomplete page uses <Label> and <Textarea> but does not import them -> build will fail.
+2) openConvertModal assumes getIncompleteLead always returns data; it can return null.
+3) Cleanup query excludes only 'Canceled' but not 'Cancelled'.
+
+Apply EXACT changes below.
+
+------------------------------------------------------------
+1) Fix missing imports (compile blocker)
+File: src/app/dashboard/orders/incomplete/page.tsx
+
+Add imports:
+
+```ts
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+```
+
+Place them near other UI imports.
+
+------------------------------------------------------------
+2) Guard against null detail in openConvertModal
+File: src/app/dashboard/orders/incomplete/page.tsx
+
+Update openConvertModal:
+
+From:
+```ts
+const detail = await getIncompleteLead(orderId);
+setConvertTarget(detail);
+setConvertForm({
+  name: detail.name || '',
+  phone: detail.phone || '',
+  address: detail.address || '',
+  skuCsv: skuListToCsv(detail.skuList),
+});
+setIsConvertOpen(true);
+```
+
+To:
+```ts
+const detail = await getIncompleteLead(orderId);
+if (!detail) throw new Error('Lead not found');
+setConvertTarget(detail);
+setConvertForm({
+  name: detail.name || '',
+  phone: detail.phone || '',
+  address: detail.address || '',
+  skuCsv: skuListToCsv(detail.skuList),
+});
+setIsConvertOpen(true);
+```
+
+------------------------------------------------------------
+3) Cleanup: treat both Canceled + Cancelled as terminal
+File: src/app/api/orders/incomplete/route.ts
+
+Change:
+```ts
+status: { notIn: ['Canceled'] },
+```
+
+To:
+```ts
+status: { notIn: ['Canceled', 'Cancelled'] },
+```
+
+------------------------------------------------------------
+Verification checklist
+1) npm run build (or docker compose build app) should pass.
+2) Incomplete Orders page should load without reference errors.
+3) Convert modal opens and does not crash if lead missing.

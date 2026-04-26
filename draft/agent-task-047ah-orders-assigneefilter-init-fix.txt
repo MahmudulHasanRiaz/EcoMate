@@ -1,0 +1,31 @@
+P47ah — Orders page assigneeFilter init error fix
+
+Problem
+- OrdersClientPage uses assigneeFilter in a useEffect before assigneeFilter is initialized, causing:
+  "Cannot access 'assigneeFilter' before initialization".
+
+Fix (reorder hooks)
+File: src/app/dashboard/orders/client-page.tsx
+
+1) Move the "Warn if Assign to Me" useEffect to AFTER the filter state declarations.
+
+Current order (problematic):
+- staffIdForFilters
+- useEffect(...) // uses assigneeFilter
+- const [assigneeFilter, setAssigneeFilter] = useState(...)
+
+Correct order:
+- const [statusFilter ...]
+- const [businessFilter ...]
+- const [assigneeFilter ...]
+- ... other filter states
+- const staffIdForFilters = ...
+- useEffect(...) // uses assigneeFilter
+
+No logic change, just ordering.
+
+Expected result
+- Orders page loads without ReferenceError.
+
+Verification
+- Reload /dashboard/orders/all and ensure no "assigneeFilter before initialization" error.

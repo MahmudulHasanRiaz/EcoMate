@@ -1,0 +1,164 @@
+TIMESTAMP: 2026-01-22T13:37:21.328Z
+
+[
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "104",
+    "total_exec_time": 1379.6589999999997,
+    "mean_exec_time": 13.265951923076925,
+    "rows": "104",
+    "query": "UPDATE \"public\".\"StaffMember\" SET \"name\" = $1, \"email\" = $2, \"phone\" = $3, \"role\" = CAST($4::text AS \"public\".\"StaffRole\"), \"staffCode\" = $5, \"lastLogin\" = $6, \"paymentType\" = $7, \"salaryDetails\" = $8, \"commissionDetails\" = $9, \"permissions\" = $10, \"updatedAt\" = $11 WHERE (\"public\".\"StaffMember\".\"id\" = $12 AND (\"public\".\"StaffMember\".\"clerkId\" = $13 AND $14=$15)) RETURNING \"public\".\"StaffMember\".\"id\", \"public\".\"StaffMember\".\"clerkId\", \"public\".\"StaffMember\".\"name\", \"public\".\"StaffMember\".\"email\", \"public\".\"StaffMember\".\"role\"::text, \"public\".\"StaffMember\".\"lastLogin\", \"public\".\"StaffMember\".\"paymentType\", \"public\".\"StaffMember\".\"salaryDetails\", \"public\".\"StaffMember\".\"commissionDetails\", \"public\".\"StaffMember\".\"permissions\", \"public\".\"StaffMember\".\"createdAt\", \"public\".\"StaffMember\".\"updatedAt\", \"public\".\"StaffMember\".\"phone\", \"public\".\"StaffMember\".\"staffCode\""
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "104",
+    "total_exec_time": 842.265,
+    "mean_exec_time": 8.098701923076925,
+    "rows": "312",
+    "query": "INSERT INTO \"public\".\"_StaffBusinessAccess\" (\"B\",\"A\") VALUES ($1,$2), ($3,$4), ($5,$6) ON CONFLICT DO NOTHING"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "105",
+    "total_exec_time": 347.3515,
+    "mean_exec_time": 3.3081095238095255,
+    "rows": "105",
+    "query": "SELECT \"public\".\"StaffMember\".\"id\", \"public\".\"StaffMember\".\"clerkId\", \"public\".\"StaffMember\".\"name\", \"public\".\"StaffMember\".\"email\", \"public\".\"StaffMember\".\"role\"::text, \"public\".\"StaffMember\".\"lastLogin\", \"public\".\"StaffMember\".\"paymentType\", \"public\".\"StaffMember\".\"salaryDetails\", \"public\".\"StaffMember\".\"commissionDetails\", \"public\".\"StaffMember\".\"permissions\", \"public\".\"StaffMember\".\"createdAt\", \"public\".\"StaffMember\".\"updatedAt\", \"public\".\"StaffMember\".\"phone\", \"public\".\"StaffMember\".\"staffCode\" FROM \"public\".\"StaffMember\" WHERE \"public\".\"StaffMember\".\"clerkId\" = $1 LIMIT $2 OFFSET $3"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "104",
+    "total_exec_time": 219.81249999999994,
+    "mean_exec_time": 2.1135817307692304,
+    "rows": "104",
+    "query": "SELECT \"public\".\"StaffInvite\".\"id\", \"public\".\"StaffInvite\".\"email\", \"public\".\"StaffInvite\".\"role\"::text, \"public\".\"StaffInvite\".\"permissions\", \"public\".\"StaffInvite\".\"businessIds\", \"public\".\"StaffInvite\".\"invitedBy\", \"public\".\"StaffInvite\".\"token\", \"public\".\"StaffInvite\".\"expiresAt\", \"public\".\"StaffInvite\".\"usedAt\", \"public\".\"StaffInvite\".\"createdAt\", \"public\".\"StaffInvite\".\"updatedAt\", \"public\".\"StaffInvite\".\"phone\", \"public\".\"StaffInvite\".\"status\"::text FROM \"public\".\"StaffInvite\" WHERE \"public\".\"StaffInvite\".\"email\" = $1 ORDER BY \"public\".\"StaffInvite\".\"createdAt\" DESC LIMIT $2 OFFSET $3"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "1",
+    "total_exec_time": 79.4295,
+    "mean_exec_time": 79.4295,
+    "rows": "1",
+    "query": "SELECT \"public\".\"CheckPassingItem\".\"id\", \"public\".\"CheckPassingItem\".\"source\"::text, \"public\".\"CheckPassingItem\".\"sourceId\", \"public\".\"CheckPassingItem\".\"passingDate\", \"public\".\"CheckPassingItem\".\"amount\", \"public\".\"CheckPassingItem\".\"status\"::text, \"public\".\"CheckPassingItem\".\"checkNo\", \"public\".\"CheckPassingItem\".\"referenceId\", \"public\".\"CheckPassingItem\".\"referenceLabel\", \"public\".\"CheckPassingItem\".\"referenceUrl\", \"public\".\"CheckPassingItem\".\"payee\", \"public\".\"CheckPassingItem\".\"type\", \"public\".\"CheckPassingItem\".\"createdAt\", \"public\".\"CheckPassingItem\".\"updatedAt\" FROM \"public\".\"CheckPassingItem\" WHERE $3=$4 ORDER BY \"public\".\"CheckPassingItem\".\"passingDate\" ASC, \"public\".\"CheckPassingItem\".\"source\" ASC, \"public\".\"CheckPassingItem\".\"id\" ASC LIMIT $1 OFFSET $2"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "1",
+    "total_exec_time": 63.618300000000005,
+    "mean_exec_time": 63.618300000000005,
+    "rows": "1",
+    "query": "SELECT \"public\".\"MarketingCampaign\".\"id\", \"public\".\"MarketingCampaign\".\"name\", \"public\".\"MarketingCampaign\".\"businessId\", \"public\".\"MarketingCampaign\".\"marketerId\", \"public\".\"MarketingCampaign\".\"channel\", \"public\".\"MarketingCampaign\".\"objective\", \"public\".\"MarketingCampaign\".\"status\", \"public\".\"MarketingCampaign\".\"budget\", \"public\".\"MarketingCampaign\".\"startDate\", \"public\".\"MarketingCampaign\".\"endDate\", \"public\".\"MarketingCampaign\".\"notes\", \"public\".\"MarketingCampaign\".\"createdAt\", \"public\".\"MarketingCampaign\".\"updatedAt\" FROM \"public\".\"MarketingCampaign\" WHERE \"public\".\"MarketingCampaign\".\"businessId\" IN ($1 /*, ... */) ORDER BY \"public\".\"MarketingCampaign\".\"createdAt\" DESC LIMIT $2 OFFSET $3"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "1",
+    "total_exec_time": 62.2778,
+    "mean_exec_time": 62.2778,
+    "rows": "1",
+    "query": "SELECT SUM(\"revenue\") AS \"_sum$revenue\", SUM(\"cogs\") AS \"_sum$cogs\", SUM(\"courierExpense\") AS \"_sum$courierExpense\", SUM(\"returnFeeRevenue\") AS \"_sum$returnFeeRevenue\" FROM (SELECT \"public\".\"OrderFinancialSnapshot\".\"revenue\", \"public\".\"OrderFinancialSnapshot\".\"cogs\", \"public\".\"OrderFinancialSnapshot\".\"courierExpense\", \"public\".\"OrderFinancialSnapshot\".\"returnFeeRevenue\" FROM \"public\".\"OrderFinancialSnapshot\" WHERE $2=$3 OFFSET $1) AS \"sub\""
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "212",
+    "total_exec_time": 54.773,
+    "mean_exec_time": 0.25836320754716985,
+    "rows": "633",
+    "query": "SELECT \"public\".\"_StaffBusinessAccess\".\"B\", \"public\".\"_StaffBusinessAccess\".\"A\" FROM \"public\".\"_StaffBusinessAccess\" WHERE \"public\".\"_StaffBusinessAccess\".\"B\" IN ($1)"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "3",
+    "total_exec_time": 52.95830000000001,
+    "mean_exec_time": 17.652766666666672,
+    "rows": "3",
+    "query": "SELECT \"public\".\"PurchaseOrderItem\".\"id\", \"public\".\"PurchaseOrderItem\".\"poId\", \"public\".\"PurchaseOrderItem\".\"productId\", \"public\".\"PurchaseOrderItem\".\"quantity\", \"public\".\"PurchaseOrderItem\".\"unitCost\", \"public\".\"PurchaseOrderItem\".\"createdAt\", \"public\".\"PurchaseOrderItem\".\"updatedAt\", \"public\".\"PurchaseOrderItem\".\"cuttingCost\", \"public\".\"PurchaseOrderItem\".\"finalQty\", \"public\".\"PurchaseOrderItem\".\"jamaRate\", \"public\".\"PurchaseOrderItem\".\"jamaYards\", \"public\".\"PurchaseOrderItem\".\"ornaRate\", \"public\".\"PurchaseOrderItem\".\"ornaYards\", \"public\".\"PurchaseOrderItem\".\"printingCost\", \"public\".\"PurchaseOrderItem\".\"selowarRate\", \"public\".\"PurchaseOrderItem\".\"selowarYards\", \"public\".\"PurchaseOrderItem\".\"variantId\", \"public\".\"PurchaseOrderItem\".\"pindaCount\", \"public\".\"PurchaseOrderItem\".\"pindaBreakdown\", \"public\".\"PurchaseOrderItem\".\"cuttingDamagedQty\", \"public\".\"PurchaseOrderItem\".\"printingDamagedQty\", \"public\".\"PurchaseOrderItem\".\"finishingWastageQty\" FROM \"public\".\"PurchaseOrderItem\" WHERE \"public\".\"PurchaseOrderItem\".\"poId\" IN ($1) OFFSET $2"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "105",
+    "total_exec_time": 49.03960000000002,
+    "mean_exec_time": 0.4670438095238096,
+    "rows": "315",
+    "query": "SELECT \"public\".\"Business\".\"id\", \"public\".\"Business\".\"name\", \"public\".\"Business\".\"logo\", \"public\".\"Business\".\"createdAt\", \"public\".\"Business\".\"updatedAt\" FROM \"public\".\"Business\" WHERE \"public\".\"Business\".\"id\" IN ($1 /*, ... */) OFFSET $2"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "12",
+    "total_exec_time": 44.59820000000001,
+    "mean_exec_time": 3.7165166666666667,
+    "rows": "120",
+    "query": "SELECT \"public\".\"Order\".\"id\", \"public\".\"Order\".\"type\"::text, \"public\".\"Order\".\"isExchange\", \"public\".\"Order\".\"parentOrderId\", \"public\".\"Order\".\"exchangeSourceOrderId\", \"public\".\"Order\".\"orderNumber\", \"public\".\"Order\".\"orderDay\", \"public\".\"Order\".\"orderSerial\", \"public\".\"Order\".\"customerName\", \"public\".\"Order\".\"customerEmail\", \"public\".\"Order\".\"customerPhone\", \"public\".\"Order\".\"platform\", \"public\".\"Order\".\"source\", \"public\".\"Order\".\"date\", \"public\".\"Order\".\"status\"::text, \"public\".\"Order\".\"total\", \"public\".\"Order\".\"shipping\", \"public\".\"Order\".\"discount\", \"public\".\"Order\".\"customerNote\", \"public\".\"Order\".\"officeNote\", \"public\".\"Order\".\"createdBy\", \"public\".\"Order\".\"confirmedBy\", \"public\".\"Order\".\"businessId\", \"public\".\"Order\".\"businessName\", \"public\".\"Order\".\"businessLogo\", \"public\".\"Order\".\"paymentMethod\"::text, \"public\".\"Order\".\"paidAmount\", \"public\".\"Order\".\"courierService\"::text, \"public\".\"Order\".\"courierStatus\", \"public\".\"Order\".\"courierTrackingCode\", \"public\".\"Order\".\"courierConsignmentId\", \"public\".\"Order\".\"courierDispatchedAt\", \"public\".\"Order\".\"courierMeta\", \"public\".\"Order\".\"createdAt\", \"public\".\"Order\".\"updatedAt\", \"public\".\"Order\".\"shippingAddress\", \"public\".\"Order\".\"assignedToId\" FROM \"public\".\"Order\" WHERE $3=$4 ORDER BY \"public\".\"Order\".\"createdAt\" DESC, \"public\".\"Order\".\"id\" DESC LIMIT $1 OFFSET $2"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "49",
+    "total_exec_time": 37.206199999999974,
+    "mean_exec_time": 0.7593102040816326,
+    "rows": "49",
+    "query": "SELECT $1"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "10",
+    "total_exec_time": 36.313500000000005,
+    "mean_exec_time": 3.6313500000000007,
+    "rows": "70",
+    "query": "SELECT \"public\".\"Notification\".\"id\", \"public\".\"Notification\".\"staffId\", \"public\".\"Notification\".\"title\", \"public\".\"Notification\".\"description\", \"public\".\"Notification\".\"time\", \"public\".\"Notification\".\"read\", \"public\".\"Notification\".\"href\", \"public\".\"Notification\".\"icon\"::text FROM \"public\".\"Notification\" WHERE \"public\".\"Notification\".\"staffId\" = $1 ORDER BY \"public\".\"Notification\".\"time\" DESC LIMIT $2 OFFSET $3"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "104",
+    "total_exec_time": 36.275299999999994,
+    "mean_exec_time": 0.34880096153846146,
+    "rows": "104",
+    "query": "SELECT \"public\".\"StaffMember\".\"id\", \"public\".\"StaffMember\".\"clerkId\", \"public\".\"StaffMember\".\"name\", \"public\".\"StaffMember\".\"email\", \"public\".\"StaffMember\".\"role\"::text, \"public\".\"StaffMember\".\"lastLogin\", \"public\".\"StaffMember\".\"paymentType\", \"public\".\"StaffMember\".\"salaryDetails\", \"public\".\"StaffMember\".\"commissionDetails\", \"public\".\"StaffMember\".\"permissions\", \"public\".\"StaffMember\".\"createdAt\", \"public\".\"StaffMember\".\"updatedAt\", \"public\".\"StaffMember\".\"phone\", \"public\".\"StaffMember\".\"staffCode\" FROM \"public\".\"StaffMember\" WHERE \"public\".\"StaffMember\".\"id\" = $1 LIMIT $2 OFFSET $3"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "104",
+    "total_exec_time": 33.14040000000001,
+    "mean_exec_time": 0.3186576923076925,
+    "rows": "104",
+    "query": "SELECT \"public\".\"StaffMember\".\"id\" FROM \"public\".\"StaffMember\" WHERE (\"public\".\"StaffMember\".\"clerkId\" = $1 AND $3=$4) OFFSET $2"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "4",
+    "total_exec_time": 32.1284,
+    "mean_exec_time": 8.0321,
+    "rows": "3",
+    "query": "SELECT \"public\".\"StaffMember\".\"id\", \"public\".\"StaffMember\".\"clerkId\", \"public\".\"StaffMember\".\"name\", \"public\".\"StaffMember\".\"email\", \"public\".\"StaffMember\".\"role\"::text, \"public\".\"StaffMember\".\"lastLogin\", \"public\".\"StaffMember\".\"paymentType\", \"public\".\"StaffMember\".\"salaryDetails\", \"public\".\"StaffMember\".\"commissionDetails\", \"public\".\"StaffMember\".\"permissions\", \"public\".\"StaffMember\".\"createdAt\", \"public\".\"StaffMember\".\"updatedAt\", \"public\".\"StaffMember\".\"phone\", \"public\".\"StaffMember\".\"staffCode\" FROM \"public\".\"StaffMember\" WHERE \"public\".\"StaffMember\".\"role\" = CAST($1::text AS \"public\".\"StaffRole\") ORDER BY \"public\".\"StaffMember\".\"name\" ASC LIMIT $2 OFFSET $3"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "3",
+    "total_exec_time": 32.106199999999994,
+    "mean_exec_time": 10.702066666666665,
+    "rows": "60",
+    "query": "SELECT now() AS captured_at,\n             calls,\n             total_exec_time,\n             mean_exec_time,\n             rows,\n             query\n      FROM pg_stat_statements\n      WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())\n      ORDER BY total_exec_time DESC\n      LIMIT $1"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "104",
+    "total_exec_time": 29.572299999999988,
+    "mean_exec_time": 0.28434903846153853,
+    "rows": "312",
+    "query": "SELECT \"public\".\"Business\".\"id\" FROM \"public\".\"Business\" WHERE ($1=$2 AND \"public\".\"Business\".\"id\" IN ($3 /*, ... */)) OFFSET $4"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "13",
+    "total_exec_time": 28.117199999999997,
+    "mean_exec_time": 2.162861538461538,
+    "rows": "13",
+    "query": "SELECT \"public\".\"Product\".\"id\", \"public\".\"Product\".\"name\", \"public\".\"Product\".\"sku\", \"public\".\"Product\".\"image\", \"public\".\"Product\".\"price\", \"public\".\"Product\".\"salePrice\", \"public\".\"Product\".\"productType\"::text FROM \"public\".\"Product\" WHERE \"public\".\"Product\".\"id\" IN ($1) OFFSET $2"
+  },
+  {
+    "captured_at": "2026-01-22T13:37:21.313Z",
+    "calls": "104",
+    "total_exec_time": 27.916399999999996,
+    "mean_exec_time": 0.26842692307692323,
+    "rows": "312",
+    "query": "DELETE FROM \"public\".\"_StaffBusinessAccess\" WHERE (\"public\".\"_StaffBusinessAccess\".\"B\" = ($1) AND \"public\".\"_StaffBusinessAccess\".\"A\" IN ($2 /*, ... */))"
+  }
+]

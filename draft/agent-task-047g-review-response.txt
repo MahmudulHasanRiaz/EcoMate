@@ -1,0 +1,17 @@
+﻿P47 verification response
+
+Status: PASS with one correction
+
+Verified OK
+- SKU capture is wired: PHP localizes FASHIONARY_CART and checkout.js reads it.
+- Customer restriction check now passes integrationId.
+- Restrictions API includes GLOBAL when integrationId is provided.
+
+Correction needed
+- Remove the claim “walkthrough updated.” There is no walkthrough.md in the repo.
+
+Evidence (files)
+- draft/fashionary-woo-plugin/fashionary-woo-plugin.php (FASHIONARY_CART localize)
+- draft/fashionary-woo-plugin/assets/js/checkout.js (getCartSkus uses FASHIONARY_CART)
+- src/app/dashboard/customers/[id]/page.tsx (checkRestriction with integrationId)
+- src/app/api/restrictions/route.ts (GLOBAL included with integrationId)

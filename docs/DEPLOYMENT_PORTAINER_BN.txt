@@ -1,0 +1,173 @@
+﻿# Portainer Manual Deployment Guide (Bangla)
+
+এই গাইডটি ধরে লেখা হয়েছে যে আপনার VPS‑এ Portainer আগে থেকেই ইনস্টল করা আছে। এখানে আমরা GitHub থেকে প্রোজেক্ট ডিপ্লয় করবো, নির্দিষ্ট CPU/RAM/Storage লিমিট সেট করবো, PostgreSQL/Redis‑সহ সব সার্ভিস চালু করবো এবং পরবর্তী আপডেট সহজে রিডিপ্লয় করবো।
+
+## ১) সার্ভার প্রিপারেশন (স্টেপ বাই স্টেপ)
+- পোর্ট খোলা আছে নিশ্চিত করুন: 80/443 (ওয়েব), 3000 (ডাইরেক্ট টেস্টিং চাইলে), 6379 (শুধু যদি Redis এক্সটারনাল লাগে), 5432 (শুধু যদি Postgres এক্সটারনাল হয়)
+- Docker + Portainer ইতিমধ্যে ইনস্টল আছে
+1) VPS‑এ লগইন করুন  
+2) `docker` ও `portainer` চলছে কিনা যাচাই করুন  
+3) Portainer UI খুলুন  
+4) DNS/ডোমেইন (যদি থাকে) আগে থেকেই কনফিগার করুন  
+
+## ২) রিসোর্স প্ল্যান (এই ক্লায়েন্টের জন্য ফিক্সড)
+এই ক্লায়েন্টের জন্য আপনি ফিক্সড রিসোর্স দিচ্ছেন: **2 vCPU + 8 GB RAM**।
+এটার ভেতরে নিরাপদভাবে চালানোর জন্য প্রস্তাবিত ভাগ:
+- Web (Next.js): **1.0 vCPU, 3.5 GB RAM**
+- Worker (BullMQ): **0.5 vCPU, 2.0 GB RAM**
+- Redis: **0.25 vCPU, 0.5 GB RAM**
+- DB (Postgres): **0.25 vCPU, 2.0 GB RAM**
+- Buffer/OS headroom: **~0.5 GB RAM**
+Storage: **60–80 GB** (কমপক্ষে 60 GB রাখুন; লগ/ব্যাকআপ থাকলে 80 GB ভাল)
+
+## ৩) Portainer Stack তৈরি করা (Git থেকে, স্টেপ বাই স্টেপ)
+Portainer → **Stacks** → **Add stack**
+1) **Name** দিন: `fashionary-client-01` (বা ক্লায়েন্ট নাম)  
+2) **Build method**: **Git repository**  
+3) **Repository URL**: `https://github.com/<org>/<repo>.git`  
+4) **Branch**: `main` (বা আপনার রিলিজ ব্রাঞ্চ)  
+5) **Compose file path**: `docker-compose.yml`  
+6) **Auto‑update (রিকমেন্ডেড)**: Enable করলে Portainer নির্দিষ্ট interval‑এ auto pull করবে  
+
+### Environment Variables (Portainer → Environment variables)
+```
+POSTGRES_USER=USER
+POSTGRES_PASSWORD=PASSWORD
+POSTGRES_DB=DB
+APP_URL=https://your-domain.com
+NEXT_PUBLIC_APP_URL=https://your-domain.com
+NEXT_PUBLIC_API_URL=https://your-domain.com
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
+CLERK_SECRET_KEY=sk_...
+CLERK_WEBHOOK_SECRET=svix_...
+REDIS_URL=redis://redis:6379
+```
+
+> NOTE: আমরা compose‑এ `DATABASE_URL` নিজেই গঠন করছি  
+> `postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}`  
+> যদি আপনি **external Postgres** ব্যবহার করেন, তখন `DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/DB` নিজে দিন।
+> আমাদের `docker-compose.yml` এ Redis সার্ভিসের নাম `redis`, তাই `REDIS_URL=redis://redis:6379` রাখা ঠিক হবে।
+
+## ৩.১) Postgres সার্ভিস যুক্ত করা (অবশ্যই দরকার)
+ডেটাবেস ছাড়া অ্যাপ চলবে না। নিচের সার্ভিসটি আপনার `docker-compose.yml` বা Stack‑এ থাকতে হবে:
+```
+postgres:
+  image: postgres:16
+  container_name: fashionary_postgres
+  restart: always
+  environment:
+    - POSTGRES_USER=USER
+    - POSTGRES_PASSWORD=PASSWORD
+    - POSTGRES_DB=DB
+  volumes:
+    - postgres_data:/var/lib/postgresql/data
+```
+এই Postgres সার্ভিস থাকলে আলাদা করে DATABASE_URL দিতে হবে না।
+
+### (Optional) Redis সার্ভিস
+```
+redis:
+  image: redis:7
+  container_name: fashionary_redis
+  restart: always
+```
+
+## ৪) Resource Limit সেট করা (2 vCPU + 8 GB RAM অনুযায়ী)
+Portainer → **Containers** → `fashionary_app` → **Duplicate/Edit**
+- CPU limit: **1.0**
+- Memory limit: **3.5 GB**
+
+Portainer → `fashionary_worker`
+- CPU limit: **0.5**
+- Memory limit: **2.0 GB**
+
+Portainer → `fashionary_redis`
+- CPU limit: **0.25**
+- Memory limit: **0.5 GB**
+
+Portainer → `fashionary_postgres`
+- CPU limit: **0.25**
+- Memory limit: **2.0 GB**
+
+> Note: Limit সেট করার পরে Portainer সাধারণত নতুন container তৈরি করে; পুরনোটা বন্ধ হয়।
+
+## ৫) Worker আলাদা কনটেইনার (রেকমেন্ডেড)
+Async jobs ঠিকভাবে চালাতে চাইলে worker আলাদা সার্ভিস হিসেবে রাখুন (আমাদের compose‑এ এই সার্ভিসটি থাকা উচিত):
+```
+worker:
+  container_name: fashionary_worker
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: always
+  environment:
+    - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    - REDIS_URL=redis://redis:6379
+    - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+  depends_on:
+    - redis
+  command: npm run worker
+```
+তারপর Stack আবার **Pull and Redeploy** করুন।
+
+## ৫.১) আপনার স্ক্রিনশটের Deployment Error ফিক্স (Lockfile missing)
+আপনার এরর:  
+`Lockfile not found` → Dockerfile build‑এর সময় `package-lock.json` বা `yarn.lock` পাচ্ছে না।  
+
+**ফিক্স (একবারই লাগবে):**
+1) লোকাল রিপোতে `npm install` চালান  
+2) নিশ্চিত করুন `package-lock.json` রিপোতে আছে  
+3) `git add package-lock.json && git commit -m "Add lockfile"`  
+4) GitHub‑এ push করুন  
+5) Portainer → Stack → **Pull and Redeploy**  
+
+> যদি আপনি yarn ব্যবহার করেন, তবে `yarn.lock` কমিট করতে হবে।
+
+## ৬) Domain + SSL
+- Nginx/Traefik দিয়ে reverse proxy দিন
+- Let’s Encrypt দিয়ে SSL দিন
+- `https://your-domain.com` → `fashionary_app:3000`
+
+## ৭) Clerk Webhook
+Webhook URL:
+```
+https://your-domain.com/api/webhooks/clerk
+```
+Events: `user.created`, `user.updated`, `user.deleted`
+Secret: `CLERK_WEBHOOK_SECRET`
+
+WooCommerce webhook অ্যাপ অটো ম্যানেজ করবে।
+
+## ৮) আপডেট / রিডিপ্লয়
+### ৮.১) অটো‑ডিপ্লয় (প্রায় Zero‑Touch)
+আপনি চাইলে সম্পূর্ণ অটোমেটিক রাখতে পারেন:
+1) Portainer → Stack → **Auto‑update** চালু করুন  
+2) **Polling interval** দিন (যেমন 10–15 মিনিট)  
+3) GitHub‑এ push হলেই Portainer নিজে Pull + Redeploy করবে  
+
+### ৮.২) ম্যানুয়াল আপডেট (যদি Auto‑update না দেন)
+- Portainer → Stack → **Pull and Redeploy**
+
+## ৯) লাইভ আছে কি না চেক
+- সাইট ওপেন হয় কি না
+- লগইন কাজ করে কি না
+- Orders লিস্ট আসে কি না
+- Woo sync চলছে কি না
+- Worker logs‑এ job প্রসেস দেখা যায় কি না
+
+## ১০) রিমোট থেকে বের হলেও সাইট লাইভ থাকবে কিভাবে?
+- `restart: always` থাকা চাই (আমাদের compose‑এ আছে)
+- Worker/Redis container running থাকা চাই
+- Portainer stack running থাকা চাই
+- Reverse proxy + SSL ঠিক থাকলে সাইট সর্বদা লাইভ থাকবে
+
+## ১১) Minimal Action Model (আপনার জন্য সহজ মোড)
+একবার সেটআপের পর আর কিছু করতে হবে না:
+1) Stack তৈরি করুন  
+2) Environment variables সেট করুন  
+3) Auto‑update অন করুন  
+4) DNS/SSL ঠিক করুন  
+**এরপর শুধু GitHub‑এ push দিলেই সব অটোমেটিক ডিপ্লয় হবে।**
+
+---
+ইচ্ছে করলে আমি Nginx config + SSL এর জন্য আলাদা বাংলা গাইডও লিখে দিতে পারি।

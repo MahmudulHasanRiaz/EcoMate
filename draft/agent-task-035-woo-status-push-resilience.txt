@@ -1,0 +1,58 @@
+UPDATE P35 - Woo status push resilience (circuit breaker only)
+
+Scope: ONLY stock status push path. No UI changes. Minimal changes.
+
+Problem:
+- Stock status push can hammer Woo endpoints when upstream is slow/down.
+- We already have circuit breaker for Woo import; push path needs same protection.
+
+Goals:
+- Add circuit breaker for stock status push (per integration) with same thresholds as Woo import.
+
+Implementation Steps:
+1) Add small circuit breaker helpers in src/server/modules/stock-sync.ts
+- Add constants near top:
+  const WOO_PUSH_CB_FAIL_WINDOW_MS = 5 * 60 * 1000;
+  const WOO_PUSH_CB_FAIL_THRESHOLD = 3;
+  const WOO_PUSH_CB_OPEN_MS = 10 * 60 * 1000;
+- Add in-memory maps:
+  const wooPushCbMap: Map<string, { firstFail: number; count: number }>
+  const wooPushCbOpenMap: Map<string, number>
+- Add Redis key prefix:
+  const WOO_PUSH_CB_PREFIX = 'woo-push-cb';
+
+2) Add helper functions (same file):
+- isWooPushCircuitOpen(integrationId): check Redis key `woo-push-cb:open:${integrationId}` or in-memory open map.
+- recordWooPushFailure(integrationId): increment fail count in Redis or in-memory; open circuit when threshold reached.
+- recordWooPushSuccess(integrationId): clear fail counters + open flag.
+
+3) Gate pushStockStatusToIntegration
+File: src/server/modules/stock-sync.ts
+- At start of pushStockStatusToIntegration, before any network call:
+  if (await isWooPushCircuitOpen(integration.id)) {
+    console.warn('[WOO_PUSH_CIRCUIT_OPEN] skip', integration.id);
+    return;
+  }
+
+- On successful push (after all targets processed), call recordWooPushSuccess(integration.id).
+- On any fetch error/exception in attemptPushTargets or performWooSkuLookup:
+  call recordWooPushFailure(integration.id) before rethrow/log.
+  (Do NOT swallow errors; just record.)
+
+4) Logging
+- Add log lines:
+  [WOO_PUSH_CIRCUIT_OPEN]
+  [WOO_PUSH_CIRCUIT_OPENED]
+
+5) Update draft/task.txt
+- Add P35 entry under Done (Unverified):
+  "Woo stock status push resilience (circuit breaker)"
+  Evidence: stock-sync.ts
+
+Verification (manual):
+- With Woo host unreachable, after 3 failures in 5 minutes, circuit opens for 10 minutes and skips further pushes.
+
+Deliver back:
+- Summary + files touched
+- Note whether Redis or in-memory used for circuit (both supported)
+- Confirm task.txt updated

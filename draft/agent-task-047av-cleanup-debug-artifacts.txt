@@ -1,0 +1,49 @@
+P47av - Cleanup debug/test artifacts before production pull
+
+Goal
+- Remove debug/test/trace artifacts from repo so production pulls are clean.
+
+Scope (tracked files to remove)
+- debug-order-details.js
+- debug-perf.js
+- full_schema.sql
+- full_schema_utf8.sql
+- scripts/test-checkout.html
+- scripts/test-db.js
+- scripts/test-p47o.ts
+- scripts/ui-test-final.txt
+- scripts/ui-test-output.txt
+- scripts/ui-test-proof.png
+- scripts/verify-api.ts
+- scripts/verify-p25b.ts
+- scripts/verify-ui.js
+- tsc_errors.txt
+- tsc_errors_v2.txt
+- tsc_output.txt
+- tsc_output_utf8.txt
+- woo-sync-errors.log
+
+Commands (run in repo root)
+1) Remove tracked artifacts
+git rm -f debug-order-details.js debug-perf.js
+git rm -f full_schema.sql full_schema_utf8.sql
+git rm -f scripts/test-checkout.html scripts/test-db.js scripts/test-p47o.ts
+git rm -f scripts/ui-test-final.txt scripts/ui-test-output.txt scripts/ui-test-proof.png
+git rm -f scripts/verify-api.ts scripts/verify-p25b.ts scripts/verify-ui.js
+git rm -f tsc_errors.txt tsc_errors_v2.txt tsc_output.txt tsc_output_utf8.txt
+git rm -f woo-sync-errors.log
+
+2) Verify
+git status -sb
+
+3) Commit + push
+git commit -m "chore: remove debug/test artifacts"
+git push
+
+Production pull (after push)
+git pull
+docker compose build app
+docker compose build worker
+docker compose exec app npx prisma@6.19.1 migrate deploy
+docker compose up -d --force-recreate app worker
+

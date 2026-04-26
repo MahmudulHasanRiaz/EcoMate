@@ -1,0 +1,116 @@
+P47df - Woo Webhook Final Hardening Closeout (No Leftover)
+
+Context
+- P47de solved core issues (ID format, strict signature requirement, publish-mode reservation guard, pagination clamp).
+- Review found a few remaining correctness/security/verification gaps.
+
+Scope (strict)
+- src/app/api/webhooks/woo/[id]/route.ts
+- scripts/list-woo-webhooks.ts
+- scripts/test-webhook-id.ts
+- scripts/verify-stock-logic.ts
+
+No unrelated refactor.
+
+--------------------------------------------------
+1) Guard against invalid payload IDs (critical correctness)
+--------------------------------------------------
+File: src/app/api/webhooks/woo/[id]/route.ts
+
+Current risk:
+- `const externalOrderId = String(payload.id)` can become `"undefined"` / `"null"` / empty.
+- That can generate invalid local IDs and noisy failures.
+
+Required fix:
+- Validate payload order ID before processing:
+  - accept only non-empty scalar (`string|number`) id
+  - reject invalid values with `apiError('Invalid payload: missing order id', 400)`
+- Do this before building `internalOrderId`.
+
+Acceptance:
+- webhook with missing/invalid `payload.id` must not call `processWooWebhookPayload`.
+
+--------------------------------------------------
+2) Remove sensitive signature data from logs (security)
+--------------------------------------------------
+File: src/app/api/webhooks/woo/[id]/route.ts
+
+Current risk:
+- mismatch log prints expected HMAC and received signature.
+
+Required fix:
+- Do NOT log full signature/hash values.
+- Log only minimal metadata (integrationId + reason).
+
+Acceptance:
+- no log line should expose full computed or incoming signature.
+
+--------------------------------------------------
+3) Keep auto-heal, but make failure handling explicit and non-blocking
+--------------------------------------------------
+File: src/app/api/webhooks/woo/[id]/route.ts
+
+Required behavior (keep):
+- On missing secret/signature or mismatch:
+  - record webhook failure
+  - trigger `ensureWooWebhook(integration, { forceRecreate: true, rotateSecret: true })`
+  - return 401
+
+Required hardening:
+- Keep auto-heal call wrapped in `.catch(...)` (already present) so request path never crashes on heal error.
+
+--------------------------------------------------
+4) Tighten verification scripts so they fail on bad state
+--------------------------------------------------
+4.1 File: scripts/list-woo-webhooks.ts
+- Current behavior warns when count != 1 but exits success.
+- Required:
+  - if relevant active `order.created` webhook count !== 1 -> `process.exit(1)`.
+  - verify `delivery_url` exactly equals expected app URL path for integration.
+  - fail if mismatch.
+
+4.2 File: scripts/test-webhook-id.ts
+- Current behavior can fail due side-effect hold-push errors (external Woo route 404), even when ID assertion passes.
+- Required:
+  - keep ID-normalization assertion strict.
+  - make external status-push side effects non-fatal for this test (catch/log but do not fail ID test).
+  - still cleanup created test order.
+
+4.3 File: scripts/verify-stock-logic.ts
+- Keep publish-mode assertion as-is, but ensure script exits non-zero on failed assertions only.
+
+--------------------------------------------------
+5) Verification checklist (mandatory)
+--------------------------------------------------
+A) Type safety
+- `npx tsc --noEmit --pretty false`
+
+B) Webhook route payload-id guard
+- Send/construct webhook request without `id`.
+- Expect 400, and no new `woo-...-undefined` order in DB.
+
+C) Script strictness
+1. `npx tsx scripts/list-woo-webhooks.ts`
+   - must fail if not exactly one active `order.created` with exact expected delivery URL.
+2. `npx tsx scripts/test-webhook-id.ts`
+   - must PASS on ID normalization check and cleanup.
+3. `npx tsx scripts/verify-stock-logic.ts`
+   - must PASS publish-mode stock skip.
+
+D) Pagination unchanged
+- `npx tsx scripts/verify-pagination.ts`
+- must still pass.
+
+--------------------------------------------------
+6) Required output format from coder
+--------------------------------------------------
+Return exactly:
+1. Files changed
+2. Diff snippet for payload.id guard in webhook route
+3. Diff snippet showing signature redaction/log hardening
+4. Script outputs:
+   - list-woo-webhooks.ts
+   - test-webhook-id.ts
+   - verify-stock-logic.ts
+   - verify-pagination.ts
+5. `npx tsc --noEmit` result

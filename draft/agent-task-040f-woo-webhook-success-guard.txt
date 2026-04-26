@@ -1,0 +1,55 @@
+UPDATE P40f - Woo webhook auto-heal guard by recent success (stop recreate loop)
+
+Scope: ONLY src/app/api/webhooks/woo/[id]/route.ts. Minimal change.
+
+Problem:
+- After a successful webhook (200), subsequent stale retries (401) still trigger auto-heal + secret rotation.
+- This creates a loop: valid hook works, stale retry causes rotation -> new hook created again.
+
+Fix:
+1) Track recent success (memory + Redis)
+File: src/app/api/webhooks/woo/[id]/route.ts
+- Add near top (module scope):
+  const wooWebhookSuccessMap = new Map<string, number>();
+  const WOO_WEBHOOK_SUCCESS_TTL_MS = 10 * 60 * 1000; // 10 min
+
+- Add helper:
+```
+async function markWooWebhookSuccess(integrationId: string) {
+  const now = Date.now();
+  wooWebhookSuccessMap.set(integrationId, now);
+  const redis = getRedisClient();
+  if (redis) await redis.set(`woo:webhook:last_success:${integrationId}`, String(now), 'EX', 10 * 60);
+}
+
+async function hasRecentWooSuccess(integrationId: string) {
+  const now = Date.now();
+  const mem = wooWebhookSuccessMap.get(integrationId);
+  if (mem && now - mem < WOO_WEBHOOK_SUCCESS_TTL_MS) return true;
+  const redis = getRedisClient();
+  if (redis) {
+    const v = await redis.get(`woo:webhook:last_success:${integrationId}`);
+    if (v) return true;
+  }
+  return false;
+}
+```
+
+2) Guard auto-heal if recent success exists
+- In triggerWooWebhookAutoHeal, before throttle logic:
+```
+if (await hasRecentWooSuccess(integrationId)) {
+  console.log('[WOO_WEBHOOK_AUTOHEAL_SKIP_RECENT_SUCCESS]', integrationId);
+  return;
+}
+```
+- Keep existing throttle logic after this.
+
+3) Mark success on valid webhook processing
+- In POST handler, before returning apiSuccess (both "Order already exists" and "Order imported"):
+  await markWooWebhookSuccess(integrationId);
+
+Deliver back:
+- Summary + file touched
+- Confirm new log [WOO_WEBHOOK_AUTOHEAL_SKIP_RECENT_SUCCESS]
+- Behavior: 200 followed by stale 401 will NOT rotate secret or recreate webhook within 10 minutes.

@@ -1,0 +1,43 @@
+UPDATE P03g - Inventory modals show "No data" before load (fix loading state)
+
+Scope: ONLY fix items listed here. Keep changes minimal.
+
+Problem
+Movement History / Lots modals render an empty state before async data arrives, then update.
+This causes a confusing "No movement history found" flash.
+
+1) Movement History modal: show loading state until data is fetched
+File: src/app/dashboard/inventory/client-page.tsx
+
+Fix:
+- Treat "no movementState yet" as loading when dialog opens.
+  Example:
+    const isMovementLoading =
+      movementState?.isLoading ?? (dialogState.mode === 'viewMovement' && !!currentItem);
+- In the viewMovement UI, render:
+  - If isMovementLoading: show a loader row/message (desktop + mobile).
+  - Else if movementsForDialog.length === 0: show "No movement history found".
+  - Else render rows.
+
+2) Lots modal: show loading state until data is fetched
+File: src/app/dashboard/inventory/client-page.tsx
+
+Fix:
+- Compute lotState for the dialog key and derive isLotsLoading similarly:
+  const lotStateForDialog = ... from lotStateByKey[key]
+  const isLotsLoading =
+    lotStateForDialog?.isLoading ?? (dialogState.mode === 'lots' && !!dialogState.selectedItem);
+- Use isLotsLoading to render a loader state before showing "No lots found".
+
+3) Optional pre-seed loading state (to avoid 1-frame empty)
+File: src/app/dashboard/inventory/client-page.tsx
+Function: openDialog
+- When opening 'viewMovement' or 'lots', pre-seed state:
+  setMovementStateByKey / setLotStateByKey with { items: [], nextCursor: null, isLoading: true }
+  (only if no state exists for that key).
+
+Deliver back:
+- Summary + files touched
+- Manual verify:
+  - Movement History opens with loader (no empty flash), then data.
+  - Lots dialog behaves same.

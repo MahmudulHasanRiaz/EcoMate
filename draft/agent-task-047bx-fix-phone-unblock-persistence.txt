@@ -1,0 +1,112 @@
+P47bx - Fix manual phone unblock persistence (customer page)
+
+Goal
+- When a phone is manually unblocked from customer profile, it must stay unblocked after reload.
+- Remove hidden residual phone restrictions (GLOBAL/SITE leftovers) that currently re-block on refresh.
+- Keep fix minimal and production-safe.
+
+Scope
+- `src/app/api/restrictions/route.ts`
+- `src/app/dashboard/customers/[id]/page.tsx`
+
+Out of scope
+- No schema/migration.
+- No Woo restriction-check logic changes.
+- No unrelated refactor.
+
+--------------------------------------------------------------------
+Root cause (confirmed)
+--------------------------------------------------------------------
+
+Current customer-page unblock does:
+1) GET phone restrictions
+2) DELETE only with `scope=GLOBAL`
+
+So if a `SITE` restriction exists for the same phone, it remains in DB.
+After reload, `checkRestriction(...)` sees active restriction again => appears blocked.
+
+--------------------------------------------------------------------
+1) Backend: extend DELETE /api/restrictions for stable phone unblock
+--------------------------------------------------------------------
+
+File: `src/app/api/restrictions/route.ts`
+
+Required changes
+1. Keep backward compatibility with existing `targetHash` delete.
+2. Add support for delete by `targetType + targetValue`:
+   - Query params accepted:
+     - `targetType` (`PHONE` / `IP` / `IP_HASH`)
+     - `targetValue`
+     - `allScopes` (`true` / `false`)
+     - existing `scope`, `integrationId` still supported
+3. For `targetType=PHONE`:
+   - normalize with `normalizeBdPhone(targetValue)`.
+   - if invalid => return 400.
+4. If `allScopes=true` and targetType is PHONE:
+   - delete ALL phone restrictions for that normalized hash:
+     - `where: { targetType: 'PHONE', targetHash: <normalized> }`
+   - Do not filter by scope/integration in this mode.
+5. Response must include deleted count:
+   - `{ success: true, deletedCount: number }`
+6. If delete count is 0:
+   - return 404 `{ error: 'No matching restriction found' }`
+
+Why
+- Manual unblock should restore phone to normal state, not partially unblock only GLOBAL rows.
+
+--------------------------------------------------------------------
+2) Frontend: customer phone unblock must call allScopes delete
+--------------------------------------------------------------------
+
+File: `src/app/dashboard/customers/[id]/page.tsx`
+
+Replace current phone unblock handler logic:
+- Remove old sequence:
+  - GET restrictions
+  - pick `data[0]`
+  - DELETE with `scope=GLOBAL`
+
+Implement new logic:
+1. Build one DELETE request:
+   - `/api/restrictions?targetType=PHONE&targetValue=<customer.phone>&allScopes=true`
+2. Parse JSON response.
+3. If non-OK => show backend error toast.
+4. If OK:
+   - show success toast with deleted count (optional but recommended).
+   - re-run `checkRestriction(customer.phone, 'PHONE', mostRecentOrder?.integrationId)` to refresh UI state from server truth.
+   - do NOT rely only on `setPhoneBlocked(false)` without recheck.
+
+Note
+- Keep block flow unchanged.
+- Keep IP unblock flow unchanged.
+
+--------------------------------------------------------------------
+3) Verification checklist (mandatory)
+--------------------------------------------------------------------
+
+A) Reproduce old bug before fix (optional baseline)
+1. Ensure phone has both GLOBAL/SITE restrictions (or at least one SITE restriction).
+2. Unblock from customer page.
+3. Reload page.
+4. Observe it becomes blocked again.
+
+B) Verify after fix
+1. Block a customer phone from customer page.
+2. Unblock from customer page.
+3. Reload page.
+4. Expected:
+   - Phone remains unblocked.
+   - No block badge/button state mismatch.
+
+C) DB verification
+Run:
+`SELECT scope, "integrationId", "expiresAt" FROM "OrderRestriction" WHERE "targetType"='PHONE' AND "targetHash"='<normalized_phone>';`
+
+Expected after unblock:
+- 0 rows for that phone hash.
+
+D) Safety checks
+1. Block phone again => should work.
+2. Unblock again => should work consistently.
+3. IP unblock behavior unchanged.
+

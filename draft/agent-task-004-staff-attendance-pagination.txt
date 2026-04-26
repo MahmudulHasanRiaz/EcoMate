@@ -1,0 +1,36 @@
+﻿UPDATE P02 - Staff & Attendance pagination + background accrual
+
+Scope: ONLY add pagination + move auto-accrual/attendance to job. No UI redesign.
+
+1) Staff detail payload too heavy
+- File: src/app/api/staff/[id]/route.ts
+  - Current GET loads full payments + income history. Replace with:
+    - basic staff profile + financial summary only
+    - move histories to paginated endpoints
+  - Add query params: includeHistory=false by default.
+
+2) New paginated endpoints
+- Add endpoints:
+  - GET /api/staff/[id]/payments?cursor=&pageSize=
+  - GET /api/staff/[id]/income?cursor=&pageSize=
+- Use cursor by date+id (desc) + max pageSize.
+- Return { items, nextCursor }.
+
+3) UI updates
+- File: src/app/dashboard/staff/[id]/page.tsx (or client components)
+  - Load staff profile (summary) then fetch payments/income via paginated endpoints.
+  - Keep existing totals visible; update list with “Load more”.
+
+4) Attendance list pagination
+- File: src/server/modules/attendance.ts + src/app/api/attendance/route.ts
+  - Add cursor pagination on attendanceRecord (date desc + id desc).
+  - Keep date range filters.
+
+5) Background jobs
+- Salary accrual should NOT run inside GET/PUT paths.
+  - Move ensureSalaryAccrualsForStaff / daily attendance creation into a scheduled job (BullMQ or cron worker).
+  - Add a worker task that runs daily for all staff.
+
+Deliver back
+- Summary + files touched
+- Manual test: staff profile loads fast; payment history paginates; attendance list paginates by month.

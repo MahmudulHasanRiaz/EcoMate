@@ -1,0 +1,30 @@
+P47at - Order create fails for Seller (assignedTo vs assignedToId)
+
+Issue
+- Creating an order fails with: "Unknown argument `assignedTo`. Did you mean `assignedToId`?"
+- This indicates Prisma expects the scalar FK field instead of relation connect in create().
+
+Scope
+- src/server/modules/orders.ts
+
+Fix
+In createOrder -> tx.order.create({ data: { ... } })
+Replace the relation connect with assignedToId.
+
+Change:
+  assignedTo: orderSource === 'manual' && actor.id ? { connect: { id: actor.id } } : undefined,
+
+To:
+  assignedToId: orderSource === 'manual' ? (actor.id ?? null) : null,
+
+Notes
+- Do NOT send both assignedTo and assignedToId in the same create.
+- This avoids Prisma validation errors and still assigns the staff member.
+
+Restart
+- npm run dev
+- npm run worker
+
+Verify
+- Login as Seller/Moderator
+- Create a manual order → should succeed

@@ -1,0 +1,37 @@
+P47k - Production products API fails due to missing ProductVariant.image column
+
+Root cause
+- /api/products includes variants: true
+- Prisma expects ProductVariant.image (present in schema)
+- Live DB is missing this column -> P2022 -> products list empty + new page fails
+
+What I changed locally
+- Added a safe, idempotent migration:
+  prisma/migrations/20260127121555_add_productvariant_image_column/migration.sql
+  SQL:
+    ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "image" TEXT;
+
+Actions required
+1) Commit & push this migration from local:
+   git add prisma/migrations/20260127121555_add_productvariant_image_column/migration.sql
+   git commit -m "fix(db): add missing ProductVariant.image column"
+   git push
+
+2) On VPS:
+   cd /opt/fashionary
+   git pull
+
+3) Apply migration:
+   docker compose exec app npx prisma@6.19.1 migrate deploy
+
+4) Restart app + worker:
+   docker compose up -d --force-recreate app worker
+
+5) Verify:
+   docker compose logs --tail=200 app
+   Then open:
+   - /dashboard/products
+   - /dashboard/products/new
+
+Note
+- You may still see [API_ERROR:WHOAMI] with email unique conflicts in logs. That is a separate data issue and not the blocker for products.

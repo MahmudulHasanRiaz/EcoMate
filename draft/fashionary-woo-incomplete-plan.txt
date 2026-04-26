@@ -1,0 +1,113 @@
+Fashionary Woo Incomplete Orders - Implementation Plan (No code changes)
+Date: 2026-01-25
+Owner: Architecture plan only. Implementation to be done by coder agent.
+
+Goal
+- Capture checkout-incomplete leads (order not created) from connected Woo sites.
+- Enforce optional order restrictions (phone) and manual IP blocks across sites.
+- Use a secure, lightweight plugin that posts data to Fashionary API.
+- Provide dynamic controls (debounce, duplicate window, required fields) via settings.
+- Maintain privacy and performance while keeping delivery reliable.
+
+Scope (Phase A: Minimal viable, aligned with current app)
+1) WordPress plugin "Fashionary" (WooCommerce required)
+   - Admin Settings page (unique UI, not EcomDrive clone):
+     - API Base URL (Fashionary backend)
+     - API Key (per-integration; no HMAC secret)
+     - Status card (Connected/Last Seen)
+     - Copy buttons + Test/Verify Connection
+   - Plugin does NOT own business rules. It fetches dynamic settings from Fashionary.
+   - Frontend JS tracking:
+     - Detect changes on checkout fields
+     - Validate phone locally (BD rules) before submit and before sending incomplete
+     - Call "restriction check" API before submit
+     - Post incomplete payload with Authorization header
+     - Local cache to avoid repeated posts (signature + TTL)
+     - On "order completed" (woocommerce_new_order), send completion payload
+   - Data collection aligns with current Fashionary ingestion format (see API section).
+
+2) Fashionary Backend
+   - New endpoints (auth: Bearer API key):
+     - GET /api/woo/plugin-config
+       - Returns per-integration settings (debounce, dedupe window, restriction rules, message)
+     - POST /api/woo/incomplete-orders
+       - Validate payload, normalize phone, store lead
+       - De-dup within time window (server config)
+       - Capture client IP from headers (CF-Connecting-IP / X-Forwarded-For)
+     - POST /api/woo/incomplete-orders/complete
+       - Mark as completed if a real order is created later
+     - POST /api/woo/restriction-check
+       - Returns {allowed, message, supportPhone, blockType}
+   - Manual IP block/unblock (UI triggers server action):
+     - Order detail page: "Block IP" / "Unblock IP"
+     - Customer detail page: same
+   - Admin UI listing (optional Phase B):
+     - List incomplete leads with filters and conversion status
+
+3) Data Contract (draft)
+   - Required:
+     - site_url
+     - integration_id (resolved by API key)
+     - uid (session/uuid)
+     - customer_phone
+     - customer_name
+     - customer_address_1
+     - product_skus
+   - Optional:
+     - product_data (line items)
+     - tracking_data (utm, fbclid/fbp/fbc)
+     - user_ip (client, best-effort; server also captures)
+     - user_agent
+     - created_at (client time)
+     - order_completed (boolean)
+
+Security Plan
+- Use per-integration API key stored in Fashionary
+- Rate-limit by IP + site
+- Reject unknown site_url or invalid key
+
+Reliability Plan
+- Client debounce + request cache to avoid floods
+- Server-side de-dup (phone+sku+site within window)
+- Optional secondary fallback endpoint (worker) for downtime
+- Logging: minimal, structured, no PII in logs
+
+Compatibility Plan
+- Works with standard Woo checkout (including block-based if needed later)
+- Does not require admin-level order permissions
+- No custom order status needed
+
+Order Restriction (phone)
+- Settings live in Woo Integration page:
+  - Enable toggle
+  - Scope: This site only / All connected sites
+  - Duration: Always / Hours / Days (default 1 day)
+  - Message template (default + editable)
+  - Support phone (integration override)
+- Support phone fallback order:
+  - Integration support phone -> Business phone -> General settings phone
+- Trigger: only after successful order placement
+- Phone validation (BD):
+  - Accept inputs starting with 01 / 880 / +880
+  - Normalize to 0 + 10 digits (length 11). Do NOT require second digit = 1.
+  - Invalid -> red warning + block submit + no incomplete capture
+
+IP Blocking (manual)
+- No automatic IP restriction toggle.
+- Manual block/unblock only:
+  - Order detail page: "Block IP" / "Unblock IP"
+  - Customer detail page: "Block IP" / "Unblock IP"
+- Scope: Global (blocks across all connected sites)
+- Message: same as restriction, editable in settings (default provided)
+- IP capture:
+  - Not currently stored. Must be captured in incomplete/complete endpoints and on Woo order webhook.
+  - Store hash only (no raw IP display in UI).
+- Performance: indexed lookup; O(1) check in restriction API. No heavy queries.
+
+Open Questions (to confirm before build)
+- Confirm plugin should never allow incomplete capture on invalid phone.
+
+Deliverables (Phase A)
+- /draft/fashionary-woo-incomplete-plan.txt (this plan)
+- Implementation command file for coder (next step)
+- Code review after coder applies

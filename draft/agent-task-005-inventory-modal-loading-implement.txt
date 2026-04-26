@@ -1,0 +1,23 @@
+UPDATE P03g-IMPLEMENT - Apply the loading-state fixes (no plan)
+
+Scope: Implement now. Do NOT send a plan. No refactors.
+
+Required changes (same as P03g):
+1) Movement History modal loading state
+File: src/app/dashboard/inventory/client-page.tsx
+- If movementState missing, treat as loading while dialog is open.
+- Show Loading row/message before empty state.
+
+2) Lots modal loading state
+File: src/app/dashboard/inventory/client-page.tsx
+- If lotState missing, treat as loading while dialog is open.
+- Show Loading row/message before empty state.
+
+3) Pre-seed loading state on dialog open
+File: src/app/dashboard/inventory/client-page.tsx
+- In openDialog/openDialogForVariant, if opening 'viewMovement' or 'lots' and no state exists, set isLoading: true.
+
+Deliver back:
+- Summary of changes
+- Files touched
+- Manual verify steps + outcome

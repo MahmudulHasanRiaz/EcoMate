@@ -1,0 +1,58 @@
+UPDATE 26 - Fix blank first print + barcode render + compact lots + correct remaining
+
+Scope: ONLY items listed here. Keep changes minimal. No refactors.
+
+1) Fix blank print on first click (content not ready)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> after w.document.write/html and before printing
+Fix:
+- Add a strong “print-ready” wait:
+  - waitForDomReady (document.body exists + has content length > 0)
+  - waitForImages
+  - waitForBarcode (after DOM ready)
+  - waitForFonts: if (w.document.fonts?.ready) await it
+  - waitForPaint: two rAF + small timeout (150–250ms)
+- Call safePrint ONLY after all of the above complete.
+- Keep timeout fallback, but ensure it still includes the minimum delay so print doesn’t fire too early.
+Goal: first click opens a fully rendered print preview (no blank page).
+
+2) Barcode not showing + oversized empty SVG
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: formatLots + waitForBarcode
+Fix:
+- Change barcode elements to include data-barcode attribute and fixed size:
+  <svg class="lot-barcode" data-barcode="LOT123" style="width:90px;height:16px;display:inline-block;"></svg>
+- In waitForBarcode, after DOM ready:
+  - Select all .lot-barcode nodes.
+  - For each node, read value from data-barcode (or jsbarcode-value).
+  - Call JsBarcode(node, value, { format:'CODE128', displayValue:false, height:12, width:1 }).
+  - If no value OR JsBarcode fails, hide the svg (display:none) to avoid huge blank space.
+Goal: barcodes actually render, and no big blank blocks if they fail.
+
+3) Remaining qty must reflect total allocations across ALL items in invoice
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> before itemsHtml
+Fix:
+- Build overallAllocatedByLotNumber map across ALL threePieceItems:
+  - For each item, combine JAMA/ORNA/SELOWAR allocations.
+  - Sum yards per lotNumber (use inventoryLotMap for lotNumber).
+- In formatLots, when computing Rem for a lot:
+  overallAllocated = overallAllocatedByLotNumber.get(lotNumber) || 0
+  rem = (lot.stock >= overallAllocated) ? (lot.stock - overallAllocated) : lot.stock
+- Keep per-item totals row (J/O/S) so the user sees part totals + per-lot splits.
+Goal: if a lot has 100 stock and total allocations across products = 80, Rem shows 20 everywhere.
+
+4) Compact lots layout to fit 2+ products per page
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: formatLots styles
+Fix:
+- Reduce padding + font size (e.g., 8–9px) and line-height (~1.1).
+- Remove extra margins where possible (top/bottom).
+- Keep header row but make it slimmer; keep borders subtle.
+- Ensure barcode height does not increase row height (see #2).
+Goal: lots block is readable yet compact.
+
+Deliver back:
+- Summary of changes
+- Files touched
+- Manual verify note: first print is NOT blank, barcodes visible, lots block compact, Rem shows invoice-level leftover.

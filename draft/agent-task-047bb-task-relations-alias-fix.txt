@@ -1,0 +1,68 @@
+P47bb - Tasks list empty after create (relation alias mismatch)
+
+Symptom
+- Task create returns success, but list stays empty.
+- Root cause: tasks module uses relation names assignedTo/createdBy/logs/user, but Prisma schema uses auto-generated relation names:
+  StaffMember_Task_assignedToIdToStaffMember, StaffMember_Task_createdByIdToStaffMember, TaskLog, StaffMember.
+  This makes GET /api/tasks fail silently and list shows nothing.
+
+Scope
+- src/server/modules/tasks.ts
+
+Fix (code only, no migration)
+1) getTasks(): use actual relation names + map to expected fields
+
+Replace include block:
+  include: {
+    assignedTo: { select: { id: true, name: true, staffCode: true } },
+    createdBy: { select: { id: true, name: true } }
+  }
+
+With:
+  include: {
+    StaffMember_Task_assignedToIdToStaffMember: { select: { id: true, name: true, staffCode: true } },
+    StaffMember_Task_createdByIdToStaffMember: { select: { id: true, name: true } }
+  }
+
+Then map before return:
+  return tasks.map((t: any) => ({
+    ...t,
+    assignedTo: t.StaffMember_Task_assignedToIdToStaffMember ?? null,
+    createdBy: t.StaffMember_Task_createdByIdToStaffMember,
+  }));
+
+2) getTaskById(): fix include + normalize
+Replace include:
+  assignedTo, createdBy, logs
+With:
+  StaffMember_Task_assignedToIdToStaffMember,
+  StaffMember_Task_createdByIdToStaffMember,
+  TaskLog: { orderBy: { timestamp: 'desc' }, include: { StaffMember: { select: { name: true } } } }
+
+Then normalize result:
+  const { TaskLog, StaffMember_Task_assignedToIdToStaffMember, StaffMember_Task_createdByIdToStaffMember, ...rest } = task;
+  return {
+    ...rest,
+    assignedTo: StaffMember_Task_assignedToIdToStaffMember ?? null,
+    createdBy: StaffMember_Task_createdByIdToStaffMember,
+    logs: (TaskLog || []).map((log: any) => ({ ...log, user: log.StaffMember }))
+  };
+
+3) getTaskReport(): update select + map
+Replace:
+  assignedTo: { select: { name: true } }
+With:
+  StaffMember_Task_assignedToIdToStaffMember: { select: { name: true } }
+Then map:
+  tasks: completedTasks.map((t: any) => ({
+    ...t,
+    assignedTo: t.StaffMember_Task_assignedToIdToStaffMember ?? null,
+  }))
+
+Verify
+- Create a task assigned to another user.
+- Reload /dashboard/tasks: task appears.
+- Open task details: logs show user names.
+
+Notes
+- No schema/migration change required.

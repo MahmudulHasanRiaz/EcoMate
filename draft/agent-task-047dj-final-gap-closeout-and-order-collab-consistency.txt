@@ -1,0 +1,232 @@
+P47dj - Final Gap Closeout + Multi-User Order Consistency Hardening
+
+Context (must follow)
+- Environment is LOCAL machine (Cloudflare tunnel), not `/opt/fashionary`.
+- Keep current working webhook ingest behavior unchanged.
+- Do not do broad refactors. Ship focused, minimal-risk changes.
+- Existing webhook behavior is already healthy:
+  - signed Woo hits => 200
+  - unsigned/no-signature hits => 401 (expected)
+- This task is split into:
+  - A) remaining concrete bug gaps
+  - B) order-management multi-user consistency hardening
+
+==================================================
+A) Remaining Bug Gaps (must finish)
+==================================================
+
+1) Order details status select still uncontrolled
+File:
+- `src/components/orders/order-details-view.tsx`
+
+Current issue:
+- In status form, Select is still:
+  - `defaultValue={field.value}`
+- This keeps it uncontrolled and can drift from form state.
+
+Required fix:
+- Change Select to controlled:
+  - `value={field.value ?? ''}`
+  - `onValueChange={field.onChange}`
+- Keep existing guard that blocks empty status submit.
+
+Acceptance:
+- Status dropdown always reflects actual form value.
+- No stale/blank selection after data reset or save.
+
+--------------------------------------------------
+
+2) General Purchase variant labels still fallback to product-name/"Default"
+File:
+- `src/app/dashboard/purchases/new/page.tsx`
+
+Current issue:
+- Two remaining inline blocks still use:
+  - `(variant.name && variant.name !== product.name) ? variant.name : 'Default'`
+- This bypasses `getVariantLabel(...)` and causes wrong variant text.
+
+Required fix:
+- Replace both remaining inline blocks with shared helper:
+  - `getVariantLabel(variant, product.name)`
+- Preserve `N/A` behavior where no variant is selected.
+
+Acceptance:
+- General Purchase (mobile + table) shows attribute-value labels (e.g. `Red / XL`) consistently.
+
+--------------------------------------------------
+
+3) Webhook verification scripts must match runtime policy
+Files:
+- `scripts/check-woo-hook-details.ts`
+- `scripts/check-woo-deliveries.ts`
+
+Current issue:
+- Hook detail script still checks `order.on-hold` (wrong for current ensure policy).
+- Delivery script only checks first webhook page and only `order.created`.
+
+Required fix:
+- Align scripts with runtime ensure policy:
+  - required topics: `order.created`, `order.updated`
+- Use paginated webhook listing before matching hook(s).
+- Delivery script should match either required topic for this integration URL.
+
+Acceptance:
+- No false negatives due to topic mismatch or single-page listing.
+
+==================================================
+B) Multi-User Order Consistency Hardening (architectural, must implement)
+==================================================
+
+Goal:
+- If one user updates an order, all other active users should see it quickly.
+- Avoid write conflicts and silent overwrites during concurrent edits.
+
+Implement in 4 focused layers:
+
+1) Optimistic concurrency guard on order writes
+Files:
+- `src/lib/validations/orders.ts`
+- `src/app/api/orders/[id]/route.ts`
+- `src/server/modules/orders.ts`
+- `src/services/orders.ts`
+
+Required:
+- Add optional `expectedUpdatedAt` (ISO string) in update payload schema.
+- API PATCH passes it through to update module.
+- In update module, before write:
+  - compare current `updatedAt` with `expectedUpdatedAt`.
+  - if mismatch => throw conflict error.
+- API returns `409` with structured error:
+  - `{ code: 'ORDER_CONFLICT', message, latest }`
+
+Acceptance:
+- Two simultaneous editors cannot silently overwrite each other.
+- Second stale write gets 409 + latest snapshot.
+
+--------------------------------------------------
+
+2) Lock-aware mutation enforcement (server-side guard)
+Files:
+- `src/server/modules/order-open-lock.ts`
+- `src/lib/validations/orders.ts`
+- `src/app/api/orders/[id]/route.ts`
+- `src/server/modules/orders.ts`
+- `src/services/orders.ts`
+- `src/components/orders/order-details-view.tsx`
+
+Required:
+- Add optional `lockToken` in update payload.
+- Add helper in lock module to read current lock for an order.
+- On PATCH write:
+  - if a lock exists for another user and provided token does not match => return 409 `LOCKED`.
+- When editing from order details:
+  - send active lock token with update payload.
+
+Acceptance:
+- Locked order cannot be mutated by another user without valid lock token.
+- Conflict is explicit instead of hidden overwrite.
+
+--------------------------------------------------
+
+3) Near-real-time cross-user refresh for order list/details
+Files:
+- `src/app/api/orders/changes/route.ts` (new)
+- `src/server/modules/orders.ts` (helper query if needed)
+- `src/app/dashboard/orders/client-page.tsx`
+- `src/components/orders/order-details-view.tsx`
+
+Required:
+- New lightweight changes endpoint:
+  - input: `since`, optional `ids`
+  - output: `{ changedIds, serverTime }`
+  - detect by `Order.updatedAt > since` (and optional id filter)
+- Orders list page:
+  - poll this endpoint every 5-8s (only when tab visible)
+  - if changed ids intersect visible rows => `mutateOrders()`
+- Order details page:
+  - while open, poll specific order every 8-10s (pause while save in progress)
+  - if changed externally, refresh view and show subtle toast/info.
+
+Acceptance:
+- User B sees User A's updates quickly without manual reload.
+- No aggressive full-list polling every few seconds.
+
+--------------------------------------------------
+
+4) Same-browser multi-tab instant sync (cheap win)
+Files:
+- `src/services/orders.ts`
+- `src/app/dashboard/orders/client-page.tsx`
+- `src/components/orders/order-details-view.tsx`
+
+Required:
+- Add `BroadcastChannel('orders-updates')` (with safe fallback) on successful order update.
+- Include payload `{ orderId, updatedAt, source }`.
+- Other tabs on same browser receive and trigger local refresh (`mutateOrders` / `refetch order`).
+
+Acceptance:
+- Same-user multiple tabs stay in sync immediately.
+
+==================================================
+C) Guardrails
+==================================================
+
+- Do NOT modify runtime webhook ingest logic in:
+  - `src/app/api/webhooks/woo/[id]/route.ts`
+  - `src/server/modules/woo/webhook-processor.ts`
+  - `src/server/modules/woo-sync.ts`
+- Keep current signed=200 / unsigned=401 behavior.
+- Keep existing publish-mode stock guard behavior unchanged.
+- No schema-breaking DB migration in this task.
+
+==================================================
+D) Verification (LOCAL)
+==================================================
+
+Run from:
+```powershell
+cd E:\fashionary\Fashionary
+```
+
+1) Type check
+```powershell
+npx tsc --noEmit --pretty false
+```
+
+2) Webhook script consistency
+```powershell
+npx tsx scripts/check-woo-hook-details.ts
+npx tsx scripts/check-woo-deliveries.ts
+```
+
+3) Concurrency test (manual)
+- Open same order in two browsers/sessions.
+- Session A updates status successfully.
+- Session B tries stale save:
+  - must get conflict/locked error, not silent overwrite.
+
+4) Multi-user visibility test (manual)
+- Keep Orders list open in Session B.
+- Update order in Session A.
+- Session B should auto-reflect within polling window (<=10s target).
+
+5) Variant label test
+- General Purchase page (mobile + desktop table):
+  - variant text should be attribute-based labels, not product name fallback.
+
+==================================================
+E) Required Output
+==================================================
+
+Return exactly:
+1. Files changed
+2. Diff snippets for:
+   - controlled status select fix
+   - purchase page variant label replacement
+   - webhook scripts topic/pagination consistency
+   - optimistic concurrency + lock guard
+   - changes endpoint + client auto-refresh wiring
+3. `npx tsc --noEmit --pretty false` result
+4. Output of both webhook scripts
+5. Manual concurrency + multi-user visibility test results
+6. Known risks / follow-up (if any)

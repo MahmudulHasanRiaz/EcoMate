@@ -1,0 +1,106 @@
+P47bm - Final blockers: purchases.ts build fix + multi-type vendor visibility in production
+
+Objective:
+- Remove the remaining compile blocker.
+- Ensure partners who are both Supplier + multi-type Vendor are visible in Printing/Cutting vendor selectors.
+
+Scope:
+- `src/server/modules/purchases.ts`
+- `src/services/partners.ts`
+- `src/app/dashboard/purchases/[id]/client-page.tsx`
+- (optional if needed) `src/app/dashboard/purchases/new/page.tsx`
+- No unrelated refactor.
+- No commit/push instructions.
+
+--------------------------------------------------------------------
+1) Fix compile blocker in purchases.ts (`getAccountId` undefined)
+--------------------------------------------------------------------
+Problem:
+- `applyPartnerPaymentCore` now calls `getAccountId(...)` but this helper does not exist.
+- TypeScript/build fails.
+
+File:
+- `src/server/modules/purchases.ts`
+
+Required fix:
+A) Remove all calls to `getAccountId(...)`.
+B) Resolve required account IDs once per transaction near the top of `applyPartnerPaymentCore`:
+   - `Accounts Payable` (from `ACCOUNT_LABELS.accountsPayable`)
+   - `Supplier Advance` (from `ACCOUNT_LABELS.supplierAdvance`)
+C) Reuse these resolved IDs inside both supplier and vendor loops when creating payment-linked ledger entries.
+D) If either account is missing, throw a clear error (same style as existing accounting guards).
+E) Remove dead variable `totalClearedAllocated` if no longer used after this refactor.
+
+Acceptance:
+- No `getAccountId` reference remains in `src/server/modules/purchases.ts`.
+- Purchases module compiles (at least no `Cannot find name 'getAccountId'`).
+
+--------------------------------------------------------------------
+2) Multi-type vendor must appear in Printing/Cutting selectors
+--------------------------------------------------------------------
+Problem:
+- Vendor `type` is now CSV (e.g. `Printing, Cutting`).
+- Current filters still use exact equality in critical paths, so same-person multi-type vendor is hidden.
+
+Files:
+- `src/services/partners.ts`
+- `src/app/dashboard/purchases/[id]/client-page.tsx`
+- (optional) `src/app/dashboard/purchases/new/page.tsx`
+
+Required fix A: backend vendor filter by token, not exact string
+
+In `getVendors(params)` (`src/services/partners.ts`):
+- Replace `where.type = params.type` exact-match logic.
+- Implement token-aware filter for `params.type` (`Printing` / `Cutting`) that matches:
+  - exact single value
+  - first token
+  - middle token
+  - last token
+  with both comma-space and comma-no-space variants.
+
+Implementation pattern:
+- Build `where.AND` clauses.
+- For type clause, use `OR` with Prisma string operators (`equals`, `startsWith`, `contains`, `endsWith`) and `mode: 'insensitive'`.
+- Keep search clause working together with type clause.
+
+Required fix B: frontend local filtering by token
+
+In `src/app/dashboard/purchases/[id]/client-page.tsx`:
+- Add helper:
+  - `hasVendorType(v.type, target)` that splits CSV by comma, trims, lowercases, token matches.
+- Replace strict filters:
+  - `v.type === 'Printing'` -> `hasVendorType(v.type, 'Printing')`
+  - `v.type === 'Cutting'` -> `hasVendorType(v.type, 'Cutting')`
+- Apply to all three select contexts currently using strict equality:
+  - Fabric step printing vendor selector
+  - Printing step next cutting vendor selector
+  - Cutting step vendor selector
+
+Optional alignment:
+- In `purchases/new/page.tsx`, keep/adjust existing filter to use same helper style for consistency.
+
+Acceptance:
+- A vendor with `type = "Printing, Cutting"` appears in both Printing and Cutting dropdowns.
+- Existing single-type vendors still behave unchanged.
+
+--------------------------------------------------------------------
+3) Manual verification checklist (must run)
+--------------------------------------------------------------------
+A) Build/TS sanity
+1. Run typecheck.
+2. Confirm no `getAccountId` error remains.
+
+B) Multi-type visibility
+1. Ensure one vendor row has `type` containing both `Printing` and `Cutting`.
+2. Open Purchase detail page (`/dashboard/purchases/[id]`).
+3. Check all relevant selectors:
+   - Printing vendor selector (Fabric step)
+   - Cutting vendor selectors (Printing/Cutting steps)
+4. Confirm same vendor appears in both roles.
+
+C) API filter sanity
+1. Hit vendors API with type filter for each:
+   - `.../api/partners/vendors?type=Printing`
+   - `.../api/partners/vendors?type=Cutting`
+2. Confirm multi-type vendor appears in both results.
+

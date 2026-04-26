@@ -1,0 +1,19 @@
+# UPDATE P03: Inventory Performance & Pagination
+
+## 1. Inventory List
+- [x] Verified: Service update `getInventory` to support cursor/search. (Evidence: src/services/inventory.ts)
+- [x] Verified: API update `GET /api/inventory` with cursor pagination. (Evidence: src/app/api/inventory/route.ts)
+- [x] Verified: UI update `dashboard/inventory/client-page` to use paginated fetcher. (Evidence: src/app/dashboard/inventory/client-page.tsx)
+- [x] Verified: UI update `dashboard/products/[id]` to use filtered inventory fetch. (Evidence: src/app/dashboard/products/[id]/page.tsx)
+
+## 2. Inventory Lots
+- [x] Verified: Service update `getInventoryLots` to use searching API. (Evidence: src/services/inventory.ts)
+- [x] Verified: API create `GET /api/inventory/lots`. (Evidence: src/app/api/inventory/lots/route.ts)
+- [x] Verified: UI update `dashboard/purchases/[id]` lot selection to use async search. (Evidence: src/app/dashboard/purchases/[id]/client-page.tsx)
+
+## 3. Inventory Movements
+- [x] Verified: Service update `getInventoryMovements` to use cursor API. (Evidence: src/services/inventory.ts)
+- [x] Verified: API ensure `GET /api/inventory/movements` supports cursor. (Evidence: src/server/modules/inventory.ts)
+
+## 4. Audit Items
+- [x] Verified: Service update `getAuditItems` to support pagination. (Evidence: src/services/inventory.ts)

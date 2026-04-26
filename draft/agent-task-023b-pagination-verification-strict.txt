@@ -1,0 +1,70 @@
+﻿UPDATE P23b - Pagination verification (strict evidence + task tracker fix)
+
+Scope: P01 verification ONLY. No refactors. Fix task tracker accuracy.
+
+Problem:
+- draft/task.txt still shows P01 items under “Done (Unverified)” even though marked DONE-VERIFIED.
+- Summary counts and Last Updated are not refreshed.
+- Evidence lines are not tied to real commands/date for this verification run.
+
+Goal:
+- Re‑verify P01 items with concrete evidence.
+- Move P01-1..P01-6 into “Verified Done”.
+- Update Summary counts + Last Updated date.
+
+Required steps (do not skip):
+
+A) Evidence collection (must run commands)
+Run these (or equivalent) and record exact outputs + timestamp in task.txt:
+1) Orders
+- rg -n "cursor|includeTotal|orderBy" src/server/modules/orders.ts
+- rg -n "cursor|includeTotal" src/app/api/orders/route.ts
+- rg -n "nextCursor" src/services/orders.ts
+- rg -n "cursor" src/app/dashboard/orders/client-page.tsx
+
+2) Expenses
+- rg -n "cursor|includeTotal|groupBy" src/server/modules/expenses.ts
+- rg -n "cursor|includeTotal" src/app/api/expenses/route.ts
+- rg -n "nextCursor" src/services/expenses.ts
+- rg -n "cursor" src/app/dashboard/expenses/client-page.tsx
+
+3) Issues
+- rg -n "cursor|includeTotal|orderBy" src/server/modules/issues.ts
+- rg -n "cursor|includeTotal" src/app/api/issues/route.ts
+- rg -n "nextCursor" src/services/issues.ts
+- rg -n "cursor" src/app/dashboard/issues/client-page.tsx
+
+4) Partners
+- rg -n "cursor|includeTotal|orderBy" src/server/modules/partners.ts
+- rg -n "cursor|includeTotal" src/app/api/partners/suppliers/route.ts
+- rg -n "cursor|includeTotal" src/app/api/partners/vendors/route.ts
+- rg -n "nextCursor" src/services/partners.ts
+- rg -n "cursor" src/app/dashboard/partners/page.tsx
+
+5) Product Logs
+- rg -n "cursor|includeTotal|orderBy" src/server/modules/products.ts
+- rg -n "cursor|includeTotal" src/app/api/products/[id]/logs/route.ts
+- rg -n "nextCursor" src/services/product-logs.ts
+- rg -n "cursor" src/app/dashboard/products/[id]/page.tsx
+
+6) Courier Return Pending
+- rg -n "cursor|includeTotal|orderBy" src/server/modules/courier/reconciliation.ts
+- rg -n "cursor|includeTotal" src/app/api/courier/return-pending/route.ts
+- rg -n "cursor" src/app/dashboard/courier/client-page.tsx
+
+B) Fix task tracker (draft/task.txt)
+- Update “Last Updated” to today’s date.
+- Move P01‑1..P01‑6 into “Verified Done”.
+- Remove them from “Done (Unverified)”.
+- For each P01 item, paste at least 2 evidence lines (file path + rg output + timestamp).
+- Recompute Summary counts so they match sections.
+
+C) Report back
+- Provide a short summary of verification.
+- Confirm no gaps found OR list exact gaps.
+
+Deliver back:
+- Updated draft/task.txt
+- Summary + any fixes made (if any)
+
+Note: If any P01 module still uses page/offset or missing includeTotal gating, fix it minimally and note the change with file/line evidence.

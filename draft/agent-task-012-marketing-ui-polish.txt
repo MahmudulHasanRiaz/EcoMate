@@ -1,0 +1,51 @@
+UPDATE P12-3 - Marketing UI polish (currency, date range, load more)
+
+Scope: ONLY marketing UI files. Keep changes minimal.
+
+Files:
+- src/app/dashboard/marketing/page.tsx
+- src/app/dashboard/marketing/campaign-details.tsx
+
+1) Fix broken currency symbol (ASCII)
+Problem: "…3" appears in UI.
+Fix:
+- Introduce const currencyPrefix = 'Tk';
+- Replace all "…3" occurrences with `${currencyPrefix} ` formatting.
+Locations:
+- KPI cards (Total Spend / CPR / Profit)
+- Campaigns table (Spend / CPR / Profit)
+- Marketer Performance table (Spend / Revenue / CPR / Profit)
+- CampaignDetailsSheet stats + tables (Spend/Revenue/CPR/Profit/Order totals)
+
+2) Add simple date range filter (clean UI)
+File: marketing/page.tsx
+Add small inline date range inputs near Business filter:
+- "From" (type="date") sets dateRange.start
+- "To" (type="date") sets dateRange.end
+- Add a small "Clear" button to reset both to undefined
+Use the existing dateRange state (already wired in loadData).
+Keep layout compact (same header row with Business filter + Refresh).
+
+3) Add Load More for campaigns (cursor pagination)
+File: marketing/page.tsx
+State additions:
+- const [campaignNextCursor, setCampaignNextCursor] = useState<string | undefined>(undefined);
+- const [isLoadingMoreCampaigns, setIsLoadingMoreCampaigns] = useState(false);
+
+Changes:
+- In loadData(): after getCampaigns, setCampaigns(camData.items) and setCampaignNextCursor(camData.nextCursor).
+- Add loadMoreCampaigns() that calls getCampaigns({ status: undefined, pageSize: 50, businessId: effectiveBusinessId, cursor: campaignNextCursor })
+  - Append unique items (dedupe by id)
+  - Update campaignNextCursor
+- At bottom of Campaigns table, add a "Load more" row/button when campaignNextCursor exists.
+  Disable button while isLoadingMoreCampaigns.
+
+4) Minor polish
+- Change Refresh button label from "(Refresh)" to "Refresh".
+
+Deliver back:
+- Summary + files touched
+- Manual verify:
+  - No weird "…3" characters
+  - Date range filters apply (API query includes startDate/endDate)
+  - Load More appends campaigns without duplicates

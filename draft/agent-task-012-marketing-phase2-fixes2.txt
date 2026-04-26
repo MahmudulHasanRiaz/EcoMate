@@ -1,0 +1,82 @@
+UPDATE P12-2c - Marketing module critical fixes (migration + broken route + business wiring)
+
+Scope: ONLY items listed. Keep changes minimal. No refactors.
+
+1) Create proper migration for Marketing tables
+Reason: db push used; no migration exists (required for other envs).
+Run:
+```
+npx prisma migrate dev -n add_marketing_module --create-only
+npx prisma migrate deploy
+npx prisma generate
+```
+Deliver migration folder name.
+
+2) Fix broken campaigns/[id] API route (comment block + missing PATCH)
+File: src/app/api/marketing/campaigns/[id]/route.ts
+- Remove the long internal comment block.
+- Ensure file exports BOTH GET and PATCH.
+- PATCH should call updateCampaign from marketing module.
+Example:
+```
+import { getCampaignDetails, updateCampaign } from '@/server/modules/marketing';
+import prisma from '@/lib/prisma';
+
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const { allowed, error } = await enforcePermission('marketing', 'update');
+  if (!allowed) return error;
+  const body = await req.json();
+  const updated = await updateCampaign(params.id, body);
+  return NextResponse.json(updated);
+}
+```
+
+3) Add updateCampaign to server module
+File: src/server/modules/marketing.ts
+Add:
+```
+export async function updateCampaign(id: string, data: any) {
+  return prisma.marketingCampaign.update({
+    where: { id },
+    data: {
+      ...data,
+      startDate: data.startDate ? new Date(data.startDate) : undefined,
+      endDate: data.endDate ? new Date(data.endDate) : undefined,
+      budget: typeof data.budget !== 'undefined' ? Number(data.budget) : undefined,
+    },
+  });
+}
+```
+
+4) Fix businessId handling (staff has no businessId)
+Files:
+- src/app/api/marketing/campaigns/route.ts
+- src/app/api/marketing/campaigns/[id]/spend/route.ts
+
+Rules:
+- Use body.businessId if provided.
+- Else use first accessible business from staff.accessibleBusinessIds (if any).
+- Else leave businessId undefined.
+
+Implement:
+a) In campaigns POST:
+```
+const businessId = body.businessId || staff?.accessibleBusinessIds?.[0] || undefined;
+```
+Pass businessId to createCampaign.
+
+b) In spend POST:
+Option 1 (best): fetch campaign businessId in addSpend when missing.
+Implement inside addSpend in marketing.ts:
+  - If data.businessId missing, fetch campaign { businessId } and use it.
+Option 2 (ok): in spend route, fetch campaign first and use its businessId.
+
+5) Orders attribution route should not pass staff.businessId
+File: src/app/api/marketing/campaigns/[id]/orders/route.ts
+- Remove businessId argument, since addAttributions now derives from campaign.
+- Keep staff.id as fallback marketerId.
+
+Deliver back:
+- Summary + files touched
+- Migration folder name
+- Confirm PATCH /api/marketing/campaigns/[id] works

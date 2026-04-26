@@ -1,0 +1,24 @@
+UPDATE 14 - Fix missing <thead>/<tr> in Fabric + Printing invoice tables
+
+Scope: ONLY fix header markup in FABRIC and PRINTING itemsHtml. No logic changes.
+
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> itemsHtml
+
+Problem:
+- FABRIC and PRINTING tables have <th> cells and </thead> but missing <thead> and <tr> opening tags.
+- This is invalid HTML and can render inconsistently.
+
+Fix:
+1) FABRIC block
+   - After `<table ...>` add:
+     `<thead><tr>`
+   - Keep existing <th> header cells.
+   - Ensure header row closes with `</tr></thead>` (existing </thead> can stay but must be after </tr).
+2) PRINTING block
+   - Same fix: add `<thead><tr>` before <th> headers.
+   - Ensure proper `</tr></thead>` close before <tbody>.
+
+Do NOT change column labels, data cells, or any calculations.
+
+Deliver back: summary + confirm invoice renders without HTML warnings.

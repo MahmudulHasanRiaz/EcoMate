@@ -1,0 +1,2 @@
+﻿src/app/api/orders/incomplete/[id]/convert/route.ts(10,5): error TS2459: Module '"@/server/modules/orders"' declares 'getAvailableQty' locally, but it is not exported.
+src/app/api/orders/incomplete/[id]/convert/route.ts(13,5): error TS2459: Module '"@/server/modules/orders"' declares 'getStockSyncMode' locally, but it is not exported.

@@ -1,0 +1,119 @@
+P47ca - Final closeout for customer SITE phone block (must leave zero gaps)
+
+Goal
+- Close remaining gaps from P47bz completely.
+- Keep current UX and architecture; patch only correctness gaps.
+- No schema/migration.
+- No commit/push instructions.
+
+Scope
+- `src/app/api/restrictions/route.ts`
+- `src/app/dashboard/customers/[id]/page.tsx`
+
+Out of scope
+- No plugin changes
+- No unrelated module edits
+
+--------------------------------------------------------------------
+Gap #1 (HIGH): Add real ownership/business guard for integrationId
+--------------------------------------------------------------------
+
+Problem
+- Current backend only checks integration existence.
+- It does NOT verify the selected integration is valid for caller context.
+
+Required backend behavior
+1. In `POST /api/restrictions`:
+   - keep existing rule:
+     - if `targetType=PHONE` and `scope=SITE` and no `integrationId` => 400
+2. When `integrationId` is provided:
+   - fetch integration including `businessId`
+   - if not found => 404 (keep)
+3. Add SITE consistency guard:
+   - if request includes `businessId` and integration.businessId differs => 400
+   - message: `"Selected site does not belong to provided business context"`
+
+Why:
+- Prevent accidental cross-business/site mismatches in payload.
+
+Note:
+- Keep this simple validation; do not add heavy auth refactor.
+
+--------------------------------------------------------------------
+Gap #2 (MEDIUM): Keep customer badge check fully unscoped everywhere
+--------------------------------------------------------------------
+
+Problem
+- Page load uses unscoped check (good), but post-unblock path still calls scoped check.
+
+Required frontend behavior
+1. In `src/app/dashboard/customers/[id]/page.tsx`:
+   - replace unblock post-action check:
+     - from: `checkRestriction(customer.phone, 'PHONE', customerOrders[0]?.integrationId || undefined)`
+     - to:   `checkRestriction(customer.phone, 'PHONE')`
+
+Why:
+- Customer profile badge is global “blocked anywhere” signal.
+- Scoped recheck can show false unblocked/blocked mismatch.
+
+--------------------------------------------------------------------
+Gap #3 (MEDIUM): Derive businessId from selected integration (not latest order)
+--------------------------------------------------------------------
+
+Problem
+- SITE block currently sends `businessId` from `mostRecentOrder`, which may not match selected site.
+
+Required frontend behavior
+1. In block confirm submit (`scope=SITE`):
+   - `finalIntegrationId = selectedIntegrationId`
+   - derive `finalBusinessId` from selected integration metadata:
+     - use integration list fetched via `getWooCommerceIntegrations()`
+     - `finalBusinessId = selectedIntegration?.businessId || null`
+2. For GLOBAL scope:
+   - keep `integrationId: null`
+   - `businessId` may remain null (preferred) or fallback unchanged.
+3. Send payload:
+   - `integrationId: finalIntegrationId`
+   - `businessId: finalBusinessId`
+4. Remove dependence on `mostRecentOrder?.businessId` for SITE path.
+
+Why:
+- Ensures DB restriction row maps to the actually selected site context.
+
+--------------------------------------------------------------------
+Implementation hints (do exactly)
+--------------------------------------------------------------------
+
+Frontend:
+- Build map once:
+  - `const selectedIntegration = integrations.find(i => i.id === finalIntegrationId)`
+  - `const finalBusinessId = blockScope === 'SITE' ? (selectedIntegration?.businessId || null) : null`
+
+Backend:
+- After loading integration:
+  - `if (scope === 'SITE' && businessId && integration.businessId !== businessId) return 400`
+
+--------------------------------------------------------------------
+Verification checklist (mandatory)
+--------------------------------------------------------------------
+
+A) SITE flow correctness
+1. Customer has orders from multiple sites.
+2. Select SITE + Site A.
+3. Submit block.
+4. Confirm API payload uses Site A integrationId.
+5. Confirm DB row has integrationId=SiteA and businessId matching SiteA business.
+
+B) Badge consistency
+1. Unblock phone.
+2. After toast, verify badge state refreshes correctly without reload.
+3. Reload page => same state (no mismatch).
+
+C) Guard test
+1. Force mismatched payload (integration from business X, businessId=Y).
+2. Expect 400 with clear guard message.
+
+D) Regression
+1. GLOBAL block still works.
+2. Existing allScopes unblock still works.
+

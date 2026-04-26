@@ -1,0 +1,73 @@
+﻿scalability-performance-remaining.txt
+===================================
+
+উদ্দেশ্য
+- [scalability-performance-implementation-plan.txt](draft/scalability-performance-implementation-plan.txt) অনুযায়ী যেগুলো এখনও সম্পূর্ণ হয়নি/পার্শিয়াল আছে সেগুলোর তালিকা।
+- কেবল বাকি কাজগুলোই এখানে আছে (নতুন ফিচার নয়)।
+
+স্ট্যাটাস সারাংশ (Quick)
+- Done: pg_trgm extension, বেশ কিছু core indexes, Redis + BullMQ queue infra (code level), check passing cursor, ledger groupBy.
+- Partial: orders pagination (cursor+offset), partners overview, inventory aggregation, stock sync fallback, notifications async.
+- Missing: PM2 config/worker deployment, cursor-only pagination standard, report caching layer, materialized check passing view, partitioning/observability, salary accrual cron, attendance pagination.
+
+বাকি আইটেম (Phase অনুযায়ী)
+
+A) Infra / Runtime (Phase 2)
+- PM2 ecosystem config নেই (multi-process + worker plan এখনও ডেপ্লয়-রেডি নয়)।
+- BullMQ worker (scripts/bullmq-worker.ts) আলাদা process হিসেবে চালানো হয়নি; deployment/runbook নেই।
+- Redis degrade-mode + health handling (docs/ops) অসম্পূর্ণ।
+- PgBouncer/connection pool কনফিগ বা রানবুক নেই।
+
+B) DB / Indexing (Phase 1)
+- BRIN index (date-heavy tables) যোগ করা হয়নি।
+- CREATE INDEX CONCURRENTLY ভিত্তিক safe migration/runbook নেই।
+- কিছু search-heavy টেবিলে trigram/partial index যাচাই বাকি (Issues/Partners search)।
+
+C) Pagination Standard (Phase 3)
+- Orders: offset fallback আছে (cursor-only হয়নি)। `src/server/modules/orders.ts`.
+- Expenses: offset pagination। `src/server/modules/expenses.ts`.
+- Issues: offset pagination। `src/server/modules/issues.ts`.
+- Partners (suppliers/vendors): offset pagination। `src/services/partners.ts` এবং `src/app/api/partners/*`.
+- Staff income/payment history: pagination নেই (সবকিছু একবারে)। `src/app/api/staff/[id]/payments/route.ts`.
+- Attendance list: pagination নেই। `src/server/modules/attendance.ts` + `src/app/api/attendance/route.ts`.
+- Product logs: offset pagination। `src/services/product-logs.ts`.
+- Courier return-pending list: offset pagination। `src/server/modules/courier/reconciliation.ts`.
+- Purchase detail page এখনো `getInventoryLots()` দিয়ে সব লট আনছে; বড় ডাটায় স্কেল হবে না। `src/services/inventory.ts`, `src/app/dashboard/purchases/[id]/page.tsx`.
+
+D) Inventory Performance (Phase 8)
+- `getInventory()` এখনো active product ids নিয়ে full inventory fetch করছে (বড় ডাটায় heavy)। `src/services/inventory.ts`.
+- `getInventoryMovements()` all movements লোড করে; cursor API ব্যবহার করা হয়নি।
+- `getInventoryLots()` পূর্ণ ডাটা রিটার্ন; pagination/filters দরকার।
+- `getAuditItems()` fixed take=1000 (pagination নেই)।
+
+E) Reports + Caching (Phase 14)
+- Analytics/Reports caching নেই (TTL/Redis/Tag invalidation দরকার)। `src/server/modules/analytics.ts`.
+- Partner overview aggregation cache নেই; heavy payment scan হতে পারে। `src/services/partners.ts`.
+- Courier metrics cache নেই। `src/server/modules/courier/reconciliation.ts`.
+- Check Passing union query heavy; materialized/denormalized ভিউ নেই। `src/app/api/check-passing/route.ts`.
+
+F) Woo Sync Hardening (Phase 4)
+- Per-SKU external lookup এখনও চালু; batch resolve + circuit breaker/backoff policy আরও শক্ত করা দরকার। `src/server/modules/woo-sync.ts`.
+- Queue dedup/rate-limit policy documented নয় (ops + retry visibility)।
+
+G) Staff/Attendance Automation (Phase 11)
+- Salary accrual auto-job নেই (queue/cron)।
+- Attendance daily records এখন GET এর সময় ensure হয়; background jobে সরানো দরকার।
+
+H) Load Spike / Observability / Security (Phase 15,17,20)
+- pg_stat_statements enable + slow query capture নেই।
+- API rate-limit enforcement নেই (admin/report endpoints)।
+- Load-spike fallback (adaptive caching + queue gating) নেই।
+
+I) Data Retention & Partitioning (Phase 16)
+- Orders/Ledger/Logs partitioning নেই।
+- Archive/export policy runbook নেই।
+
+সিদ্ধান্ত (Architect)
+1) Check Passing: write-time denormalized table (real-time + lighter query)।
+2) Cursor pagination: total count ডিফল্টে বাদ; প্রয়োজন হলে includeTotal=true।
+3) Partitioning: এখনই রান নয়; runbook + readiness যোগ হবে। ডাটা বড় হলে/low-traffic window এ প্রয়োগ।
+4) PM2: ডিফল্ট 1 instance, প্রয়োজন অনুযায়ী scale (env-based); worker আলাদা।
+
+পরবর্তী পদক্ষেপ
+- এই বাকি আইটেমগুলোর জন্য পৃথক command files তৈরি করা হয়েছে (এখানে উল্লেখিত তালিকা অনুসারে)।

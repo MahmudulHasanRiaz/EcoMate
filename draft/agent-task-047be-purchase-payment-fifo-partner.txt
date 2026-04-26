@@ -1,0 +1,168 @@
+P47be - Purchases: Remove inline payments, move to Partner FIFO payments + advance credit
+
+Goal
+- Purchases create/update should NOT take payments directly.
+- Payments happen ONLY from Partner profile (or 3‑dot menu on partner list).
+- Partner page shows: Previous Due + New Bills + Total Due (latest).
+- FIFO allocation:
+  - General purchases: by PurchaseOrder.date (oldest first)
+  - Production steps: by ProductionStep.createdAt (oldest first)
+- Overpayment becomes Advance Credit and is auto-applied to future bills (FIFO).
+- Accounting stays correct (ledger entries for invoice, payment, and credit usage).
+
+Scope
+- Server: src/server/modules/purchases.ts, src/services/partners.ts
+- UI: src/app/dashboard/purchases/new/page.tsx, src/app/dashboard/purchases/[id]/client-page.tsx
+      src/app/dashboard/partners/page.tsx, src/app/dashboard/partners/[id]/page.tsx
+- Schema: prisma/schema.prisma + migration
+- API: new route for partner payment
+
+=== 1) Schema changes (migration) ===
+1. Add createdAt to ProductionStep (needed for FIFO).
+   model ProductionStep:
+     createdAt DateTime @default(now())
+     @@index([createdAt])
+
+2. Add creditBalance to Supplier + Vendor:
+   Supplier: creditBalance Float @default(0)
+   Vendor:   creditBalance Float @default(0)
+
+3. Add default account for Supplier/Vendor advance:
+   In ACCOUNT_LABELS / ensureDefaultAccounts:
+   - Add "Supplier Advance" (Asset).
+   (Use this for BOTH supplier & vendor advance credits.)
+
+Migration SQL (example):
+  ALTER TABLE "ProductionStep" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+  CREATE INDEX IF NOT EXISTS "ProductionStep_createdAt_idx" ON "ProductionStep"("createdAt");
+  ALTER TABLE "Supplier" ADD COLUMN IF NOT EXISTS "creditBalance" DOUBLE PRECISION NOT NULL DEFAULT 0;
+  ALTER TABLE "Vendor" ADD COLUMN IF NOT EXISTS "creditBalance" DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+Backfill ProductionStep.createdAt for existing rows:
+  UPDATE "ProductionStep" ps
+  SET "createdAt" = po."date"
+  FROM "PurchaseOrder" po
+  WHERE ps."poId" = po."id" AND ps."createdAt" IS NULL;
+
+=== 2) Purchases: Remove inline payments ===
+File: src/server/modules/purchases.ts
+- createPurchaseOrderCore():
+  - Ignore payload.payments (force to empty).
+  - Do NOT create PurchasePayment rows here.
+  - Do NOT create payment ledger entries here.
+  - paymentStatus should be Unpaid unless total=0 (then Paid).
+- If a caller still sends payments, return a clear error (optional) OR silently ignore.
+
+UI:
+File: src/app/dashboard/purchases/new/page.tsx
+- Remove/disable all payment inputs in create flow.
+- Only show Bill Summary (total, due, etc).
+- Show note: “Payments are recorded from Partner profile.”
+
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+- Remove payment section UI (no add/edit payments here).
+- Keep invoice / bill summary display only.
+- Show: Previous Due, New Bill Due, Total Due.
+- Provide “Go to Partner” link for payment.
+
+=== 3) Partner payment API (FIFO allocation) ===
+New API route:
+  POST /api/partners/payments
+Payload:
+  {
+    partnerId: string,
+    partnerType: 'supplier' | 'vendor',
+    amount: number,
+    method: 'Cash' | 'Bank' | 'bKash' | 'Nagad' | 'Rocket' | 'Check' | 'Direct',
+    paidFromAccountId: string,
+    checkNo?: string,
+    checkDate?: string,
+    note?: string
+  }
+
+Server logic (new function: applyPartnerPaymentCore):
+- Validate amount > 0, accountId present, checkNo+checkDate required for checks.
+- Determine FIFO targets:
+  Supplier:
+    - PurchaseOrder where supplierId=partnerId, type='general',
+      status != 'Cancelled', paymentStatus in ('Unpaid','Partial')
+    - order by date asc, id asc
+  Vendor:
+    - ProductionStep where vendorId=partnerId, costAmount > paidAmount,
+      and parent PO status != 'Cancelled'
+    - order by ProductionStep.createdAt asc (fallback to PO.date if null)
+
+- Compute due per target:
+  Supplier PO due = po.total - sum(payments cash + passed checks + credit-applied)
+  Vendor step due = step.costAmount - step.paidAmount
+
+- Apply existing creditBalance first:
+  while creditBalance > 0 and target due > 0:
+    allocate credit to oldest target
+    create PurchasePayment row with:
+      paymentMethod: 'Credit'
+      cash: creditAmount (store as cash for tracking)
+      check: 0
+      poId + (productionStepId if vendor)
+    Ledger entry:
+      Dr Accounts Payable, Cr Supplier Advance (amount)
+    decrement creditBalance
+
+- Apply incoming payment amount FIFO:
+  allocate across targets until amount=0:
+    create PurchasePayment row with paymentMethod=method
+    set cash/check fields
+    set productionStepId for vendor, paymentFor = stepType
+    for Supplier PO: paymentFor='General'
+    ledger entry:
+      Dr Accounts Payable, Cr paidFromAccount
+      NOTE: if method=Check and status=Pending -> ledger amount = 0 (keep same current rule)
+
+- If payment amount still remains after all dues:
+    add to partner.creditBalance (advance)
+    ledger entry:
+      Dr Supplier Advance (Asset), Cr paidFromAccount
+
+- After each allocation:
+    syncStepPaidFromPaymentsTx(tx, poId)
+    recomputePaymentStatusTx(tx, poId)
+
+- Revalidate tags: ['purchases', 'partners', `partner:${partnerId}`]
+
+=== 4) Partner UI for payments ===
+File: src/app/dashboard/partners/page.tsx
+- Add “Record Payment” action in 3‑dot menu for supplier/vendor.
+- Opens modal:
+  fields: amount, method, account, checkNo/checkDate (if check)
+  shows current due + credit balance
+  submits to /api/partners/payments
+
+File: src/app/dashboard/partners/[id]/page.tsx
+- Add “Record Payment” button (same modal).
+- Update financial overview:
+  totalBusiness, totalPaid, totalDue
+  include creditBalance in due calc:
+    due = max(business - paid - creditBalance, 0)
+  show credit separately if > 0.
+
+=== 5) Allow same person as Supplier + Vendor ===
+UI: partner create dialog
+- Add checkbox: “Create as both Supplier and Vendor”.
+- If checked:
+  - Create Supplier if not exists (by name)
+  - Create Vendor if not exists (by name)
+  - Allow same name in both tables (unique per table).
+
+=== Verification ===
+1) Create PO -> no payment created; paymentStatus Unpaid.
+2) Partner profile shows due + credit.
+3) Record payment -> FIFO allocates to oldest PO/step.
+4) Overpay -> creditBalance increases; future bills auto‑reduce.
+5) Ledger entries:
+   - Payment: Dr AP / Cr Cash (or 0 if check pending)
+   - Credit usage: Dr AP / Cr Supplier Advance
+   - Credit creation: Dr Supplier Advance / Cr Cash
+
+Notes
+- Owner handles git commit/push and production deploy.
+*** End Patch"}}

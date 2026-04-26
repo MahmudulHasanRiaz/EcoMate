@@ -1,0 +1,170 @@
+P47aq - Woo manual sync + webhook import not creating orders
+
+Root cause (from woo-sync-errors.log)
+- Every Woo order fails in syncOneWooOrder because prisma.customer.upsert(create) is missing updatedAt.
+- Webhook path has the same customer upsert and also uses `logs` instead of `OrderLog`.
+- After customer is fixed, order creation will still fail due to `logs` relation name mismatch.
+
+Scope
+- src/server/modules/woo-sync.ts
+- src/app/api/webhooks/woo/[id]/route.ts
+- prisma/schema.prisma (verify, no new migration needed)
+
+Fixes (apply exactly)
+
+1) Customer upsert: add updatedAt on create (Woo sync + webhook)
+
+File: src/server/modules/woo-sync.ts
+Find prisma.customer.upsert in syncOneWooOrder and change create to:
+```
+create: {
+  name: customerName || 'Customer',
+  phone: normalizedPhone,
+  email: customerEmail || undefined,
+  joinDate: new Date(),
+  address: normalizedAddress.address || '',
+  district: normalizedAddress.district || '',
+  country: normalizedAddress.country || 'BD',
+  updatedAt: new Date(),
+} as any,
+```
+
+File: src/app/api/webhooks/woo/[id]/route.ts
+Find prisma.customer.upsert and change create similarly (include updatedAt: new Date()).
+
+2) Order logs relation name (Woo sync + webhook)
+
+File: src/server/modules/woo-sync.ts
+Replace:
+```
+logs: { create: { ... } }
+```
+with:
+```
+OrderLog: { create: { ... } }
+```
+
+File: src/app/api/webhooks/woo/[id]/route.ts
+Replace:
+```
+logs: { create: logs }
+```
+with:
+```
+OrderLog: { create: logs }
+```
+
+3) Order updatedAt (defensive)
+If Order.updatedAt is required in schema, set it explicitly in both order create paths:
+- In woo-sync order data:
+```
+updatedAt: new Date(),
+```
+- In webhook order create data (baseOrderData):
+```
+updatedAt: new Date(),
+```
+
+4) Capture and store ipHash on Order (sync + webhook)
+- Import `createHash` from `crypto` in both files (woo-sync.ts & webhook route).
+- Derive IP:
+  - Woo sync: `const ipRaw = (wo?.customer_ip_address || '').split(',')[0].trim();`
+  - Webhook: same with `data?.customer_ip_address`.
+- Hash: `const ipHash = ipRaw ? createHash('sha256').update(ipRaw).digest('hex') : null;`
+- When creating the order, set `ipHash` field to this value (and keep rawPayload intact).
+
+5) Make woo-sync error logging safe on Linux (do NOT crash batch)
+File: src/server/modules/woo-sync.ts
+Replace hardcoded Windows path in appendFileSync:
+```
+require('fs').appendFileSync('e:/fashionary/Fashionary/woo-sync-errors.log', ...)
+```
+with:
+```
+const path = require('path');
+const errorLogPath = path.join(process.cwd(), 'woo-sync-errors.log');
+try {
+  require('fs').appendFileSync(errorLogPath, `${new Date().toISOString()} ${errMsg}`);
+} catch (logErr) {
+  console.warn('[WOO_SYNC_LOG_FAIL]', logErr);
+}
+```
+This prevents batch failure on Linux servers.
+
+6) Push HOLD for newly imported Woo orders (manual sync)
+Current code only pushes HOLD when the order already exists. For manual sync, new orders never get HOLD.
+Add after successful create in syncOneWooOrder (after the transaction):
+```
+const wooStatus = (wo?.status || '').toLowerCase();
+if (wooStatus === 'processing' || wooStatus === 'pending') {
+  await pushHoldWithRetry({
+    storeUrl: integration.storeUrl,
+    consumerKey: integration.consumerKey,
+    consumerSecret: integration.consumerSecret,
+    externalOrderId: String(wo.id),
+    integrationId: integration.id,
+    orderId: orderId,
+    storeName: integration.storeName || integration.storeUrl,
+  });
+}
+```
+
+7) Force-inline option for manual sync (so orders actually create even if worker is down)
+Files:
+- src/app/api/orders/import/woo/route.ts
+- src/server/modules/woo-sync.ts
+
+Add `forceInline` boolean to request body and pass into importWooOrders:
+```
+const forceInline = body?.forceInline === true;
+const result = await importWooOrders(integrationId, since, days, status, forceInline);
+```
+
+Update importWooOrders signature:
+```
+export async function importWooOrders(integrationId: string, sinceDate?: string, days?: number, statusFilter?: string, forceInline?: boolean)
+```
+
+Inside importWooOrders, after batch fetch:
+```
+const queued = !forceInline && await enqueueStockSyncBatchJob({ batch, integration });
+if (!queued) {
+  await syncWooOrdersBatch(batch, integration);
+}
+```
+
+During testing, call:
+```
+POST /api/orders/import/woo
+{ "integrationId": "...", "days": 3, "forceInline": true }
+```
+
+This bypasses the queue and proves orders are created.
+
+8) Fix OrderProduct createMany (updatedAt required)
+Error seen in worker: `orderProduct.createMany` missing updatedAt.
+Add `updatedAt: new Date()` in all createMany payloads.
+Files:
+- src/server/modules/woo-sync.ts
+  - when building productCreates, include updatedAt on each item.
+- src/app/api/webhooks/woo/[id]/route.ts
+  - before createMany, map: productCreates = productCreates.map(p => ({ ...p, updatedAt: new Date() }));
+- src/server/modules/orders.ts
+  - in updateOrderDetails: createMany map add updatedAt.
+- src/app/api/orders/split/route.ts
+  - in keptItemsData map add updatedAt.
+
+No migration required; this fixes runtime error.
+
+9) Prisma client
+```
+npx prisma generate
+```
+Restart dev + worker afterwards.
+
+Verify
+1) Clear/rename woo-sync-errors.log.
+2) Trigger manual sync: /api/orders/import/woo
+3) Watch worker log: no more [WOO_BATCH_ITEM_FAIL].
+4) New orders appear in /dashboard/orders.
+5) Webhook order import also works (watch /api/webhooks/woo/{id} logs).

@@ -1,0 +1,91 @@
+P47cj - Variant preview hardening + blob preview "Not Found" fix
+
+Goal
+- Keep current variant image first-click preview behavior.
+- Fix broken preview issue (`Not Found`) after first-click variant file select.
+- Remove potential memory leak from repeated `URL.createObjectURL(...)`.
+- No feature changes, no API changes.
+
+Scope (only these files)
+- `src/app/dashboard/products/new/page.tsx`
+- `src/app/dashboard/products/[id]/edit/page.tsx`
+- `src/components/ui/image-uploader.tsx`
+
+Do not touch unrelated files.
+
+--------------------------------------------------------------------
+1) Fix variant preview source (first-click + no broken image)
+--------------------------------------------------------------------
+
+Problem:
+- Variant file gets selected on first click, but preview shows broken/Not Found.
+- Cause: pending file preview is being passed as URL object in a path that can be normalized incorrectly.
+
+Required implementation (both files):
+1. In variant image render block, pass pending file directly:
+   - `const pendingFile = variantImageFilesRef.current[variationId];`
+   - `images = pendingFile ? [pendingFile] : (currentUrl ? [{ id: currentUrl, url: currentUrl }] : []);`
+2. Do NOT build inline blob URLs in these pages.
+3. Keep existing marker logic unchanged:
+   - file selection => `field.onChange('__file__:<variationId>')`
+   - library selection => real URL string
+
+--------------------------------------------------------------------
+2) ImageUploader hardening (blob-safe + revoke-safe)
+--------------------------------------------------------------------
+
+File: `src/components/ui/image-uploader.tsx`
+
+2.1 Normalize helper
+- Update `normalizeImageUrl` so these are treated as absolute valid URLs:
+  - `blob:`
+  - `data:`
+  - existing `http://` and `https://` logic stays.
+
+2.2 Object URL lifecycle
+- Replace direct `URL.createObjectURL(file)` in render/memo path with managed lifecycle:
+  1) Keep state map for file preview URLs keyed by stable file key (e.g. `name:size:lastModified`).
+  2) `useEffect` builds missing URLs and revokes removed/stale URLs.
+  3) Cleanup on unmount revokes all remaining blob URLs.
+- This prevents memory growth when users repeatedly pick/switch files.
+
+2.3 Same-file reselect reliability
+- Keep existing input reset before click:
+  - `fileInputRef.current.value = ''`
+- Also safe to clear after `onChange` handling.
+
+--------------------------------------------------------------------
+3) Verification (mandatory)
+--------------------------------------------------------------------
+
+A) Type check
+```powershell
+npx tsc --noEmit --pretty false
+```
+
+B) Functional checks
+1. New Product page:
+   - pick variant image via click once -> preview appears immediately.
+   - no broken image / no Not Found placeholder.
+   - switch accordion panels -> preview persists.
+2. Edit Product page:
+   - same checks.
+3. Replace same file again:
+   - preview still updates reliably.
+
+C) Leak safety quick check (manual)
+1. Open DevTools memory panel.
+2. Repeatedly select/change variant images and switch accordions.
+3. Confirm memory does not continuously grow from unreleased blob URLs.
+
+4) Required reply format
+--------------------------------------------------------------------
+
+Reply with:
+1) Exact files changed
+2) `tsc` result
+3) Confirmation that preview still works first-click in New + Edit
+4) Confirmation that broken preview issue is resolved
+5) Confirmation that object URL cleanup is implemented
+
+No commit/push instructions in this task.

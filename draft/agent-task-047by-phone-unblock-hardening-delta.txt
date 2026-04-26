@@ -1,0 +1,79 @@
+P47by - Phone unblock hardening delta (idempotent + UX-safe)
+
+Context
+- P47bx core fix is correct and can be considered functionally complete.
+- This delta is a reliability hardening pass to avoid false error toasts in race/stale UI cases.
+
+Scope
+- `src/app/api/restrictions/route.ts`
+- `src/app/dashboard/customers/[id]/page.tsx`
+- Optional cleanup: `scripts/verify_p47bx.js` (do not track in repo unless explicitly needed)
+
+Out of scope
+- No schema changes
+- No other module changes
+- No commit/push instructions
+
+--------------------------------------------------------------------
+1) Make phone unblock idempotent in API
+--------------------------------------------------------------------
+
+File: `src/app/api/restrictions/route.ts`
+
+Current behavior (allScopes phone delete):
+- Returns 404 when `deleteMany.count === 0`
+
+Required behavior:
+- Always return 200 success for valid request.
+- Response shape:
+  - `{ success: true, deletedCount: number }`
+- Keep 400 for invalid phone format.
+
+Why:
+- If restriction is already removed (another tab/user/action), unblock should still be treated as success.
+- Prevents unnecessary “failed unblock” UX.
+
+--------------------------------------------------------------------
+2) Frontend: handle idempotent unblock cleanly
+--------------------------------------------------------------------
+
+File: `src/app/dashboard/customers/[id]/page.tsx`
+
+Required changes:
+1. Keep current `allScopes=true` DELETE call.
+2. After DELETE response (even when deletedCount=0):
+   - run `checkRestriction(customer.phone, 'PHONE', customerOrders[0]?.integrationId || undefined)`
+3. Toast rules:
+   - if deletedCount > 0: “Phone Unblocked”
+   - if deletedCount === 0: “Already unblocked”
+4. Only show destructive toast for true invalid request/server error (e.g., 400/500), not for zero-delete case.
+
+--------------------------------------------------------------------
+3) Optional cleanup
+--------------------------------------------------------------------
+
+If `scripts/verify_p47bx.js` was only temporary:
+- remove it from working tree (or keep untracked and do not commit).
+
+--------------------------------------------------------------------
+4) Verification checklist
+--------------------------------------------------------------------
+
+A) Normal case
+1. Block phone
+2. Unblock
+3. Reload customer page
+4. Expected: still unblocked
+
+B) Idempotent case
+1. Unblock same phone again
+2. Expected: no destructive error; show “Already unblocked” (or equivalent)
+3. Reload: still unblocked
+
+C) Data check
+SQL:
+`SELECT scope, "integrationId" FROM "OrderRestriction" WHERE "targetType"='PHONE' AND "targetHash"='<normalized_phone>';`
+
+Expected:
+- no rows after unblock
+

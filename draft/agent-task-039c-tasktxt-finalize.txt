@@ -1,0 +1,28 @@
+﻿UPDATE P39c - Fix task tracker (add missing P38 + update Last Updated)
+
+Scope: draft/task.txt only. No code changes.
+
+Findings:
+- P38 entry missing from draft/task.txt (even though evidence exists in draft/p38-regression-evidence.txt).
+- Last Updated header still shows 2026-01-22.
+
+Fix steps:
+1) Update header:
+- Change "Last Updated" to 2026-01-23.
+
+2) Add P38 under "Verified Done" section:
+ID: P38
+Title: Final regression checklist
+Status: DONE-VERIFIED
+Evidence:
+- File: draft/p38-regression-evidence.txt (2026-01-23)
+Notes: Full critical-flow checklist completed across Orders, Inventory, Purchases, Expenses, Check Passing, Webhooks, Analytics, Marketing, Tasks, Staff.
+
+3) Update Summary counts:
+- Verified Done should increment by +1 (from 29 to 30).
+- Done (Unverified) remains 0.
+- Known Issues and Corrections unchanged.
+
+Deliver back:
+- Updated draft/task.txt
+- Short confirmation of counts

@@ -1,0 +1,164 @@
+P47bo - Partner unified profile hardening (dual-role Supplier+Vendor, zero-count regression prevention)
+
+Goal:
+- Ensure a dual-role person (Supplier + Vendor) always sees combined PO/payment/business data in one profile.
+- Eliminate intermittent "0 Active Orders" after payment actions.
+- Keep financial numbers correct by counting only cleared (Passed) checks.
+- No unrelated refactor.
+- No commit/push instructions.
+
+Files to update:
+- src/app/dashboard/partners/[id]/page.tsx
+- src/services/partners.ts
+
+--------------------------------------------------------------------
+1) Single source loader in Partner profile (critical)
+--------------------------------------------------------------------
+
+Problem:
+- Initial load fetches dual IDs and merges POs correctly.
+- After payment success, page refresh path uses only `getPurchaseOrdersByPartnerId(partner.id)`.
+- For dual-role partner, this can drop the other side and show 0/partial data.
+
+Do in `src/app/dashboard/partners/[id]/page.tsx`:
+A) Create one helper function:
+- `loadPartnerAndOrders = async (targetPartnerId: string) => { ... }`
+- Steps:
+  1. `partnerData = await getPartnerWithDualIds(targetPartnerId)`
+  2. fetch orders for `partnerData.supplierId` and `partnerData.vendorId` (if distinct)
+  3. flatten + dedupe by PO id
+  4. set both `partner` and `associatedPOs`
+
+B) Use this helper in BOTH places:
+- initial `useEffect`
+- payment success callback (`onSuccess`)
+
+C) Remove old refresh path that uses only `partner.id`.
+
+Acceptance:
+- After applying payment from profile, active orders and totals remain correct without manual hard refresh.
+
+--------------------------------------------------------------------
+2) Financial correctness: count only Passed checks
+--------------------------------------------------------------------
+
+Problem:
+- In PO table financials, check amounts are summed regardless of check status.
+- Pending/Bounced checks should not reduce due.
+
+Do in `src/app/dashboard/partners/[id]/page.tsx`:
+A) In `getPOFinancials` replace all payment sums:
+- from `(p.cash || 0) + (p.check || 0)`
+- to `(p.cash || 0) + ((p.checkStatus === 'Passed') ? (p.check || 0) : 0)`
+
+Apply this in all three branches:
+1. supplier/general
+2. supplier/3-piece relevant payments
+3. vendor step payments
+
+Acceptance:
+- Due/paid in profile cards and PO modals match accounting rules (only passed checks counted).
+
+--------------------------------------------------------------------
+3) Dual-role identity resolution hardening
+--------------------------------------------------------------------
+
+Problem:
+- `getPartnerWithDualIds` currently relies on name-only matching.
+- Name-based linking is fragile and can mismatch in real data.
+
+Do in `src/services/partners.ts` within `getPartnerWithDualIds`:
+A) Keep current behavior but change matching priority:
+1. exact email match
+2. exact phone match
+3. exact name match (fallback only)
+
+B) If multiple matches are possible, prefer deterministic order:
+- latest updated record or smallest id consistently (pick one and document in code comment)
+
+C) Remove all `console.log` debug statements from this function.
+
+Acceptance:
+- Same person dual-role resolves reliably even when names are similar across records.
+
+--------------------------------------------------------------------
+4) Remove debug noise from server/client partner flows
+--------------------------------------------------------------------
+
+Do:
+- Remove temporary/debug `console.log` statements from:
+  - `src/services/partners.ts` (`getPartnerWithDualIds`, `getPurchaseOrdersByPartnerId`)
+  - `src/app/dashboard/partners/[id]/page.tsx` initial load debug prints
+
+Reason:
+- Reduce log noise and avoid leaking internals in production logs.
+
+--------------------------------------------------------------------
+5) Verification matrix (must run manually)
+--------------------------------------------------------------------
+
+Scenario A: Dual-role profile load
+1. Open partner who exists in both Supplier and Vendor.
+2. Confirm profile shows combined orders (supplier + vendor-side production/payment linked POs).
+
+Scenario B: Post-payment refresh regression
+1. From same profile, record a payment.
+2. On success, verify cards and PO modal counts update correctly.
+3. No temporary 0 active orders state.
+
+Scenario C: Check-status accounting
+1. Add a check payment with status Pending.
+2. Confirm due does NOT reduce.
+3. Mark check Passed.
+4. Confirm due reduces exactly by check amount.
+
+Scenario D: Name collision safety
+1. Keep two different partners with similar names.
+2. Verify dual-role resolution uses correct person (email/phone priority).
+
+Quick local checks:
+- `npx tsc --noEmit`
+- open `/dashboard/partners/[id]` and run through A/B/C
+
+--------------------------------------------------------------------
+6) Settings page category list UX (collapse/expand like requested)
+--------------------------------------------------------------------
+
+Goal:
+- In `Settings -> Categories -> Product Categories`, do not show a long fully-expanded tree.
+- Show parent categories only by default.
+- Expand one parent to show only that parent's children.
+- Expanding another parent collapses previous one (single-open behavior).
+
+File:
+- `src/app/dashboard/settings/categories/page.tsx`
+
+Required implementation:
+A) Replace always-recursive rendering with controlled expand state
+- Add state: `expandedParentId: string | null`
+- Parent rows render with chevron toggle button.
+- On parent toggle:
+  - if same parent clicked => collapse (`null`)
+  - else set that parent id and collapse all others.
+
+B) Render strategy
+- Keep `mainCategories` as root rows.
+- Render children rows only when parent is currently expanded.
+- Child rows should keep indent and current action menu behavior.
+- Parent and child row actions (Edit/Delete/View products) must continue to work.
+
+C) Keep performance stable
+- Do not re-render whole tree recursively for all nodes every time.
+- Build a `childrenByParentId` map once with `useMemo`.
+
+D) Optional UX enhancement (recommended)
+- Add a small search box above the table for product categories.
+- If search is empty: single-expand mode.
+- If search has value: show matched parents/children list (expanded view for matches only).
+
+Acceptance:
+1. Initial load shows only parent categories.
+2. Expanding parent A shows only A children.
+3. Expanding parent B collapses A and shows B children.
+4. Edit/Delete works from both parent and child rows.
+5. Large category lists remain readable and fast.

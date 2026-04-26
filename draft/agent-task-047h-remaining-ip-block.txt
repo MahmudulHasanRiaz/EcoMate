@@ -1,0 +1,46 @@
+﻿P47 Remaining Task — Customer page IP block/unblock
+
+Goal
+Add IP block/unblock controls on Customer Details page (GLOBAL scope), without showing IP in UI.
+
+Files
+- src/app/dashboard/customers/[id]/page.tsx
+
+Steps
+1) Add state for lastOrderIp + ipBlocked + checkingIp:
+   - const [lastOrderIp, setLastOrderIp] = useState<string | null>(null);
+   - const [ipBlocked, setIpBlocked] = useState(false);
+   - const [isCheckingIp, setIsCheckingIp] = useState(false);
+
+2) After customer orders load, fetch full latest order to access rawPayload IP:
+   - Use getOrderById(mostRecentOrder.id)
+   - Extract raw IP: fullOrder?.rawPayload?.customer_ip_address
+   - Save into lastOrderIp (no UI display).
+   - If not found -> keep null and disable block button.
+
+3) Check IP restriction (GLOBAL) when lastOrderIp is set:
+   - fetch `/api/restrictions?targetType=IP&targetValue=${encodeURIComponent(lastOrderIp)}`
+   - setIpBlocked based on data length > 0
+
+4) UI section (similar to Order page, but text-only):
+   - Label: “Network Protection”
+   - If lastOrderIp is null, show text: “No IP captured from recent orders.” and disable button.
+   - If ipBlocked: show “Unblock IP” button ->
+       * GET restrictions for IP (same as step 3), pick first item
+       * DELETE `/api/restrictions?targetHash=...&scope=GLOBAL`
+       * setIpBlocked(false)
+   - Else: show “Block IP” button ->
+       * POST `/api/restrictions` with:
+         { targetType:'IP', targetValue:lastOrderIp, durationDays:3650, scope:'GLOBAL', integrationId:null, businessId: mostRecentOrder?.businessId }
+       * setIpBlocked(true)
+
+5) Do NOT show the raw IP in UI.
+
+Notes
+- This uses existing GET/POST logic; no API changes needed.
+- If lastOrderIp missing, just disable block button.
+
+Deliver back
+- Short diff summary
+- Mention file touched
+- Note that IP is never displayed; only used internally.

@@ -1,0 +1,112 @@
+P47bk - Must-fix final pass: check-status ledger correctness across ALL payment entry paths
+
+Objective:
+- Remove the last accounting inconsistency.
+- Ensure `updateCheckStatusCore` works correctly whether the check came from:
+  1) Partner FIFO payment (`applyPartnerPaymentCore`)
+  2) PO payment add/edit flows (`addPurchasePaymentCore` / `upsertPurchasePaymentCore`)
+
+Scope:
+- `src/server/modules/purchases.ts` only
+- No unrelated refactor
+- No commit/push instructions
+
+--------------------------------------------------------------------
+1) Fix `updateCheckStatusCore` settlement branch using posting origin
+--------------------------------------------------------------------
+Current issue:
+- `Passed` currently always posts `Dr AP / Cr Supplier Advance`.
+- This is correct only when pending was staged in Supplier Advance.
+- For flows that did NOT stage pending there (PO add/edit), this is wrong.
+
+Required implementation (inside `updateCheckStatusCore` ledger transaction):
+
+A) Gather context BEFORE deleting postingGroup entries
+1. Resolve accounts:
+   - `apId` from `ACCOUNT_LABELS.accountsPayable`
+   - `supplierAdvanceId` from `ACCOUNT_LABELS.supplierAdvance`
+   - `sourceAccountId` = `fullPayment.paidFromAccountId || cash account`
+2. Query existing postingGroup lines:
+   - `existingEntries = findMany({ where: { postingGroup }, select: { accountId, debit, credit } })`
+3. Detect staging:
+   - `hadPendingAdvanceStage = existingEntries.some(e => e.accountId === supplierAdvanceId && e.debit > 0)`
+
+B) Delete old postingGroup rows (keep current idempotent behavior)
+
+C) Rebuild rows by target status
+
+Case 1: `status === 'Passed'` and `fullPayment.check > 0`
+- If `hadPendingAdvanceStage`:
+  - post `Dr Accounts Payable`
+  - post `Cr Supplier Advance`
+- Else:
+  - post `Dr Accounts Payable`
+  - post `Cr sourceAccountId` (bank/cash/direct account)
+
+Case 2: `status === 'Pending'` and `fullPayment.check > 0`
+- Re-stage only when pending-stage model applies:
+  - If `hadPendingAdvanceStage` OR payment is partner-FIFO-origin (see Rule D below):
+    - post `Dr Supplier Advance`
+    - post `Cr sourceAccountId`
+- Else keep no posting for pending.
+
+Case 3: `status in ('Bounced','Cancelled')`
+- Keep no postingGroup rows (fully reversed).
+
+D) Partner-FIFO origin rule (for re-pending after pass)
+- Add helper boolean:
+  - `isPartnerFifoPayment = fullPayment.paymentFor === 'Purchase Balance (FIFO)' || (fullPayment.paymentFor || '').startsWith('Production Step (')`
+- Use this for Case 2 when `hadPendingAdvanceStage` is not detectable due to prior status transitions.
+
+Acceptance:
+- Partner FIFO path: Pending = staged in Supplier Advance; Passed = clears from Supplier Advance to AP.
+- PO add/edit path: Pending (no staging) remains no-ledger; Passed = Dr AP / Cr source account.
+- No double-credit bank in any status transition.
+
+--------------------------------------------------------------------
+2) Keep existing status recompute flow unchanged
+--------------------------------------------------------------------
+- Do NOT remove:
+  - `syncStepPaidFromPaymentsTx(...)`
+  - `recomputePaymentStatusTx(...)`
+- These must continue running after status change.
+
+--------------------------------------------------------------------
+3) Verification matrix (mandatory)
+--------------------------------------------------------------------
+Run all four scenarios manually and collect outputs:
+
+Scenario A: Partner FIFO check (supplier or vendor)
+1. Create payment via Partner profile with method = Check
+2. Confirm postingGroup initially has:
+   - `Dr Supplier Advance`
+   - `Cr source account`
+3. Mark Passed
+4. Confirm postingGroup now has:
+   - `Dr Accounts Payable`
+   - `Cr Supplier Advance`
+5. Confirm no second credit to source account
+
+Scenario B: PO page Add Payment (Check)
+1. Add check payment from Purchase detail page
+2. Confirm pending has no postingGroup rows (or existing behavior unchanged)
+3. Mark Passed
+4. Confirm postingGroup has:
+   - `Dr Accounts Payable`
+   - `Cr source account`
+5. Confirm Supplier Advance is NOT credited for this scenario
+
+Scenario C: Status rollback from Passed -> Pending (Partner FIFO-origin check)
+1. Take Scenario A check and set back to Pending
+2. Confirm postingGroup returns to staged model:
+   - `Dr Supplier Advance`
+   - `Cr source account`
+
+Scenario D: Bounced/Cancelled
+1. Set any check to Bounced or Cancelled
+2. Confirm postingGroup rows removed (net zero effect)
+
+Quick SQL helpers (replace <PAYMENT_ID>):
+- `select accountId, debit, credit from "LedgerEntry" where "postingGroup" = 'purchasePayment:<PAYMENT_ID>';`
+- `select id, "paymentMethod", "paymentFor", "checkStatus", "paidFromAccountId", cash, "check" from "PurchasePayment" where id = '<PAYMENT_ID>';`
+

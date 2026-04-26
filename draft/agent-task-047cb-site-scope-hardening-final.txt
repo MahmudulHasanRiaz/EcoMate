@@ -1,0 +1,132 @@
+P47cb - Final hardening for customer PHONE block SITE scope (must leave zero gap)
+
+Objective
+- Close the last two correctness gaps from P47ca.
+- Ensure SITE scope can never be saved with missing/wrong business context.
+- Keep UX simple and current flow unchanged.
+- No migration.
+- No unrelated refactor.
+- No commit/push instructions.
+
+Scope
+- `src/app/api/restrictions/route.ts`
+- `src/app/dashboard/customers/[id]/page.tsx`
+
+Out of scope
+- Plugin changes
+- Other restriction types
+- Other pages
+
+--------------------------------------------------------------------
+1) Backend: enforce strict SITE payload + canonical business binding
+--------------------------------------------------------------------
+
+File
+- `src/app/api/restrictions/route.ts`
+
+Required changes in `POST` handler:
+
+1. Keep existing validation:
+   - `targetType=PHONE` + `scope=SITE` requires `integrationId`.
+
+2. Add missing hard requirement:
+   - `targetType=PHONE` + `scope=SITE` also requires `businessId`.
+   - If missing: return `400` with message:
+     - `"businessId is required for SITE phone restriction"`
+
+3. When `integrationId` is provided:
+   - Fetch integration by id.
+   - If not found: `404` `"Integration not found"`.
+
+4. Keep mismatch guard:
+   - If `scope=SITE` and `integration.businessId !== businessId`:
+     - return `400` `"Selected site does not belong to provided business context"`.
+
+5. Canonicalize persisted business context (important):
+   - For `scope=SITE`, do NOT persist raw incoming businessId directly.
+   - After validation, set `businessId = integration.businessId` before `create`.
+   - This prevents any payload drift and guarantees DB correctness.
+
+6. Keep existing behavior for GLOBAL:
+   - No SITE-only blocking logic should run.
+
+Acceptance for backend
+- SITE request with missing `businessId` fails with 400.
+- SITE request with mismatch business/integration fails with 400.
+- SITE success row always stores integrationId + matching businessId.
+
+--------------------------------------------------------------------
+2) Frontend: block submit unless selected integration context is complete
+--------------------------------------------------------------------
+
+File
+- `src/app/dashboard/customers/[id]/page.tsx`
+
+Required changes in block submit flow:
+
+1. In `Confirm Block` action for `SITE`:
+   - Resolve selected integration object from `integrations`:
+     - `const selectedIntegration = integrations.find(i => i.id === selectedIntegrationId)`
+   - If not found:
+     - show destructive toast (`"Selected site metadata not found. Please reload."`)
+     - return early.
+   - If selected integration has no `businessId`:
+     - show destructive toast (`"Selected site has no business mapping."`)
+     - return early.
+
+2. Build payload from selected integration only:
+   - `integrationId = selectedIntegration.id`
+   - `businessId = selectedIntegration.businessId`
+   - Never use latest order business for SITE path.
+
+3. Keep confirm button disabled state strict for SITE:
+   - disabled when no `selectedIntegrationId`
+   - and also disabled when selectedIntegration cannot be resolved.
+
+4. Keep customer blocked badge recheck unscoped:
+   - `checkRestriction(customer.phone, 'PHONE')`
+   - Do not pass integrationId in this recheck.
+
+Acceptance for frontend
+- SITE block cannot submit with missing integration metadata.
+- SITE payload always sends integrationId+businessId from selected integration.
+- Unblock badge remains globally consistent.
+
+--------------------------------------------------------------------
+3) Mandatory verification checklist
+--------------------------------------------------------------------
+
+A) SITE success path
+1. Open customer with orders from 2+ sites.
+2. Choose `Specific Site`, select Site A, click Confirm.
+3. Verify created restriction row:
+   - `scope='SITE'`
+   - `integrationId=SiteA`
+   - `businessId` equals SiteA business.
+
+B) SITE missing business guard
+1. Temporarily tamper payload in browser devtools (or API client) with SITE + integrationId but no businessId.
+2. Must return `400` with message:
+   - `businessId is required for SITE phone restriction`.
+
+C) SITE mismatch guard
+1. Send SITE payload with integrationId from business X and businessId from business Y.
+2. Must return `400` with message:
+   - `Selected site does not belong to provided business context`.
+
+D) GLOBAL regression
+1. GLOBAL block still works.
+2. Unblock (`allScopes=true`) works.
+3. Customer badge refresh after unblock remains correct without page reload.
+
+--------------------------------------------------------------------
+4) Quality gates before handoff
+--------------------------------------------------------------------
+
+Run and share outputs:
+1. `git diff -- src/app/api/restrictions/route.ts`
+2. `git diff -- src/app/dashboard/customers/[id]/page.tsx`
+3. `npx tsc --noEmit --pretty false` (report only touched-file relevance; pre-existing repo errors can remain)
+
+Completion rule
+- Do not mark complete unless all checklist items A/B/C/D are confirmed.

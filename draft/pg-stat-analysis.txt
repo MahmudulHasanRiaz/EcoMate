@@ -1,0 +1,58 @@
+# DB Performance Triage Analysis (P25)
+
+Analysis based on `draft/pg-stat-report.txt` baseline (2026-01-22).
+
+## 1. Top Costly Queries (by total_exec_time)
+
+| Query Type | Table | Total Time (ms) | Calls | Mean Time (ms) | Impact |
+| --- | --- | --- | --- | --- | --- |
+| UPDATE | StaffMember | 1379.66 | 104 | 13.27 | Very High |
+| INSERT | _StaffBusinessAccess | 842.27 | 104 | 8.10 | High |
+| SELECT | StaffMember | 347.35 | 105 | 3.31 | Medium |
+| SELECT | StaffInvite | 219.81 | 104 | 2.11 | Medium |
+| SELECT | CheckPassingItem | 79.43 | 1 | 79.43 | Low (Sparse) |
+| SELECT | MarketingCampaign | 63.62 | 1 | 63.62 | Low (Sparse) |
+| SELECT SUM | OrderFinancialSnapshot | 62.28 | 1 | 62.28 | Low (Sparse) |
+| SELECT | _StaffBusinessAccess | 54.77 | 212 | 0.26 | Medium |
+
+## 2. Module Mapping & Root Cause
+
+### High Impact: Staff Authentication Auth Flow
+- **Query**: UPDATE `StaffMember`, INSERT `_StaffBusinessAccess`, SELECT `StaffMember` (by clerkId).
+- **Module**: `src\server\modules\staff-auth.ts` -> `getStaffAuthDetails`.
+- **Root Cause**: The `getStaffAuthDetails` function performs a full `upsert` and a Clerk metadata backfill on *every* authenticated request via middleware/guards. This includes updating `lastLogin` and reconnecting all accessible businesses.
+- **Index Status**: `clerkId` and `id` are already indexed.
+
+### Medium Impact: Staff Invitation Check
+- **Query**: SELECT `StaffInvite` (by email).
+- **Module**: `src\server\modules\staff-auth.ts` -> `getInviteForEmail`.
+- **Root Cause**: Checking for pending invites on every auth check.
+- **Index Status**: `email` is indexed (@unique).
+
+### High Mean Time (Sparse): Reports & Summaries
+- **Query**: `CheckPassingItem` listing, `OrderFinancialSnapshot` aggregation.
+- **Module**: `src\server\modules\check-passing-items.ts`, `src\server\modules\finance.ts`.
+- **Optimization**: These are currently rare (1 call) but could scale poorly.
+
+## 3. Index Recommendations
+
+- **CheckPassingItem**: Add a composite index for pagination.
+  - Candidate: `@@index([passingDate, source, id])` to match the specific ordering used in listings.
+- **MarketingCampaign**: Existing `@@index([businessId, status])` is good for current queries.
+
+## 4. Proposed Fixes & Logic Changes
+
+### CRITICAL: Optimize Authentication Flow (P25b)
+- **Implement Auth Caching**: Use an in-memory Cache (e.g., `lru-cache`) or Redis to store `StaffAuthResult` for a short period (e.g., 5-10 minutes).
+- **Gated Upsert**: Only perform the `upsert` to DB if the staff member is missing OR if the `lastLogin` is older than 30 minutes. 
+- **Reduce Metadata Backfill**: Only call `client.users.updateUser` if metadata has actually changed.
+
+### Query Refactoring
+- **CheckPassingItem**: Deterministic sort uses 3 columns. Ensure the index covers them or simplify the sort.
+
+## 5. Next Action Shortlist (P25b)
+
+1. [ ] Implement LRU caching for `getStaffAuthDetails` to eliminate 90%+ of redundant DB writes.
+2. [ ] Refactor `upsert` logic to be "lazy" (trigger only on session refresh or data change).
+3. [ ] Add composite index to `CheckPassingItem` (passingDate, source, id).
+4. [ ] Monitor `pg_stat_statements` after fixes to verify impact.

@@ -1,0 +1,179 @@
+P47y - Incomplete Capture: Missing Name/Address (phone-only payload fix)
+
+Problem observed
+- Customer fills name/address but incomplete lead contains only phone.
+- Raw payload shows empty fields except phone/referrer/landingPage.
+
+Root cause (very likely)
+- `getVal()` only reads `:visible` elements.
+- We trigger capture on `pagehide` / `visibilitychange` where fields are no longer considered visible.
+- Result: phone is passed explicitly, but other fields are read as empty.
+
+Scope
+- Only update: draft/fashionary-woo-plugin/assets/js/checkout.js
+
+----------------------------------------------------------------------
+1) Make getVal robust to hidden fields (critical fix)
+----------------------------------------------------------------------
+Find:
+```js
+function getVal(selectors) {
+    for (const sel of selectors) {
+        const $el = $(sel).filter(':visible').first();
+        if ($el.length) {
+            const v = String($el.val() || '').trim();
+            if (v) return v;
+        }
+    }
+    return '';
+}
+```
+
+Replace with:
+```js
+function getVal(selectors) {
+    for (const sel of selectors) {
+        // 1) Try visible element first
+        let $el = $(sel).filter(':visible').first();
+
+        // 2) Fallback to the first matching element even if hidden
+        if (!$el.length) {
+            $el = $(sel).first();
+        }
+
+        if ($el.length) {
+            const v = String($el.val() || '').trim();
+            if (v) return v;
+        }
+    }
+    return '';
+}
+```
+
+----------------------------------------------------------------------
+2) Add shipping fallbacks to selectors (themes vary)
+----------------------------------------------------------------------
+Many themes or checkout flows keep shipping fields, not billing fields.
+Add shipping selectors into the existing arrays.
+
+Update arrays as follows (append these, do not remove existing):
+
+2.1) FIRST_NAME_SELECTORS: add
+```js
+'#shipping_first_name',
+'input[name="shipping_first_name"]',
+'input[name="shipping-first-name"]'
+```
+
+2.2) LAST_NAME_SELECTORS: add
+```js
+'#shipping_last_name',
+'input[name="shipping_last_name"]',
+'input[name="shipping-last-name"]'
+```
+
+2.3) ADDRESS1_SELECTORS: add
+```js
+'#shipping_address_1',
+'input[name="shipping_address_1"]',
+'input[name="shipping-address_1"]',
+'input[name="shipping-address-1"]'
+```
+
+2.4) ADDRESS2_SELECTORS: add
+```js
+'#shipping_address_2',
+'input[name="shipping_address_2"]',
+'input[name="shipping-address_2"]',
+'input[name="shipping-address-2"]'
+```
+
+2.5) CITY_SELECTORS: add
+```js
+'#shipping_city',
+'input[name="shipping_city"]',
+'input[name="shipping-city"]'
+```
+
+2.6) STATE_SELECTORS: add
+```js
+'#shipping_state',
+'input[name="shipping_state"]',
+'input[name="shipping-state"]',
+'select[name="shipping_state"]'
+```
+
+2.7) POSTCODE_SELECTORS: add
+```js
+'#shipping_postcode',
+'input[name="shipping_postcode"]',
+'input[name="shipping-postcode"]'
+```
+
+2.8) COUNTRY_SELECTORS: add
+```js
+'#shipping_country',
+'select[name="shipping_country"]',
+'select[name="shipping-country"]'
+```
+
+----------------------------------------------------------------------
+3) Add a lightweight debug log at send time (temporary but useful)
+----------------------------------------------------------------------
+Inside `sendIncomplete(payload, useBeacon)` before `return fetch(...)`, add:
+
+```js
+try {
+    console.log('[FASHIONARY_CAPTURE_PAYLOAD]', {
+        phone: payload?.phone,
+        name: payload?.name,
+        address: payload?.address,
+        payload: payload?.payload
+    });
+} catch {}
+```
+
+This helps confirm whether fields are being read correctly on the checkout page.
+
+----------------------------------------------------------------------
+4) Bump plugin version (force cache bust)
+----------------------------------------------------------------------
+File: draft/fashionary-woo-plugin/fashionary-woo-plugin.php
+
+Update:
+```php
+ * Version: 1.0.7
+```
+to:
+```php
+ * Version: 1.0.8
+```
+
+----------------------------------------------------------------------
+5) Rebuild the plugin zip
+----------------------------------------------------------------------
+PowerShell command:
+
+```powershell
+Compress-Archive -Path draft/fashionary-woo-plugin -DestinationPath draft/fashionary-woo-plugin.zip -Force
+```
+
+----------------------------------------------------------------------
+6) Verification checklist
+----------------------------------------------------------------------
+6.1) On Woo checkout page (browser console):
+- Fill phone, first name, address1, city.
+- You should see `[FASHIONARY_CAPTURE_PAYLOAD]` with those fields populated.
+
+6.2) On app side:
+- Visit `/api/orders/incomplete` (logged in).
+- The latest lead should include:
+  - non-empty `name`
+  - non-empty `address`
+  - payload fields populated
+
+6.3) If still empty:
+- Inspect the real field names in the checkout DOM and add them to selectors.
+- In console, try:
+  - `jQuery('input,select,textarea').filter('[name*="first"],[name*="address"],[name*="city"]').map((_,el)=>el.name).get()`
+

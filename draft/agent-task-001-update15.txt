@@ -1,0 +1,56 @@
+UPDATE 15 - Invoice polish + Cutting source persistence + remove Pindi field
+
+Scope: ONLY items listed here. Keep changes minimal. No refactors.
+
+1) Fix Cutting Source persistence (still resets to Vendor External)
+Files:
+- src/app/dashboard/purchases/[id]/client-page.tsx
+- src/server/modules/production.ts (or the server action/route used by handleSavePrintingStep)
+- src/services/purchases.ts
+- src/types/index.ts (only if needed)
+
+Checks/Fixes:
+- Ensure handleSavePrintingStep payload includes:
+  cuttingType and assignedStaffId (selected Cutting Master).
+- Ensure server save (printing step) writes these fields to the production step row.
+- Ensure mapDbPoToAppPo() returns cuttingType + assignedStaffId
+  (see Update 13 if not applied).
+- Ensure initStepDraft uses saved cuttingType/assignedStaffId if present.
+
+Deliver: After save + refresh, Cutting Source remains Internal and selected staff stays.
+
+2) Remove "Pindi of Fab (optional)" from Cutting step UI
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+- Remove this input from Cutting step (desktop + mobile).
+- Do NOT delete DB fields; just hide UI and exclude from payload if present.
+
+3) Invoice: Lot summary is messy and missing on Printing
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> itemsHtml
+
+Goal: compact, readable, minimal space.
+- Build a compact lots line grouped by lot number:
+  "Lots: LOT123 (J:2.0,O:1.0,S:0.5) | LOT124 (J:1.5,O:0,S:1.0)"
+- Use ASCII labels J/O/S only.
+- Show lots line under product name for ALL steps (Fabric, Printing, Cutting, Finishing)
+  when fabric source is INTERNAL and allocations exist.
+- Printing invoice must show lots line (currently missing).
+- If no allocations, show nothing (no placeholder).
+
+4) Invoice: product images not loading (placeholder)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> itemsHtml
+
+Fix:
+- Normalize image URL:
+  if imageUrl starts with "http", use as-is.
+  else build absolute via new URL(imageUrl, window.location.origin).
+- If imageUrl is falsy or invalid after normalization, do NOT render <img>.
+- This should remove broken placeholder and load images when URL is valid.
+
+5) Replace broken label joiner (shows "ƒ?\"")
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+- In invoice labels, replace the joiner with ASCII " - ".
+  Example: `${productName} - ${variantName}`
+
+Deliver back: summary + list of files changed + a quick manual verify note.

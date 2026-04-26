@@ -1,0 +1,43 @@
+UPDATE P12-1b - Phase A gaps (roles still incomplete)
+
+Scope: ONLY fill missing Phase‑A pieces. No refactors.
+
+Missing items found:
+- Prisma enum StaffRole NOT updated (Marketer/FinanceManager missing).
+- staff invite roleMap missing new roles.
+- Staff UI role dropdown missing Marketer/Finance Manager.
+- Staff permission modules list missing marketing.
+- Marketing menu + placeholder page not created.
+
+1) Prisma enum + migration
+File: prisma/schema.prisma
+- Add to enum StaffRole:
+  - Marketer
+  - FinanceManager
+Run:
+  npx prisma migrate dev -n add_marketer_finance_roles
+  npx prisma generate
+
+2) Staff invite mapping (roleMap)
+File: src/app/api/staff/invite/route.ts
+Add:
+  'Marketer': 'Marketer'
+  'Finance Manager': 'FinanceManager'
+
+3) Staff UI role dropdown + permissions list
+File: src/app/dashboard/staff/page.tsx
+- Add 'Marketer' and 'Finance Manager' to staffRoles array.
+- Add 'marketing' to permissionModules array (so permissions UI can show it).
+
+4) Marketing menu + placeholder page
+Files:
+- src/app/dashboard/layout-client.tsx (nav list)
+  - Add a "Marketing" menu item pointing to /dashboard/marketing
+  - Gate by permissions.marketing.read OR page access.
+- src/app/dashboard/marketing/page.tsx
+  - Simple placeholder: title "Marketing" + subtitle "Reports coming soon"
+
+Deliver back:
+- Summary + files touched
+- Migration name + confirmation ran
+- Screenshot or note that Marketing menu appears for Marketer/Finance Manager/Admin

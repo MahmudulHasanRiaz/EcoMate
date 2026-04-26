@@ -1,0 +1,2 @@
+ALTER TABLE "StaffMember" ADD COLUMN IF NOT EXISTS "jobStartDate" DATE;
+ALTER TABLE "StaffMember" ADD COLUMN IF NOT EXISTS "jobEndDate" DATE;

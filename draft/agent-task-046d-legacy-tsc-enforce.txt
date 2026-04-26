@@ -1,0 +1,18 @@
+﻿UPDATE P46d - Continue legacy TSC fixes (no excuses)
+
+You said tool-call formatting issues. That is not acceptable. Do the edits locally and finish.
+
+Rules:
+- No refactor. Only minimal typing/guard fixes.
+- After changes run: `npx tsc --noEmit` and paste output.
+- If still failing, paste exact error list.
+
+Execute these steps exactly:
+1) Apply changes in draft/agent-task-046c-legacy-tsc-fix3.txt (all items).
+2) Re-run `npx tsc --noEmit`.
+3) Save output to draft/tsc-legacy-errors-after.txt.
+4) Reply with:
+   - Summary of files touched
+   - tsc output (or remaining errors)
+
+Do NOT pause or reset context. Finish the task.

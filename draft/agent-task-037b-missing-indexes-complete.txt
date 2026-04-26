@@ -1,0 +1,69 @@
+﻿UPDATE P37b - Complete missing perf indexes + production-safe concurrent plan
+
+Scope: Index verification + add remaining indexes + evidence. Minimal changes.
+
+Findings from review:
+- Migration 20260123173851_add_missing_perf_indexes adds ONLY 4 indexes and uses non-concurrent CREATE INDEX.
+- Missing from plan unless already present:
+  * Order_orderNumber_trgm_idx (GIN trgm)
+  * LedgerEntry_accountId_date_idx
+  * LedgerEntry_businessId_date_idx
+  * Expense_businessId_date_idx
+  * Expense_categoryId_date_idx
+- No evidence file draft/p37-indexes.txt produced.
+
+Steps:
+
+1) Verify existing indexes in DB (do NOT assume)
+Run in psql:
+SELECT tablename, indexname, indexdef
+FROM pg_indexes
+WHERE schemaname='public'
+  AND tablename IN ('Order','LedgerEntry','InventoryItem','Expense','PurchasePayment','StaffPayment');
+
+Save output to: draft/p37-indexes.txt
+
+2) Add ONLY missing indexes
+If any of the above are missing:
+- For DEV (safe enough): create a small migration with standard CREATE INDEX (non-concurrent).
+- For PROD (safe): run a separate SQL file with CREATE INDEX CONCURRENTLY.
+
+2a) DEV migration (if missing):
+$stamp = Get-Date -Format yyyyMMddHHmmss
+$folder = "prisma/migrations/${stamp}_add_missing_perf_indexes_2"
+New-Item -ItemType Directory -Path $folder | Out-Null
+
+Create migration.sql with ONLY missing statements (example below):
+-- Order (orderNumber) search
+CREATE INDEX "Order_orderNumber_trgm_idx" ON "Order" USING GIN ("orderNumber" gin_trgm_ops);
+
+-- LedgerEntry
+CREATE INDEX "LedgerEntry_accountId_date_idx" ON "LedgerEntry"("accountId", "date");
+CREATE INDEX "LedgerEntry_businessId_date_idx" ON "LedgerEntry"("businessId", "date");
+
+-- Expense
+CREATE INDEX "Expense_businessId_date_idx" ON "Expense"("businessId", "date");
+CREATE INDEX "Expense_categoryId_date_idx" ON "Expense"("categoryId", "date");
+
+Then run:
+  npx prisma migrate deploy
+  npx prisma generate
+
+2b) PROD-safe concurrent runbook (required)
+Create: scripts/p37-concurrent-indexes.sql
+Put ONLY the missing indexes with CREATE INDEX CONCURRENTLY and a warning banner.
+Example:
+-- DO NOT RUN IN TRANSACTION
+CREATE INDEX CONCURRENTLY "Order_orderNumber_trgm_idx" ON "Order" USING GIN ("orderNumber" gin_trgm_ops);
+... etc
+
+3) Evidence
+- draft/migrate-status-p37b.txt (output of npx prisma migrate status)
+- draft/p37-indexes.txt (pg_indexes output)
+- Update draft/task.txt: add P37b evidence lines + note dev vs prod path
+
+Deliver back:
+- Which indexes were missing and added
+- Migration folder name (if created)
+- paths to evidence files
+- confirmation of prisma generate success

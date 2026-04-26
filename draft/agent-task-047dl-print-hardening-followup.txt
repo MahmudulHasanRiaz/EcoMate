@@ -1,0 +1,135 @@
+P47dl - Bulk Print Hardening Follow-up (Post P47dk Audit)
+
+Context
+- P47dk mostly worked, but audit found remaining gaps in print flow robustness.
+- Keep existing tokenized print mechanism.
+- Do not touch webhook/runtime order sync logic.
+
+==================================================
+A) Findings from Audit (must fix)
+==================================================
+
+1) Large batch warning is not rendered (claim mismatch)
+File:
+- `src/app/dashboard/orders/client-page.tsx`
+
+Issue:
+- State exists:
+  - `printWarning`
+  - `isBulkPrinting`
+- Trigger exists in `handleBulkPrint` for `selectedOrders.length > 300`.
+- But no AlertDialog/UI is rendered for `printWarning`.
+- Result: warning never shown.
+
+Required fix:
+- Add an `AlertDialog` tied to `printWarning.isOpen`:
+  - Title: "Large print batch"
+  - Message: browser may be slow for very large batches.
+  - Actions:
+    - Cancel: close dialog
+    - Continue: call `executeBulkPrint(printWarning.type!)`
+
+Acceptance:
+- Selecting >300 and clicking bulk print must show warning dialog before printing.
+
+--------------------------------------------------
+
+2) "Up to 2000 supported" is not operationally safe with current fetch pattern
+File:
+- `src/app/print/bulk/client-page.tsx`
+
+Issue:
+- Current loading still does N+1:
+  - `Promise.all(orderIds.map(id => getOrderById(id)))`
+- For 500/1000/2000 this can overwhelm browser/network and fail partially.
+
+Required fix:
+- Add new API for bulk order print payload:
+  - `POST /api/print/bulk/orders`
+  - Input: `{ ids: string[] }`
+  - Permission: enforce `orders:read`
+  - Output: minimal order fields needed by `InvoiceTemplate`/`StickerTemplate`.
+- Update print page to use this single bulk endpoint instead of per-order requests.
+- Keep old per-order fallback only if bulk endpoint fails.
+
+Acceptance:
+- Print page performs one primary request for batch data, not thousands.
+- 120+ loads significantly faster and more reliably.
+
+--------------------------------------------------
+
+3) Print token routes should enforce order read permission, not just auth
+Files:
+- `src/app/api/print/bulk/route.ts`
+- `src/app/api/print/bulk/[token]/route.ts`
+
+Issue:
+- Routes currently check only `currentUser`.
+- Must align with order data sensitivity model.
+
+Required fix:
+- Replace/augment auth check with `enforcePermission('orders','read')`.
+- Keep existing token TTL and response shapes.
+
+Acceptance:
+- User without order-read permission cannot create/retrieve print batches.
+
+==================================================
+B) Optional Hardening (if quick)
+==================================================
+
+1) Token ownership binding
+Files:
+- `src/server/modules/print-batch.ts`
+- print API routes
+
+Optional:
+- Store creator staff/user id alongside ids in Redis.
+- Validate same owner (or admin) on retrieval.
+
+2) Single-use token toggle
+- Optional: delete token after retrieval to reduce leakage window.
+
+==================================================
+C) Verification
+==================================================
+
+Run from:
+```powershell
+cd E:\fashionary\Fashionary
+```
+
+1) Type check
+```powershell
+npx tsc --noEmit --pretty false
+```
+
+2) Manual warning test
+- Select >300 orders.
+- Click bulk sticker print.
+- Warning dialog must appear.
+
+3) Manual token print test
+- Select 120+ orders.
+- Click continue in warning (or direct for smaller batches).
+- Opened URL must be `.../print/bulk?type=...&token=...`.
+
+4) Manual performance sanity
+- Confirm network shows bulk print data fetch as one primary API call (not N requests for N orders).
+
+5) Permission check
+- With a user lacking `orders:read`, print batch create/retrieve must be blocked.
+
+==================================================
+D) Required Output
+==================================================
+
+Return exactly:
+1. Files changed
+2. Diff snippets for:
+   - warning dialog wiring
+   - bulk print data endpoint + print page migration
+   - permission enforcement on print batch routes
+3. `npx tsc --noEmit --pretty false` result
+4. Manual verification results (warning + 120+ print + permission check)
+5. Any residual limits

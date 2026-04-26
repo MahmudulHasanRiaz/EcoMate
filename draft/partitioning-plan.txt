@@ -1,0 +1,57 @@
+# Database Partitioning Strategy (P28)
+
+## 1. Requirement Analysis
+
+### Why Partitioning?
+As Fashionary scales, certain tables attract massive write and read volume, leading to:
+- **Index Bloat**: Indexes become too large to fit in memory, slowing down random I/O.
+- **Vacuum Multi-threading Issues**: Postgres AUTOVACUUM becomes less efficient on multi-million row tables.
+- **Query Latency**: Scans on non-indexed ranges or complex aggregations (LedgerEntry/Order) degrade.
+- **Maintenance**: Backups and restores take longer.
+
+### Target Tables (Priority Order)
+1.  **Order** (by `createdAt` / `date`) 
+2.  **LedgerEntry** (by `date`)
+3.  **OrderPaymentEvent** (by `paymentDate`)
+4.  **InventoryMovement** (by `createdAt`)
+5.  **Notification** (by `createdAt`)
+6.  **WebhookFailure** (by `createdAt`)
+
+## 2. Partitioning Strategy
+
+### Scheme: RANGE Partitioning
+We will use Native Postgres RANGE partitioning by month or year.
+- **Window**: Monthly for high-volume logs (Notification, InventoryMovement).
+- **Window**: Quarterly or Yearly for business records (Order, LedgerEntry).
+
+### Implementation Approach (Phased)
+1.  **Phase A**: Create new partitioned parent tables (e.g., `Order_New`).
+2.  **Phase B**: Create partitions for historical years and 12 months into the future.
+3.  **Phase C**: Migration window (Off-peak). Copy data from old to new.
+4.  **Phase D**: Rename (Wrap in transaction). Swap `Order` -> `Order_Old`, `Order_New` -> `Order`.
+
+## 3. Retention Policy
+
+### Data Integrity
+The policy is **Indefinite Retention**. No data will be deleted during this process.
+- Older partitions can be moved to cheaper storage (Tablespaces) if needed.
+- Cold data (e.g., Notifications > 1 year) can eventually be exported to S3/JSON but kept read-only in the database.
+
+## 4. Query & Performance Impact
+
+- **Constraint Exclusion**: The Postgres planner will exclude partitions that don't match the `WHERE` clause (e.g., `WHERE createdAt >= '2025-01-01'`).
+- **Parallel Scans**: Partitions allow for better parallelization of large analytic queries.
+- **Index Maintenance**: Indexes are local to each partition, keeping them compact and cacheable.
+
+## 5. Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| Lock Contention | High | Move data during low-traffic windows. Use `CONCURRENTLY` for index creation. |
+| Application Breakage | High | Prisma requires specific configuration to work with native partitioning (using `@ignore` or views). |
+| Data Drift | Medium | Use a transient trigger during the swap Phase to keep both tables in sync. |
+| Disk Usage | Medium | Ensure 2x disk space available during the "Copy" phase. |
+
+## 6. Rollback Plan
+- Keep the original `Table_Old` for at least 30 days.
+- In case of failure, swap the names back immediately.

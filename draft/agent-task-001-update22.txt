@@ -1,0 +1,14 @@
+UPDATE 22 - Fix stray </html > tag from Update 21
+
+Scope: ONLY fix malformed closing tag.
+
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> html template
+
+Issue:
+- Closing tag currently `</html >` (invalid). This can break parsing.
+
+Fix:
+- Replace `</html >` with `</html>`.
+
+Deliver back: summary + confirm no malformed tags remain.

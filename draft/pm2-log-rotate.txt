@@ -1,0 +1,26 @@
+# PM2 Log Rotation Configuration
+# Run these commands to install and configure proper log retention.
+
+# 1. Install module
+pm2 install pm2-logrotate
+
+# 2. Configure Max Size (10MB)
+pm2 set pm2-logrotate:max_size 10M
+
+# 3. Configure Retention (30 files)
+pm2 set pm2-logrotate:retain 30
+
+# 4. Enable Compression
+pm2 set pm2-logrotate:compress true
+
+# 5. Date Format (Matches ecosystem)
+pm2 set pm2-logrotate:dateFormat YYYY-MM-DD_HH-mm-ss
+
+# 6. Daily Rotation at Midnight
+pm2 set pm2-logrotate:rotateInterval '0 0 * * *'
+
+# 7. Enable Module
+pm2 set pm2-logrotate:rotateModule true
+
+# 8. Save
+pm2 save

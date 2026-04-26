@@ -1,0 +1,61 @@
+﻿P47 Review – Fix Required (do not proceed to plugin yet)
+
+Summary: The claim "Frontend Implementation complete" is not accurate. There are security, schema, and requirement mismatches that must be fixed first.
+
+IMPORTANT (do not ignore)
+- Do NOT edit the ecomdrive plugin. It is reference only.
+- Create a new plugin folder: draft/fashionary-woo-plugin/
+- The new plugin name/branding must be "Fashionary".
+
+BLOCKERS (fix these first)
+1) /api/restrictions has no auth/permission checks
+   - File: src/app/api/restrictions/route.ts
+   - Current: open POST endpoint, anyone can block phone/IP.
+   - Required: protect with staff auth + permission (suggest integrations:manage or orders:manage). Use same guard pattern as other admin APIs.
+
+2) /api/restrictions writes fields not in schema + missing required fields
+   - File: src/app/api/restrictions/route.ts:16-40
+   - Current: writes `reason` which does NOT exist in OrderRestriction model; omits `scope` (required) and doesn’t set integrationId/businessId.
+   - Schema: prisma/schema.prisma model OrderRestriction (scope is required; reason not present).
+   - Required: remove `reason` field, add `scope` (SITE or GLOBAL), set integrationId and businessId as needed. Add supportPhone + message from integration/general settings.
+
+3) Manual block UI uses /api/restrictions but sends only targetType/targetValue/reason/durationDays
+   - Files:
+     - src/app/dashboard/orders/[id]/page.tsx:1180-1217
+     - src/app/dashboard/customers/[id]/page.tsx:177-216
+   - Required: send scope + integrationId + businessId, and use configured message/supportPhone. Also add UNBLOCK action (toggle) per requirement.
+
+REQUIREMENT MISMATCHES
+4) IP should NOT be shown in UI
+   - Current: shows raw IP in Order detail (orders/[id]/page.tsx:1180-1184).
+   - Required: hide IP from UI; only show “Blocked/Unblocked” status + action. IP hash only in DB.
+
+5) Phone validation logic is too strict
+   - File: src/lib/utils/phone-utils.ts:7-18
+   - Current: accepts only 01/8801 or 10-digit starting with 1.
+   - Required per spec:
+     - Accept 11 digits starting with 0 (any 0X...).
+     - Accept 880/+880 followed by 10 digits (normalize to 0 + 10 digits).
+     - Also accept 880/+880 where 0 after country code isn’t 1 (still valid if total digits match).
+     - If invalid: block with message and DO NOT capture incomplete.
+
+6) Dedupe window is calculated but not used
+   - File: src/server/modules/woo-public.ts:173-180
+   - Current: always update existing fingerprint.
+   - Required: only update if lastSeenAt >= now - dedupeMinutes; else create new or increment occurrences based on spec.
+
+7) Support phone fallback missing general settings
+   - File: src/server/modules/woo-public.ts:42-56
+   - Required fallback: integration.restrictionSupportPhone -> integration.supportPhone -> business.phone -> general settings phone. Same for business phone/address defaults in UI.
+
+8) Restriction on successful order placed not implemented
+   - File: src/server/modules/woo-public.ts:completeOrderEvent
+   - Required: when order placed, create restriction based on integration settings (duration type: Always/Hours/Days). Scope should be SITE (not global), per spec.
+
+OTHER NOTES
+- Ensure /api/woo/restriction-check returns the correct custom message and support phone (from integration settings). If phone invalid, block and return message.
+- Ensure dedupe and retry settings are actually used by plugin endpoints.
+
+Deliverable expectations
+- Fix all above, then report back with exact file list + snippets + how you met each requirement.
+- Do NOT proceed to plugin packaging until these are done.

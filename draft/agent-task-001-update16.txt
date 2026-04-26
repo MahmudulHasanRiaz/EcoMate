@@ -1,0 +1,56 @@
+UPDATE 16 - Fix remaining issues (Cutting source persistence + invoice polish)
+
+Scope: ONLY items listed here. Keep changes minimal. No refactors.
+
+1) Cutting Source still resets to Vendor External after save
+Root cause likely missing fields in server-side mapping.
+
+Files:
+- src/server/modules/purchases.ts
+
+Fix:
+In the productionSteps mapping (around the map that builds step objects),
+add the missing fields so API returns them:
+  cuttingType: (step as any).cuttingType || undefined
+  assignedStaffId: (step as any).assignedStaffId || undefined
+  note: (step as any).note || undefined (optional but recommended)
+
+Sanity:
+Save Printing step with Cutting Source = Internal + select master.
+Refresh page -> Cutting Source stays Internal and master stays selected.
+
+2) Invoice lots display is messy + missing in Printing
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> itemsHtml
+
+Fix:
+- Create a small helper to render lots line for a single item when internal fabric:
+  Format example:
+  "Lots: LOT123 (J:2.0,O:1.0,S:0.5) | LOT124 (J:1.5,O:0,S:1.0)"
+- Group allocations by lotNumber and sum yards by type (J/O/S).
+- Only render the lots line when allocations exist.
+- Use ASCII labels J/O/S only.
+- Apply the same lots line under product name in ALL invoices:
+  FABRIC, PRINTING, CUTTING, FINISHING.
+- Remove the old "U: ... R: ..." lot format.
+
+3) Invoice product images not loading (placeholder)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: handleGenerateWorkOrder -> itemsHtml
+
+Fix:
+- Normalize image URL before rendering <img>.
+  if imageUrl starts with http/https -> use as-is.
+  else -> new URL(imageUrl, window.location.origin).toString().
+  if invalid or empty -> do not render <img>.
+
+4) Replace broken label joiner (shows "ƒ?\"")
+Files:
+- src/app/dashboard/purchases/[id]/client-page.tsx
+- src/server/modules/purchases.ts
+
+Fix:
+- Replace product label joiner with ASCII " - ":
+  `${productName} - ${variantName}`
+
+Deliver back: summary of changes + quick manual verify notes (Printing invoice shows lots, Cutting Source persists after refresh).

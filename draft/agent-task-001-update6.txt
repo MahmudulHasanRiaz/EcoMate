@@ -1,0 +1,42 @@
+UPDATE 6 - Add Cutting Master role (actual implementation)
+
+Status check: No code changes found yet. This is required work.
+
+Requirements (from client):
+- Role label can be "Cutting Master" (preferred; matches existing UI mapping).
+- Page/menu access: only Dashboard + Account (account is not gated by page access).
+- Read-only permissions: Purchases + Orders + Attendance so their account page stats remain consistent.
+- No other page access or module access.
+
+1) Role dropdowns (UI)
+File: src/app/dashboard/staff/page.tsx
+- Add 'Cutting Master' to staffRoles list (used by invite + filters).
+
+2) Role mapping (API)
+Files:
+- src/app/api/staff/route.ts
+- src/app/api/staff/[id]/route.ts
+- src/app/api/staff/invite/route.ts
+
+Changes:
+- Add UI -> DB mapping: 'Cutting Master' => 'CuttingMan'.
+- Add DB -> UI mapping: 'CuttingMan' => 'Cutting Master'.
+- Ensure invites persist role as CuttingMan.
+
+3) Preset permissions
+File: src/lib/staff-permissions.ts
+- Add preset for 'Cutting Master' with:
+  orders: readOnly
+  purchases: readOnly
+  attendance: readOnly
+  all other modules: noAccess
+
+4) Page access preset
+File: src/lib/page-access.ts
+- Add ROLE_PAGE_ACCESS entry for 'Cutting Master': ['pages.dashboard']
+  (Account page is not gated, so it remains accessible.)
+
+5) Verify filters
+- staffRoles list is reused in role filter; no extra changes required if #1 done.
+
+Deliver back: summary + tests run.

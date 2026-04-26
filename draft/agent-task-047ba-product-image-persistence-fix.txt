@@ -1,0 +1,28 @@
+P47ba - Product image persistence fix (uploads volume)
+
+Problem
+- Uploaded product images show as placeholders after a while or after deploy.
+- Root cause: images are stored in /app/public/uploads inside the container; container rebuild/recreate wipes them.
+
+Fix (local, code)
+1) Persist uploads directory via Docker volume/bind mount.
+File: docker-compose.yml (app service)
+Add under app service:
+  volumes:
+    - ./public/uploads:/app/public/uploads
+
+(If you want worker to access uploads for any reason, add same volume there too.)
+
+2) Ensure uploads dir exists on host (repo)
+Command:
+  mkdir -p public/uploads
+
+Notes
+- No Prisma changes.
+- This makes /uploads survive app rebuilds and keeps media library images available.
+
+Verify (local)
+- Upload a product image, refresh, image still loads.
+- Recreate app container, image still loads.
+
+Owner will handle commit/push/deploy.

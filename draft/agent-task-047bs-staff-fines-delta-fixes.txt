@@ -1,0 +1,67 @@
+P47bs-delta - Staff Fine post-implementation corrections (must fix before push)
+
+Scope
+- `src/server/modules/staff-fines.ts`
+- `src/app/api/staff/[id]/fines/route.ts`
+- `src/app/api/staff/[id]/fines/[fineId]/route.ts`
+- `src/app/api/staff/route.ts`
+- `src/app/dashboard/staff/[id]/page.tsx`
+- `src/services/staff.ts`
+
+1) Fix invalid LedgerEntry payload (critical)
+File: `src/server/modules/staff-fines.ts`
+- In `rebuildStaffFineLedger()`, remove `updatedAt` from both `ledgerEntry.createMany` objects.
+- `LedgerEntry` model has no `updatedAt` column.
+
+2) Keep ledger account resolution transaction-safe
+File: `src/server/modules/staff-fines.ts`
+- Do NOT use `getAccountIdByName()` inside `rebuildStaffFineLedger()` because it uses global prisma.
+- Resolve account IDs with the same transaction client:
+  - `const accounts = await tx.account.findMany({ select: { id: true, name: true } })`
+  - map by lowercase name and pick:
+    - `ACCOUNT_LABELS.salariesPayable`
+    - `ACCOUNT_LABELS.salary`
+- If missing, throw explicit error.
+
+3) Enforce staffId ownership on void route
+File: `src/app/api/staff/[id]/fines/[fineId]/route.ts`
+- Extract both `id` and `fineId` from params.
+- Before voiding, check fine exists and belongs to that staff id.
+- If mismatch/not found, return 404 (or 400) and do not call `voidStaffFineCore`.
+
+4) Use proper error codes for business validation
+Files:
+- `src/app/api/staff/[id]/fines/route.ts`
+- `src/app/api/staff/[id]/fines/[fineId]/route.ts`
+
+- For known validation/business errors (e.g. "Max deduction allowed", "already voided", invalid date), return 400/422.
+- Keep 500 only for unexpected server errors.
+
+5) Validate fine date input
+File: `src/app/api/staff/[id]/fines/route.ts`
+- After parsing date, guard invalid date:
+  - `if (Number.isNaN(date.getTime())) return 400`.
+
+6) Restore financial card label regression
+File: `src/app/dashboard/staff/[id]/page.tsx`
+- In Financials card row for total paid, restore missing left label text:
+  - `Total Payments Made`
+
+7) Include totalFines in staff list summary response
+File: `src/app/api/staff/route.ts`
+- In `summary`, add `totalFines` key.
+
+8) Avoid date timezone drift from client
+File: `src/services/staff.ts`
+- `createStaffFine()` should send date as `yyyy-MM-dd` string (not raw Date object).
+- Keep backend parsing as date-only.
+
+Verification (mandatory)
+1. `npx tsc --noEmit` (at least no NEW errors from changed files)
+2. Create fine -> ledger rows created (2 rows).
+3. Void fine -> postingGroup rows removed.
+4. Try void with mismatched `staffId/fineId` route -> blocked.
+5. UI Financials card shows all three labels:
+   - Lifetime Earnings
+   - Total Payments Made
+   - Total Fines

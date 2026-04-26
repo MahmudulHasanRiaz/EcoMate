@@ -1,0 +1,5 @@
+{
+    "chatgpt.openOnStartup": true,
+    "chatgpt.runCodexInWindowsSubsystemForLinux": true,
+    "geminicodeassist.project": "mythic-shape-dmhkk"
+}

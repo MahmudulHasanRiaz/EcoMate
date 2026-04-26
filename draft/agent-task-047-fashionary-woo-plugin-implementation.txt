@@ -1,0 +1,154 @@
+Fashionary Woo Incomplete + Restriction (Coder Command File)
+Date: 2026-01-26
+Owner: Apply changes in app + plugin. Minimal refactor. Keep existing behavior.
+
+Scope
+- App: add incomplete checkout capture, order restriction, manual IP block, business phone/address.
+- Plugin: Fashionary WP plugin with unique UI and dynamic settings from app.
+- No ecomdrive code reuse (only behavior reference).
+
+A) Database (Prisma)
+1) Business phone/address
+- Add to Business model:
+  - phone String?
+  - address String?
+- Default usage: if Business.phone/address missing, fallback to General Settings.
+
+2) Woo integration settings + API key
+- Add to WooCommerceIntegration model:
+  - apiKey String? @unique (for plugin auth)
+  - settings Json? (store feature settings)
+  - supportPhone String? (optional override)
+  - incompleteEnabled Boolean @default(false)
+  - restrictionEnabled Boolean @default(false)
+  - restrictionScope String ("site" | "global", default "site")
+  - restrictionDurationType String ("always" | "hours" | "days", default "days")
+  - restrictionDurationValue Int? (default 1)
+  - restrictionMessage String? (default message)
+  - restrictionSupportPhone String? (optional)
+  - dedupeMinutes Int? (default 10)
+  - debounceMs Int? (default 1200)
+  - retrySeconds Int? (default 15)
+
+3) Incomplete leads table
+- New model WooCheckoutLead (or WooIncompleteOrder) with:
+  - id, integrationId, businessId
+  - uid (session), phoneNormalized, name, address
+  - skuList Json, payload Json
+  - status (OPEN/COMPLETED/IGNORED)
+  - occurrences Int @default(1)
+  - firstSeenAt DateTime, lastSeenAt DateTime
+  - completedAt DateTime?
+  - fingerprint String @unique? (or indexed)
+  - ipHash String?, userAgent String?
+
+3b) Orders (support manual IP block)
+- Add to Order model:
+  - ipHash String? (hash only, not displayed)
+
+4) Restriction table
+- New model OrderRestriction:
+  - id, targetType ("PHONE"|"IP"), targetHash
+  - scope ("SITE"|"GLOBAL")
+  - integrationId? (for SITE)
+  - businessId? (optional)
+  - message, supportPhone
+  - expiresAt?
+  - createdByStaffId?, sourceOrderId?, sourceCustomerId?
+  - createdAt, updatedAt
+- Indexes: (targetHash, scope, integrationId), expiresAt
+
+B) Backend API
+1) GET /api/woo/plugin-config
+- Auth: Bearer apiKey
+- Return:
+  - incompleteEnabled, debounceMs, dedupeMinutes, retrySeconds
+  - restrictionEnabled, restrictionScope, restrictionDurationType, restrictionDurationValue
+  - restrictionMessage + supportPhone (resolve fallback: integration -> business -> general)
+  - phoneValidation rules (BD)
+
+2) POST /api/woo/restriction-check
+- Input: integrationId, phone, uid
+- Normalize phone
+- If invalid -> allowed=false, reason=invalid_phone (no capture)
+- Check phone restriction (scope per integration setting):
+  - SITE: match integrationId only
+  - GLOBAL: match any integration
+- Check IP block (GLOBAL) by IP hash from request headers
+- Return allowed flag + message + supportPhone + blockType
+
+3) POST /api/woo/incomplete-orders
+- Auth by apiKey
+- Normalize phone; reject if invalid
+- Capture IP from headers (CF-Connecting-IP / X-Forwarded-For)
+- Compute fingerprint: integrationId + normalizedPhone + skuList + address hash
+- Dedupe within dedupeMinutes: update occurrences + lastSeenAt
+- Save lead (store ipHash on lead)
+
+4) POST /api/woo/incomplete-orders/complete
+- Mark matching lead(s) COMPLETED if order was created
+
+5) Manual IP block/unblock endpoints
+- For Order detail + Customer detail
+- Create/clear OrderRestriction with targetType=IP, scope=GLOBAL
+- Use ipHash captured on order (or from latest lead for that phone)
+
+C) App UI
+1) Woo Integration page
+- New section: "Checkout Recovery / Incomplete Orders"
+  - Enable toggle
+  - API Key (Generate/Rotate)
+  - Endpoint URL (copy)
+  - Dedupe minutes / Debounce ms / Retry seconds
+  - Restriction settings (scope/duration/message/support phone)
+  - Test Connection
+
+2) Business Settings page
+- Add inputs: Business Phone, Business Address
+- Default values from General Settings if blank
+
+3) Order detail page
+- Show "Block IP" / "Unblock IP" (if ipHash exists)
+- Show status indicator: IP blocked or not (no IP display)
+
+4) Customer detail page
+- Same IP block/unblock (no IP display)
+
+D) Plugin (WordPress / WooCommerce)
+1) Unique UI (not ecomdrive clone)
+- Clean card layout, status badge, API URL + API key
+- Test connection button
+
+2) Dynamic settings
+- On load, call /api/woo/plugin-config with API key and cache in JS
+
+3) Phone validation (BD)
+- Accept 01 / 880 / +880
+- Normalize to 0 + 10 digits (length 11). Do NOT require second digit = 1
+- Invalid -> red warning + block submit + no incomplete capture
+
+4) Restriction check
+- Call /api/woo/restriction-check before place order
+- If blocked -> show custom message + support phone, prevent submit
+
+5) Incomplete capture
+- Debounce input changes
+- Send minimal payload (phone/name/address/skus)
+- Use local cache to prevent spam
+
+6) Completion
+- On woocommerce_new_order, send completion payload to /complete
+
+E) Notes
+- IP is not stored today. Must store hash for blocking (no raw IP display in UI).
+- For Woo orders, use data.customer_ip_address (store separately, not as phone)
+- Use new phone normalization utility shared between app + plugin
+
+Deliverables
+- Updated prisma schema + migration
+- Updated API routes + services
+- Updated Woo Integration UI + Business settings UI
+- Updated Order + Customer pages (IP block)
+- New Fashionary WP plugin under /draft/Fashionary
+
+END

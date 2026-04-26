@@ -1,0 +1,17 @@
+UPDATE P01c - Remaining cursor-pagination compliance gap (post re-check)
+
+Scope: ONLY fix the item listed here. No refactors.
+
+Finding
+- Expenses: getExpenses always runs paidStats (groupBy) even when includeTotal=false. This defeats the cursor performance rule and adds heavy query cost on every Load More.
+
+Required fix
+1) Expenses - gate paidStats + summary behind includeTotal
+File: src/server/modules/expenses.ts
+- In getExpenses(), wrap paidStats groupBy behind includeTotal.
+- When includeTotal=false:
+  - Do NOT run groupBy/aggregate.
+  - Return summary as undefined (omit summary for lightweight response).
+
+Deliver back
+- Summary of changes + file touched.

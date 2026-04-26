@@ -1,0 +1,73 @@
+﻿স্কেলিবিলিটি/স্ট্যাবিলিটি অডিট নোটস (Deep Learn Review)
+=========================================================
+তারিখ: 2026-01-10
+
+১) প্রোজেক্ট শেখার সারাংশ (High-level)
+- স্ট্যাক: Next.js 15 + Prisma + Postgres, Redis/BullMQ ইনফ্রা যোগ করা হয়েছে।
+- Core মডিউল: Orders, Purchases (General + 3‑piece), Inventory, Accounting/Ledger, Staff/Attendance, Expenses, Check Passing, Woo integrations.
+- Multi‑business সাপোর্ট আছে, তবে Inventory/Analytics সিঙ্গেল সোর্স ধরে চলছে।
+
+২) scalability-performance-implementation-plan.txt বনাম কোড (Applied/Partial/Missing)
+Applied (মোটামুটি বসানো হয়েছে)
+- Redis helper: `src/server/queues/redis.ts` (shared client) ✅
+- Notification/SMS queue wrapper + worker: `src/server/queues/*`, `scripts/bullmq-worker.ts` ✅
+- Stock sync lock + cooldown + audit batching: `src/server/modules/stock-sync.ts` ✅
+- Low‑stock alert throttling: `src/server/modules/stock-allocation.ts` ✅
+- Inventory movement API + lots pagination endpoint: `src/app/api/inventory/movements/route.ts`, `src/app/api/inventory/lots/route.ts` ✅
+- Balance sheet DB aggregation: `src/server/modules/accounting.ts` ✅
+- Attendance cron endpoint: `src/app/api/cron/attendance/route.ts` ✅
+- Webhook integration cache + required integrationId (prod): `src/app/api/webhooks/woo/route.ts` ✅
+
+Partial (কিছু করা হয়েছে, কিন্তু পুরোটা হয়নি)
+- BullMQ job design: default retry/backoff আছে, কিন্তু stock-sync/report heavy jobs এখনো queue‑based হয়নি। QueueScheduler বাদ পড়েছে (BullMQ v5). ⚠️
+- Orders list optimization: cursor আছে, কিন্তু offset/page + total count এখনও চলমান (heavy count)। ⚠️
+- Inventory UI refactor: API যোগ হয়েছে, তবে client-page.tsx‑এ lots/movements auto‑fetch wiring অসম্পূর্ণ (useEffect/append flow)। ⚠️
+- Staff/Attendance: page‑based pagination আছে, cursor নেই; staff avatar caching (Clerk API) নেই। ⚠️
+- Check Passing: cursor list আছে, কিন্তু materialized view / denormalized cache নেই। ⚠️
+
+Missing / Not found
+- pg_trgm extension + GIN indexes (Order/Customer search) — migration নেই। ❌
+- Orders search & counts: estimated count / cached count strategy নেই। ❌
+- Expenses list: server‑side pagination নেই (UI এখন সব fetch করে in‑memory paginate)। ❌
+- Partners/Vendors list: pagination নেই, overview heavy include চালাচ্ছে। ❌
+- Product logs: cursor pagination নেই (offset + count)। ❌
+- Reports caching (1–3 min TTL) বাস্তবায়ন নেই (Analytics/Reports সব realtime aggregate)। ❌
+- Webhook failure replay queue/processor নেই। ❌
+- Order number atomic sequence (table‑based) নেই; এখন select+retry। ❌
+
+৩) Purchases মডিউল (Deep Learn Notes)
+- General vs 3‑piece split: Prisma PurchaseType (`general`, `three_piece`) এবং UI mapping আছে।
+- 3‑piece flow: Production steps (FABRIC/PRINTING/CUTTING/FINISHING) + per‑step payments.
+- Internal fabric usage: FabricLotUsage ভিত্তিক lot allocations, allocation ↔ unit cost sync, usage validation (yards must match) আছে।
+- Payment status recompute: production payments + general payments + internal fabric adjustment যোগ করে status recalculation আছে।
+- Offline invoice: PurchaseOrder.offlineInvoiceUrl এবং per‑step invoiceUrl update; UI তে View/Replace/Upload সেকশন আছে।
+
+Risks/Edge‑cases in Purchases
+- List endpoint (`getPurchases`) full include করে; list‑view heavy হতে পারে।
+- Stats endpoint full scan করে (findMany + loop) — aggregate query ভালো হবে।
+- addPurchasePaymentCore এ paidFromAccountId null হলে ledger credit account null হতে পারে (non‑null assertion)।
+- Internal fabric: lot cost resolution relies on PO lotNumber mapping; missing cost হলে 0 carry করতে পারে।
+
+৪) অন্যান্য স্কেলিবিলিটি/প্রডাকশন রিস্ক (Plan‑এর বাইরেও)
+- Orders search ILIKE/contains without pg_trgm index → বড় ডেটায় slow.
+- Orders list: every call `count()` চালায়; 5–6k/day scale এ costly.
+- Partners overview: `getPartnerOverviewStats` সব PO + relations টেনে aggregate করছে → heavy memory/CPU.
+- Analytics monthly breakdown: প্রতি মাসে aggregate query loop (12x2) → cache/rollup দরকার।
+- Expenses list: API সব expenses ফেরত দিচ্ছে → UI in‑memory pagination; বড় ডেটায় crash risk.
+- Issues list: offset pagination + total count heavy; cursor + minimal select better।
+- Staff list: Clerk avatar API প্রতিবার hit → latency + rate limit ঝুঁকি।
+- Inventory client page: lots/movements on‑demand fetch wiring অসম্পূর্ণ হলে UI data blank হতে পারে (functional + UX risk)।
+- Check passing summary: union query every request; materialized/cached summary নেই।
+- Job queue: worker না চললে SMS/notifications silently pending থাকবে — production SOP দরকার।
+
+৫) প্ল্যান‑এর সম্ভাব্য গ্যাপ/ঝুঁকি
+- সব heavy রিপোর্টকে cache করলে freshness vs accuracy trade‑off হবে—business-critical metrics নির্দিষ্ট করতে হবে।
+- Cursor pagination চালু করলে UI‑তে total count না দেখালে business users confusion হতে পারে (UI পরিবর্তন প্রয়োজন)।
+- Partitioning/archival strategy পরিকল্পনায় আছে কিন্তু বাস্তবায়নের ডাটা মডেল, constraint, retention rule স্পষ্ট নয়।
+
+৬) আপনার কাছ থেকে কনফার্মেশন দরকার
+- আপনি কোন কোন মডিউল/ফাইলে ম্যানুয়াল পরিবর্তন করেছেন? (file list দিলে diff যাচাই সহজ হবে)
+- Purchases মডিউলে আপনি যে “বড় পরিবর্তন” বলেছেন, কোন flow/logic specifically? (internal fabric, invoice generation, payment aggregation, lot usage?)
+- Reports/Analytics realtime vs cached split‑এ আপনার বর্তমান expectation কী? (কোন রিপোর্টে delay acceptable?)
+
+নোট: উপরেরগুলো শুধু শেখা/অডিট ফলাফল। এখন কোনো কোড পরিবর্তন করা হয়নি।

@@ -1,0 +1,34 @@
+UPDATE P16b - Fix Expenses errors (Textarea import + 500 diagnosis)
+
+Scope: Expenses module only. Keep changes minimal.
+
+Issue 1: Textarea is not defined
+File: src/app/dashboard/expenses/client-page.tsx
+Fix:
+- Add missing import at top with other UI imports:
+  import { Textarea } from '@/components/ui/textarea';
+
+Issue 2: /api/expenses returns 500
+We need the exact server error to fix. Do this first:
+1) Open expenses page once to trigger GET /api/expenses
+2) Capture the server console error line (it will show Prisma error text)
+3) Reply with the exact error message + stack (do NOT guess)
+
+If the error mentions missing columns/enum (approvalStatus/submittedBy/etc):
+- Confirm migration applied:
+  npx prisma migrate status
+- If pending, apply:
+  npx prisma migrate deploy
+- Then:
+  npx prisma generate
+  restart dev server
+
+If the error mentions "Unknown argument" in Prisma client:
+- Stop dev server
+- Run: npx prisma generate
+- Restart dev server
+
+Deliver back:
+- Summary of Textarea import change
+- Server error log from /api/expenses (exact)
+- Migration status output (if applicable)

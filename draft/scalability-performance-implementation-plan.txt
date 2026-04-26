@@ -1,0 +1,237 @@
+﻿স্কেলিবিলিটি/পারফরম্যান্স ফুল ইমপ্লিমেন্টেশন প্ল্যান (v9)
+=========================================================
+এই প্ল্যানটি প্রোজেক্ট learn করে ধাপে ধাপে ইমপ্লিমেন্ট করার জন্য। আগের সব পয়েন্ট + নতুন ঝুঁকি + আপনার ইনপুট (Postgres + Prisma, দৈনিক ৫-৬ হাজার অর্ডার, VPS, future PM2 cluster, Redis + BullMQ, async SMS, indefinite retention) যুক্ত করা হয়েছে। ERP বেস্ট প্র্যাক্টিস ফলো করা হয়েছে এবং সব ঝুঁকি/ফিক্স কভার করা হয়েছে।
+
+ইনপুট/Assumptions
+- DB: Postgres (Prisma ORM)
+- ট্রাফিক: দৈনিক ~৫-৬ হাজার অর্ডার (মাসে ~১.৫-১.৮ লাখ)
+- হোস্টিং: VPS (প্রথমে single-instance; ভবিষ্যতে PM2 cluster/multi-process)
+- Redis: cache + distributed lock + job queue (BullMQ)
+- BullMQ worker: আলাদা PM2 process বা Docker container
+- SMS/Notifications: async queue, ৩০–৬০ সেকেন্ড delay acceptable
+- Data retention: operational data indefinite (auto deletion নয়)
+- Real-time (≤5s): Dashboard action centre, Stock level, Stock movement, Operational live metrics
+- Cached (1–3 min acceptable): Sales reports, Product analytics, Expense reports, Abandoned orders, Revenue summary
+
+ERP Best-Practice Guardrails
+- Financial/ledger data append-only; delete এড়িয়ে reversal entry ব্যবহার
+- Timezone consistency: একটাই store timezone source
+- Audit trail বাধ্যতামূলক (who/when/what)
+- Data retention indefinite; query performance নিশ্চিত করতে partitioning/archival strategy থাকবে
+
+নির্দেশক নীতি (Best Practices)
+- N+1 কুয়েরি বাদ, batch/group fetch
+- DB-side aggregate/groupBy
+- বড় লিস্টে cursor pagination বাধ্যতামূলক
+- minimal select + lazy detail load
+- idempotent write + safe retry
+- cache + tag invalidation
+- safe migration (no data loss)
+- পর্যাপ্ত observability (log/metric)
+
+পারফরম্যান্স বাজেট (Target)
+- Core list endpoints p95 < 500ms (orders, inventory, staff)
+- Real-time endpoints p95 < 300ms (stock/operational metrics)
+- Heavy reports p95 < 2-3s (analytics, partner overview)
+
+ফেজিং (Priority Map)
+- Phase 1 (High impact): Orders list/search, Woo sync, Inventory, DB indexing, Redis cache/lock setup
+- Phase 2 (Reports): Ledger/Balance, Partners, Courier analytics, Expenses/Staff history
+- Phase 3 (Polish): UI payload trimming, cache tuning, background jobs refinement, retention/partition
+
+ধাপ 0: Discovery + Baseline (Learn-first)
+- কোন endpoint কত ঘন ঘন কল হয় তা ম্যাপ করা
+- কুয়েরি প্যাটার্ন ও payload সাইজ নোট করা
+- DB row count/টেবিল সাইজ বেসলাইন
+- প্রতিটি হাই-রিস্ক রুটে latency বেসলাইন
+- /draft এ discovery রিপোর্ট রাখা
+
+ধাপ 1: Postgres + Prisma + Indexing Strategy
+- pg_trgm extension enable (ILIKE/contains দ্রুত করার জন্য)
+- key indexes:
+  - Order: orderNumber, customerPhone, customerName (trgm), createdAt/date, businessId, status
+  - LedgerEntry: accountId, date, businessId
+  - InventoryItem: productId, variantId, locationId
+  - PurchasePayment: vendorId, paymentFor, checkDate
+  - StaffIncome/StaffPayment: staffId, createdAt
+  - Expense: date, categoryId, businessId, isAdExpense
+- বড় টেবিলে BRIN index (date-based) বিবেচনা (future scale)
+- raw count/contains এড়াতে estimated counts বা cached counts
+- Prisma connection pool + PgBouncer optional (150-200 concurrent staff বিবেচনায়)
+- Prisma migration: CREATE INDEX CONCURRENTLY এর জন্য raw SQL migration (manual step documented)
+
+ধাপ 2: Infra/Runtime Scaling (PM2 + Redis + BullMQ)
+- PM2 cluster mode ready config (future multi-process)
+- Redis layer:
+  - shared cache (cross-process)
+  - distributed lock (stock sync, audit, cron, concurrency control)
+  - BullMQ job queues (sync/report heavy tasks)
+- BullMQ worker: আলাদা process/container (web থেকে বিচ্ছিন্ন)
+- Queue design:
+  - job deduplication (idempotent key)
+  - retry + backoff + dead-letter queue
+  - rate-limit per integration/vendor
+  - visibility into job status
+- fallback strategy: Redis down হলে degraded mode (cache bypass + sync throttling)
+
+ধাপ 3: Safe Pagination Standard (Risk-free)
+- Default pageSize + max limit enforced (server)
+- Cursor-only pagination for large tables (avoid offset)
+- Export/CSV আলাদা endpoint (batch job)
+- Paginated modules (must):
+  - Orders list/search
+  - Expenses list
+  - Inventory lots + movements
+  - Staff income/payment history
+  - Attendance list
+  - Product logs
+  - Partner list (supplier/vendor)
+  - Check passing list
+
+ধাপ 4: Woo Sync অপ্টিমাইজ (High Impact)
+সমস্যা: per-order product lookup + heavy include + rate-limit risk
+- এক page-এ সব SKU সংগ্রহ করে resolveSkuMap একবারে
+- unique productId/variantId সেট বানিয়ে সীমিত select দিয়ে fetch
+- heavy include বাদ; শুধুমাত্র দরকারি ফিল্ড
+- create/update idempotent: upsert/createMany + skipDuplicates
+- SKU cache invalidation hook (product update হলে)
+- rate-limit safe queue + backoff + circuit breaker
+- BullMQ enqueue on schedule/manual sync
+Acceptance: ৫০–২৫০ অর্ডার sync এ query count/latency কমে, stable
+
+ধাপ 5: Ledger/Balance Sheet অপ্টিমাইজ
+সমস্যা: পুরো ledger টেনে in-memory হিসাব
+- DB-side aggregate: groupBy accountId sum(debit/credit)
+- business/date filter DB-তেই প্রয়োগ
+- ledger list cursor-pagination (UI aligned)
+Acceptance: বড় ledger এ দ্রুত response, memory spike নেই
+
+ধাপ 6: Partners + Purchases Overview অপ্টিমাইজ
+সমস্যা: PurchaseOrder full include করে পুরো টেবিল ফেচ
+- Supplier/Vendor stats aggregate query (PurchasePayment + ProductionStep)
+- minimal select; heavy include বাদ
+- প্রয়োজনে daily summary cache/table
+Acceptance: বড় ডেটায় overview stable
+
+ধাপ 7: Courier Metrics অপ্টিমাইজ
+সমস্যা: সব dispatched order ফেচ করে হিসাব
+- DB aggregate (sum/count) courierService/business/date range
+- Return Pending লিস্ট আলাদা paginated endpoint
+Acceptance: courier analytics দ্রুত ও স্কেলেবল
+
+ধাপ 8: Inventory + Issues অপ্টিমাইজ
+Inventory:
+- getInventory O(N^2) lookup -> map/lookup table
+- movements endpoint cursor pagination, on-demand fetch
+- movements query server-side join (in-memory N*M বাদ)
+- aggregation query sum(quantity-reserved) by product/variant
+- inventory lots pagination (risk-free)
+Issues:
+- list cursor pagination + minimal select
+Acceptance: বড় স্টকে inventory/UI দ্রুত
+
+ধাপ 9: Orders Listing/Search/Count + Order Number
+সমস্যা: contains search + count + offset pagination slow
+- pg_trgm GIN index ব্যবহার
+- offset pagination বাদ, cursor-only endpoint
+- total count optional/async (estimated count বা cached count)
+- order list payload shrink: product detail lite, lazy fetch on view
+- orderNumber generator atomic counter (per-day sequence/table)
+Acceptance: বড় অর্ডার টেবিলে list stable
+
+ধাপ 10: Webhooks/Integrations
+সমস্যা: Woo webhook signature verify করতে সব integration scan
+- webhook URL এ integrationId বাধ্যতামূলক
+- integration secret cache + TTL (Redis)
+- fallback scan শুধু dev/debug মোডে
+- webhook failure queue/log for replay
+Acceptance: integration count বাড়লেও webhook CPU stable
+
+ধাপ 11: Staff + Expenses + Attendance (স্কেল ঝুঁকি কভার)
+Staff:
+- staff detail/payments endpoints এ income history pagination
+- summary ও history আলাদা endpoint
+- salary accrual শুধুমাত্র cron/queue এ (GET থেকে write বাদ)
+- Clerk avatar caching policy (DB field + daily refresh job)
+Expenses:
+- expenses list cursor pagination + filters
+- heavy include বাদ (staffPayment minimal select)
+Attendance:
+- ensureDailyAttendanceRecords GET থেকে সরিয়ে cron/job-এ
+- attendance list pagination + date clamp
+Acceptance: staff/expense/attendance বড় ডেটায় stable
+
+ধাপ 12: Partners List + Product Logs
+- supplier/vendor list pagination
+- product logs pagination (on-demand view)
+
+ধাপ 13: Check Passing + Notifications + Stock Audit
+Check Passing:
+- union+ILIKE heavy হলে materialized view বা denormalized table
+- indexed search (pg_trgm) + scheduled refresh
+Notifications:
+- notifyAdmins => createMany বা background job
+- SMS + notifications async BullMQ queue (30–60s delay)
+Stock Audit:
+- MAX_PUSH সীমা বাদ দিয়ে batch/cursor ভিত্তিক full scan
+- daily/12h schedule fallback নিশ্চিত
+- low-stock alert throttling (per SKU per day/hour) + aggregation
+
+ধাপ 14: Cache + Invalidation Strategy (Real-time vs Cached)
+Real-time (≤5s):
+- Dashboard action centre, stock level/movement, operational metrics
+- cache ছোট TTL বা no-cache + event-based invalidation
+Cached (1–3 min):
+- Sales reports, analytics, expenses, abandoned orders, revenue summary
+- short TTL cache + tag revalidate on write
+Redis cache replacement list:
+- skuMapCache, productTypeCache, integrationRate, integrationQueue, pushCooldown, woo-sku-map cache
+
+ধাপ 15: Security/Permissions Hardening
+- Analytics/report endpoints permission guard
+- Audit logs for critical actions
+- Rate-limit admin endpoints
+
+ধাপ 16: Data Retention + Partitioning
+- Data retention indefinite (no deletion)
+- Orders/Ledger/Logs yearly partition strategy (Postgres native partition) as mandatory for query performance
+- Archive policy: cold storage export (optional, read-only)
+
+ধাপ 17: Load-Spike Behavior (যখনই লো হবে তখনই)
+- latency/CPU threshold crossed হলে heavy jobs queue-তে পাঠানো
+- report endpoints TTL সাময়িকভাবে বাড়ানো (adaptive caching)
+- stock sync/low priority jobs throttling
+- request coalescing + Redis lock দিয়ে stampede প্রতিরোধ
+
+ধাপ 18: Async External Calls (SMS/Notifications)
+- SMS, notifications, third-party calls always via BullMQ
+- UI shows queued/scheduled state
+- retry/backoff + failure log
+
+ধাপ 19: Safe Migration + Rollout
+- indexes add via Prisma migration (no data loss)
+- large index off-peak; raw SQL + CREATE INDEX CONCURRENTLY strategy documented
+- feature flags/fallback path for risky refactors
+
+ধাপ 20: Verification & Observability
+- before/after query count + latency log
+- core flow checklist: Woo import, Balance Sheet, Partners, Courier, Inventory, Issues, Orders list
+- minimal load-test style run
+- pg_stat_statements enable করে slow query capture
+
+ডেলিভারেবলস
+- রিফ্যাক্টর কোড (query/aggregate/cache)
+- migration files (indexes)
+- regression checklist + ফলাফল
+
+প্ল্যান ইমপ্লিমেন্টের পর সম্ভাব্য নতুন ঝুঁকি ও মিটিগেশন
+- Cache stale data -> strict revalidate hooks + short TTL
+- Aggregate logic mismatch -> old vs new compare tests
+- Index migration lock -> off-peak + stepwise rollout
+- Sync batching rate-limit -> backoff + queue
+- Cursor-only pagination -> UI adaptation (total count optional)
+- Multi-process cache stampede -> Redis lock/throttle + request coalescing
+- Job queue backlog -> priority queues + worker autoscale (future)
+
+শেষ কথা
+প্রতিটি ধাপ ইমপ্লিমেন্ট করার আগে সংশ্লিষ্ট মডিউল learn করে নোট করবো, এরপর incremental change করবো।

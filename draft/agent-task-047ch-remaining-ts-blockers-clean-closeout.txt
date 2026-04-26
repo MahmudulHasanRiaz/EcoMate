@@ -1,0 +1,151 @@
+P47ch - Remaining TypeScript blockers clean closeout (no feature creep)
+
+Goal
+- Remove all currently failing `npx tsc --noEmit` blockers.
+- Keep this pass strictly technical (type safety + relation-key alignment).
+- Do not introduce new features, schema changes, or behavior refactors.
+
+Hard Rule
+- Only touch these files:
+  1) `scripts/backfill-marketing-check.ts`
+  2) `src/app/api/webhooks/steadfast/route.ts`
+  3) `src/app/dashboard/accounting/checks/page.tsx`
+  4) `src/app/dashboard/purchases/[id]/client-page.tsx`
+  5) `src/lib/page-access.ts`
+  6) `src/server/modules/issues.ts`
+  7) `src/server/modules/purchases.ts`
+  8) `src/services/products.ts`
+
+If any other file must be touched, STOP and report first.
+
+--------------------------------------------------------------------
+0) Baseline snapshot (mandatory)
+--------------------------------------------------------------------
+
+Run:
+```powershell
+mkdir -Force .tmp | Out-Null
+git diff --name-only | Set-Content .tmp/p47ch_before_changed_files.txt
+```
+
+--------------------------------------------------------------------
+1) Apply exact fixes per file
+--------------------------------------------------------------------
+
+1.1 `scripts/backfill-marketing-check.ts`
+- Remove unsupported fields from where clauses:
+  - `amountBdt` is not in current `MarketingSpend` schema
+  - `platform` is not in current `MarketingCampaign` schema
+- Keep script compilable against current schema only.
+- Use existing fields (e.g. `amount`, `channel`) for checks/logging.
+
+1.2 `src/app/api/webhooks/steadfast/route.ts`
+- Fix enum mapping typo:
+  - replace `'InCourier'` with `'In_Courier'`
+
+1.3 `src/app/dashboard/accounting/checks/page.tsx`
+- Prisma include returns PascalCase relations; update property access:
+  - `payment.productionStep` -> `payment.ProductionStep`
+  - `payment.vendor` -> `payment.Vendor`
+- Remove duplicate table header label (`Vendor` appears twice).
+- Keep UI/flow unchanged otherwise.
+
+1.4 `src/app/dashboard/purchases/[id]/client-page.tsx`
+- Fix payload typing mismatch:
+  - `items` must always be an array for `receivePurchaseOrderStock`
+  - use `items: isThreePiece ? [] : mappedItems`
+- Fix unsupported button size:
+  - `size="xs"` -> valid size (use `sm`)
+- Fix missing `fabricSource` on `ProductionStep`:
+  - Do not access `productionStepsByType.FABRIC?.fabricSource`
+  - Derive persisted source from typed fields (e.g. `fabricInventoryId`) and keep draft source fallback.
+- Fix invalid supplier property access:
+  - replace `purchaseOrder.supplier?.id` with `purchaseOrder.supplierId`
+
+1.5 `src/lib/page-access.ts`
+- `ROLE_PAGE_ACCESS` must satisfy `Record<StaffRole, ...>`.
+- Add missing keys:
+  - `'Project Manager'`
+  - `'Office Assistant'`
+- Assign sensible existing presets (no broadening beyond current intent).
+
+1.6 `src/server/modules/issues.ts`
+- Fix relation key casing:
+  - replace `issue.order?.orderNumber` with `issue.Order?.orderNumber`
+
+1.7 `src/server/modules/purchases.ts`
+- Fix implicit `any` reduce params:
+  - add explicit types for reducer params
+- Fix invalid `poItem.product?.name` access:
+  - either include `product` relation in query or use safe fallback text without invalid property
+- Fix invalid `orderNumber` on `PurchaseOrder`:
+  - replace `po.orderNumber` / `freshPo.orderNumber` with deterministic lot fallback (e.g. `PO-${po.id}`)
+- Fix `PurchaseOrderLog.create.user` nullable issue:
+  - ensure string (`user || 'System'`)
+- Keep business logic unchanged.
+
+1.8 `src/services/products.ts`
+- Align with current Prisma enum (`piece`, not `three_piece`):
+  - replace `ProductTypeEnum.three_piece` checks with `ProductTypeEnum.piece`
+  - in `prismaTypeToAppType`, use key `piece` instead of `three_piece`
+- Keep existing app-facing compatibility behavior (no product-flow redesign).
+
+--------------------------------------------------------------------
+2) No-scope-creep verification (mandatory)
+--------------------------------------------------------------------
+
+```powershell
+$allowed = @(
+  'scripts/backfill-marketing-check.ts',
+  'src/app/api/webhooks/steadfast/route.ts',
+  'src/app/dashboard/accounting/checks/page.tsx',
+  'src/app/dashboard/purchases/[id]/client-page.tsx',
+  'src/lib/page-access.ts',
+  'src/server/modules/issues.ts',
+  'src/server/modules/purchases.ts',
+  'src/services/products.ts'
+)
+
+$actual = git diff --name-only
+$unexpected = $actual | Where-Object { $_ -notin $allowed }
+if ($unexpected) {
+  Write-Host 'Unexpected files changed:'
+  $unexpected | ForEach-Object { Write-Host " - $_" }
+  exit 1
+}
+Write-Host 'Scope check passed.'
+```
+
+--------------------------------------------------------------------
+3) Verification commands (mandatory)
+--------------------------------------------------------------------
+
+```powershell
+npx tsc --noEmit --pretty false
+```
+
+Sanity grep:
+```powershell
+rg -n "InCourier" src/app/api/webhooks/steadfast/route.ts
+rg -n "productionStep\\?|vendor\\?" src/app/dashboard/accounting/checks/page.tsx
+rg -n "issue\\.order\\?" src/server/modules/issues.ts
+rg -n "ProductTypeEnum\\.three_piece|three_piece:\\s*'variable'" src/services/products.ts
+rg -n "po\\.orderNumber|freshPo\\.orderNumber" src/server/modules/purchases.ts
+```
+
+Expected:
+- no matches from above grep checks
+- `tsc` exits clean
+
+--------------------------------------------------------------------
+4) Required reply format
+--------------------------------------------------------------------
+
+Reply with:
+1) Exact files modified
+2) `tsc` result (pass/fail + first error if fail)
+3) Scope-check result
+4) Grep sanity results
+5) Any blocker left (exact file + line)
+
+Do not claim completion without command-result summary.

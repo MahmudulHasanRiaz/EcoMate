@@ -1,0 +1,52 @@
+UPDATE 2 - Remaining fixes after your "done" message
+
+Scope: only fix items listed here. Do not add new features or refactors.
+
+1) Invoice HTML tags still invalid (template strings)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+- Search for `< div` / `< table` / `< html` inside handleGenerateWorkOrder.
+- Replace with `<div>` / `<table>` / `<html>` (and proper closing tags).
+- Examples still present near the summaryHtml and FINISHING itemsHtml blocks.
+
+2) Cutting billable logic must include printing damage
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+- In handleSaveCuttingStep (INTERNAL + EXTERNAL), use:
+  billable = max(0, qty - printingDamagedQty - cuttingDamagedQty)
+- totalBillable (internal distribution) must use the same billable formula.
+- damageQty stays as cuttingDamagedQty (this step's new damage).
+
+3) Mobile UI still missing per-item damage/wastage inputs
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+- Printing step (mobile cards): add printingDamagedQty input (min 0, max qty).
+- Cutting step (mobile cards): add cuttingDamagedQty input (min 0, max qty - printingDamagedQty).
+- Final Receiving step (mobile cards): add finishingWastageQty input (min 0, max qty - printingDamagedQty - cuttingDamagedQty).
+- Final Qty should be read-only (auto). Apply same in desktop tables (disable or render as text).
+
+4) Auto Final Qty recalculation (not editable)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+- finalQty must be fully auto-calculated from:
+  max(0, qty - printingDamagedQty - cuttingDamagedQty - finishingWastageQty)
+- User cannot edit finalQty (no manual override).
+- Recalculate whenever qty or any damage/wastage changes.
+
+5) Invoice data must be pcs-based (remove yard-based damage/wastage)
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+- Remove damagedYards / extraWastage meta rows from handleGenerateWorkOrder.
+- Add pcs-based totals:
+  - Printing invoice: show printing damage (pcs) prominently.
+  - Cutting invoice: show cutting damage (pcs) prominently.
+  - Finishing invoice: show finishing wastage (pcs) prominently.
+- Other step damage can be shown only as a small/compact line if it does NOT waste space (optional).
+- Cutting invoice line totals must use billable = qty - printingDamagedQty - cuttingDamagedQty.
+
+6) Cutting invoice line math
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+- Update cutting line total and "for X pcs" to use billable formula (qty - printingDamagedQty - cuttingDamagedQty).
+
+Validation (manual)
+- Printing: mobile + desktop damage input works; total uses billable.
+- Cutting: billable uses printing+cutting damage; internal distribution excludes damaged pcs.
+- Final Receiving: finishing wastage input works on mobile/desktop; finalQty auto-updates and is NOT editable.
+- Invoice: no `< div`/`< table` tags, and damage/wastage shown in pcs.
+
+Deliver back: summary of changes + any tests run.

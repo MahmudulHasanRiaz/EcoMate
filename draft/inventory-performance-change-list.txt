@@ -1,0 +1,5 @@
+src/app/dashboard/inventory/client-page.tsx - Implemented global stats, fixed types, pagination support
+src/app/dashboard/inventory/audit/client-page.tsx - Added cursor pagination and Load More button
+src/app/dashboard/purchases/[id]/client-page.tsx - Optimized lot refresh to pageSize=50
+src/server/modules/inventory.ts - Added stats calculation and pagination logic
+src/services/inventory.ts - Updated wrappers for stats and pagination helpers

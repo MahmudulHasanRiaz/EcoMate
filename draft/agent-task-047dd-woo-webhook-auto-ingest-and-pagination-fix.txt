@@ -1,0 +1,147 @@
+P47dd - Woo Auto-Ingest Restore + Pagination Cursor Fix + Publish-Mode Webhook Guard
+
+Context (production evidence)
+- Manual sync works and imports orders inline, so integration credentials are valid.
+- Local now has many Woo orders (`local_woo_last_10d = 379`), but not complete compared to remote status totals.
+- `src/app/api/webhooks/woo/[id]/route.ts` is currently missing from codebase.
+- UI/load-more issue is confirmed by runtime check:
+  - `getPaginationParams({ pageSize: "169", cursor: "CUR123" }) => { page: 1, pageSize: 20, cursor: undefined }`
+  - This drops cursor and blocks pagination when pageSize > 100.
+- Publish mode stock behavior in sync path is now correct (`[STOCK_RESERVE_SKIP]` logs), but webhook path still needs same guard.
+
+Goal
+- Restore Woo webhook auto order ingest (`/api/webhooks/woo/:id`) so new orders arrive automatically again.
+- Keep webhook self-heal behavior on secret/signature problems.
+- Ensure publish mode never reserves stock for Woo `New` orders in webhook flow.
+- Fix pagination parser so invalid high pageSize does not drop cursor.
+
+Scope (strict)
+- src/app/api/webhooks/woo/[id]/route.ts (restore this route)
+- src/server/modules/woo/webhook-processor.ts
+- src/lib/pagination.ts
+
+No unrelated refactor.
+
+--------------------------------------------------
+1) Restore Woo webhook route (critical)
+--------------------------------------------------
+File: src/app/api/webhooks/woo/[id]/route.ts
+
+Action:
+- Recreate route file (it was deleted).
+- Route must:
+  1. Validate `integrationId` from params.
+  2. Read raw body text.
+  3. Fetch integration by id (with small Redis cache if available).
+  4. Verify `x-wc-webhook-signature` using `HMAC-SHA256(base64)` with integration webhook secret.
+  5. Parse JSON payload and resolve external order id.
+  6. Call `processWooWebhookPayload(...)` from `@/server/modules/woo/webhook-processor`.
+  7. Return `apiSuccess`.
+  8. On failures, write `recordWebhookFailure(...)`.
+
+Required hardening:
+- If webhook secret missing/signature missing/signature mismatch:
+  - record failure
+  - trigger auto-heal (force recreate Woo webhook with rotated secret) with throttle/lock protection
+  - return 401
+
+Implementation note:
+- Reuse logic from pre-delete route content (`cc4ca92^:src/app/api/webhooks/woo/[id]/route.ts`) but do NOT duplicate full order processing there.
+- Processing stays centralized in `woo/webhook-processor.ts`.
+
+--------------------------------------------------
+2) Publish-mode reservation guard in webhook processor (critical)
+--------------------------------------------------
+File: src/server/modules/woo/webhook-processor.ts
+
+Action:
+- Add stock mode helper (using `getGeneralSettings` from `@/server/utils/app-settings`).
+- In block:
+  - `if (saved.status === 'New' && !saved.isStockReserved) { ... }`
+- Apply same guard as sync module:
+  - reserve stock only when mode is `inventory`
+  - when mode is `publish`, skip reservation and log:
+    - `[STOCK_RESERVE_SKIP] Publish mode active, skipping reservation for Webhook order <id>`
+
+Acceptance:
+- Webhook-created Woo `New` orders in publish mode must keep:
+  - `isStockReserved = false`
+  - `isStockDeducted = false`
+
+--------------------------------------------------
+3) Pagination parser fix (critical UX/data visibility)
+--------------------------------------------------
+File: src/lib/pagination.ts
+
+Current bug:
+- Any invalid `pageSize` (e.g. 169 > 100) causes full parse failure and fallback:
+  - page reset to 1
+  - pageSize reset to 20
+  - cursor dropped (`undefined`)
+
+Required fix:
+- Normalize each field independently.
+- Clamp pageSize to `MAX_PAGE_SIZE` instead of invalidating whole payload.
+- Preserve valid `cursor` even when pageSize is too high.
+
+Expected behavior:
+- `getPaginationParams({ pageSize: "169", cursor: "CUR123" })`
+  -> `{ page: 1, pageSize: 100, cursor: "CUR123" }`
+
+--------------------------------------------------
+4) Verification checklist (mandatory)
+--------------------------------------------------
+A) Type/build
+- `npx tsc --noEmit --pretty false`
+
+B) Webhook route exists and is reachable
+1. Source check:
+   - `test -f src/app/api/webhooks/woo/[id]/route.ts && echo OK`
+2. Runtime route check (prod):
+   - `curl -i "https://erp.jannatfashionlive.com/api/webhooks/woo/<INTEGRATION_ID>"`
+   - Expected: not 404 (likely 401/405 without valid signed POST).
+
+C) Force webhook rebind once after deploy (prod op)
+1. `INT_ID=$(docker compose exec -T postgres psql -U postgres -d fashionary -Atc "select id from \"WooCommerceIntegration\" where status='Active' order by \"updatedAt\" desc limit 1;")`
+2. `docker compose exec -T worker sh -lc "npx tsx scripts/force-ensure-woo-webhook.ts $INT_ID"`
+
+D) Validate webhook object on Woo side
+1. Pull store URL + keys from DB.
+2. Call Woo webhooks API and verify:
+   - one active `order.created`
+   - `delivery_url` matches:
+     - `https://erp.jannatfashionlive.com/api/webhooks/woo/<INTEGRATION_ID>`
+
+E) Publish mode stock validation
+1. Ensure mode is publish.
+2. Create one fresh Woo order (or wait for live order).
+3. Verify:
+   - imported via webhook without manual sync
+   - `status='New'`, `isStockReserved=false`, `isStockDeducted=false`
+
+SQL:
+- `select count(*) filter (where source='woo' and status='New' and "isStockReserved"=true and "isStockDeducted"=false) as woo_new_reserved_only, count(*) filter (where source='woo' and status='New' and "isStockDeducted"=true) as woo_new_deducted from "Order";`
+
+F) Pagination regression proof
+- `docker compose exec -T worker sh -lc "npx tsx -e \"import { getPaginationParams } from './src/lib/pagination'; console.log(getPaginationParams({ pageSize: '169', cursor: 'CUR123' }));\""`
+- Expected cursor preserved and pageSize clamped to 100.
+
+G) Auto ingest proof (no manual sync)
+- Place one new test Woo order after webhook reset.
+- Confirm it appears locally within ~1 minute.
+- Check logs:
+  - `docker compose logs app --since=15m | grep -E \"WOO_WEBHOOK|Order imported|WOO_WEBHOOK_ERROR|WOO_WEBHOOK_SIGNATURE\" | tail -n 120`
+
+--------------------------------------------------
+5) Required coder output format
+--------------------------------------------------
+Return exactly:
+1. Files changed
+2. Diff snippet for restored route (`src/app/api/webhooks/woo/[id]/route.ts`)
+3. Diff snippet for publish-mode guard in webhook processor
+4. Diff snippet for pagination fix in `src/lib/pagination.ts`
+5. `npx tsc --noEmit` result
+6. Webhook reachability proof (not 404)
+7. Woo webhook object proof (`order.created` + correct delivery_url)
+8. One auto-ingested new order proof (without manual sync)
+9. SQL stock-flag proof for publish mode

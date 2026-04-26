@@ -1,0 +1,39 @@
+UPDATE P36 - Verify Webhook Failures UI + Replay end-to-end (evidence only)
+
+Scope: Verification only. No code changes unless a bug is found. If a bug is found, stop and report with exact file/line + logs.
+
+Goal:
+- Confirm P32/P34 work in UI and API.
+- Collect evidence and upgrade task.txt status to DONE-VERIFIED.
+
+Steps:
+1) API list works
+- Open /dashboard/webhook-failures
+- Confirm list loads (no 403/500). Use network tab:
+  GET /api/webhooks/failures returns 200 and data.
+- Take note of response fields and cursor usage.
+
+2) Replay works
+- Pick a failure row and click “Replay”.
+- Observe toast + network:
+  POST /api/webhooks/failures/{id}/replay returns success.
+- Confirm failure record updates with replay status/message (if response includes it).
+
+3) Access control
+- Confirm menu item only visible when permissions.integrations.read or admin.
+- If you have a non-admin account w/o integrations permission, verify page is blocked.
+
+4) Evidence capture
+- Save a short log of network responses (status codes + payload keys) into:
+  draft/webhook-failures-verification.txt
+- Update draft/task.txt:
+  - P32 -> DONE-VERIFIED with evidence file
+  - P34 -> DONE-VERIFIED with evidence file
+
+Deliver back:
+- Confirm verification outcomes
+- draft/webhook-failures-verification.txt path
+- Updated task.txt
+
+If any bug found:
+- Do NOT fix. Report the exact error, logs, and where it happens.

@@ -1,0 +1,71 @@
+# Safe Migration & Rollout Runbook (P29)
+
+## 1. Pre-Flight Checklist
+- [ ] **Full Backup**: Ensure a fresh WAL or snapshot backup is available.
+- [ ] **Off-Peak Window**: Identify the window with lowest active users (e.g., 2 AM - 4 AM).
+- [ ] **Staging Verification**: Run the exact migration in a staging env with production-like data volume.
+- [ ] **Maintenance Mode**: Determine if a partial feature freeze or "read-only" lock is needed for critical writes.
+- [ ] **Feature Flags**: If possible, gate new code using the schema changes behind a flag.
+
+## 2. Methodology: Prisma vs. Raw SQL
+
+### Prisma (`migrate dev` / `deploy`)
+- **Use for**: Small tables, adding nullable columns, non-locking metadata changes.
+- **Risk**: Standard `prisma migrate` takes an Exclusive Access lock on tables, which blocks ALL reads/writes.
+
+### Raw SQL (`CREATE INDEX CONCURRENTLY`)
+- **Use for**: Adding indexes to tables > 1M rows, complex data transformations.
+- **Benefit**: Does not block reads or writes.
+
+## 3. Large Index Addition Guide
+
+When adding an index to a large table (e.g., `Order` or `LedgerEntry`), never use the standard Prisma migration flow.
+
+### Step 1: Manual Index Creation
+Run manually on the DB (psql):
+```sql
+-- This avoids locking the table. It takes longer but allows the app to stay online.
+CREATE INDEX CONCURRENTLY "idx_orders_status_date" ON "Order"("status", "date");
+```
+
+### Step 2: Verification
+```sql
+-- Ensure the index is NOT marked as "INVALID"
+SELECT pg_size_pretty(pg_relation_size('idx_orders_status_date'));
+```
+
+### Step 3: Align Prisma
+Update `schema.prisma` *after* the index exists and use `prisma db pull` or `prisma migrate resolve` to sync the state without re-creating the index.
+
+## 4. Stepwise Rollout Process
+
+1.  **Preparation**: Write the migration script.
+2.  **Creation**: Apply schema changes (e.g., new column/index) without changing any app code.
+3.  **Validation**: Verify DB performance and integrity.
+4.  **Deployment**: Deploy application code that utilizes the new schema.
+5.  **Cleanup**: Remove legacy columns or indexes (after 24-48 hours of stability).
+
+## 5. Rollback Strategy
+
+Always have a "back-out" plan for every SQL command.
+
+### SQL Rollback
+If an index causes a performance regression:
+```sql
+-- Concurrent drop does not lock the table
+DROP INDEX CONCURRENTLY IF EXISTS "idx_orders_status_date";
+```
+
+### Code Rollback
+Maintain the ability to revert the last Git commit immediately if the application logic fails against the new schema.
+
+## 6. "No Data Loss" Policy
+
+- **Destructive Changes**: Never `DROP COLUMN` or `RENAME COLUMN` in a single step.
+- **Multi-Phase Rename**:
+    1. Add `new_column`.
+    2. Write to both `old_column` and `new_column`.
+    3. Backfill `new_column` from `old_column`.
+    4. Switch reads to `new_column`.
+    5. Stop writing to `old_column`.
+    6. Drop `old_column`.

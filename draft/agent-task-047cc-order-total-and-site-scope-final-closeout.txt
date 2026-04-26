@@ -1,0 +1,132 @@
+P47cc - Final closeout: Order total correctness + SITE scope hard-proof
+
+Goal
+- Close the last remaining blockers before push.
+- Fix webhook runtime/type bug (`effectivePrice` scope).
+- Ensure order total is correct in create/list/details (including siteDiscount).
+- Provide hard proof outputs (not claims).
+- Keep P47cb hardening verified.
+
+Scope
+- `src/app/api/webhooks/woo/[id]/route.ts`
+- `scripts/recompute-totals.ts` (track and use as backfill utility)
+- Optional read-only verification in:
+  - `src/server/modules/orders.ts`
+  - `src/app/api/restrictions/route.ts`
+  - `src/app/dashboard/customers/[id]/page.tsx`
+
+Out of scope
+- No migration
+- No unrelated refactor
+- No plugin changes
+- No commit/push instructions
+
+--------------------------------------------------------------------
+1) Critical fix: webhook `effectivePrice` undefined / scope bug
+--------------------------------------------------------------------
+
+File
+- `src/app/api/webhooks/woo/[id]/route.ts`
+
+Current bug
+- `price: effectivePrice` is used outside the `else` block where `effectivePrice` is declared.
+- This causes TS/runtime failure.
+
+Required implementation pattern
+1. Define `effectivePrice` before combo/non-combo branching:
+   - `let effectivePrice = price;`  // default Woo unit price
+2. Keep `siteDiscount` initialized to 0.
+3. Combo branch:
+   - Compute `comboUnitPrice` from component unit prices.
+   - Compute `comboGross = comboUnitPrice * quantity`.
+   - If `comboGross >= lineTotal`:
+     - `effectivePrice = comboUnitPrice`
+     - `siteDiscount = comboGross - lineTotal`
+   - Else fallback to Woo line:
+     - `effectivePrice = price`
+     - `siteDiscount = 0`
+4. Non-combo branch:
+   - Resolve sale/regular effective unit as current logic intends.
+   - `effectivePrice = resolvedEffectivePrice`
+   - `siteDiscount = max((effectivePrice * quantity) - lineTotal, 0)`
+5. Return payload uses:
+   - `price: effectivePrice`
+   - `siteDiscount`
+
+Acceptance
+- No `Cannot find name 'effectivePrice'` error.
+- Net line math remains stable:
+  - `price * qty - siteDiscount == Woo line total` (within tiny float tolerance).
+
+--------------------------------------------------------------------
+2) Backfill existing orders (must be tracked + reproducible)
+--------------------------------------------------------------------
+
+File
+- `scripts/recompute-totals.ts`
+
+Required
+1. Keep/adjust script so formula is:
+   - `expectedTotal = subtotal + shipping - discount - siteDiscountTotal`
+2. Ensure script is tracked (not untracked).
+3. Execute script once to backfill.
+4. Execute script second time to prove idempotency (fixed count should be 0).
+
+Run commands (local)
+1. `npx tsx scripts/recompute-totals.ts`
+2. `npx tsx scripts/recompute-totals.ts`
+
+Expected
+- First run: may fix N rows.
+- Second run: fixes 0 rows.
+
+--------------------------------------------------------------------
+3) P47cb hardening proof (no new code unless failing)
+--------------------------------------------------------------------
+
+Verify these are true:
+1. Backend requires both `integrationId` and `businessId` for SITE phone restriction.
+2. Backend canonicalizes SITE `businessId` to integration.businessId.
+3. Frontend unblock recheck is unscoped.
+4. Frontend SITE submit uses selected integration metadata only.
+
+Quick static checks
+1. `git diff -- src/app/api/restrictions/route.ts`
+2. `git diff -- src/app/dashboard/customers/[id]/page.tsx`
+
+--------------------------------------------------------------------
+4) Mandatory quality gates (must share outputs)
+--------------------------------------------------------------------
+
+A) File-level compile proof for webhook change
+1. `npx tsc --noEmit --pretty false 2>&1 | rg "webhooks/woo/\\[id\\]/route.ts|effectivePrice"`
+Expected:
+- No output lines for webhook/effectivePrice issue.
+
+If `rg` unavailable, use:
+- `npx tsc --noEmit --pretty false 2>&1 | findstr /I "webhooks/woo/[id]/route.ts effectivePrice"`
+
+B) Backfill proof
+1. output from first run
+2. output from second run (must show 0 fixed)
+
+C) Runtime/manual proof (minimum)
+1. Create or sync one Woo order that has line discount/site discount.
+2. Confirm:
+   - order list total == order details total
+   - line summary math is consistent with site discount.
+
+D) Working tree proof
+1. `git status --short`
+Expected:
+- No accidental unrelated files.
+
+--------------------------------------------------------------------
+5) Completion rule
+--------------------------------------------------------------------
+
+Do NOT mark complete until all are provided:
+- Webhook bug fixed (compile grep proof)
+- Backfill run #1 + run #2 proof
+- Manual order total consistency proof
+- Clean change scope proof

@@ -1,0 +1,60 @@
+UPDATE P40g - Skip auto-heal immediately after ensure (prevent double-create)
+
+Scope: src/server/modules/woo-sync.ts + src/app/api/webhooks/woo/[id]/route.ts only.
+
+Problem:
+- Manual sync runs ensureWooWebhook (creates hook). A stale retry arrives right after, triggers auto-heal and rotates secret, creating a second hook.
+- We need a short cooldown window after ensure/recreate to avoid back-to-back creation.
+
+Fix:
+1) Add “ensure cooldown” flag (Redis + memory)
+File: src/app/api/webhooks/woo/[id]/route.ts
+- Add module-level map:
+  const wooWebhookEnsureMap = new Map<string, number>();
+  const WOO_WEBHOOK_ENSURE_TTL_MS = 5 * 60 * 1000;
+
+- Add helper:
+```
+async function hasRecentEnsure(integrationId: string) {
+  const now = Date.now();
+  const mem = wooWebhookEnsureMap.get(integrationId);
+  if (mem && now - mem < WOO_WEBHOOK_ENSURE_TTL_MS) return true;
+  const redis = getRedisClient();
+  if (redis) {
+    const v = await redis.get(`woo:webhook:last_ensure:${integrationId}`);
+    if (v) return true;
+  }
+  return false;
+}
+```
+
+2) Set cooldown whenever ensureWooWebhook runs
+File: src/server/modules/woo-sync.ts (inside ensureWooWebhook)
+- After a successful createRes (ok):
+  - set Redis key `woo:webhook:last_ensure:${integration.id}` with EX 300
+  - update in-memory map via a new exported helper (or duplicate small map in woo-sync)
+
+Simplest approach:
+- Add a small helper in woo-sync.ts:
+```
+async function markWebhookEnsured(integrationId: string) {
+  const redis = getRedisClient();
+  if (redis) await redis.set(`woo:webhook:last_ensure:${integrationId}`, Date.now().toString(), 'EX', 5*60);
+}
+```
+- Call it after successful createRes.
+
+3) Guard auto-heal by ensure cooldown
+File: src/app/api/webhooks/woo/[id]/route.ts
+- In triggerWooWebhookAutoHeal (at top), add:
+```
+if (await hasRecentEnsure(integrationId)) {
+  console.log('[WOO_WEBHOOK_AUTOHEAL_SKIP_RECENT_ENSURE]', integrationId);
+  return;
+}
+```
+
+Deliver back:
+- Summary + files touched
+- Confirm new log: [WOO_WEBHOOK_AUTOHEAL_SKIP_RECENT_ENSURE]
+- Behavior: after manual sync, stale retries will NOT rotate/recreate for 5 minutes.

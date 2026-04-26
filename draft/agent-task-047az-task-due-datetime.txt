@@ -1,0 +1,52 @@
+P47az - Task due date should include time (datetime-local)
+
+Goal
+- Allow setting time along with date for Task dueDate.
+- Preserve time on edit and show time in list.
+
+Scope
+- prisma/schema.prisma
+- src/app/dashboard/tasks/page.tsx
+- src/app/dashboard/tasks/schema.ts (optional: keep as string, OK)
+
+Changes
+1) Schema: make dueDate full DateTime (remove @db.Date)
+File: prisma/schema.prisma
+Find:
+  dueDate DateTime? @db.Date
+Replace with:
+  dueDate DateTime?
+
+2) UI input: use datetime-local and keep time on edit
+File: src/app/dashboard/tasks/page.tsx
+- State init:
+  const [dueDate, setDueDate] = React.useState(
+    initialData?.dueDate ? format(new Date(initialData.dueDate), "yyyy-MM-dd'T'HH:mm") : ''
+  );
+- Input:
+  <Input type="datetime-local" value={dueDate} onChange={...} />
+
+3) List display: show time
+File: src/app/dashboard/tasks/page.tsx
+- Replace date-only formats with time-included, e.g.
+  format(new Date(task.dueDate), 'MMM d, yyyy, h:mm a')
+  format(new Date(task.dueDate), 'MMM d, h:mm a')
+
+Migration (local)
+- Run:
+  npx prisma migrate dev --name task_due_datetime
+
+If migrate dev fails with P1014 (shadow DB drift), do NOT use prisma db push.
+Instead create a manual migration file:
+  1) Create folder prisma/migrations/XXXXXXXXXXXXXX_task_due_datetime
+  2) Put migration.sql with:
+     ALTER TABLE "Task" ALTER COLUMN "dueDate" TYPE TIMESTAMP(3);
+
+Notes
+- This changes column type DATE -> TIMESTAMP; existing rows will have time 00:00.
+- API already does new Date(dueDate), so no server change needed.
+
+Verify
+- Create task with due time set.
+- Edit task: time persists.
+- List shows time.

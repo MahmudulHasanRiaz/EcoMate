@@ -1,0 +1,96 @@
+P47bh - Remaining delta fixes after P47bg
+
+Scope:
+- Only finish unresolved critical gaps.
+- Do not touch unrelated modules.
+- Do not include commit/push instructions.
+
+--------------------------------------------------------------------
+1) Pending check must NOT mark PO/Step as paid
+--------------------------------------------------------------------
+Problem:
+- In `applyPartnerPaymentCore`, status update currently uses:
+  `newTotalPaid = paid + allocation`
+- This incorrectly treats a newly created Pending check as cleared payment.
+
+File:
+- `src/server/modules/purchases.ts`
+
+Function:
+- `applyPartnerPaymentCore`
+
+Required fix:
+- Keep allocation writing logic as is (cash/check rows can still be created).
+- Change status math so ONLY cash-like allocations affect `newTotalPaid`.
+
+Implementation rule:
+- `isCheck = method === 'Check'`
+- `isCashLike = ['Cash', 'Direct', 'bKash', 'Nagad', 'Rocket'].includes(method)`
+- `effectiveAllocation = isCashLike ? allocation : 0`
+- `newTotalPaid = paid + effectiveAllocation`
+
+Apply this in BOTH flows:
+- Supplier PO update block
+- Vendor step update block
+
+Expected behavior:
+- Check payment with status `Pending` creates payment/check-passing item
+  but does not flip `paymentStatus` to Paid/Partial prematurely.
+- Status changes after check is marked `Passed` through existing reconciliation flow.
+
+--------------------------------------------------------------------
+2) Vendor -> Supplier dual-create must capture real address
+--------------------------------------------------------------------
+Problem:
+- In partners form, when adding Vendor with "Also create as Supplier",
+  supplier payload currently falls back to `address = 'N/A'`.
+- This misses required real address input.
+
+File:
+- `src/app/dashboard/partners/page.tsx`
+
+Required fix:
+- In `PartnerForm`, when mode is Vendor AND `alsoCreate` is true:
+  show an address input field (supplier address for dual-create).
+- Submit this address in form data.
+- In `handleSave`, for vendor -> supplier dual create:
+  use submitted address from form data, not hardcoded `'N/A'`.
+- Keep validation:
+  if `alsoCreate` and address is empty, block submit with toast/error.
+
+Implementation guidance:
+- Add conditional field:
+  `if (!isSupplier && alsoCreate) show <Input name="address" ... />`
+- In dual-create payload:
+  `otherData.address = (partnerData as any).address`
+
+--------------------------------------------------------------------
+3) Keep supplier -> vendor dual-create vendor type safe
+--------------------------------------------------------------------
+File:
+- `src/app/dashboard/partners/page.tsx`
+
+Required fix:
+- If adding Supplier with `alsoCreate` checked:
+  enforce at least 1 vendor type selected before submit.
+- If empty, block submit (toast/error).
+- Dual-create payload should use selected CSV string from form (`type`), no fallback default.
+
+--------------------------------------------------------------------
+4) Verification checklist (local)
+--------------------------------------------------------------------
+Run and verify manually:
+
+1. Vendor add -> check "Also create as Supplier"
+   - Address field appears
+   - Submit without address is blocked
+   - Submit with address creates supplier with that address
+
+2. Partner payment using Check
+   - Payment row created with `checkStatus=Pending`
+   - Check-passing item appears
+   - PO/Step `paymentStatus` does not move to Paid because of pending check
+
+3. After marking check Passed
+   - Recompute flow updates paid totals/status correctly
+

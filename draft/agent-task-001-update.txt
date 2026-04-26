@@ -1,0 +1,74 @@
+UPDATE TASK — Follow-up fixes after your implementation
+
+Context:
+I reviewed current code after your changes. Some items are still broken or missing. This file lists ONLY the remaining corrections to finish the original requirements. Do NOT add new features beyond what’s listed here.
+
+PART 0 — Critical build errors (must fix first)
+1) Build-breaking JSX tag spacing in `src/app/dashboard/purchases/[id]/client-page.tsx`:
+   - There is still a JSX fragment `< div className=...>` (line ~389). Replace with `<div>` / `</div>`.
+   - In invoice template strings, there are `< div`, `< table` (with spaces). These are invalid HTML; change to `<div>`, `<table>`, `</div>`, `</table>`.
+   - Search patterns: `< div`, `< table`, `< html` etc; replace all.
+
+PART 1 — Per-item finishing wastage (still missing)
+Files: `src/app/dashboard/purchases/[id]/client-page.tsx`
+- Add `finishingWastageQty` to `ThreePieceItemDraft` and `toThreePieceDrafts` (default 0 from `purchaseItems`).
+- Add per-item finishing wastage input (pieces) in BOTH mobile and desktop tables under Step 4 (Final Receiving).
+- Remove old yard-based `stepDrafts.FINISHING.wastageQty` input (“Extra Wastage (yds)”).
+- Update Final Qty default (auto):
+  - default = max(0, qty - printingDamagedQty - cuttingDamagedQty - finishingWastageQty)
+  - keep finalQty editable. Avoid overriding manual edits if user has changed it (simple rule: only auto-adjust when current finalQty equals previous auto value).
+- Total wastage summary should be pieces, computed from per-item values.
+- Ensure `handleFinalizeReceivingStep` passes `finishingWastageQty` from draft (already in payload) and finalQty uses the (possibly edited) field.
+
+PART 2 — Printing/Cutting per-piece logic corrections
+File: `src/app/dashboard/purchases/[id]/client-page.tsx`
+- `cuttingCost` in draft must be per-piece rate (same as printing). Change mapping:
+  `cuttingCost: (it.cuttingCost || 0) / max(1, qty)`
+- Fix `cuttingTotalDraft`:
+  - If cuttingType INTERNAL: total = `stepDrafts.CUTTING.paymentAmount` (or `productionStepsByType.CUTTING?.costAmount` if you prefer to read saved value when locked).
+  - If EXTERNAL: total = sum(rate * billable).
+- Cutting billable qty must account for printing damage:
+  `billable = max(0, qty - printingDamagedQty - cuttingDamagedQty)`
+- Update all places using cutting billable (table totals + itemsPayload calc).
+- For INTERNAL cutting, distribute lump sum by billable qty (use same billable formula). If totalAmount = 0, costs should be 0.
+- Desktop cutting cost input should be disabled when internal (same as mobile).
+
+PART 3 — Remove leftover yard-based damage UI
+File: `src/app/dashboard/purchases/[id]/client-page.tsx`
+- Remove “Yard of Damaged Fabric” input still present in Cutting step.
+- Update any labels from yds ? pcs in Printing/Cutting/Finishing summaries.
+- Replace references to `stepDrafts.PRINTING.damagedQty` and `stepDrafts.CUTTING.damagedQty` in finishing summary with computed per-item totals.
+
+PART 4 — Printing note input (missing)
+File: `src/app/dashboard/purchases/[id]/client-page.tsx`
+- Add a Textarea for Printing Note (like Cutting Note) under Step 2.
+- Bind to `stepNotes.PRINTING` and disable when step not enabled / received.
+
+PART 5 — Damage total resets bug (server)
+File: `src/server/modules/purchases.ts`
+- In `updateThreePieceStepCostsCore`, when calculating `finalDamagedQty`, do NOT fall back to the previous value when the sum is 0. If items are provided, always use calculated sum (allow reset to 0).
+
+PART 6 — Cutting Master role filter
+File: `src/app/dashboard/purchases/[id]/page.tsx`
+- Fetch cutting masters with role filter: `getStaff({ role: 'CuttingMan', pageSize: 100 })` (or 1000 if you want).
+- Do NOT load all staff for cutting.
+
+PART 7 — Invoice updates
+File: `src/app/dashboard/purchases/[id]/client-page.tsx`
+- In `handleGenerateWorkOrder`, update finishing invoice table to include per-item finishing wastage (pcs) if needed.
+- Remove “Damaged Fabric / Extra Wastage (yds)” meta rows; replace with pieces-based labels and totals.
+- Keep printing/cutting notes shown in invoice meta.
+- Ensure all invoice HTML tags are proper (no `< div` etc).
+
+PART 8 — Migration
+- Add Prisma migration for schema changes (printingDamagedQty, cuttingDamagedQty, finishingWastageQty, note). Do not drop data.
+- If you used db push, still generate migration to keep schema tracked.
+
+Validation checklist (quick manual)
+1) Printing: per-piece rate, per-item damage, total uses billable. Save ? refresh ? values persist.
+2) Cutting external: billable uses printing+cutting damage. Internal: lump sum distributed.
+3) Finishing: per-item wastage + auto finalQty default + editable, invoice shows wastage in pcs.
+4) Cutting master dropdown shows only CuttingMan role.
+5) No build errors from malformed JSX.
+
+Deliver back: summary of changes + confirmation of tests run.

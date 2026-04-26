@@ -1,0 +1,66 @@
+UPDATE P03j-5 - Fix "View Movement" modal (missing DialogTitle + restore UI)
+
+Scope: ONLY `src/app/dashboard/inventory/client-page.tsx`. Keep changes minimal. No refactors.
+
+Problem:
+- Clicking “View Movement” opens a dialog without a DialogTitle.
+- This triggers Radix accessibility error and shows an empty modal.
+- Movement state variables already exist but are not rendered:
+  - movementsForDialog, movementNextCursor, isMovementLoading, currentItem.
+
+Fix:
+1) Add a View Movement dialog block
+Location: inside <DialogContent> render section.
+Add a new block:
+```
+{dialogState.mode === 'viewMovement' && dialogState.selectedItem && (
+  <>
+    <DialogHeader>
+      <DialogTitle>Movement History</DialogTitle>
+      <DialogDescription>
+        {formatLotProduct(dialogState.selectedItem)} at {dialogState.selectedItem.locationName || 'All Locations'}
+      </DialogDescription>
+    </DialogHeader>
+    ...table/cards...
+  </>
+)}
+```
+This satisfies Radix requirement and provides visible title.
+
+2) Render movement list (use existing state)
+Use existing variables:
+- movementsForDialog
+- isMovementLoading
+- movementNextCursor
+- loadMovementsForItem(currentItem, true) for Load More
+
+Desktop table (columns match earlier UI):
+- Date
+- Type
+- Qty (show +/– sign)
+- Balance
+- User
+- Notes/Ref
+
+Show states:
+- If isMovementLoading: show one row “Loading...”
+- If not loading and empty: show “No movement history found for this item.”
+- Else map rows.
+
+Optional: Mobile cards (reuse same fields) if you already have the pattern; otherwise skip for now.
+
+3) Load More (if movementNextCursor exists)
+Add a small “Load More” button under the table:
+```
+{movementNextCursor && (
+  <div className="mt-3 text-center">
+    <Button variant="outline" onClick={() => currentItem && loadMovementsForItem(currentItem, true)} disabled={isMovementLoading}>
+      {isMovementLoading && <Loader2 ... />} Load More
+    </Button>
+  </div>
+)}
+```
+
+Deliver back:
+- Summary + files touched
+- Manual verify: “View Movement” opens with title and shows rows or empty state; no Radix DialogTitle error in console.

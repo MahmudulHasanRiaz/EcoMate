@@ -1,0 +1,142 @@
+P47i - Incomplete Checkout Not Capturing (commands for coder)
+
+Goal
+- Incomplete checkout POST should fire even if user leaves without placing order.
+- Incomplete list UI should show WooCheckoutLead (not Order status=Incomplete).
+- Phone validation must block 10-digit numbers.
+
+Root cause summary (tell coder)
+- /dashboard/orders/incomplete UI was reading Orders (status=Incomplete), but plugin writes WooCheckoutLead.
+- Checkout JS did not fire capture on page leave for Blocks checkout; no unload hook.
+- 10-digit phone accepted because new plugin code not deployed (old JS/PHP).
+
+Steps for coder (apply EXACT changes)
+
+1) API: return WooCheckoutLead from /api/orders/incomplete
+File: src/app/api/orders/incomplete/route.ts
+Replace the GET body with:
+```
+import prisma from '@/lib/prisma';
+
+const leads = await prisma.wooCheckoutLead.findMany({
+  where: { status: 'OPEN' },
+  orderBy: { lastSeenAt: 'desc' },
+  take: 200,
+  include: { business: true, integration: true }
+});
+
+const payload = leads.map((lead) => ({
+  id: lead.id,
+  integrationId: lead.integrationId,
+  businessId: lead.businessId,
+  name: lead.name || 'Unknown',
+  phone: lead.phoneNormalized || '',
+  address: lead.address || '',
+  skuList: lead.skuList || [],
+  occurrences: lead.occurrences || 1,
+  firstSeenAt: lead.firstSeenAt,
+  lastSeenAt: lead.lastSeenAt,
+  status: lead.status,
+  businessName: lead.business?.name || '',
+  businessPhone: lead.business?.phone || '',
+  businessAddress: lead.business?.address || '',
+  businessLogo: lead.business?.logo || '',
+  storeUrl: lead.integration?.storeUrl || '',
+}));
+return apiSuccess(payload);
+```
+
+2) Service: getIncompleteOrders should return leads (not Orders)
+File: src/services/orders.ts
+Add type:
+```
+export type IncompleteLead = {
+  id: string;
+  integrationId: string;
+  businessId: string;
+  name: string;
+  phone: string;
+  address?: string;
+  skuList?: any[];
+  occurrences?: number;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  status?: string;
+  businessName?: string;
+  businessPhone?: string;
+  businessAddress?: string;
+  businessLogo?: string;
+  storeUrl?: string;
+};
+```
+Update getIncompleteOrders:
+```
+export async function getIncompleteOrders(): Promise<IncompleteLead[]> {
+  const res = await fetch(`${API_BASE_URL}/orders/incomplete`, { next: { revalidate: 60, tags: ['orders', 'incomplete-orders'] } });
+  if (!res.ok) throw new Error('Failed to fetch incomplete orders');
+  const data = await res.json();
+  const items = data?.data || data;
+  return Array.isArray(items) ? items : [];
+}
+```
+
+3) UI: Incomplete Orders page should show lead data
+File: src/app/dashboard/orders/incomplete/page.tsx
+- Replace Order types with IncompleteLead.
+- Show name/phone, businessName, lastSeenAt.
+- Replace total with occurrences.
+- Remove Edit/Convert button (no Order ID).
+Map usage:
+```
+const phoneMeta = normalizeBdPhoneForStorage(order.phone || '');
+const phoneDisplay = phoneMeta.isValid ? phoneMeta.last11 : (phoneMeta.value || order.phone || '');
+```
+Date:
+```
+format(new Date(order.lastSeenAt || order.firstSeenAt || new Date().toISOString()), 'MMM d, yyyy')
+```
+Count:
+```
+order.occurrences ? `×${order.occurrences}` : '×1'
+```
+
+4) Plugin: add unload capture + stronger block
+File: draft/fashionary-woo-plugin/assets/js/checkout.js
+- Add `pagehide` + `visibilitychange` listeners.
+- Add `attemptCapture()` once config loads.
+- Replace jQuery AJAX with `fetch(..., { keepalive: true, mode:'cors' })`.
+- Ensure block on submit for blocks checkout:
+```
+$(document).on('submit', 'form.checkout, form.wc-block-checkout__form', blockIfInvalid);
+$(document).on('click', '.wc-block-components-checkout-place-order-button', blockIfInvalid);
+```
+
+5) Plugin: server-side phone validation + restriction on after_checkout_validation
+File: draft/fashionary-woo-plugin/fashionary-woo-plugin.php
+- Add hook in __construct:
+```
+add_action('woocommerce_after_checkout_validation', array($this, 'validate_phone_after_checkout'), 10, 2);
+```
+- Add helper request_restriction_check() and call from both check_order_restrictions() and validate_phone_after_checkout().
+- Keep wc_add_notice for error.
+- Bump version to 1.0.2 so browser cache flushes.
+
+6) Plugin-config message (optional but recommended)
+File: src/app/api/woo/plugin-config/route.ts
+Add `phoneValidation.message` so JS uses correct warning text.
+
+7) Rebuild plugin zip
+Command:
+```
+Compress-Archive -Path draft/fashionary-woo-plugin -DestinationPath draft/fashionary-woo-plugin.zip -Force
+```
+
+8) Test checklist
+- Woo plugin-config GET returns `incompleteEnabled: true` and phoneValidation regex.
+- On checkout: type 10-digit -> red warning + checkout blocked.
+- Type valid BD phone; fill name/address; then leave page -> server should receive POST `/api/woo/incomplete-orders`.
+- /dashboard/orders/incomplete should show new lead with occurrences count.
+
+Notes for coder
+- This fix is required because incomplete leads are NOT stored as Orders; they live in WooCheckoutLead.
+- If still no POST: check plugin update installed, caching cleared, and verify that `fashionary-checkout` JS is loaded on checkout page.

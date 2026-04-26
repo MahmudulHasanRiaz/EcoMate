@@ -1,0 +1,16 @@
+P47aw - Schema drift fix migration (production-safe)
+
+What I changed (local repo)
+- Added migration: prisma/migrations/20260201000000_schema_drift_fix/migration.sql
+  This migration is idempotent (IF NOT EXISTS / guarded DO $$) and fixes:
+  enums, missing columns, missing tables, indexes, foreign keys, and the WooCheckoutLead FK/index drift
+  based on the Prisma diff you captured on production.
+
+Local (commit + push)
+1) git status
+2) git add prisma/migrations/20260201000000_schema_drift_fix/migration.sql
+3) git commit -m "fix: schema drift guard migration"
+4) git push origin main
+
+Production steps removed here (owner will run). This file is ONLY for local
+changes/commit/push by the coder.

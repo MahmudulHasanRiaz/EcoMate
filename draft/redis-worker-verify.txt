@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-01-24T11:58:21.063Z",
+  "redis_url": "redis://127.0.0.1:6379",
+  "jobCounts": {
+    "active": 0,
+    "completed": 5,
+    "delayed": 0,
+    "failed": 0,
+    "paused": 0,
+    "prioritized": 0,
+    "waiting": 0,
+    "waiting-children": 0
+  },
+  "lastCompleted": [
+    {
+      "id": "5",
+      "name": "sync-order-batch",
+      "finishedOn": 1769255556307
+    },
+    {
+      "id": "4",
+      "name": "sync-order-batch",
+      "finishedOn": 1769255555826
+    },
+    {
+      "id": "1",
+      "name": "sync-order-batch",
+      "finishedOn": 1769255555805
+    },
+    {
+      "id": "3",
+      "name": "sync-order-batch",
+      "finishedOn": 1769255555801
+    },
+    {
+      "id": "2",
+      "name": "sync-order-batch",
+      "finishedOn": 1769255555759
+    }
+  ]
+}

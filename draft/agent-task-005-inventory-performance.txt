@@ -1,0 +1,33 @@
+﻿UPDATE P03 - Inventory performance + lot pagination
+
+Scope: ONLY optimize inventory list/lots/movements access paths. No UI redesign.
+
+1) Inventory list (dashboard/products)
+- File: src/services/inventory.ts (getInventory)
+  - Avoid loading all inventoryItem rows for active productIds.
+  - Use DB aggregation + limited fetch per page/cursor.
+  - Add new API endpoint if needed: GET /api/inventory?cursor=&pageSize=&search=&locationId=
+- File: src/app/dashboard/inventory/client-page.tsx
+  - Switch to cursor-based API.
+- File: src/app/dashboard/products/[id]/page.tsx
+  - Avoid full inventory fetch; only fetch for this product (filtered API).
+
+2) Inventory lots
+- File: src/services/inventory.ts (getInventoryLots)
+  - Do not return all lots; switch to API with cursor + filters.
+- File: src/app/dashboard/purchases/[id]/page.tsx
+  - Remove server-side getInventoryLots() full load.
+  - Use /api/inventory/lots with search + cursor.
+
+3) Inventory movements
+- File: src/services/inventory.ts (getInventoryMovements)
+  - Replace full load with API that already supports cursor: /api/inventory/movements
+  - Return paginated movements per item.
+
+4) Audit items
+- File: src/services/inventory.ts (getAuditItems)
+  - Add cursor/pageSize params; remove fixed take=1000.
+
+Deliver back
+- Summary + files touched
+- Manual test: Inventory list loads under 1s with cursor; purchase detail lot combobox loads on search; movements list paginates.

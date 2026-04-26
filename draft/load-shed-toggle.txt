@@ -1,0 +1,24 @@
+# Load-spike Adaptive Throttling Toggle
+
+Use the following commands to enable or disable throttling during a load spike.
+
+## 1. Enable Reports Throttling (Increases Cache TTL to 10 min)
+Enable for 10 minutes:
+`redis-cli SET load-shed:reports 1 EX 600`
+
+## 2. Enable Sync Throttling (Skips Background Audits + Concurrency = 1)
+Enable for 10 minutes:
+`redis-cli SET load-shed:sync 1 EX 600`
+
+## 3. Enable Both (Recommended during high CPU/DB load)
+`redis-cli SET load-shed:reports 1 EX 600`
+`redis-cli SET load-shed:sync 1 EX 600`
+
+## 4. Disable Early
+`redis-cli DEL load-shed:reports load-shed:sync`
+
+## 5. Verification
+Check the server logs for:
+- `[LOAD_SHED] skipping stock audit.`
+- `[LOAD_SHED] throttling bulk sync concurrency to 1`
+- `[LOAD_SHED] throttling audit concurrency to 1`

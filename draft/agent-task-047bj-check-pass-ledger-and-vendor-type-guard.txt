@@ -1,0 +1,85 @@
+P47bj - Final delta: check-pass ledger flow + vendor type guard
+
+Scope:
+- Fix only the two remaining issues from P47bi verification.
+- Do not touch unrelated modules.
+- Do not include commit/push instructions.
+
+--------------------------------------------------------------------
+1) Check Passed ledger must clear from Supplier Advance, not credit bank again
+--------------------------------------------------------------------
+Problem:
+- In `applyPartnerPaymentCore`, pending check amount is already posted into `Supplier Advance`.
+- In `updateCheckStatusCore` (status = Passed), current posting does `Dr AP / Cr Bank`.
+- This can double-credit the bank account and does not clear the pending advance bucket.
+
+Files:
+- `src/server/modules/purchases.ts`
+
+Functions:
+- `applyPartnerPaymentCore` (already posts pending to Supplier Advance; keep this behavior)
+- `updateCheckStatusCore` (fix required)
+
+Required fix in `updateCheckStatusCore`:
+
+A) Keep `postingGroup = purchasePayment:<paymentId>` logic and delete old entries first.
+
+B) For `status === 'Passed'` and `fullPayment.check > 0`:
+- Post:
+  - Debit: `Accounts Payable` by check amount
+  - Credit: `Supplier Advance` by check amount
+- Do NOT credit bank/cash account here (bank was already credited in pending stage).
+
+C) For non-Passed statuses:
+- Keep existing behavior (deleting postingGroup entries so pending effect is reversed).
+
+Implementation notes:
+- Resolve both account IDs via existing `ACCOUNT_LABELS` map:
+  - `accountsPayable`
+  - `supplierAdvance`
+- Keep entryNumber and postingGroup usage same as current style.
+
+Acceptance:
+- Pending check entry: amount sits in Supplier Advance (no AP debit yet).
+- On Passed: AP debit appears and Supplier Advance reduces (bank not re-credited).
+
+--------------------------------------------------------------------
+2) Vendor create must require at least one Vendor Type (primary create too)
+--------------------------------------------------------------------
+Problem:
+- UI currently enforces vendor type only when `alsoCreate` is checked.
+- For normal vendor create (`alsoCreate = false`), empty type can pass client-side and fail at API.
+
+File:
+- `src/app/dashboard/partners/page.tsx`
+
+Required fix:
+- In `PartnerForm.handleSubmit`, after computing `type = selectedTypes.join(', ')`:
+  - If `!isSupplier && !type`, block submit and show toast:
+    - "Please select at least one vendor type."
+- Keep existing supplier+alsoCreate validation unchanged.
+
+Acceptance:
+- Add Vendor flow cannot submit without selecting at least one vendor type.
+- User gets immediate UI validation error (before API request).
+
+--------------------------------------------------------------------
+3) Verification checklist (local)
+--------------------------------------------------------------------
+A) Vendor type guard
+1. Open Add Vendor dialog
+2. Do not select any Vendor Type
+3. Submit -> blocked with toast
+
+B) Pending/Passed check ledger path
+1. Record partner payment via Check
+2. Verify ledger for `postingGroup=purchasePayment:<id>`:
+   - Credit bank/cash account
+   - Debit Supplier Advance
+   - No AP debit yet
+3. Mark check Passed
+4. Verify same postingGroup now shows:
+   - Debit Accounts Payable
+   - Credit Supplier Advance
+   - No second bank credit
+

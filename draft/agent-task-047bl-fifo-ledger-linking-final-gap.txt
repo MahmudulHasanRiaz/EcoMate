@@ -1,0 +1,112 @@
+P47bl - Final gap fix: FIFO check ledger must be payment-linked (postingGroup-safe)
+
+Objective:
+- Close the last critical inconsistency from P47bk.
+- Ensure every FIFO payment ledger line can be cleanly replaced by `updateCheckStatusCore`.
+
+Scope:
+- `src/server/modules/purchases.ts` only
+- No unrelated refactor
+- No commit/push instructions
+
+--------------------------------------------------------------------
+Problem (must fix)
+--------------------------------------------------------------------
+In `applyPartnerPaymentCore`, ledger rows are currently written as one aggregated batch:
+- no `postingGroup = purchasePayment:<paymentId>`
+- `sourceTransactionId` uses `partnerId` (not payment id)
+
+But `updateCheckStatusCore` manages check transitions by:
+- `postingGroup = purchasePayment:<paymentId>`
+- delete/rebuild by that postingGroup
+
+So FIFO check entries are not reliably reversible/rebuildable per payment.
+
+--------------------------------------------------------------------
+Required implementation
+--------------------------------------------------------------------
+
+1) Make FIFO ledger entries payment-level in `applyPartnerPaymentCore`
+
+Inside both loops (supplier PO loop and vendor step loop), after creating `payment`:
+- Create ledger rows immediately for that `payment.id` using:
+  - `postingGroup = purchasePayment:${payment.id}`
+  - `sourceTransactionId = payment.id`
+  - `entryNumber = resolveLedgerEntryNumber(tx, { date: now, postingGroup })`
+
+Posting rules per created payment:
+- Cash-like allocation (`effectiveAllocation > 0`):
+  - Dr Accounts Payable = effectiveAllocation
+  - Cr source account (`accountId` from payload) = effectiveAllocation
+
+- Check allocation (`isCheck && allocation > 0`, pending at creation):
+  - Dr Supplier Advance = allocation
+  - Cr source account (`accountId` from payload) = allocation
+
+Notes:
+- Keep current check-passing item creation as is.
+- Keep current paymentStatus guard (pending check should not flip status).
+
+2) Remove aggregate AP/advance posting block from `applyPartnerPaymentCore`
+
+At function end, remove/replace old aggregated `ledgerEntries` batch that uses:
+- `sourceTransactionId: partnerId`
+- no postingGroup
+
+Rationale:
+- It conflicts with payment-level status transitions.
+- Ledger must be fully payment-granular for check lifecycle.
+
+3) Keep only partner-level advance credit posting for `remaining > 0`
+
+If after FIFO allocation there is leftover `remaining` (true advance credit to partner):
+- Keep the `supplier/vendor.creditBalance` increment behavior.
+- Post separate ledger entry pair with a dedicated posting group, e.g.:
+  - `postingGroup = partnerAdvance:${partnerType}:${partnerId}:${timestamp}`
+  - `sourceTransactionId = partnerId`
+  - Dr Supplier Advance = remaining
+  - Cr source account = remaining
+
+This entry is not tied to a specific purchase payment and should remain separate.
+
+4) Do NOT change `updateCheckStatusCore` strategy
+
+Keep existing P47bk logic that handles:
+- Passed: AP vs SupplierAdvance / source account based on origin staging
+- Pending rollback
+- Bounced/Cancelled reverse
+
+It will now work correctly because FIFO pending journals are payment-linked.
+
+--------------------------------------------------------------------
+Acceptance criteria (must pass)
+--------------------------------------------------------------------
+1) FIFO check created via Partner payment
+- Ledger exists under `postingGroup = purchasePayment:<paymentId>`
+- Rows: Dr Supplier Advance / Cr source account
+
+2) Mark same check Passed
+- Old rows replaced by `updateCheckStatusCore`
+- Rows become: Dr AP / Cr Supplier Advance
+
+3) Mark same check Bounced/Cancelled
+- `postingGroup = purchasePayment:<paymentId>` has zero rows
+
+4) PO add/edit check flow still works
+- Pending direct check: no staged entry unless designed by current flow
+- Passed direct check: Dr AP / Cr source account
+
+--------------------------------------------------------------------
+Verification SQL (required)
+--------------------------------------------------------------------
+Replace `<PAYMENT_ID>`:
+
+1) Verify payment-linked ledger rows:
+`select "postingGroup","sourceTransactionId","accountId",debit,credit from "LedgerEntry" where "postingGroup" = 'purchasePayment:<PAYMENT_ID>';`
+
+2) Verify payment record:
+`select id,"paymentFor","paymentMethod","checkStatus","paidFromAccountId",cash,"check" from "PurchasePayment" where id = '<PAYMENT_ID>';`
+
+3) Check leftover partner-advance posting (if overpayment happened):
+`select "postingGroup","sourceTransactionId","accountId",debit,credit from "LedgerEntry" where "postingGroup" like 'partnerAdvance:%' order by date desc limit 20;`
+

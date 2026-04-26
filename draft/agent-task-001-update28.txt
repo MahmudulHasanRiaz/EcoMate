@@ -1,0 +1,35 @@
+UPDATE 28 - Further shrink barcode width (adaptive)
+
+Scope: ONLY adjust barcode sizing logic. No other changes.
+
+Goal:
+- Make barcode visibly shorter for long lot numbers.
+- Keep scan reliability reasonable by adapting min bar width based on length.
+
+File: src/app/dashboard/purchases/[id]/client-page.tsx
+Section: formatLots + waitForBarcode
+
+1) Reduce barcode container size
+- In formatLots, change SVG size to:
+  style="width:60px;height:9px;display:inline-block;"
+
+2) Adaptive module width (length-based)
+- In waitForBarcode, when calling JsBarcode(node, val, opts):
+  - Compute approxModules = Math.max(1, (val.length + 2) * 11)
+  - Set maxWidth = 60
+  - Set minWidth by length:
+      if (val.length >= 20) minWidth = 0.35
+      else if (val.length >= 16) minWidth = 0.45
+      else minWidth = 0.55
+  - moduleWidth = Math.max(minWidth, Math.min(1.0, maxWidth / approxModules))
+  - Use height: 9, margin: 1
+
+3) Keep existing safety fallback:
+- If JsBarcode fails or no val, hide SVG.
+
+Deliver back:
+- Summary of changes
+- Screenshot of invoice showing narrower barcodes (if possible)
+
+Note:
+If this is still too wide, we’ll need a bigger change (shorter encoded value or QR), which will change scanner output. Ask before doing that.

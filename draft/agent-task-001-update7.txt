@@ -1,0 +1,24 @@
+UPDATE 7 - Tighten Cutting Master permissions (remove Orders)
+
+Scope: ONLY adjust the Cutting Master preset permissions. No other changes.
+
+Requirement update (client):
+- Orders: NO access.
+- Purchases: Read-only.
+- Attendance: Read-only.
+- Staff: Read-only (so their own profile/account remains consistent).
+- All other modules: No access.
+- Page/menu access remains ONLY dashboard (already set).
+
+File: src/lib/staff-permissions.ts
+- Replace the current 'Cutting Master' preset with the following:
+  orders: noAccess
+  purchases: readOnly
+  attendance: readOnly
+  staff: readOnly
+  all other modules: noAccess
+
+Note:
+- Do NOT add page access for staff/attendance/purchases. Dashboard-only remains.
+
+Deliver back: summary + tests run.
