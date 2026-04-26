@@ -6,7 +6,7 @@ Goal: একটাই প্রস্তুত Admin অ্যাকাউন্
 
 ### 1) লোকাল/সার্ভার DB সিড
 1) `.env.local` (বা সার্ভার env) এ ডাইরেক্ট Postgres URL সেট করুন:  
-   `DATABASE_URL=postgres://postgres:123456@localhost:5432/fashionary?schema=public`  
+   `DATABASE_URL=postgres://postgres:123456@localhost:5432/ecomate?schema=public`  
    `DIRECT_DATABASE_URL=...` (একই URL)  
 2) মাইগ্রেশন চালান:  
    ```bash

@@ -20,7 +20,7 @@ const locations = [
 ];
 
 const businesses = [
-    { id: 'BIZ001', name: 'Fashionary Main', logo: '/logo-full.svg' },
+    { id: 'BIZ001', name: 'EcoMate Main', logo: '/logo-full.svg' },
     { id: 'BIZ002', name: 'Urban Threads', logo: 'https://placehold.co/100x100/A78BFA/FFFFFF/png?text=UT' },
     { id: 'BIZ003', name: 'Kids Fashion Co.', logo: 'https://placehold.co/100x100/F472B6/FFFFFF/png?text=KFC' },
 ];
@@ -58,7 +58,7 @@ const staffSeed = [
         id: 'STAFF002',
         clerkId: 'user_2fA9y9Z8fX6vS5tL6uA7aJ3bYz8',
         name: 'Saleha Akter',
-        email: 'saleha@fashionary.com',
+        email: 'saleha@ecomate.com',
         phone: '01700000002',
         role: 'Moderator',
         lastLogin: new Date('2024-05-26T14:30:00Z'),
@@ -78,7 +78,7 @@ const staffSeed = [
         id: 'STAFF003',
         clerkId: 'user_2fABt9Z8fX6vS5tL6uA7aJ3bYz8',
         name: 'Kamrul Hasan',
-        email: 'kamrul@fashionary.com',
+        email: 'kamrul@ecomate.com',
         phone: '01700000003',
         role: 'Packing Assistant',
         lastLogin: new Date('2024-05-27T09:00:00Z'),
@@ -106,7 +106,7 @@ const staffSeed = [
         id: 'STAFF005',
         clerkId: 'user_2fADt9Z8fX6vS5tL6uA7aJ3bYz8',
         name: 'Courier Manager Guy',
-        email: 'courier.manager@fashionary.com',
+        email: 'courier.manager@ecomate.com',
         phone: '01700000005',
         role: 'Courier Manager',
         lastLogin: new Date('2024-05-27T11:00:00Z'),
@@ -120,7 +120,7 @@ const staffSeed = [
         id: 'STAFF006',
         clerkId: 'user_2fAEt9Z8fX6vS5tL6uA7aJ3bYz8',
         name: 'Call Center Agent',
-        email: 'call.agent@fashionary.com',
+        email: 'call.agent@ecomate.com',
         phone: '01700000006',
         role: 'Call Assistant',
         lastLogin: new Date('2024-05-27T15:00:00Z'),

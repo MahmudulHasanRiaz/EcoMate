@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function LandingPage() {
   const [branding, general] = await Promise.all([getBrandingSettings(), getGeneralSettings()]);
-  const storeName = general.storeName || 'Fashionary';
+  const storeName = general.storeName || 'EcoMate';
   const logoSrc = branding.standardLogoUrl || branding.iconLogoUrl || '/logo-full.svg';
 
   return (

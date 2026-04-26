@@ -836,7 +836,7 @@ function DashboardLayoutContent({
     const [commandSearchTerm, setCommandSearchTerm] = React.useState('');
     const [searchData, setSearchData] = React.useState<{ orders: any[], products: any[], customers: any[] }>({ orders: [], products: [], customers: [] });
     const [isSearching, setIsSearching] = React.useState(false);
-    const [storeName] = React.useState(generalSettings?.storeName || 'Fashionary');
+    const [storeName] = React.useState(generalSettings?.storeName || 'EcoMate');
     const [forcedPermissions, setForcedPermissions] = React.useState<StaffMember['permissions'] | null>(initialPermissions);
     const [authLoading, setAuthLoading] = React.useState(initialAuthState === 'loading');
     const [isBlocked, setIsBlocked] = React.useState(initialAuthState === 'blocked');

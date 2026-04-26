@@ -83,7 +83,7 @@ async function pushWooConfig(integration: any) {
 
     try {
         console.log(`[WOO_PUSH_CONFIG] Pushing to ${url} for ${integration.id}`);
-        const res = await fetch(`${url}/wp-json/fashionary/v1/settings`, {
+        const res = await fetch(`${url}/wp-json/ecomate/v1/settings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),

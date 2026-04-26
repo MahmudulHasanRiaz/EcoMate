@@ -261,7 +261,7 @@ export default function PurchaseOrderDetailsClientPage({
     const [itemReceiveQtys, setItemReceiveQtys] = useState<Record<string, number>>({});
     const [itemWastageQtys, setItemWastageQtys] = useState<Record<string, number>>({});
     const [pindaRestates, setPindaRestates] = useState<Record<string, number[]>>({});
-    const storeName = generalSettings?.storeName || 'Fashionary';
+    const storeName = generalSettings?.storeName || 'EcoMate';
     const storeAddress = generalSettings?.storeAddress || '';
     const currencyCode = generalSettings?.currency || 'BDT';
     const currencyPrefix = currencyCode === 'USD' ? '$' : 'Tk';

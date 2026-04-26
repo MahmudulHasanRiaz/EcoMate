@@ -484,7 +484,7 @@ export async function ensureWooWebhook(integration: any, options: { forceRecreat
 
         // Create the hook for this topic
         const createPayload = {
-          name: `Fashionary ${topic}`,
+          name: `EcoMate ${topic}`,
           topic,
           delivery_url: normalizedTarget,
           secret,

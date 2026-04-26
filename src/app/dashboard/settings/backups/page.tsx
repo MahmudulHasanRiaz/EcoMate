@@ -194,7 +194,7 @@ export default function BackupsPage() {
                                 <Input 
                                     value={settings.r2BucketName} 
                                     onChange={e => setSettings({...settings, r2BucketName: e.target.value})} 
-                                    placeholder="e.g. fashionary-backups"
+                                    placeholder="e.g. ecomate-backups"
                                 />
                             </div>
                             <div className="space-y-2">

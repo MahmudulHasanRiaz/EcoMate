@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
     let branding: { appIconUrl?: string } = { appIconUrl: '/icons/icon-512x512.png' };
-    let general: { storeName?: string; storeAddress?: string } = { storeName: 'Fashionary', storeAddress: '' };
+    let general: { storeName?: string; storeAddress?: string } = { storeName: 'EcoMate', storeAddress: '' };
 
     try {
         [branding, general] = await Promise.all([getBrandingSettings(), getGeneralSettings()]);
@@ -14,7 +14,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
         console.warn('[MANIFEST_FALLBACK]', error);
     }
 
-    const name = general.storeName || 'Fashionary';
+    const name = general.storeName || 'EcoMate';
     const description =
         general.storeAddress?.trim()?.length
             ? `${name} - ${general.storeAddress}`

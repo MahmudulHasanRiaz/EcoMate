@@ -22,7 +22,7 @@ Storage: **60–80 GB** (কমপক্ষে 60 GB রাখুন; লগ/ব
 
 ## ৩) Portainer Stack তৈরি করা (Git থেকে, স্টেপ বাই স্টেপ)
 Portainer → **Stacks** → **Add stack**
-1) **Name** দিন: `fashionary-client-01` (বা ক্লায়েন্ট নাম)  
+1) **Name** দিন: `ecomate-client-01` (বা ক্লায়েন্ট নাম)  
 2) **Build method**: **Git repository**  
 3) **Repository URL**: `https://github.com/<org>/<repo>.git`  
 4) **Branch**: `main` (বা আপনার রিলিজ ব্রাঞ্চ)  
@@ -53,7 +53,7 @@ REDIS_URL=redis://redis:6379
 ```
 postgres:
   image: postgres:16
-  container_name: fashionary_postgres
+  container_name: ecomate_postgres
   restart: always
   environment:
     - POSTGRES_USER=USER
@@ -68,24 +68,24 @@ postgres:
 ```
 redis:
   image: redis:7
-  container_name: fashionary_redis
+  container_name: ecomate_redis
   restart: always
 ```
 
 ## ৪) Resource Limit সেট করা (2 vCPU + 8 GB RAM অনুযায়ী)
-Portainer → **Containers** → `fashionary_app` → **Duplicate/Edit**
+Portainer → **Containers** → `ecomate_app` → **Duplicate/Edit**
 - CPU limit: **1.0**
 - Memory limit: **3.5 GB**
 
-Portainer → `fashionary_worker`
+Portainer → `ecomate_worker`
 - CPU limit: **0.5**
 - Memory limit: **2.0 GB**
 
-Portainer → `fashionary_redis`
+Portainer → `ecomate_redis`
 - CPU limit: **0.25**
 - Memory limit: **0.5 GB**
 
-Portainer → `fashionary_postgres`
+Portainer → `ecomate_postgres`
 - CPU limit: **0.25**
 - Memory limit: **2.0 GB**
 
@@ -95,7 +95,7 @@ Portainer → `fashionary_postgres`
 Async jobs ঠিকভাবে চালাতে চাইলে worker আলাদা সার্ভিস হিসেবে রাখুন (আমাদের compose‑এ এই সার্ভিসটি থাকা উচিত):
 ```
 worker:
-  container_name: fashionary_worker
+  container_name: ecomate_worker
   build:
     context: .
     dockerfile: Dockerfile
@@ -126,7 +126,7 @@ worker:
 ## ৬) Domain + SSL
 - Nginx/Traefik দিয়ে reverse proxy দিন
 - Let’s Encrypt দিয়ে SSL দিন
-- `https://your-domain.com` → `fashionary_app:3000`
+- `https://your-domain.com` → `ecomate_app:3000`
 
 ## ৭) Clerk Webhook
 Webhook URL:

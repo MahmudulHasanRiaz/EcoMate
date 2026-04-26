@@ -1,7 +1,7 @@
 
 {
-    "name": "Fashionary",
-    "short_name": "Fashionary",
+    "name": "EcoMate",
+    "short_name": "EcoMate",
     "description": "A modern ERP for managing your fashion business.",
     "start_url": "/dashboard",
     "display_override": ["standalone", "minimal-ui"],

@@ -38,7 +38,7 @@ const brandingDefaults: BrandingSettings = {
 };
 
 const generalDefaults: GeneralSettings = {
-    storeName: 'Fashionary',
+    storeName: 'EcoMate',
     storeAddress: '',
     currency: 'BDT',
     timezone: 'Asia/Dhaka',

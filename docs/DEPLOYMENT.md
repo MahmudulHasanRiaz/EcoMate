@@ -48,8 +48,8 @@ pm2 startup
 ```
 
 This will start:
-- `fashionary-web` (Next.js)
-- `fashionary-worker` (BullMQ worker)
+- `ecomate-web` (Next.js)
+- `ecomate-worker` (BullMQ worker)
 
 ## 7) Webhooks
 Set Clerk webhook URL:

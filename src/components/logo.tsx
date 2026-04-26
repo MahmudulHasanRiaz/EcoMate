@@ -69,7 +69,7 @@ export function Logo({ variant = 'icon', className, size, srcOverride }: LogoPro
     >
       <Image
         src={src}
-        alt="Fashionary Logo"
+        alt="EcoMate Logo"
         width={width}
         height={height}
         className={`${roundedClass}`}

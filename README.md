@@ -1,6 +1,6 @@
-# Fashionary ERP
+# EcoMate ERP
 
-Fashionary is a production?ready ERP for fashion businesses built with Next.js (App Router). It covers orders, inventory, purchases, accounting, staff, marketing, integrations, and operational tooling with strong role/permission controls.
+EcoMate is a production?ready ERP for fashion businesses built with Next.js (App Router). It covers orders, inventory, purchases, accounting, staff, marketing, integrations, and operational tooling with strong role/permission controls.
 
 ## Tech Stack
 - Framework: Next.js (App Router)

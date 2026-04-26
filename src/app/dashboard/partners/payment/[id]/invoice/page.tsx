@@ -28,7 +28,7 @@ export default async function PaymentInvoicePage({ params }: { params: Promise<{
 
     const { totalDue } = await getPartnerFinancials(partnerName);
 
-    const appName = generalSettings.storeName || 'Fashionary';
+    const appName = generalSettings.storeName || 'EcoMate';
     const businessAddress = generalSettings.storeAddress || '';
     // We don't have business phone in general settings, defaulting or omitting
 

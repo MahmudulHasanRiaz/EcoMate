@@ -1,5 +1,5 @@
 const fs = require('fs');
-const path = 'e:\\fashionary\\Fashionary\\draft\\fashionary-woo-plugin\\fashionary-woo-plugin.php';
+const path = 'e:\\ecomate\\EcoMate\\draft\\ecomate-woo-plugin\\ecomate-woo-plugin.php';
 
 try {
     const data = fs.readFileSync(path, 'utf8');

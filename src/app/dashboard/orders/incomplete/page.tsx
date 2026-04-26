@@ -939,7 +939,7 @@ export default function IncompleteOrdersPage() {
                   </div>
                   <div className="space-y-1">
                     <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Store / Source</h4>
-                    <p className="font-semibold text-sm">{leadDetail.businessName || 'Fashionary'}</p>
+                    <p className="font-semibold text-sm">{leadDetail.businessName || 'EcoMate'}</p>
                     {leadDetail.storeUrl && (
                       <a href={leadDetail.storeUrl} target="_blank" className="text-xs text-blue-600 hover:underline break-all block">
                         {leadDetail.storeUrl}

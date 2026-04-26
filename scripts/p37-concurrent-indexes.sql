@@ -1,6 +1,6 @@
 -- PRODUCTION-SAFE CONCURRENT INDEX CREATION (P37b)
 -- WARNING: DO NOT RUN THIS SCRIPT INSIDE A TRANSACTION.
--- Run via psql: psql -d fashionary -f scripts/p37-concurrent-indexes.sql
+-- Run via psql: psql -d ecomate -f scripts/p37-concurrent-indexes.sql
 
 -- Order search (contains/ILIKE)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "Order_customerPhone_gin_idx" ON "Order" USING GIN ("customerPhone" gin_trgm_ops);

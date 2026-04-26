@@ -46,7 +46,7 @@ export default function SmsGatewaySettingsPage() {
         resolver: zodResolver(testSmsSchema),
         defaultValues: {
             mobileNumber: "",
-            message: "This is a test message from Fashionary.",
+            message: "This is a test message from EcoMate.",
         },
     });
 

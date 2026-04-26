@@ -560,7 +560,7 @@ export default function IntegrationsPage() {
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="webhook-secret">Webhook Secret (optional)</Label>
-                                        <Input id="webhook-secret" placeholder="WooFashionary" value={formState.webhookSecret || ''} onChange={(e) => setFormState(prev => ({ ...prev, webhookSecret: e.target.value }))} />
+                                        <Input id="webhook-secret" placeholder="WooEcoMate" value={formState.webhookSecret || ''} onChange={(e) => setFormState(prev => ({ ...prev, webhookSecret: e.target.value }))} />
                                         <p className="text-xs text-muted-foreground">Use the same secret when configuring the report webhook.</p>
                                     </div>
 

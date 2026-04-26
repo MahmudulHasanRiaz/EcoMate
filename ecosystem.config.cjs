@@ -1,7 +1,7 @@
 module.exports = {
     apps: [
         {
-            name: 'fashionary-web',
+            name: 'ecomate-web',
             script: 'npm',
             args: 'start',
             exec_mode: 'cluster',
@@ -15,7 +15,7 @@ module.exports = {
             log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
         },
         {
-            name: 'fashionary-worker',
+            name: 'ecomate-worker',
             script: 'npm',
             args: 'run worker',
             exec_mode: 'fork',

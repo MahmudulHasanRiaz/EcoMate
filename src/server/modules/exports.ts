@@ -69,7 +69,7 @@ const ORDER_EXPORT_SELECT = {
 function getExportBaseDir() {
     const configured = (process.env.EXPORT_DIR || '').trim();
     if (configured) return configured;
-    return path.join(os.tmpdir(), 'fashionary-exports');
+    return path.join(os.tmpdir(), 'ecomate-exports');
 }
 
 export async function createExportJob({ type, params, createdById, businessId }: any) {

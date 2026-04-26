@@ -5,7 +5,7 @@ import type { Order, Product, Customer, Category, ExpenseCategory, Business, Pur
 import { PERMISSIONS } from './permissions';
 
 export const businesses: Business[] = [
-    { id: 'BIZ001', name: 'Fashionary Main', logo: '/logo-full.svg' },
+    { id: 'BIZ001', name: 'EcoMate Main', logo: '/logo-full.svg' },
     { id: 'BIZ002', name: 'Urban Threads', logo: 'https://placehold.co/100x100/A78BFA/FFFFFF/png?text=UT' },
     { id: 'BIZ003', name: 'Kids Fashion Co.', logo: 'https://placehold.co/100x100/F472B6/FFFFFF/png?text=KFC' },
 ];
@@ -25,12 +25,12 @@ export const wooCommerceIntegrations: WooCommerceIntegration[] = [
         consumerSecret: 'cs_xxxxxxxxxxxxxx_5678',
         status: 'Active',
         businessId: 'BIZ001',
-        businessName: 'Fashionary Main',
+        businessName: 'EcoMate Main',
     },
     {
         id: 'woo-2',
-        storeName: 'Fashionary Wholesale',
-        storeUrl: 'https://wholesale.fashionary.com',
+        storeName: 'EcoMate Wholesale',
+        storeUrl: 'https://wholesale.ecomate.com',
         consumerKey: 'ck_xxxxxxxxxxxxxx_abcd',
         consumerSecret: 'cs_xxxxxxxxxxxxxx_efgh',
         status: 'Inactive',
@@ -43,13 +43,13 @@ export const courierIntegrations: CourierIntegration[] = [
     {
         id: 'ci-1',
         businessId: 'BIZ001',
-        businessName: 'Fashionary Main',
+        businessName: 'EcoMate Main',
         courierName: 'Pathao',
         status: 'Active',
         credentials: {
             clientId: 'pathao_client_id_main',
             clientSecret: 'pathao_client_secret_main',
-            username: 'main@fashionary.com',
+            username: 'main@ecomate.com',
             storeId: '12345'
         },
         deliveryType: 48,
@@ -68,7 +68,7 @@ export const courierIntegrations: CourierIntegration[] = [
     {
         id: 'ci-3',
         businessId: 'BIZ001',
-        businessName: 'Fashionary Main',
+        businessName: 'EcoMate Main',
         courierName: 'Steadfast',
         status: 'Inactive',
         credentials: {
@@ -80,13 +80,13 @@ export const courierIntegrations: CourierIntegration[] = [
     {
         id: 'ci-4',
         businessId: 'BIZ001',
-        businessName: 'Fashionary Main',
+        businessName: 'EcoMate Main',
         courierName: 'Carrybee',
         status: 'Active',
         credentials: {
             clientId: 'carrybee_client_id_main',
             clientSecret: 'carrybee_client_secret_main',
-            clientContext: 'fashionary'
+            clientContext: 'ecomate'
         }
     }
 ];
@@ -102,7 +102,7 @@ export const expenseCategories: ExpenseCategory[] = [
 ];
 
 export const expenses: Expense[] = [
-    { id: 'EXP001', date: '2024-05-20', category: 'Marketing & Advertising', amount: 5000, notes: 'Facebook boost for Eid campaign', isAdExpense: true, businessId: 'BIZ001', business: 'Fashionary Main', platform: 'Facebook', approvalStatus: 'Approved' },
+    { id: 'EXP001', date: '2024-05-20', category: 'Marketing & Advertising', amount: 5000, notes: 'Facebook boost for Eid campaign', isAdExpense: true, businessId: 'BIZ001', business: 'EcoMate Main', platform: 'Facebook', approvalStatus: 'Approved' },
     { id: 'EXP002', date: '2024-05-18', category: 'Office Supplies', amount: 1500, notes: 'A4 paper, pens, and folders', isAdExpense: false, approvalStatus: 'Approved' },
     { id: 'EXP003', date: '2024-05-15', category: 'Salaries & Wages', amount: 150000, notes: 'May 2024 Staff Salaries', isAdExpense: false, approvalStatus: 'Approved' },
     { id: 'EXP004', date: '2024-05-10', category: 'Utilities (Electricity, Water)', amount: 8500, notes: 'Monthly electricity bill', isAdExpense: false, approvalStatus: 'Approved' },
@@ -246,7 +246,7 @@ export const orders: Order[] = [
         assignedTo: 'Saleha Akter',
         assignedToId: 'STAFF002',
         businessId: 'BIZ001',
-        businessName: 'Fashionary Main',
+        businessName: 'EcoMate Main',
         businessLogo: '/logo-full.svg',
         platform: 'Website',
         shippingAddress: { address: '123 Maple St', district: 'Dhaka', country: 'Bangladesh' },
@@ -308,7 +308,7 @@ export const orders: Order[] = [
         createdBy: 'Charlie Brown',
         confirmedBy: 'Admin',
         businessId: 'BIZ001',
-        businessName: 'Fashionary Main',
+        businessName: 'EcoMate Main',
         businessLogo: '/logo-full.svg',
         platform: 'Instagram',
         shippingAddress: { address: '789 Pine Ln', district: 'Sylhet', country: 'Bangladesh' },
@@ -367,7 +367,7 @@ export const orders: Order[] = [
         assignedTo: 'Saleha Akter',
         assignedToId: 'STAFF002',
         businessId: 'BIZ001',
-        businessName: 'Fashionary Main',
+        businessName: 'EcoMate Main',
         businessLogo: '/logo-full.svg',
         platform: 'Website',
         shippingAddress: { address: '123 Maple St', district: 'Dhaka', country: 'Bangladesh' },
@@ -579,7 +579,7 @@ export const staff: StaffMember[] = [
         clerkId: 'user_2fA9y9Z8fX6vS5tL6uA7aJ3bYz8',
         name: 'Saleha Akter',
         staffCode: 'MOD1',
-        email: 'saleha@fashionary.com',
+        email: 'saleha@ecomate.com',
         phone: '01700000002',
         role: 'Moderator',
         accessibleBusinessIds: ['BIZ001', 'BIZ003'],
@@ -611,7 +611,7 @@ export const staff: StaffMember[] = [
         clerkId: 'user_2fABt9Z8fX6vS5tL6uA7aJ3bYz8',
         name: 'Kamrul Hasan',
         staffCode: 'PAC1',
-        email: 'kamrul@fashionary.com',
+        email: 'kamrul@ecomate.com',
         phone: '01700000003',
         role: 'Packing Assistant',
         accessibleBusinessIds: ['BIZ001'],
@@ -657,7 +657,7 @@ export const staff: StaffMember[] = [
         clerkId: 'user_2fADt9Z8fX6vS5tL6uA7aJ3bYz8',
         name: 'Courier Manager Guy',
         staffCode: 'COU1',
-        email: 'courier.manager@fashionary.com',
+        email: 'courier.manager@ecomate.com',
         phone: '01700000005',
         role: 'Courier Manager',
         accessibleBusinessIds: ['BIZ001', 'BIZ002'],
@@ -677,7 +677,7 @@ export const staff: StaffMember[] = [
         clerkId: 'user_2fAEt9Z8fX6vS5tL6uA7aJ3bYz8',
         name: 'Call Center Agent',
         staffCode: 'CAL1',
-        email: 'call.agent@fashionary.com',
+        email: 'call.agent@ecomate.com',
         phone: '01700000006',
         role: 'Call Assistant',
         accessibleBusinessIds: ['BIZ001'],

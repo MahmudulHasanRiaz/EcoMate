@@ -24,7 +24,7 @@ type GeneralSettingsPayload = {
 
 const KEY = 'general';
 const defaults: Required<Pick<GeneralSettingsPayload, 'storeName' | 'storeAddress' | 'currency' | 'timezone' | 'weightUnit' | 'dimensionUnit' | 'lowStockThreshold' | 'weekendDays' | 'holidays' | 'theme' | 'badgeRules' | 'stockSyncMode' | 'lateGraceMinutes' | 'workStartTime' | 'overtimeRate' | 'overtimeMaxHours' | 'allowAutoManagerApproval'>> = {
-  storeName: 'Fashionary',
+  storeName: 'EcoMate',
   storeAddress: '',
   currency: 'BDT',
   timezone: 'Asia/Dhaka',

@@ -32,7 +32,7 @@ type GeneralSettings = {
 };
 
 const defaults: GeneralSettings = {
-    storeName: 'Fashionary',
+    storeName: 'EcoMate',
     storeAddress: '',
     currency: 'BDT',
     timezone: 'Asia/Dhaka',

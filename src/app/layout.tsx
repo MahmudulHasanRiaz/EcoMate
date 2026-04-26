@@ -18,7 +18,7 @@ export const runtime = 'nodejs';
 // });
 
 export async function generateMetadata(): Promise<Metadata> {
-  let storeName = 'Fashionary';
+  let storeName = 'EcoMate';
   let storeAddress = '';
   let branding = {
     standardLogoUrl: '/logo-full.svg',
@@ -43,11 +43,11 @@ export async function generateMetadata(): Promise<Metadata> {
     console.warn('[LAYOUT_METADATA_FALLBACK]', error);
   }
 
-  const title = storeName || 'Fashionary';
+  const title = storeName || 'EcoMate';
   const description =
     storeAddress?.trim()?.length
       ? `${title} — ${storeAddress}`
-      : 'Manage and grow your fashion business with Fashionary.';
+      : 'Manage and grow your fashion business with EcoMate.';
 
   const favicon = branding.iconLogoUrl || '/favicon.ico';
   const appIcon = branding.appIconUrl || favicon;
@@ -142,7 +142,7 @@ export default async function RootLayout({
             forcedTheme={forcedTheme}
             enableSystem
             disableTransitionOnChange
-            storageKey="fashionary-theme"
+            storageKey="ecomate-theme"
           >
             <ThemeSync theme={defaultTheme} />
             <MaintenanceGuard>

@@ -15,7 +15,7 @@ Adjust based on traffic:
 
 ## 3) Create Stack from Git in Portainer
 Portainer ? **Stacks** ? **Add stack**
-- Name: `fashionary`
+- Name: `ecomate`
 - Build method: **Git repository**
 - Repository URL: `https://github.com/<org>/<repo>.git`
 - Branch: `main` (or your release branch)
@@ -38,11 +38,11 @@ REDIS_URL=redis://redis:6379
 
 ## 4) Set Resource Limits (Portainer UI)
 After stack is created:
-- Go to **Containers** ? select `fashionary_app` ? **Duplicate/Edit**
+- Go to **Containers** ? select `ecomate_app` ? **Duplicate/Edit**
 - Set:
   - CPU limit (e.g. 1.5)
   - Memory limit (e.g. 3 GB)
-- Repeat for `fashionary_redis` (lower limits)
+- Repeat for `ecomate_redis` (lower limits)
 
 > Portainer sets limits per container. If you want limits stored in compose, add `deploy.resources` blocks.
 
@@ -50,7 +50,7 @@ After stack is created:
 If you want async jobs in a separate container, update compose to include:
 ```
 worker:
-  container_name: fashionary_worker
+  container_name: ecomate_worker
   build:
     context: .
     dockerfile: Dockerfile
@@ -69,7 +69,7 @@ Then redeploy the stack.
 
 ## 6) Domain + SSL
 Use a reverse proxy (Nginx or Traefik). Recommended:
-- Proxy `https://your-domain.com` ? `fashionary_app:3000`
+- Proxy `https://your-domain.com` ? `ecomate_app:3000`
 - Issue SSL via Let?s Encrypt
 
 ## 7) Webhooks

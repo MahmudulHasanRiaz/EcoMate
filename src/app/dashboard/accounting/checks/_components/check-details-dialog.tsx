@@ -19,7 +19,7 @@ interface CheckDetailsDialogProps {
     storeName?: string;
 }
 
-export function CheckDetailsDialog({ payment, storeName = 'Fashionary' }: CheckDetailsDialogProps) {
+export function CheckDetailsDialog({ payment, storeName = 'EcoMate' }: CheckDetailsDialogProps) {
     const amount = (payment.cash || 0) + (payment.check || 0);
     const purpose = payment.productionStep?.stepType || payment.paymentFor || 'General';
     const date = payment.checkDate ? new Date(payment.checkDate) : new Date();
