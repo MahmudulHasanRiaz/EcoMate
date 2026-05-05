@@ -1,11 +1,13 @@
-// src/lib/prisma.ts
 import { PrismaClient } from '@prisma/client';
-
-// This setup prevents creating too many PrismaClient instances in a serverless environment like Next.js.
-// It creates a single, cached instance.
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 
 const prismaClientSingleton = () => {
-  return new PrismaClient();
+  const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+  });
+  const adapter = new PrismaPg(pool);
+  return new PrismaClient({ adapter });
 };
 
 declare global {

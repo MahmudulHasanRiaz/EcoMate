@@ -59,7 +59,7 @@ async function getServerCookieHeader(): Promise<string | undefined> {
     if (typeof window !== 'undefined') return undefined;
     try {
         const { cookies } = await import('next/headers');
-        const cookieHeader = cookies().toString();
+        const cookieHeader = (await cookies()).toString();
         return cookieHeader || undefined;
     } catch {
         return undefined;
