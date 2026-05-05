@@ -3,7 +3,7 @@ import { WebhookEvent } from '@clerk/nextjs/server';
 import { Webhook } from 'svix';
 import prisma from '@/lib/prisma';
 import { createClerkClient } from '@clerk/backend';
-import { getPresetPermissions } from '@/lib/staff-permissions';
+import { getPresetPermissions } from '@/lib/permissions';
 import { attachPageAccess } from '@/lib/page-access';
 import { generateStaffCode } from '@server/utils/staffCode';
 import { normalizeSalaryDetails, normalizeCommissionDetails } from '@server/utils/staff-compensation';
@@ -25,8 +25,8 @@ const prismaRoleMap: Record<string, string> = {
   'Call Centre Manager': 'CallCentreManager',
   'Courier Manager': 'CourierManager',
   'Courier Call Assistant': 'CourierCallAssistant',
-  'Vendor/Supplier': 'VendorSupplier',
-  'Partner': 'VendorSupplier',
+  'Vendor/Supplier': 'Vendor_Supplier',
+  'Partner': 'Vendor_Supplier',
   'Project Manager': 'ProjectManager',
   'Modarator Manager': 'ModaratorManager',
   'Custom': 'Custom',
@@ -45,7 +45,7 @@ const dbRoleToUiRole: Record<string, string> = {
   FinanceManager: 'Finance Manager',
   ModaratorManager: 'Modarator Manager',
   ProjectManager: 'Project Manager',
-  VendorSupplier: 'Vendor/Supplier',
+  Vendor_Supplier: 'Vendor/Supplier',
   Custom: 'Custom',
 };
 

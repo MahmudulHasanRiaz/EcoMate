@@ -81,7 +81,7 @@ export default function ProductDetailsPage() {
             <ShoppingBag className="h-10 w-10 text-muted-foreground" />
           </div>
           <h2 className="text-2xl font-bold">Product not found</h2>
-          <p className="text-muted-foreground">The product you're looking for might have been removed or is temporarily unavailable.</p>
+          <p className="text-muted-foreground">The product you&apos;re looking for might have been removed or is temporarily unavailable.</p>
           <Button asChild variant="default" className="mt-4 rounded-full px-8">
             <Link href="/shop">Back to Shop</Link>
           </Button>

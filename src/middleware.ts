@@ -2,11 +2,24 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
-const isProtectedRoute = createRouteMatcher(['/dashboard(.*)']);
+const isPublicRoute = createRouteMatcher([
+  '/api/webhooks/woo(.*)',
+  '/api/webhooks/clerk',
+  '/api/webhooks/pathao',
+  '/api/webhooks/carrybee',
+  '/api/webhooks/steadfast',
+  '/api/shop(.*)',
+  '/api/print/bulk(.*)',
+  '/api/woo/(.*)',
+  '/api/revalidate',
+  '/api/cron(.*)',
+]);
+
+const isDashboardRoute = createRouteMatcher(['/dashboard(.*)']);
+const isApiRoute = createRouteMatcher(['/api(.*)']);
 
 export default clerkMiddleware(async (auth, req: NextRequest) => {
-  if (isProtectedRoute(req)) {
-    // Await to avoid Next.js header sync warnings
+  if (isDashboardRoute(req) || (isApiRoute(req) && !isPublicRoute(req))) {
     await auth.protect();
   }
   return NextResponse.next();

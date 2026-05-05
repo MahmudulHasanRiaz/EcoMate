@@ -14,7 +14,6 @@ import { randomBytes } from 'crypto';
 
 // Optional dotenv load for local/dev usage. In containers, env is already injected.
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const dotenv = require('dotenv');
   dotenv.config();
 } catch {

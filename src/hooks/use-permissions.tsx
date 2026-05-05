@@ -56,7 +56,7 @@ function UserPermissionsProvider({ children }: { children: React.ReactNode }) {
             'CallCentreManager': 'Call Centre Manager',
             'CourierManager': 'Courier Manager',
             'CourierCallAssistant': 'Courier Call Assistant',
-            'VendorSupplier': 'Vendor/Supplier',
+            'Vendor_Supplier': 'Vendor/Supplier',
             'CuttingMan': 'Cutting Master',
             'FinanceManager': 'Finance Manager',
             'ModaratorManager': 'Modarator Manager',

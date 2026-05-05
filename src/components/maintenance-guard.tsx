@@ -11,7 +11,7 @@ export default async function MaintenanceGuard({ children }: { children: React.R
                 </div>
                 <h1 className="text-3xl font-bold tracking-tight mb-2">System Maintenance</h1>
                 <p className="text-muted-foreground max-w-md mx-auto mb-8">
-                    The database is currently being restored or updated. We'll be back online in a few minutes.
+                    The database is currently being restored or updated. We&apos;ll be back online in a few minutes.
                 </p>
                 <div className="w-16 h-1 bg-amber-500 rounded-full mx-auto animate-bounce" />
             </div>

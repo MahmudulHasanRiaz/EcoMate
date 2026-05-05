@@ -1213,7 +1213,7 @@ export function NewOrderDialog({ open, onOpenChange, onOrderCreated, orderToEdit
                                                         {isSearchProductsLoading && shouldUseServerProductSearch ? (
                                                             <div className="p-8 text-center text-muted-foreground text-sm">Searching products...</div>
                                                         ) : filteredProducts.length === 0 ? (
-                                                            <div className="p-8 text-center text-muted-foreground text-sm">No products found for "{searchQuery}"</div>
+                                                            <div className="p-8 text-center text-muted-foreground text-sm">No products found for &quot;{searchQuery}&quot;</div>
                                                         ) : (
                                                             filteredProducts.slice(0, 50).map((product: any) => (
                                                                 <div

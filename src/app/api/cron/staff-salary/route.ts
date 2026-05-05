@@ -4,12 +4,15 @@ import { ensureSalaryAccrualsForStaff } from '@/server/utils/staff-salary-accrua
 import { getAppTimezone } from '@/lib/timezone';
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET || process.env.WOO_WEBHOOK_SECRET || '';
-  if (secret) {
-    const header = req.headers.get('x-cron-secret') || '';
-    if (header !== secret) {
-      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-    }
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    console.error('[CRON_ERROR] CRON_SECRET is not configured');
+    return NextResponse.json({ ok: false, error: 'Configuration error' }, { status: 500 });
+  }
+
+  const header = req.headers.get('x-cron-secret');
+  if (header !== secret) {
+    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   try {

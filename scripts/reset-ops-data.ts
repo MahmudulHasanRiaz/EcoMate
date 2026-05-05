@@ -16,7 +16,6 @@ import { PrismaClient } from '@prisma/client';
 // Optional dotenv load for local/dev usage. In containers, env is already injected.
 let dotenvLoaded = false;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const dotenv = require('dotenv');
   dotenv.config();
   dotenvLoaded = true;

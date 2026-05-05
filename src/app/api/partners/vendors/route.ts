@@ -3,10 +3,14 @@ import prisma from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import { getVendors } from '@/server/modules/partners';
 import { revalidateTag } from 'next/cache';
+import { enforcePermission } from '@/lib/security';
 
 // GET all vendors
 export async function GET(req: NextRequest) {
   try {
+    const { allowed, error } = await enforcePermission('partners', 'read');
+    if (!allowed) return error;
+
     const url = req.nextUrl;
     const pageSize = Number(url.searchParams.get('pageSize')) || 20;
     const cursor = url.searchParams.get('cursor') || undefined;
@@ -25,6 +29,9 @@ export async function GET(req: NextRequest) {
 // POST a new vendor
 export async function POST(request: Request) {
   try {
+    const { allowed, error } = await enforcePermission('partners', 'create');
+    if (!allowed) return error;
+
     const body = await request.json();
     const { name, type, contactPerson, email, phone } = body;
 
@@ -49,6 +56,9 @@ export async function POST(request: Request) {
 // PUT (update) an existing vendor
 export async function PUT(request: Request) {
   try {
+    const { allowed, error } = await enforcePermission('partners', 'update');
+    if (!allowed) return error;
+
     const body = await request.json();
     const { id, rate: _rate, ...data } = body;
 
@@ -74,6 +84,9 @@ export async function PUT(request: Request) {
 // DELETE a vendor
 export async function DELETE(request: Request) {
   try {
+    const { allowed, error } = await enforcePermission('partners', 'delete');
+    if (!allowed) return error;
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

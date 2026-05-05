@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { revalidateTag } from 'next/cache';
+import { enforcePermission } from '@/lib/security';
 
 // GET all categories
 import { getCategories } from '@/services/categories';
@@ -9,6 +10,9 @@ import { getCategories } from '@/services/categories';
 // GET all categories
 export async function GET() {
   try {
+    const { allowed, error } = await enforcePermission('products', 'read');
+    if (!allowed) return error;
+
     const categories = await getCategories();
     return NextResponse.json(categories);
   } catch (error) {
@@ -20,6 +24,9 @@ export async function GET() {
 // POST a new category
 export async function POST(request: Request) {
   try {
+    const { allowed, error } = await enforcePermission('products', 'create');
+    if (!allowed) return error;
+
     const body = await request.json();
     const { name, parentId } = body;
 
@@ -49,6 +56,9 @@ export async function POST(request: Request) {
 // PUT (update) an existing category
 export async function PUT(request: Request) {
   try {
+    const { allowed, error } = await enforcePermission('products', 'update');
+    if (!allowed) return error;
+
     const body = await request.json();
     const { id, name, parentId } = body;
 
@@ -80,6 +90,9 @@ export async function PUT(request: Request) {
 // DELETE a category
 export async function DELETE(request: Request) {
   try {
+    const { allowed, error } = await enforcePermission('products', 'delete');
+    if (!allowed) return error;
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

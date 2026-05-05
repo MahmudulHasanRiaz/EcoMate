@@ -812,6 +812,7 @@ export type StaffMemberUI = {
         marketing: Permission | boolean;
         tasks: Permission | boolean;
         integrations: Permission | boolean;
+        pos: Permission | boolean;
         pageAccess?: Record<string, boolean>;
     };
     // Job dates

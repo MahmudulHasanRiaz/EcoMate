@@ -20,7 +20,7 @@ const staffRoleSchema = z.enum([
   'CallCentreManager',
   'CourierManager',
   'CourierCallAssistant',
-  'VendorSupplier',
+  'Vendor_Supplier',
   'Cutting Master',
   'CuttingMan',
   'Marketer',
@@ -28,6 +28,8 @@ const staffRoleSchema = z.enum([
   'FinanceManager',
   'Modarator Manager',
   'ModaratorManager',
+  'Project Manager',
+  'ProjectManager',
 ]);
 
 const paymentTypeSchema = z.enum(['Salary', 'Commission', 'Both']);

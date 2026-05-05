@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { clerkClient } from '@clerk/nextjs/server';
 import prisma from '@/lib/prisma';
-import { getPresetPermissions } from '@/lib/staff-permissions';
+import { getPresetPermissions } from '@/lib/permissions';
 import { attachPageAccess } from '@/lib/page-access';
 import { generateStaffCode } from '@server/utils/staffCode';
 import { enforcePermission } from '@/lib/security';
@@ -16,8 +16,8 @@ const roleMap: Record<string, string> = {
   'Call Centre Manager': 'CallCentreManager',
   'Courier Manager': 'CourierManager',
   'Courier Call Assistant': 'CourierCallAssistant',
-  'Vendor/Supplier': 'VendorSupplier',
-  'Partner': 'VendorSupplier',
+  'Vendor/Supplier': 'Vendor_Supplier',
+  'Partner': 'Vendor_Supplier',
   'Cutting Master': 'CuttingMan',
   'Marketer': 'Marketer',
   'Finance Manager': 'FinanceManager',

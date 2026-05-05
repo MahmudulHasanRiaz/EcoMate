@@ -27,9 +27,9 @@ export async function POST(req: NextRequest) {
 
     // Load saved settings (fallback to env if missing)
     const saved = await getSmsGatewaySettings();
-    const username = saved.username || process.env.NEXT_PUBLIC_MIM_SMS_USERNAME || '';
-    const apiKey = saved.apiKey || process.env.NEXT_PUBLIC_MIM_SMS_API_KEY || '';
-    const senderName = saved.senderName || process.env.NEXT_PUBLIC_MIM_SMS_SENDER_NAME || '';
+    const username = saved.username || process.env.MIM_SMS_USERNAME || process.env.NEXT_PUBLIC_MIM_SMS_USERNAME || '';
+    const apiKey = saved.apiKey || process.env.MIM_SMS_API_KEY || process.env.NEXT_PUBLIC_MIM_SMS_API_KEY || '';
+    const senderName = saved.senderName || process.env.MIM_SMS_SENDER_NAME || process.env.NEXT_PUBLIC_MIM_SMS_SENDER_NAME || '';
     const enabled = typeof saved.enabled === 'boolean' ? saved.enabled : true;
 
     if (!enabled) {

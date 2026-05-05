@@ -13,7 +13,7 @@ const prismaToUiRole: Record<string, StaffMemberUI['role']> = {
     CallCentreManager: 'Call Centre Manager',
     CourierManager: 'Courier Manager',
     CourierCallAssistant: 'Courier Call Assistant',
-    VendorSupplier: 'Vendor/Supplier',
+    Vendor_Supplier: 'Vendor/Supplier',
     CuttingMan: 'Cutting Master',
     Marketer: 'Marketer',
     FinanceManager: 'Finance Manager',

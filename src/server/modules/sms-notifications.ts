@@ -25,9 +25,9 @@ export async function sendSmsRaw(to: string | null | undefined, message: string)
 
   const gateway = await getSmsGatewaySettings();
   const configured: SmsGatewaySettings = {
-    username: gateway.username || process.env.NEXT_PUBLIC_MIM_SMS_USERNAME || '',
-    apiKey: gateway.apiKey || process.env.NEXT_PUBLIC_MIM_SMS_API_KEY || '',
-    senderName: gateway.senderName || process.env.NEXT_PUBLIC_MIM_SMS_SENDER_NAME || '',
+    username: gateway.username || process.env.MIM_SMS_USERNAME || process.env.NEXT_PUBLIC_MIM_SMS_USERNAME || '',
+    apiKey: gateway.apiKey || process.env.MIM_SMS_API_KEY || process.env.NEXT_PUBLIC_MIM_SMS_API_KEY || '',
+    senderName: gateway.senderName || process.env.MIM_SMS_SENDER_NAME || process.env.NEXT_PUBLIC_MIM_SMS_SENDER_NAME || '',
     enabled: gateway.enabled ?? true,
   };
 

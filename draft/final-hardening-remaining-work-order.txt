@@ -1,0 +1,245 @@
+EcoMate Final Hardening Remaining Work Order
+
+Role:
+You are the Executor for EcoMate. Read and follow:
+- AGENTS.md
+- agents/AGENTS.md
+- agents/direction/shared.md
+- agents/direction/review-checklist.md
+- agents/direction/role-executor.md
+- agents/direction/mode-agent.md
+- agents/direction/verification-matrix.md
+- agents/direction/release-runbook.md if you touch build/deploy behavior
+
+User-facing summaries must be in Bangla. Commands and technical acceptance criteria should remain in English.
+
+Goal:
+Finish the final verification and cleanup for the security hardening work without undoing the security fixes. The system must be safe to merge only after typecheck, lint, Prisma validation/generation, git diff checks, and production build verification are all clearly accounted for.
+
+Current audit findings from Codex:
+- `git diff --check` passes.
+- `node_modules/.bin/tsc --noEmit` passes.
+- `DATABASE_URL=... DIRECT_DATABASE_URL=... node_modules/.bin/prisma validate` passes, with warnings only.
+- `DATABASE_URL=... DIRECT_DATABASE_URL=... node_modules/.bin/prisma generate` passes, with Prisma config deprecation warning only.
+- `node_modules/.bin/eslint . --ext .js,.jsx,.ts,.tsx` exits 0 with 686 warnings and 0 errors.
+- `node_modules/.bin/next build` could not be verified in Codex local environment because the local Next SWC binary has a macOS code-signature issue and `npm` is not available in Codex PATH.
+- The previous executor reported `npm run build` fails in their environment because static generation attempts database queries and Clerk initialization without a running Postgres DB / valid Clerk configuration. Do not dismiss this as harmless until the Docker/CI build path is proven.
+
+Non-goals:
+- Do not redesign the app.
+- Do not refactor unrelated modules.
+- Do not remove or weaken API auth/security hardening.
+- Do not reintroduce private secrets as Docker build args.
+- Do not commit, push, deploy, or run production data migrations unless the user explicitly asks.
+
+Critical Rule:
+The Dockerfile currently runs `npm run build` during image build while `docker-compose.yml` no longer passes real private secrets or real `DATABASE_URL` as build args. Therefore, `next build` must either:
+1. succeed without a live production database and private Clerk secrets, or
+2. the deployment build strategy must be explicitly changed and documented without leaking secrets.
+
+Do not mark the work complete if `npm run build` only passes when private runtime secrets are injected into the image build.
+
+Step 1: Confirm repo state
+Run:
+```bash
+git status --short
+git diff --stat
+git diff --check
+```
+
+Expected:
+- Only intentional hardening/tooling files are changed.
+- No generated log files like `lint_output.txt` or `lint_full_output.txt`.
+- `git diff --check` exits 0.
+
+If unexpected files are changed:
+- Review them with `git diff -- <path>`.
+- Do not revert user changes blindly.
+- Remove only generated/noise files that are clearly from verification output.
+
+Step 2: Verify package and lint setup
+Inspect:
+- `package.json`
+- `package-lock.json`
+- `.eslintrc.json`
+
+Required state:
+- `package.json` has:
+```json
+"lint": "eslint . --ext .js,.jsx,.ts,.tsx"
+```
+- `next lint` must not be used.
+- Required dev dependencies are present:
+  - `eslint`
+  - `eslint-config-next`
+  - `@typescript-eslint/eslint-plugin`
+  - `@typescript-eslint/parser`
+- `.eslintrc.json` must not reference removed/invalid rules such as `@typescript-eslint/no-var-requires`.
+
+Run:
+```bash
+npm ci
+npm ls eslint eslint-config-next @typescript-eslint/eslint-plugin @typescript-eslint/parser
+npm run lint
+```
+
+Expected:
+- `npm ci` exits 0.
+- `npm ls ...` exits 0.
+- `npm run lint` exits 0.
+- Warnings are acceptable for this pass only if there are 0 errors.
+
+If lint fails because it scans non-source/generated assets:
+- Prefer `ignorePatterns` in `.eslintrc.json` for clearly non-source paths only, such as:
+  - `draft/**`
+  - `public/vendor/**`
+  - `.next/**`
+  - `node_modules/**`
+- Do not suppress or ignore `src/**` errors.
+
+Step 3: Verify TypeScript and Prisma
+Run:
+```bash
+npm run typecheck
+DATABASE_URL="postgres://user:pass@localhost:5432/db" DIRECT_DATABASE_URL="postgres://user:pass@localhost:5432/db" npx prisma validate
+DATABASE_URL="postgres://user:pass@localhost:5432/db" DIRECT_DATABASE_URL="postgres://user:pass@localhost:5432/db" npx prisma generate
+```
+
+Expected:
+- Typecheck exits 0.
+- Prisma validate exits 0.
+- Prisma generate exits 0.
+
+Known non-blocking warnings to report:
+- `package.json#prisma` config deprecation for Prisma 7.
+- Existing Prisma schema warning about `onDelete: SetNull` with required referenced field.
+
+Do not fix those warnings in this pass unless they block build or runtime. Record them as follow-up risks.
+
+Step 4: Verify security hardening was not broken
+Review these files and confirm the behavior:
+- `src/middleware.ts`
+- `src/lib/permissions.ts`
+- `src/types/index.ts`
+- `src/lib/secret-utils.ts`
+- `src/server/modules/staff-auth.ts`
+- `src/server/modules/staff-list.ts`
+- `src/app/api/settings/integrations/woo/route.ts`
+- `src/app/api/settings/integrations/courier/route.ts`
+- `src/app/api/settings/sms-gateway/route.ts`
+- `src/app/api/settings/notifications/route.ts`
+- `src/app/api/sys/repair/route.ts`
+- `src/app/api/debug/woo-check/route.ts`
+- `src/app/api/debug/verify-zones/route.ts`
+- `src/app/api/products/categories/route.ts`
+- `src/app/api/partners/suppliers/route.ts`
+- `src/app/api/partners/vendors/route.ts`
+- `src/app/api/products/sync-stock/route.ts`
+- `src/app/api/uploads/purchase-memo/route.ts`
+- `src/app/api/webhooks/steadfast/route.ts`
+- `prisma/seed.ts`
+
+Acceptance criteria:
+- `/dashboard(.*)` is protected by Clerk.
+- Non-public `/api/*` routes are protected by Clerk.
+- Public API allowlist is narrow and intentional:
+  - `/api/webhooks/woo(.*)`
+  - `/api/webhooks/clerk`
+  - `/api/webhooks/pathao`
+  - `/api/webhooks/carrybee`
+  - `/api/webhooks/steadfast`
+  - `/api/shop(.*)`
+  - `/api/print/bulk(.*)`
+  - `/api/woo/(.*)` only because these routes validate Woo API keys internally
+  - `/api/revalidate` only because it validates `REVALIDATION_TOKEN`
+  - `/api/cron(.*)` only because each cron route validates `CRON_SECRET`
+- `/api/webhooks/failures(.*)` is not public at middleware level.
+- Cron routes fail closed when `CRON_SECRET` is missing.
+- Steadfast webhook requires a valid Bearer token and does not update orders without matching active integration.
+- Woo settings GET does not return raw `consumerKey`, `consumerSecret`, `webhookSecret`, or `apiKey`.
+- Courier settings GET/POST/PUT responses do not return raw credentials.
+- Masked secret values sent back in update requests preserve existing real DB values.
+- `pos` exists in permission types and presets.
+- Active Prisma enum mapping uses `Vendor_Supplier`, not `VendorSupplier`.
+- `src/prisma/schema.prisma` remains removed or clearly non-active; active schema is `prisma/schema.prisma`.
+
+Step 5: Build verification is mandatory
+Run a clean production build in an environment with a valid npm installation:
+```bash
+npm run build
+```
+
+If local macOS build fails due to Next SWC code-signature issues:
+1. Clear/reinstall dependencies in a normal terminal:
+```bash
+rm -rf node_modules
+npm ci
+```
+2. Re-run:
+```bash
+npm run build
+```
+
+If build fails because pages/API code query Postgres or initialize Clerk during prerender:
+- Do not call it "environment only" and stop.
+- Identify the exact route/page in the build log.
+- For each failing route/page, decide the correct fix:
+  - If the route/page is request-time only, mark it dynamic with the appropriate Next.js pattern, e.g. `export const dynamic = 'force-dynamic'`.
+  - If it should be static, avoid direct runtime DB/Clerk access during build.
+  - If it truly requires build-time data, document the deployment requirement and confirm it does not require private secrets in Docker build args.
+- Re-run `npm run build` after the fix.
+
+Required final build acceptance:
+- `npm run build` exits 0 in a clean environment.
+- The build does not require leaking private runtime secrets into Docker build args.
+- Docker image build path remains compatible with the Dockerfile and docker-compose setup.
+
+Step 6: Runtime smoke checks after build passes
+Start local app with real dev env:
+```bash
+npm run dev
+```
+
+Smoke test manually or with HTTP/browser checks:
+- Unauthenticated `/dashboard` redirects/blocks.
+- Unauthenticated sensitive API returns 401/403:
+  - `/api/settings/integrations/woo`
+  - `/api/settings/integrations/courier`
+  - `/api/sys/repair`
+  - `/api/debug/woo-check`
+- Public shop endpoints still work if intended:
+  - `/api/shop/products`
+  - `/api/shop/categories`
+- Woo plugin routes return 401 without API key, and work with valid API key:
+  - `/api/woo/plugin-config`
+  - `/api/woo/status`
+  - `/api/woo/restriction-check`
+  - `/api/woo/incomplete-orders`
+- Cron routes return 401 without `x-cron-secret`, 500 if `CRON_SECRET` is missing, and work only with the correct header.
+- Settings pages still load with authenticated Admin.
+- Staff create/invite/update still maps `Vendor/Supplier` to `Vendor_Supplier`.
+- POS routes no longer fail because of missing `pos` permission.
+
+Step 7: Final report format
+Return a Bangla final report with these sections:
+1. Changed files summary.
+2. Verification commands and exact pass/fail status.
+3. Build result and whether it required DB/Clerk at build time.
+4. Security behavior confirmed.
+5. Remaining warnings/risks.
+6. Files that should not be committed, if any.
+
+Do not say "complete" unless all mandatory checks pass:
+- `git diff --check`
+- `npm ci`
+- `npm run typecheck`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npm run lint`
+- `npm run build`
+
+If any check fails, stop and report:
+- exact command
+- exact error summary
+- affected file/route
+- proposed fix

@@ -250,7 +250,6 @@ async function main() {
     // This allows production to run in --input mode even if csv-parse isn't installed there.
     let csvParse: any;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       csvParse = require('csv-parse/sync')?.parse;
     } catch (e: any) {
       console.error('Error: Missing dependency "csv-parse".');

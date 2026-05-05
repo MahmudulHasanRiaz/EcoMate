@@ -213,7 +213,7 @@ export function AttendanceEditModal({ isOpen, onOpenChange, record, onSuccess }:
                          <span className="font-semibold">{log.editorName}</span>
                          <span className="text-muted-foreground text-xs">{format(new Date(log.createdAt), 'PP p')}</span>
                       </div>
-                      <p className="italic text-muted-foreground mb-2">"{log.reason}"</p>
+                      <p className="italic text-muted-foreground mb-2">&quot;{log.reason}&quot;</p>
                       
                       {(log.oldCheckIn !== log.newCheckIn || log.oldCheckOut !== log.newCheckOut) && (
                         <div className="text-xs space-y-1 mb-2 border-l-2 pl-2 border-primary/20">

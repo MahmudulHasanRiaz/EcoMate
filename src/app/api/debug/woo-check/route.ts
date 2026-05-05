@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
+import { enforcePermission } from '@/lib/security';
+
 export async function GET(req: NextRequest) {
+    const { allowed, error } = await enforcePermission('integrations', 'read');
+    if (!allowed) return error;
+
     const { searchParams } = new URL(req.url);
     const sku = searchParams.get('sku');
 

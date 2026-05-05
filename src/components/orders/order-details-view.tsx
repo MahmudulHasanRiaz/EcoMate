@@ -324,6 +324,42 @@ type StatusUpdateFormValues = z.infer<typeof statusUpdateSchema>;
 const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
 const reportCache = new Map<string, { data: DeliveryReport, timestamp: number }>();
 
+function ProductThumb({ product, size = 64 }: { product: OrderProduct; size?: number }) {
+    const image = (product as any).image ?? (product as any).imageUrl ?? (product as any).product?.image;
+    const initialSrc = resolveImageSrc(image);
+    const [src, setSrc] = React.useState(initialSrc);
+    const [show404, setShow404] = React.useState(initialSrc.includes('placeholder'));
+    const alt = product.name && product.name.trim().length > 0 ? product.name : 'Product image';
+
+    React.useEffect(() => {
+        const image = (product as any).image ?? (product as any).imageUrl ?? (product as any).product?.image;
+        const next = resolveImageSrc(image);
+        setSrc(next);
+        setShow404(next.includes('placeholder'));
+    }, [product]);
+
+    return (
+        <div className="relative" style={{ width: size, height: size }}>
+            <Image
+                alt={alt}
+                className="h-full w-full rounded-md object-cover"
+                height={size}
+                width={size}
+                src={src}
+                onError={() => {
+                    setSrc('/placeholder.svg');
+                    setShow404(true);
+                }}
+            />
+            {show404 && (
+                <div className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    404
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function OrderDetailsView({ orderId, onClose, lockToken, onUpdated }: { orderId: string, onClose?: () => void, lockToken?: string, onUpdated?: () => void }) {
 
     const { user: clerkUser } = useUser();
@@ -567,44 +603,6 @@ export function OrderDetailsView({ orderId, onClose, lockToken, onUpdated }: { o
         }
     };
 
-    const productImageSrc = React.useCallback((product: OrderProduct) => {
-        const image = (product as any).image ?? (product as any).imageUrl ?? (product as any).product?.image;
-        return resolveImageSrc(image);
-    }, []);
-
-    const ProductThumb = React.useCallback(({ product, size = 64 }: { product: OrderProduct; size?: number }) => {
-        const initialSrc = productImageSrc(product);
-        const [src, setSrc] = React.useState(initialSrc);
-        const [show404, setShow404] = React.useState(initialSrc.includes('placeholder'));
-        const alt = product.name && product.name.trim().length > 0 ? product.name : 'Product image';
-
-        React.useEffect(() => {
-            const next = productImageSrc(product);
-            setSrc(next);
-            setShow404(next.includes('placeholder'));
-        }, [product, productImageSrc]);
-
-        return (
-            <div className="relative" style={{ width: size, height: size }}>
-                <Image
-                    alt={alt}
-                    className="h-full w-full rounded-md object-cover"
-                    height={size}
-                    width={size}
-                    src={src}
-                    onError={() => {
-                        setSrc('/placeholder.svg');
-                        setShow404(true);
-                    }}
-                />
-                {show404 && (
-                    <div className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        404
-                    </div>
-                )}
-            </div>
-        );
-    }, [productImageSrc]);
 
     const deriveShippingAddress = React.useCallback((shippingAddress: any) => {
         const topLevel = shippingAddress && typeof shippingAddress === 'object'

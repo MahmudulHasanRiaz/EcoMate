@@ -1,34 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { revalidateTag } from 'next/cache';
+import { getStaffAuthDetails } from '@/server/modules/staff-auth';
+import { maskSensitiveFields, isMaskedSecret } from '@/lib/secret-utils';
+import { apiUnauthorized, apiForbidden, apiSuccess, apiServerError, apiError } from '@/lib/error';
 
 export const revalidate = 0;
 
 export async function GET() {
+  const auth = await getStaffAuthDetails();
+  if (auth.status !== 'ok') return apiUnauthorized();
+  if (auth.staff.role !== 'Admin' && auth.staff.role !== 'SuperAdmin' && !auth.staff.permissions.settings.read) {
+    return apiForbidden();
+  }
+
   try {
     const couriers = await prisma.courierIntegration.findMany({
       orderBy: { createdAt: 'desc' },
       include: { Business: true },
     });
 
-    return NextResponse.json(
+    return apiSuccess(
       couriers.map((c) => ({
         ...c,
+        credentials: maskSensitiveFields(c.credentials),
         businessName: c.Business?.name || '',
       }))
     );
   } catch (error) {
-    console.error('[COURIER_INTEGRATION_GET_ERROR]', error);
-    return NextResponse.json({ message: 'Failed to fetch integrations' }, { status: 500 });
+    return apiServerError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await getStaffAuthDetails();
+  if (auth.status !== 'ok') return apiUnauthorized();
+  if (auth.staff.role !== 'Admin' && auth.staff.role !== 'SuperAdmin' && !auth.staff.permissions.settings.update) {
+    return apiForbidden();
+  }
+
   const body = await req.json().catch(() => ({}));
   const { businessId, courierName, credentials, status = 'Active', deliveryType, itemType } = body || {};
 
   if (!businessId || !courierName || !credentials) {
-    return NextResponse.json({ message: 'businessId, courierName, and credentials are required' }, { status: 400 });
+    return apiError('businessId, courierName, and credentials are required', 400);
   }
 
   try {
@@ -44,26 +59,54 @@ export async function POST(req: NextRequest) {
       include: { Business: true },
     });
     revalidateTag('integrations');
-    return NextResponse.json({ ...created, businessName: created.Business?.name || '' });
+    return apiSuccess({
+      ...created,
+      credentials: maskSensitiveFields(created.credentials),
+      businessName: created.Business?.name || ''
+    }, 'Integration created');
   } catch (err: any) {
     if (err?.code === 'P2002') {
-      return NextResponse.json({ message: 'Integration already exists for this business/courier' }, { status: 409 });
+      return apiError('Integration already exists for this business/courier', 409);
     }
-    console.error('[COURIER_INTEGRATION_CREATE_ERROR]', err);
-    return NextResponse.json({ message: 'Failed to create integration' }, { status: 500 });
+    return apiServerError(err);
   }
 }
 
+function mergeCredentials(current: any, updated: any): any {
+  if (!updated || typeof updated !== 'object') return updated;
+  if (!current || typeof current !== 'object') return updated;
+
+  const result = { ...current, ...updated };
+  for (const key of Object.keys(updated)) {
+    const val = updated[key];
+    if (isMaskedSecret(val)) {
+      result[key] = current[key];
+    } else if (val && typeof val === 'object' && !Array.isArray(val)) {
+      result[key] = mergeCredentials(current[key], val);
+    }
+  }
+  return result;
+}
+
 export async function PUT(req: NextRequest) {
+  const auth = await getStaffAuthDetails();
+  if (auth.status !== 'ok') return apiUnauthorized();
+  if (auth.staff.role !== 'Admin' && auth.staff.role !== 'SuperAdmin' && !auth.staff.permissions.settings.update) {
+    return apiForbidden();
+  }
+
   const body = await req.json().catch(() => ({}));
   const { id, credentials, status, deliveryType, itemType } = body || {};
-  if (!id) return NextResponse.json({ message: 'id is required' }, { status: 400 });
+  if (!id) return apiError('id is required', 400);
 
   try {
+    const current = await prisma.courierIntegration.findUnique({ where: { id } });
+    const mergedCredentials = credentials ? mergeCredentials(current?.credentials, credentials) : undefined;
+
     const updated = await prisma.courierIntegration.update({
       where: { id },
       data: {
-        credentials: credentials ?? undefined,
+        credentials: mergedCredentials ?? undefined,
         status: status ?? undefined,
         deliveryType: deliveryType ?? undefined,
         itemType: itemType ?? undefined,
@@ -71,27 +114,35 @@ export async function PUT(req: NextRequest) {
       include: { Business: true },
     });
     revalidateTag('integrations');
-    return NextResponse.json({ ...updated, businessName: updated.Business?.name || '' });
+    return apiSuccess({
+      ...updated,
+      credentials: maskSensitiveFields(updated.credentials),
+      businessName: updated.Business?.name || ''
+    }, 'Integration updated');
   } catch (err) {
-    console.error('[COURIER_INTEGRATION_UPDATE_ERROR]', err);
-    return NextResponse.json({ message: 'Failed to update integration' }, { status: 500 });
+    return apiServerError(err);
   }
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await getStaffAuthDetails();
+  if (auth.status !== 'ok') return apiUnauthorized();
+  if (auth.staff.role !== 'Admin' && auth.staff.role !== 'SuperAdmin' && !auth.staff.permissions.settings.delete) {
+    return apiForbidden();
+  }
+
   const { searchParams } = new URL(req.url);
   const id = searchParams.get('id');
 
-  if (!id) return NextResponse.json({ message: 'id is required' }, { status: 400 });
+  if (!id) return apiError('id is required', 400);
 
   try {
     await prisma.courierIntegration.delete({
       where: { id },
     });
     revalidateTag('integrations');
-    return NextResponse.json({ message: 'Integration deleted successfully' });
+    return apiSuccess(null, 'Integration deleted successfully');
   } catch (err) {
-    console.error('[COURIER_INTEGRATION_DELETE_ERROR]', err);
-    return NextResponse.json({ message: 'Failed to delete integration' }, { status: 500 });
+    return apiServerError(err);
   }
 }

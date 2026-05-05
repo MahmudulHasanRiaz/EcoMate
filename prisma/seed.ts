@@ -35,7 +35,7 @@ const roleMap: Record<string, string> = {
     'Call Centre Manager': 'CallCentreManager',
     'Courier Manager': 'CourierManager',
     'Courier Call Assistant': 'CourierCallAssistant',
-    'Vendor/Supplier': 'VendorSupplier',
+    'Vendor/Supplier': 'Vendor_Supplier',
     'Custom': 'Custom',
 };
 
@@ -53,6 +53,7 @@ const staffSeed = [
         commissionDetails: {},
         permissions: {},
         businessIds: ['BIZ001', 'BIZ002', 'BIZ003'],
+        staffCode: 'EM001',
     },
     {
         id: 'STAFF002',
@@ -73,6 +74,7 @@ const staffSeed = [
         },
         permissions: {},
         businessIds: ['BIZ001', 'BIZ003'],
+        staffCode: 'EM002',
     },
     {
         id: 'STAFF003',
@@ -87,6 +89,7 @@ const staffSeed = [
         commissionDetails: { onOrderPacked: 20 },
         permissions: {},
         businessIds: ['BIZ001'],
+        staffCode: 'EM003',
     },
     {
         id: 'STAFF004',
@@ -101,6 +104,7 @@ const staffSeed = [
         commissionDetails: {},
         permissions: {},
         businessIds: ['BIZ001'],
+        staffCode: 'EM004',
     },
     {
         id: 'STAFF005',
@@ -115,6 +119,7 @@ const staffSeed = [
         commissionDetails: {},
         permissions: {},
         businessIds: ['BIZ001', 'BIZ002'],
+        staffCode: 'EM005',
     },
     {
         id: 'STAFF006',
@@ -129,6 +134,7 @@ const staffSeed = [
         commissionDetails: {},
         permissions: {},
         businessIds: ['BIZ001'],
+        staffCode: 'EM006',
     },
 ];
 
@@ -187,6 +193,7 @@ async function main() {
                 salaryDetails: member.salaryDetails as any,
                 commissionDetails: member.commissionDetails as any,
                 permissions: member.permissions as any,
+                staffCode: (member as any).staffCode,
                 accessibleBusinesses: {
                     set: [],
                     connect: member.businessIds.map(id => ({ id })),
@@ -204,6 +211,7 @@ async function main() {
                 salaryDetails: member.salaryDetails as any,
                 commissionDetails: member.commissionDetails as any,
                 permissions: member.permissions as any,
+                staffCode: (member as any).staffCode,
                 accessibleBusinesses: {
                     connect: member.businessIds.map(id => ({ id })),
                 },

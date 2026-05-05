@@ -711,7 +711,7 @@ export default function CustomerDetailsPage() {
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Package className="h-12 w-12 text-muted-foreground/50 mb-3" />
               <p className="text-muted-foreground font-medium">No orders found</p>
-              <p className="text-sm text-muted-foreground/70 mt-1">This customer hasn't placed any orders yet</p>
+              <p className="text-sm text-muted-foreground/70 mt-1">This customer hasn&apos;t placed any orders yet</p>
             </div>
           )}
         </CardContent>

@@ -9,7 +9,7 @@
     "build": "npx prisma generate && next build",
     "start": "next start",
     "worker": "tsx scripts/bullmq-worker.ts",
-    "lint": "next lint",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "typecheck": "tsc --noEmit",
     "migrate-dev": "npx prisma migrate dev",
     "studio": "npx prisma studio",
@@ -80,10 +80,17 @@
     "@types/node": "^20",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.0",
+    "@typescript-eslint/parser": "^8.59.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.15",
     "genkit-cli": "^1.20.0",
     "prisma": "^6.19.1",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.16.2",
     "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }

@@ -37,7 +37,6 @@ import path from 'path';
 
 // Optional dotenv load for local/dev. In containers, env is injected.
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const dotenv = require('dotenv');
   dotenv.config();
 } catch {

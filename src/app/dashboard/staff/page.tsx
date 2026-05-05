@@ -50,7 +50,7 @@ import { getStaff } from "@/services/staff";
 import type { StaffMember, Permission, StaffRole, Business } from "@/types";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getPresetPermissions, defaultPermissions } from "@/lib/staff-permissions";
+import { getPresetPermissions, DEFAULT_PERMISSIONS } from "@/lib/permissions";
 import { PAGE_ACCESS_LIST, normalizePageAccess } from "@/lib/page-access";
 import { permissionActions } from "./constants";
 import { defaultBadgeRules, getBadgeForValue, getDeliverySuccessRate, normalizeBadgeRules } from '@/lib/badges';
@@ -165,7 +165,7 @@ const StaffForm = React.forwardRef<StaffFormHandle, { staffMember?: StaffMember 
     const [jobStartDate, setJobStartDate] = useState<string>(staffMember?.jobStartDate || '');
     const [jobEndDate, setJobEndDate] = useState<string>(staffMember?.jobEndDate || '');
     const [permissions, setPermissions] = useState<StaffMember['permissions']>(() => {
-        const base = staffMember?.permissions || defaultPermissions;
+        const base = staffMember?.permissions || DEFAULT_PERMISSIONS;
         return {
             ...base,
             pageAccess: normalizePageAccess(base.pageAccess as any, staffMember?.role, base),

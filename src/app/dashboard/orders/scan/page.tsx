@@ -490,7 +490,7 @@ export default function ScanOrdersPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Are you sure you want to apply the action "{selectedAction}" to {items.length} scanned orders? This action cannot be undone.
+                    Are you sure you want to apply the action &quot;{selectedAction}&quot; to {items.length} scanned orders? This action cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
