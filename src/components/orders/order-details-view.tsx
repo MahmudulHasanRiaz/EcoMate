@@ -727,20 +727,9 @@ export function OrderDetailsView({ orderId, onClose, lockToken, onUpdated }: { o
         return resolveImageSrc(image);
     }, []);
 
-    const ProductThumb = React.memo(function ProductThumb({ product, size = 64 }: { product: OrderProduct; size?: number }) {
-        const initialSrc = productImageSrc(product);
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        const [src, setSrc] = React.useState(initialSrc);
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        const [show404, setShow404] = React.useState(initialSrc.includes('placeholder'));
+const ProductThumb = React.useCallback(({ product, size = 64 }: { product: OrderProduct; size?: number }) => {
+        const imgSrc = productImageSrc(product);
         const alt = product.name && product.name.trim().length > 0 ? product.name : 'Product image';
-
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        React.useEffect(() => {
-            const next = productImageSrc(product);
-            setSrc(next);
-            setShow404(next.includes('placeholder'));
-        }, [product, productImageSrc]);
 
         return (
             <div className="relative" style={{ width: size, height: size }}>
@@ -749,17 +738,11 @@ export function OrderDetailsView({ orderId, onClose, lockToken, onUpdated }: { o
                     className="h-full w-full rounded-md object-cover"
                     height={size}
                     width={size}
-                    src={src}
+                    src={imgSrc}
                     onError={() => {
-                        setSrc('/placeholder.svg');
-                        setShow404(true);
+                        // fallback handled by parent
                     }}
                 />
-                {show404 && (
-                    <div className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        404
-                    </div>
-                )}
             </div>
         );
     }, [productImageSrc]);

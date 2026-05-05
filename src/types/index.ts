@@ -154,6 +154,9 @@ export type Product = {
 
     brandId?: string | null;
     brand?: Brand | null;
+
+    // Video
+    videoUrl?: string | null;
 };
 
 export type OrderStatus =
