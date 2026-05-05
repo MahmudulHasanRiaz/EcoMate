@@ -244,26 +244,9 @@ export default function PurchaseOrderDetailsClientPage({
 
     const [purchaseOrder, setPurchaseOrder] = useState(initialPurchaseOrder);
 
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
     const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
-    const [activeStep, setActiveStep] = useState<'fabric' | 'printing' | 'cutting' | 'finishing'>('fabric');
-
-    useEffect(() => {
-        if (purchaseOrder) {
-            const stepMap: Record<string, 'fabric' | 'printing' | 'cutting' | 'finishing'> = {
-                PLANNING: 'fabric',
-                FABRIC: 'fabric',
-                PRINTING: 'printing',
-                CUTTING: 'cutting',
-                COMPLETED: 'finishing',
-            };
-            const currentId = stepMap[(purchaseOrder as any).currentStep] || 'fabric';
-            setActiveStep(currentId);
-        }
-    }, [purchaseOrder]);
-
-    const stepIndex = (id: 'fabric' | 'printing' | 'cutting' | 'finishing') => productionStepDefs.findIndex((s) => s.id === id);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploadTarget, setUploadTarget] = useState<'general' | ProductionStepType | null>(null);
 
     const [isReceiveDialogOpen, setIsReceiveDialogOpen] = useState(false);
@@ -2363,6 +2346,7 @@ export default function PurchaseOrderDetailsClientPage({
     }
 
     type StepId = 'fabric' | 'printing' | 'cutting' | 'finishing';
+    const stepIndex = (id: StepId) => productionStepDefs.findIndex((s) => s.id === id);
     const currentStepMap: Record<string, StepId> = {
         PLANNING: 'fabric',
         FABRIC: 'fabric',
@@ -2371,6 +2355,12 @@ export default function PurchaseOrderDetailsClientPage({
         COMPLETED: 'finishing',
     };
     const currentStepId: StepId = currentStepMap[(purchaseOrder as any).currentStep] || 'fabric';
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [activeStep, setActiveStep] = useState<StepId>(currentStepId);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useEffect(() => {
+        setActiveStep(currentStepId);
+    }, [currentStepId]);
     const isStepEnabled = (id: StepId) => {
         if ((purchaseOrder as any).currentStep === 'COMPLETED') return true;
         return stepIndex(id) <= stepIndex(currentStepId);

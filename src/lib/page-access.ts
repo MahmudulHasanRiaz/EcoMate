@@ -25,6 +25,7 @@ export const PAGE_ACCESS_KEYS = [
   'pages.webhookFailures',
   'pages.staffAssignmentReport',
   'pages.saleReport',
+  'pages.wholesaleManagement',
 ] as const;
 
 export type PageAccessKey = typeof PAGE_ACCESS_KEYS[number];
@@ -54,6 +55,7 @@ export const PAGE_ACCESS_LIST: { key: PageAccessKey; label: string; routes: stri
   { key: 'pages.webhookFailures', label: 'Webhook Failures', routes: '/dashboard/webhook-failures' },
   { key: 'pages.staffAssignmentReport', label: 'Staff Assignment Report', routes: '/dashboard/staff/assignment-report' },
   { key: 'pages.saleReport', label: 'Sale Report', routes: '/dashboard/orders/sale-report' },
+  { key: 'pages.wholesaleManagement', label: 'Wholesale Management', routes: '/dashboard/wholesale/*' },
 ];
 
 const ROLE_PAGE_ACCESS: Record<StaffRole, PageAccessKey[] | 'ALL'> = {
@@ -81,6 +83,7 @@ const ROLE_PAGE_ACCESS: Record<StaffRole, PageAccessKey[] | 'ALL'> = {
     'pages.webhookFailures',
     'pages.staffAssignmentReport',
     'pages.saleReport',
+    'pages.wholesaleManagement',
   ],
   Moderator: [
     'pages.dashboard',
@@ -224,6 +227,13 @@ const ROLE_PAGE_ACCESS: Record<StaffRole, PageAccessKey[] | 'ALL'> = {
     'pages.customers',
     'pages.tasks',
   ],
+  'Sales Representative': [
+    'pages.dashboard',
+    'pages.products',
+    'pages.orders',
+    'pages.customers',
+    'pages.tasks',
+  ],
   Custom: [],
 };
 
@@ -250,6 +260,7 @@ const MODULE_PAGE_FALLBACK: Partial<Record<PageAccessKey, keyof StaffMember['per
   'pages.webhookFailures': 'integrations',
   'pages.staffAssignmentReport': 'tasks',
   'pages.saleReport': 'orders',
+  'pages.wholesaleManagement': 'wholesaleManagement',
 };
 
 const buildEmptyPageAccess = (): Record<PageAccessKey, boolean> =>
@@ -341,5 +352,6 @@ export function getPageAccessKey(pathname: string): PageAccessKey | null {
   if (pathname.startsWith('/dashboard/marketing')) return 'pages.marketing';
   if (pathname.startsWith('/dashboard/tasks')) return 'pages.tasks';
   if (pathname.startsWith('/dashboard/webhook-failures')) return 'pages.webhookFailures';
+  if (pathname.startsWith('/dashboard/wholesale')) return 'pages.wholesaleManagement';
   return null;
 }

@@ -808,7 +808,7 @@ function CourierIntegrationDialog({
                                             <Alert>
                                                 <AlertTitle>No cities found</AlertTitle>
                                                 <AlertDescription>
-                                                    Add credentials and use &quot;Reload list&quot; to fetch the latest locations.
+                                                    Add credentials and use "Reload list" to fetch the latest locations.
                                                 </AlertDescription>
                                             </Alert>
                                         )}

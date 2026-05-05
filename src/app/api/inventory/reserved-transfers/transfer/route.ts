@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { apiServerError, apiSuccess, apiError } from "@/lib/error";
 import { enforcePermission } from "@/lib/security";
-import { transferReservedStockAggregated } from "@/app/dashboard/inventory/actions";
+import { transferReservedStockAggregatedLogic } from "@/server/modules/inventory-transfers";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { productId, variantId, fromLocationId, quantity, note } = body;
 
-    const result = await transferReservedStockAggregated({
+    const result = await transferReservedStockAggregatedLogic({
       productId,
       variantId,
       fromLocationId,

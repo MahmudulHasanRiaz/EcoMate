@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { getGeneralSettings } from '@server/utils/app-settings';
 import {
     formatAllocationSummary,
     releaseReservedStockAcrossLots,
@@ -12,6 +13,33 @@ function createInsufficientStockError(message: string) {
     err.code = 'INSUFFICIENT_STOCK';
     return err;
 }
+
+export const PRODUCT_WITH_BRAND_INCLUDE = {
+  include: {
+    Brand: { select: { id: true, name: true, type: true } },
+    variants: true,
+    comboItems: {
+      include: {
+        child: {
+          include: {
+            Brand: { select: { id: true, name: true, type: true } },
+            variants: true,
+          }
+        }
+      }
+    }
+  }
+} as const;
+
+export const ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE = {
+  include: {
+    products: {
+      include: {
+        product: PRODUCT_WITH_BRAND_INCLUDE,
+      }
+    }
+  }
+} as const;
 
 /**
  * Strict combo component resolver.
@@ -117,8 +145,8 @@ async function getExistingAllocationQty(
     return rows.reduce((sum, r) => sum + (r.quantity || 0), 0);
 }
 
-export function aggregateOrderRequirements(order: any): Map<string, { productId: string; variantId: string | null; quantity: number; sku: string }> {
-    const aggregated = new Map<string, { productId: string; variantId: string | null; quantity: number; sku: string }>();
+export function aggregateOrderRequirements(order: any): Map<string, { productId: string; variantId: string | null; quantity: number; sku: string; brandType?: string; isPublished?: boolean }> {
+    const aggregated = new Map<string, { productId: string; variantId: string | null; quantity: number; sku: string; brandType?: string; isPublished?: boolean }>();
 
     for (const orderProduct of order.products || []) {
         const qty = Number(orderProduct.quantity || 0);
@@ -131,19 +159,48 @@ export function aggregateOrderRequirements(order: any): Map<string, { productId:
                 if (compQty <= 0) continue;
                 const key = `${component.productId}:${component.variantId ?? ''}`;
                 const sku = component.variant?.sku || component.sku || component.child?.sku || component.productId;
+                const brandType = component.child?.Brand?.type;
                 const existing = aggregated.get(key);
-                if (existing) existing.quantity += compQty;
-                else aggregated.set(key, { productId: component.productId, variantId: component.variantId || null, quantity: compQty, sku });
+                if (existing) {
+                    existing.quantity += compQty;
+                } else {
+                    aggregated.set(key, {
+                        productId: component.productId,
+                        variantId: component.variantId || null,
+                        quantity: compQty,
+                        sku,
+                        brandType,
+                        isPublished: component.child?.isPublished
+                    });
+                }
             }
         } else {
             const key = `${orderProduct.productId}:${orderProduct.variantId ?? ''}`;
             const variant = orderProduct.product?.variants?.find((v: any) => v.id === orderProduct.variantId);
             const sku = variant?.sku || orderProduct.product?.sku || orderProduct.sku || orderProduct.productId;
+            const brandType = orderProduct.product?.Brand?.type;
             const existing = aggregated.get(key);
-            if (existing) existing.quantity += qty;
-            else aggregated.set(key, { productId: orderProduct.productId, variantId: orderProduct.variantId || null, quantity: qty, sku });
+            if (existing) {
+                existing.quantity += qty;
+            } else {
+                aggregated.set(key, {
+                    productId: orderProduct.productId,
+                    variantId: orderProduct.variantId || null,
+                    quantity: qty,
+                    sku,
+                    brandType,
+                    isPublished: orderProduct.product?.isPublished
+                });
+            }
         }
     }
+    // Filter out 'Out' brand products from inventory requirements
+    for (const [key, value] of aggregated.entries()) {
+        if (value.brandType === 'Out') {
+            aggregated.delete(key);
+        }
+    }
+
     return aggregated;
 }
 
@@ -153,12 +210,19 @@ export function aggregateOrderRequirements(order: any): Map<string, { productId:
 export async function handleStockReservation(tx: Prisma.TransactionClient, order: any, user: string, locationId?: string | null) {
     if (!order.products || order.products.length === 0) return;
 
+    const settings = await getGeneralSettings();
+    const isPublishMode = settings.stockSyncMode === 'publish';
+
     const aggregated = aggregateOrderRequirements(order);
     if (aggregated.size === 0) return;
 
     const logLines: string[] = [];
     for (const entry of aggregated.values()) {
-        const { productId, variantId, quantity, sku } = entry;
+        const { productId, variantId, quantity, sku, brandType, isPublished } = entry;
+        if (brandType === 'Out') {
+            console.log(`[STOCK_RESERVE_SKIP] Skipping 'Out' brand product: ${sku}`);
+            continue;
+        }
         const qty = Number(quantity || 0);
         if (qty <= 0) continue;
 

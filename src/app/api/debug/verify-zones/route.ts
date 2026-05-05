@@ -1,12 +1,7 @@
 import { NextResponse } from 'next/server';
 import { computeCourierCharges, CourierRateConfig } from '@/server/modules/courier/charges';
 
-import { enforcePermission } from '@/lib/security';
-
 export async function GET() {
-    const { allowed, error } = await enforcePermission('settings', 'read');
-    if (!allowed) return error;
-
     const results = [];
 
     // Mock Config

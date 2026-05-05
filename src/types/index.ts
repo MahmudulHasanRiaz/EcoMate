@@ -23,6 +23,31 @@ export type Category = {
     parentId?: string | null;
 };
 
+export type BrandType = 'Self' | 'Out';
+
+export type Brand = {
+    id: string;
+    name: string;
+    slug: string;
+    type: BrandType;
+    logoUrl?: string | null;
+    description?: string | null;
+    isActive: boolean;
+    createdAt?: string;
+    updatedAt?: string;
+};
+
+export type BrandCreateInput = {
+    name: string;
+    slug: string;
+    type: BrandType;
+    logoUrl?: string | null;
+    description?: string | null;
+    isActive?: boolean;
+};
+
+export type BrandUpdateInput = Partial<BrandCreateInput>;
+
 export type ExpenseCategory = {
     id: string;
     name: string;
@@ -126,6 +151,9 @@ export type Product = {
     wholesalePackQuantity?: number | null;
     wholesaleUnitLabel?: string | null;
     wholesaleNote?: string | null;
+
+    brandId?: string | null;
+    brand?: Brand | null;
 };
 
 export type OrderStatus =
@@ -159,6 +187,27 @@ export type OrderStatus =
     | 'Confirmed Waiting';
 
 export type OrderPlatform = 'TikTok' | 'Messenger' | 'Facebook' | 'Instagram' | 'Website' | 'Call';
+
+export type OrderChannel = 'Retail' | 'Wholesale';
+
+export type CustomerType = 'Retail' | 'Wholesaler';
+
+export type WholesaleApprovalStatus = 'Pending' | 'Approved' | 'Rejected' | 'EditedApproved';
+
+export type OrderSourcePlatform =
+    | 'Manual'
+    | 'POS'
+    | 'Woo'
+    | 'Messenger'
+    | 'Facebook'
+    | 'WhatsApp'
+    | 'TikTok'
+    | 'Instagram'
+    | 'Website'
+    | 'Call'
+    | 'SR'
+    | 'WholesalerPortal'
+    | 'Other';
 export type PaymentMethod =
     | 'Cash on Delivery'
     | 'Paid Shipping COD'
@@ -259,6 +308,9 @@ export type Order = {
     customerPhone: string;
     platform?: OrderPlatform | string;
     source?: string;
+    channel: OrderChannel;
+    sourcePlatform?: OrderSourcePlatform | string | null;
+    salesRepresentativeId?: string | null;
     date: string;
     status: OrderStatus;
     total: number;
@@ -322,6 +374,14 @@ export type Order = {
     externalOrderId?: string | null;
     isComboOnly?: boolean;
     createdAt?: string | Date;
+    wholesaleApprovalStatus?: WholesaleApprovalStatus | null;
+    wholesaleDetectedAt?: string | Date | null;
+    wholesaleDetectedByRuleId?: string | null;
+    wholesaleReviewNote?: string | null;
+    wholesaleReviewedAt?: string | Date | null;
+    wholesaleReviewedById?: string | null;
+    WholesaleRule?: { id: string; name: string } | null;
+    WholesaleReviewedBy?: { name: string } | null;
     Customer?: {
         id: string;
         phone: string;
@@ -368,6 +428,7 @@ export type Customer = {
     address: string;
     district: string;
     country: string;
+    type: CustomerType;
 };
 
 export type CustomerCreateInput = Omit<Customer, 'id' | 'totalOrders' | 'totalSpent' | 'joinDate'>;
@@ -728,6 +789,7 @@ export type StaffRole =
     | 'Marketer'
     | 'Finance Manager'
     | 'Modarator Manager'
+    | 'Sales Representative'
     | 'Custom';
 
 export type StaffWorkType = 'Office' | 'Remote';
@@ -812,7 +874,7 @@ export type StaffMemberUI = {
         marketing: Permission | boolean;
         tasks: Permission | boolean;
         integrations: Permission | boolean;
-        pos: Permission | boolean;
+        wholesaleManagement: Permission | boolean;
         pageAccess?: Record<string, boolean>;
     };
     // Job dates

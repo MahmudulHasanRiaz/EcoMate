@@ -204,11 +204,11 @@ export const products: Product[] = [
 ];
 
 export const customers: Omit<Customer, 'totalOrders' | 'totalSpent'>[] = [
-    { id: 'CUST001', name: 'Alice Johnson', email: 'alice.j@example.com', phone: '01712345678', joinDate: '2023-01-15', address: '123 Maple St', district: 'Dhaka', country: 'Bangladesh' },
-    { id: 'CUST002', name: 'Bob Williams', email: 'bob.w@example.com', phone: '01812345679', joinDate: '2023-02-20', address: '456 Oak Ave', district: 'Chittagong', country: 'Bangladesh' },
-    { id: 'CUST003', name: 'Charlie Brown', email: 'charlie.b@example.com', phone: '01912345680', joinDate: '2023-03-10', address: '789 Pine Ln', district: 'Sylhet', country: 'Bangladesh' },
-    { id: 'CUST004', name: 'Diana Prince', email: 'diana.p@example.com', phone: '01612345681', joinDate: '2023-04-05', address: '101 Wonder Rd', district: 'Dhaka', country: 'Bangladesh' },
-    { id: 'CUST005', name: 'Ethan Hunt', email: 'ethan.h@example.com', phone: '01512345682', joinDate: '2023-05-25', address: '202 Mission St', district: 'Khulna', country: 'Bangladesh' },
+    { type: 'Retail', id: 'CUST001', name: 'Alice Johnson', email: 'alice.j@example.com', phone: '01712345678', joinDate: '2023-01-15', address: '123 Maple St', district: 'Dhaka', country: 'Bangladesh' },
+    { type: 'Retail', id: 'CUST002', name: 'Bob Williams', email: 'bob.w@example.com', phone: '01812345679', joinDate: '2023-02-20', address: '456 Oak Ave', district: 'Chittagong', country: 'Bangladesh' },
+    { type: 'Retail', id: 'CUST003', name: 'Charlie Brown', email: 'charlie.b@example.com', phone: '01912345680', joinDate: '2023-03-10', address: '789 Pine Ln', district: 'Sylhet', country: 'Bangladesh' },
+    { type: 'Retail', id: 'CUST004', name: 'Diana Prince', email: 'diana.p@example.com', phone: '01612345681', joinDate: '2023-04-05', address: '101 Wonder Rd', district: 'Dhaka', country: 'Bangladesh' },
+    { type: 'Retail', id: 'CUST005', name: 'Ethan Hunt', email: 'ethan.h@example.com', phone: '01512345682', joinDate: '2023-05-25', address: '202 Mission St', district: 'Khulna', country: 'Bangladesh' },
 ];
 
 export const allStatuses: OrderStatus[] = [
@@ -219,7 +219,7 @@ export const allStatuses: OrderStatus[] = [
 
 export const orders: Order[] = [
     {
-        id: 'ORD-2024-001',
+        channel: 'Retail', id: 'ORD-2024-001',
         customerName: 'Alice Johnson',
         customerEmail: 'alice.j@example.com',
         customerPhone: '01712345678',
@@ -255,7 +255,7 @@ export const orders: Order[] = [
         updatedAt: '2024-05-25T12:00:00Z',
     },
     {
-        id: 'ORD-2024-002',
+        channel: 'Retail', id: 'ORD-2024-002',
         customerName: 'Bob Williams',
         customerEmail: 'bob.w@example.com',
         customerPhone: '01812345679',
@@ -288,7 +288,7 @@ export const orders: Order[] = [
         updatedAt: '2024-05-23T19:00:00Z',
     },
     {
-        id: 'ORD-2024-003',
+        channel: 'Retail', id: 'ORD-2024-003',
         customerName: 'Charlie Brown',
         customerEmail: 'charlie.b@example.com',
         customerPhone: '01912345680',
@@ -317,7 +317,7 @@ export const orders: Order[] = [
         updatedAt: '2024-05-22T09:35:00Z',
     },
     {
-        id: 'ORD-2024-004',
+        channel: 'Retail', id: 'ORD-2024-004',
         customerName: 'Diana Prince',
         customerEmail: 'diana.p@example.com',
         customerPhone: '01612345681',
@@ -346,7 +346,7 @@ export const orders: Order[] = [
         updatedAt: '2024-05-26T15:00:00Z',
     },
     {
-        id: 'ORD-2024-005',
+        channel: 'Retail', id: 'ORD-2024-005',
         customerName: 'Alice Johnson',
         customerEmail: 'alice.j@example.com',
         customerPhone: '01712345678',
@@ -376,7 +376,7 @@ export const orders: Order[] = [
         updatedAt: '2024-05-25T00:00:00Z',
     },
     {
-        id: 'INC-2024-001',
+        channel: 'Retail', id: 'INC-2024-001',
         customerName: 'Bruce Wayne',
         customerEmail: 'bruce.w@example.com',
         customerPhone: '01711111111',

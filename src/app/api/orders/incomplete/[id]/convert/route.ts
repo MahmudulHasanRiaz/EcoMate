@@ -174,6 +174,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     businessName: businessLabel || undefined,
                     source: 'woo-incomplete',
                     platform: 'woo',
+                    channel: 'Retail',
+                    sourcePlatform: 'Woo',
                     createdBy: actor.id ?? null,
                     confirmedBy: targetStatus === OrderStatus.Confirmed ? (actor.id ?? null) : null,
                     // Always assign converted order to the staff who performed the conversion.
@@ -265,6 +267,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
         await markRecentCompletion(lead.integrationId, phone);
+
+        // Trigger wholesale classification if applicable
+        try {
+            const { classifyOrderAsWholesale } = await import('@/server/modules/wholesale');
+            await classifyOrderAsWholesale(orderId);
+        } catch (error) {
+            console.error('[Wholesale] Classification failed for converted order:', orderId, error);
+        }
 
         return apiSuccess({ orderId, missingSkus: missing });
     } catch (e: any) {

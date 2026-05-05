@@ -222,7 +222,7 @@ function NotFoundView({ query }: { query: string }) {
         <div className="text-center py-16">
             <h2 className="text-2xl font-bold">Not Found</h2>
             <p className="text-muted-foreground mt-2">
-                We couldn&apos;t find any order with the ID or phone number: <strong>{query}</strong>
+                We couldn't find any order with the ID or phone number: <strong>{query}</strong>
             </p>
             <Button asChild className="mt-6">
                 <Link href="/track-order">

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { apiServerError, apiSuccess, apiError } from "@/lib/error";
 import { enforcePermission } from "@/lib/security";
-import { transferGodownReservedStockAggregated } from "@/app/dashboard/inventory/actions";
+import { transferGodownReservedStockAggregated } from "@/server/modules/inventory-transfers";
 
 export async function POST(req: NextRequest) {
   try {

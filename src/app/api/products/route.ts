@@ -68,6 +68,16 @@ function mapProduct(p: any, inventoryMap: Record<string, number>, variantInvento
     id: p.id,
     name: p.name,
     slug: p.slug,
+    brandId: p.brandId,
+    brand: p.Brand ? {
+      id: p.Brand.id,
+      name: p.Brand.name,
+      slug: p.Brand.slug,
+      type: p.Brand.type,
+      logoUrl: p.Brand.logoUrl,
+      description: p.Brand.description,
+      isActive: p.Brand.isActive,
+    } : null,
     isPublished: p.isPublished ?? true,
     description: p.description ?? '',
     shortDescription: p.shortDescription ?? undefined,
@@ -151,6 +161,7 @@ export async function GET(req: NextRequest) {
       include: {
         variants: true,
         comboItems: { include: { child: true, variant: true } },
+        Brand: true,
       },
     });
 
@@ -169,6 +180,16 @@ export async function GET(req: NextRequest) {
           return {
             id: p.id,
             name: p.name,
+            brandId: p.brandId,
+            brand: (p as any).Brand ? {
+              id: (p as any).Brand.id,
+              name: (p as any).Brand.name,
+              slug: (p as any).Brand.slug,
+              type: (p as any).Brand.type,
+              logoUrl: (p as any).Brand.logoUrl,
+              description: (p as any).Brand.description,
+              isActive: (p as any).Brand.isActive,
+            } : null,
             image: normalizeUrl(images[0]?.url),
             images: images.map((img: any) => ({ ...img, url: normalizeUrl(img.url) })),
             sku: p.sku,

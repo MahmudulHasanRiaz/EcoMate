@@ -49,6 +49,27 @@ export default function OrderCreatePage() {
     const [isSubmitting, setIsSubmitting] = React.useState(false);
     const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
+    // Persistence: Load from local storage
+    React.useEffect(() => {
+        const savedCart = localStorage.getItem('order_create_cart');
+        if (savedCart) {
+            try {
+                setCart(JSON.parse(savedCart));
+            } catch (e) {
+                localStorage.removeItem('order_create_cart');
+            }
+        }
+    }, []);
+
+    // Persistence: Save to local storage
+    React.useEffect(() => {
+        if (cart.length > 0) {
+            localStorage.setItem('order_create_cart', JSON.stringify(cart));
+        } else {
+            localStorage.removeItem('order_create_cart');
+        }
+    }, [cart]);
+
     const validatePhone = (value: string) => {
         if (hasBanglaDigits(value)) return 'ইংরেজি সংখ্যা ব্যবহার করুন';
         if (value.length >= 11 && !isValidBdPhone(value)) return 'সঠিক ফোন নম্বর দিন';
@@ -127,7 +148,9 @@ export default function OrderCreatePage() {
         const variant = product.variants?.find(v => v.id === variantId);
         const price = variant?.price ?? product.price;
         const name = product.name;
-        const variantName = variant?.name;
+        const variantName = (variant?.attributes && Object.keys(variant.attributes).length > 0)
+            ? Object.values(variant.attributes).join(', ')
+            : (variant?.name || undefined);
         const image = variant?.image ?? product.image;
 
         setCart(prev => {
@@ -149,7 +172,6 @@ export default function OrderCreatePage() {
                 variantSku: variant?.sku || undefined,
             }];
         });
-        toast({ title: "কার্টে যোগ করা হয়েছে", description: `${name} যোগ করা হয়েছে।` });
     };
 
     const updateQuantity = (productId: string, variantId: string | undefined, delta: number) => {
@@ -349,6 +371,7 @@ export default function OrderCreatePage() {
                 source: "mobile-create" 
             };
             await createOrder(orderInput);
+            localStorage.removeItem('order_create_cart');
             toast({ title: "অর্ডার সফল হয়েছে", description: "অর্ডারটি সফলভাবে তৈরি করা হয়েছে।" });
             router.push('/dashboard/orders');
         } catch (err: any) {
@@ -740,7 +763,12 @@ export default function OrderCreatePage() {
                             </Button>
                         </div>
                         <DialogDescription className="text-xs uppercase font-bold tracking-widest text-muted-foreground">Select Variant</DialogDescription>
-                    </DialogHeader><div className="p-4 space-y-3 max-h-[50vh] overflow-y-auto">{selectedProductForVariant?.variants?.map(variant => (<Card key={variant.id} className="border-0 shadow-none bg-white rounded-3xl overflow-hidden active:scale-95 transition-transform cursor-pointer hover:shadow-md" onClick={() => { addToCart(selectedProductForVariant, variant.id); }}><div className="flex p-4 gap-4 items-center"><div className="h-16 w-16 relative bg-[#f8f9fa] rounded-2xl overflow-hidden flex-shrink-0"><Image src={resolveImageSrc(variant.image || selectedProductForVariant.image)} alt={variant.name} fill className="object-cover" unoptimized /></div><div className="flex-1 min-w-0"><h4 className="font-bold text-sm truncate">{variant.name}</h4><p className="text-[10px] text-muted-foreground">SKU: {variant.sku}</p></div><p className="text-base font-black text-[#004d99] font-manrope">৳{formatPrice(variant.price || selectedProductForVariant.price)}</p><div className="h-9 w-9 rounded-full bg-[#004d99]/10 flex items-center justify-center"><Plus className="h-5 w-5 text-[#004d99]" /></div></div></Card>))}</div><div className="p-6 bg-white border-t border-black/5 flex justify-end px-8"><Button variant="ghost" onClick={() => setSelectedProductForVariant(null)} className="rounded-xl px-10 h-10 font-bold text-muted-foreground">Close</Button></div></DialogContent>
+                    </DialogHeader><div className="p-4 space-y-3 max-h-[50vh] overflow-y-auto">{selectedProductForVariant?.variants?.map(variant => {
+    const vName = (variant.attributes && Object.keys(variant.attributes).length > 0)
+        ? Object.values(variant.attributes).join(', ')
+        : variant.name;
+    return (<Card key={variant.id} className="border-0 shadow-none bg-white rounded-3xl overflow-hidden active:scale-95 transition-transform cursor-pointer hover:shadow-md" onClick={() => { addToCart(selectedProductForVariant, variant.id); }}><div className="flex p-4 gap-4 items-center"><div className="h-16 w-16 relative bg-[#f8f9fa] rounded-2xl overflow-hidden flex-shrink-0"><Image src={resolveImageSrc(variant.image || selectedProductForVariant.image)} alt={vName} fill className="object-cover" unoptimized /></div><div className="flex-1 min-w-0"><h4 className="font-bold text-sm truncate">{vName}</h4><p className="text-[10px] text-muted-foreground">SKU: {variant.sku}</p></div><p className="text-base font-black text-[#004d99] font-manrope">৳{formatPrice(variant.price || selectedProductForVariant.price)}</p><div className="h-9 w-9 rounded-full bg-[#004d99]/10 flex items-center justify-center"><Plus className="h-5 w-5 text-[#004d99]" /></div></div></Card>);
+})}</div><div className="p-6 bg-white border-t border-black/5 flex justify-end px-8"><Button variant="ghost" onClick={() => setSelectedProductForVariant(null)} className="rounded-xl px-10 h-10 font-bold text-muted-foreground">Close</Button></div></DialogContent>
             </Dialog>
         </div>
     );

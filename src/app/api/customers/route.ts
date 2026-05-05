@@ -17,8 +17,15 @@ export async function GET(req: NextRequest) {
         const search = url.searchParams.get('search') || undefined;
         const pageSize = parseInt(url.searchParams.get('pageSize') || '20', 10);
         const cursor = url.searchParams.get('cursor') || undefined;
+        const type = (url.searchParams.get('type') as any) || undefined;
 
-        const data = await getCustomers({ search, pageSize, cursor });
+        // Validation
+        const validTypes = ['Retail', 'Wholesaler', 'all'];
+        if (type && !validTypes.includes(type)) {
+            return apiError(`Invalid customer type: ${type}. Must be one of ${validTypes.join(', ')}`, 400);
+        }
+
+        const data = await getCustomers({ search, pageSize, cursor, type });
         return apiSuccess(data);
     } catch (error: any) {
         return apiServerError(error);
@@ -40,7 +47,8 @@ export async function POST(req: NextRequest) {
 
         const customer = await createCustomer({
             ...validated.data,
-            email: validated.data.email ?? undefined
+            email: validated.data.email ?? undefined,
+            type: validated.data.type as any
         });
         return apiSuccess(customer, 'Customer created successfully', 201);
     } catch (error: any) {

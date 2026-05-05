@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getStaffAuthDetails } from '@/server/modules/staff-auth';
 import { OrderStatus, OrderType } from '@prisma/client';
 import { apiError, apiSuccess, apiServerError, apiUnauthorized } from '@/lib/error';
+import { handleStockReservation, ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE } from '@/server/modules/stock-reservation';
 
 export async function POST(req: NextRequest) {
     const auth = await getStaffAuthDetails();
@@ -77,6 +78,9 @@ export async function POST(req: NextRequest) {
                 businessId: sourceOrder.businessId,
                 businessName: sourceOrder.businessName,
                 platform: sourceOrder.platform,
+                channel: sourceOrder.channel,
+                sourcePlatform: sourceOrder.sourcePlatform,
+                salesRepresentativeId: sourceOrder.salesRepresentativeId,
                 updatedAt: new Date(),
 
                 products: {
@@ -95,6 +99,20 @@ export async function POST(req: NextRequest) {
                 }
             }
         });
+
+        // Trigger stock reservation for the new exchange order
+        const finalExchangeOrder = await prisma.order.findUnique({
+            where: { id: exchangeOrder.id },
+            ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
+        });
+
+        if (finalExchangeOrder) {
+            await handleStockReservation(prisma, finalExchangeOrder, auth.staff.name);
+            await prisma.order.update({
+                where: { id: exchangeOrder.id },
+                data: { isStockReserved: true }
+            });
+        }
 
         return apiSuccess(exchangeOrder);
 

@@ -1,6 +1,6 @@
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import prisma from '@/lib/prisma';
-import { getPresetPermissions } from '@/lib/permissions';
+import { getPresetPermissions } from '@/lib/staff-permissions';
 import { attachPageAccess } from '@/lib/page-access';
 import { generateStaffCode } from '@server/utils/staffCode';
 import { normalizeSalaryDetails, normalizeCommissionDetails } from '@server/utils/staff-compensation';
@@ -17,12 +17,13 @@ const dbRoleToUiRole: Record<string, string> = {
   CallCentreManager: 'Call Centre Manager',
   CourierManager: 'Courier Manager',
   CourierCallAssistant: 'Courier Call Assistant',
-  Vendor_Supplier: 'Vendor/Supplier',
+  VendorSupplier: 'Vendor/Supplier',
   CuttingMan: 'Cutting Master',
   Marketer: 'Marketer',
   FinanceManager: 'Finance Manager',
   ModaratorManager: 'Modarator Manager',
   ProjectManager: 'Project Manager',
+  SalesRepresentative: 'Sales Representative',
   Custom: 'Custom',
 };
 
@@ -37,12 +38,13 @@ const uiRoleToDbRole: Record<string, string> = {
   'Call Centre Manager': 'CallCentreManager',
   'Courier Manager': 'CourierManager',
   'Courier Call Assistant': 'CourierCallAssistant',
-  'Vendor/Supplier': 'Vendor_Supplier',
+  'Vendor/Supplier': 'VendorSupplier',
   'Cutting Master': 'CuttingMan',
   Marketer: 'Marketer',
   'Finance Manager': 'FinanceManager',
   'Modarator Manager': 'ModaratorManager',
   'Project Manager': 'ProjectManager',
+  'Sales Representative': 'SalesRepresentative',
   Custom: 'Custom',
 };
 
@@ -59,6 +61,9 @@ const roleAliases: Record<string, string> = {
   'modarator manager': 'Modarator Manager',
   projectmanager: 'Project Manager',
   'project manager': 'Project Manager',
+  salesrepresentative: 'Sales Representative',
+  'sales representative': 'Sales Representative',
+  sr: 'Sales Representative',
 };
 
 const normalizeRole = (role?: string | null) => {

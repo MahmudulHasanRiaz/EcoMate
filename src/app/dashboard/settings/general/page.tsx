@@ -168,7 +168,7 @@ export default function GeneralSettingsPage() {
                 <CardHeader>
                     <CardTitle>Localization</CardTitle>
                     <CardDescription>
-                        Set your store&apos;s currency and timezone.
+                        Set your store's currency and timezone.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 gap-6 sm:grid-cols-2">

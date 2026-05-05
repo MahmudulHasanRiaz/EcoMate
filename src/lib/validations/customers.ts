@@ -7,6 +7,7 @@ export const createCustomerSchema = z.object({
     address: z.string().min(1, "Address is required"),
     district: z.string().default('Dhaka'),
     country: z.string().default('Bangladesh'),
+    type: z.enum(['Retail', 'Wholesaler']).default('Retail'),
 });
 
 export const updateCustomerSchema = createCustomerSchema.partial();

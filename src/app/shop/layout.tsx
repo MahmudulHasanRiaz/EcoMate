@@ -12,79 +12,131 @@ import { getShopCategories } from '@/services/products';
 import type { Category } from '@/types';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
-function CategoryNav({ categories, selectedCategory, onSelectCategory }: { categories: Category[], selectedCategory: string | null, onSelectCategory: (id: string | null) => void }) {
-    const mainCategories = categories.filter(c => !c.parentId);
-    const subCategories = (parentId: string) => categories.filter(c => c.parentId === parentId);
+function CategoryTreeItem({
+    category,
+    allCategories,
+    selectedCategory,
+    onSelectCategory,
+    level = 0
+}: {
+    category: Category,
+    allCategories: Category[],
+    selectedCategory: string | null,
+    onSelectCategory: (id: string | null) => void,
+    level?: number
+}) {
+    const children = allCategories.filter(c => c.parentId === category.id);
+    const hasChildren = children.length > 0;
 
-    const getParentId = (childId: string | null): string | null => {
-        if (!childId) return null;
-        const category = categories.find(c => c.id === childId);
-        return category?.parentId || null;
-    };
+    // Auto-expand if the selected category is a descendant
+    const isDescendantSelected = React.useMemo(() => {
+        if (!selectedCategory) return false;
+        const checkChildren = (parentId: string): boolean => {
+            const subs = allCategories.filter(c => c.parentId === parentId);
+            return subs.some(s => s.id === selectedCategory || checkChildren(s.id));
+        };
+        return checkChildren(category.id);
+    }, [category.id, allCategories, selectedCategory]);
 
-    const parentOfSelected = getParentId(selectedCategory);
+    const [isExpanded, setIsExpanded] = React.useState(isDescendantSelected);
+
+    React.useEffect(() => {
+        if (isDescendantSelected) {
+            setIsExpanded(true);
+        }
+    }, [isDescendantSelected]);
+
+    const isSelected = selectedCategory === category.id;
 
     return (
-        <nav className="flex flex-col gap-1 p-4">
-            <h3 className="font-semibold text-lg px-3 mb-2">Categories</h3>
-            <Button
-                variant={!selectedCategory ? 'secondary' : 'ghost'}
-                className="justify-start text-base"
-                onClick={() => onSelectCategory(null)}
-            >
-                All Products
-            </Button>
-            <Accordion type="single" collapsible defaultValue={parentOfSelected || undefined} className="w-full">
-                {mainCategories.map(cat => {
-                    const children = subCategories(cat.id);
-                    const isParentSelected = selectedCategory === cat.id && children.length > 0;
+        <div className="flex flex-col">
+            <div className={cn(
+                "flex items-center group rounded-md transition-all",
+                isSelected ? "bg-secondary text-secondary-foreground" : "hover:bg-muted/50"
+            )}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                        "flex-1 justify-start h-9 text-sm font-medium px-2 hover:bg-transparent",
+                        isSelected ? "text-primary font-bold" : "text-foreground/70"
+                    )}
+                    onClick={() => onSelectCategory(category.id)}
+                >
+                    <span className="truncate">{category.name}</span>
+                </Button>
 
-                    if (children.length === 0) {
-                        return (
-                            <Button
-                                key={cat.id}
-                                variant={selectedCategory === cat.id ? 'secondary' : 'ghost'}
-                                className="justify-start w-full text-base"
-                                onClick={() => onSelectCategory(cat.id)}
-                            >
-                                {cat.name}
-                            </Button>
-                        )
-                    }
-                    return (
-                        <AccordionItem value={cat.id} key={cat.id} className="border-b-0">
-                            <AccordionTrigger
-                                className={cn(
-                                    "py-2 px-3 text-base font-medium hover:no-underline rounded-md hover:bg-muted",
-                                    isParentSelected && !children.some(c => c.id === selectedCategory) && 'bg-secondary'
-                                )}
-                            >
-                                {cat.name}
-                            </AccordionTrigger>
-                            <AccordionContent className="pt-1 pl-4">
-                                <div className="flex flex-col gap-1">
-                                    {children.map(subCat => (
-                                        <Button
-                                            key={subCat.id}
-                                            variant={selectedCategory === subCat.id ? 'secondary' : 'ghost'}
-                                            className="justify-start w-full text-muted-foreground hover:text-foreground h-9"
-                                            onClick={() => onSelectCategory(subCat.id)}
-                                        >
-                                            {subCat.name}
-                                        </Button>
-                                    ))}
-                                </div>
-                            </AccordionContent>
-                        </AccordionItem>
-                    )
-                })}
-            </Accordion>
-        </nav>
+                {hasChildren && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground/60 hover:text-foreground shrink-0"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsExpanded(!isExpanded);
+                        }}
+                    >
+                        <span className="text-lg font-mono leading-none">
+                            {isExpanded ? '−' : '+'}
+                        </span>
+                    </Button>
+                )}
+            </div>
+
+            {hasChildren && isExpanded && (
+                <div className="ml-3 border-l border-muted-foreground/10 pl-1 mt-1 flex flex-col gap-0.5">
+                    {children.map(child => (
+                        <CategoryTreeItem
+                            key={child.id}
+                            category={child}
+                            allCategories={allCategories}
+                            selectedCategory={selectedCategory}
+                            onSelectCategory={onSelectCategory}
+                            level={level + 1}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
     );
 }
 
+function CategoryNav({ categories, selectedCategory, onSelectCategory }: { categories: Category[], selectedCategory: string | null, onSelectCategory: (id: string | null) => void }) {
+    const mainCategories = categories.filter(c => !c.parentId);
+
+    return (
+        <nav className="flex flex-col gap-2 p-4">
+            <div className="flex items-center justify-between px-2 mb-2">
+                <h3 className="font-bold text-sm uppercase tracking-widest text-muted-foreground/80">Categories</h3>
+            </div>
+
+            <Button
+                variant={!selectedCategory ? 'secondary' : 'ghost'}
+                className={cn(
+                    "justify-start h-10 text-sm font-semibold px-3 mb-2 transition-all",
+                    !selectedCategory ? "shadow-sm" : "text-foreground/70"
+                )}
+                onClick={() => onSelectCategory(null)}
+            >
+                All Collections
+            </Button>
+
+            <div className="flex flex-col gap-1">
+                {mainCategories.map(cat => (
+                    <CategoryTreeItem
+                        key={cat.id}
+                        category={cat}
+                        allCategories={categories}
+                        selectedCategory={selectedCategory}
+                        onSelectCategory={onSelectCategory}
+                    />
+                ))}
+            </div>
+        </nav>
+    );
+}
 
 function DesktopSidebar() {
     const searchParams = useSearchParams();

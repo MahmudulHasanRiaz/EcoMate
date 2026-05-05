@@ -408,7 +408,7 @@ export default function AccountPage() {
             <div className="flex-1 space-y-6 p-4 lg:p-6 text-center">
                 <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground" />
                 <h2 className="mt-4 text-xl font-semibold">Staff Profile Not Found</h2>
-                <p className="mt-2 text-muted-foreground">We couldn&apos;t find a staff profile associated with your account.</p>
+                <p className="mt-2 text-muted-foreground">We couldn't find a staff profile associated with your account.</p>
             </div>
         )
     }

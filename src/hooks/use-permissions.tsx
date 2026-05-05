@@ -56,11 +56,12 @@ function UserPermissionsProvider({ children }: { children: React.ReactNode }) {
             'CallCentreManager': 'Call Centre Manager',
             'CourierManager': 'Courier Manager',
             'CourierCallAssistant': 'Courier Call Assistant',
-            'Vendor_Supplier': 'Vendor/Supplier',
+            'VendorSupplier': 'Vendor/Supplier',
             'CuttingMan': 'Cutting Master',
             'FinanceManager': 'Finance Manager',
             'ModaratorManager': 'Modarator Manager',
             'ProjectManager': 'Project Manager',
+            'SalesRepresentative': 'Sales Representative',
         };
         const roleAliases: Record<string, StaffRole> = {
             'modarator': 'Moderator',
@@ -76,6 +77,8 @@ function UserPermissionsProvider({ children }: { children: React.ReactNode }) {
             'modarator manager': 'Modarator Manager',
             'projectmanager': 'Project Manager',
             'project manager': 'Project Manager',
+            'salesrepresentative': 'Sales Representative',
+            'sales representative': 'Sales Representative',
         };
 
         const normalizeRole = (rawRole?: string) => {

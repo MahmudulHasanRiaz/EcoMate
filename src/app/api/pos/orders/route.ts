@@ -5,7 +5,11 @@ import { apiError, apiServerError, apiSuccess } from '@/lib/error';
 import { normalizeBdPhoneForStorage } from '@/lib/phone';
 import { generateOrderNumber } from '@/server/utils/orderNumber';
 import { resolveOrderLineItems } from '@/server/modules/sku-resolver';
-import { handleStockReservation } from '@/server/modules/stock-reservation';
+import {
+  handleStockReservation,
+  aggregateOrderRequirements,
+  ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
+} from '@/server/modules/stock-reservation';
 import { handleStockMovementTx } from '@/server/modules/orders';
 import { recordOrderPaymentEvent } from '@/server/modules/finance';
 
@@ -161,6 +165,8 @@ export async function POST(req: NextRequest) {
           customerName: customerName || cust.name || 'Customer',
           customerEmail: customerEmail || null,
           customerPhone: normalizedPhone.value,
+          channel: 'Retail',
+          sourcePlatform: 'POS',
           platform: 'POS',
           source: 'manual',
           date: orderDate,
@@ -190,23 +196,7 @@ export async function POST(req: NextRequest) {
             ],
           },
         },
-        include: {
-          products: {
-            include: {
-              product: {
-                include: {
-                  variants: true,
-                  comboItems: {
-                    include: {
-                      child: { include: { variants: true } },
-                      variant: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
       });
 
       // Stock enforcement at the showroom location (never use Packing/Godown here)
@@ -240,6 +230,14 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         console.error('[POS_PAYMENT_EVENT_ERROR]', err);
       }
+    }
+
+    // Trigger wholesale classification if applicable
+    try {
+      const { classifyOrderAsWholesale } = await import('@/server/modules/wholesale');
+      await classifyOrderAsWholesale(result.id);
+    } catch (error) {
+      console.error('[Wholesale] Classification failed for POS order:', result.id, error);
     }
 
     return apiSuccess({ orderId: result.id, orderNumber: result.orderNumber }, 'POS order created', 201);

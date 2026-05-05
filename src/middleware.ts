@@ -2,24 +2,16 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
-const isPublicRoute = createRouteMatcher([
-  '/api/webhooks/woo(.*)',
-  '/api/webhooks/clerk',
-  '/api/webhooks/pathao',
-  '/api/webhooks/carrybee',
-  '/api/webhooks/steadfast',
-  '/api/shop(.*)',
-  '/api/print/bulk(.*)',
-  '/api/woo/(.*)',
-  '/api/revalidate',
-  '/api/cron(.*)',
-]);
-
-const isDashboardRoute = createRouteMatcher(['/dashboard(.*)']);
-const isApiRoute = createRouteMatcher(['/api(.*)']);
+const isProtectedRoute = createRouteMatcher(['/dashboard(.*)']);
+const isWholesaleRoute = createRouteMatcher(['/wholesale(.*)']);
 
 export default clerkMiddleware(async (auth, req: NextRequest) => {
-  if (isDashboardRoute(req) || (isApiRoute(req) && !isPublicRoute(req))) {
+  // Wholesale portal uses its own auth (phone+OTP), skip Clerk
+  if (isWholesaleRoute(req)) {
+    return NextResponse.next();
+  }
+  if (isProtectedRoute(req)) {
+    // Await to avoid Next.js header sync warnings
     await auth.protect();
   }
   return NextResponse.next();

@@ -60,6 +60,12 @@ const settingsLinks = [
     icon: GitBranch,
   },
   {
+    href: '/dashboard/settings/brands',
+    title: 'Brands',
+    description: 'Manage product brands and procurement types.',
+    icon: Palette,
+  },
+  {
     href: '/dashboard/settings/locations',
     title: 'Locations',
     description: 'Manage your stock locations and warehouses.',
@@ -140,6 +146,7 @@ export default function SettingsDashboardPage() {
             'Business': true,
             'Categories': true,
             'Branches': true,
+            'Brands': true,
             'Locations': true,
             'Notifications': true,
             'Accounting': true,

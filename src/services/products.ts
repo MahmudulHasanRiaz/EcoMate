@@ -367,6 +367,7 @@ export async function getProductById(id: string): Promise<Product | undefined> {
       ProductLog: { orderBy: { timestamp: 'desc' }, take: 5 },
       comboItems: { include: { child: true, variant: true } },
       ProductCategory: { select: { categoryId: true } },
+      Brand: true,
     },
   });
 
@@ -427,6 +428,16 @@ export async function getProductById(id: string): Promise<Product | undefined> {
 
   return {
     ...rest,
+    brandId: product.brandId,
+    brand: (product as any).Brand ? {
+      id: (product as any).Brand.id,
+      name: (product as any).Brand.name,
+      slug: (product as any).Brand.slug,
+      type: (product as any).Brand.type,
+      logoUrl: (product as any).Brand.logoUrl,
+      description: (product as any).Brand.description,
+      isActive: (product as any).Brand.isActive,
+    } : null,
     description: product.description ?? '',
     salePrice: product.salePrice ?? undefined,
     reservedQuantity: reservedMap[product.id] || 0,
@@ -598,6 +609,8 @@ export async function createProduct(
     const prismaProductType: ProductTypeEnum =
       appTypeToPrismaType[productType] || ProductTypeEnum.simple;
 
+    const brandId = getOptionalString('brandId');
+
     const wholesaleEnabled = getString('wholesaleEnabled') === 'true';
     let wholesaleVisible = getString('wholesaleVisible') === 'true';
     const wholesalePriceRaw = getString('wholesalePrice');
@@ -647,6 +660,8 @@ export async function createProduct(
       wholesalePackQuantity,
       wholesaleUnitLabel: getOptionalString('wholesaleUnitLabel'),
       wholesaleNote: getOptionalString('wholesaleNote'),
+      videoUrl: getOptionalString('videoUrl'),
+      Brand: (brandId && brandId !== 'none') ? { connect: { id: brandId } } : undefined,
     };
 
     const categoryId = getOptionalString('categoryId');
@@ -1084,6 +1099,8 @@ export async function updateProduct(
       'wholesalePackQuantity',
       'wholesaleUnitLabel',
       'wholesaleNote',
+      'videoUrl',
+      'brandId',
     ];
 
     const numericFields = [
@@ -1112,6 +1129,7 @@ export async function updateProduct(
           newValue = formValue ? parseFloat(formValue as string) : undefined;
         } else {
           newValue = (formValue as string) || undefined;
+          if (key === 'brandId' && newValue === 'none') newValue = null;
         }
 
         const oldValue =
@@ -1758,7 +1776,7 @@ export async function setProductPublished(productId: string, isPublished: boolea
 export async function getShopProducts(): Promise<Product[]> {
   try {
     const url = `${getBaseUrl()}/api/shop/products`;
-    const res = await fetch(url, { cache: 'force-cache', next: { tags: ['shop-products'] } });
+    const res = await fetch(url, { next: { revalidate: 60, tags: ['shop-products'] } });
     const data = await handleApiResponse<Product[]>(res);
     return Array.isArray(data) ? data : [];
   } catch (error) {
@@ -1770,7 +1788,7 @@ export async function getShopProducts(): Promise<Product[]> {
 export async function getShopCategories(): Promise<Category[]> {
   try {
     const url = `${getBaseUrl()}/api/shop/categories`;
-    const res = await fetch(url, { cache: 'force-cache', next: { tags: ['categories'] } });
+    const res = await fetch(url, { next: { revalidate: 60, tags: ['categories'] } });
     const data = await handleApiResponse<Category[]>(res);
     return Array.isArray(data) ? data : [];
   } catch (error) {

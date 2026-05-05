@@ -14,7 +14,9 @@ import {
   handleStockReservation,
   handleStockReservationRelease,
   aggregateOrderRequirements,
+  ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
 } from './stock-reservation';
+import { accrueOrderCommission, voidOrderCommissions } from './sr-performance';
 import {
   deductStockAcrossLots,
   formatAllocationSummary,
@@ -175,7 +177,7 @@ async function getReturnedStockLocationOrThrow(tx: Prisma.TransactionClient) {
   return location.id;
 }
 
-function serializeOrder<T extends { status?: any; logs?: any[]; statusUpdatedAt?: Date | string | null; products?: any[] }>(order: T | null) {
+function serializeOrder<T extends { status?: any; logs?: any[]; statusUpdatedAt?: Date | string | null; products?: any[]; channel?: string; sourcePlatform?: string | null; salesRepresentativeId?: string | null; createdAt: Date | string }>(order: T | null) {
   if (!order) return order;
 
   let shipmentStale = false;
@@ -250,31 +252,23 @@ async function ensureOrderStockAvailable(tx: Prisma.TransactionClient, orderId: 
     return; // Do not block order creation in publish mode
   }
 
-  const orderProducts = await tx.orderProduct.findMany({
-    where: { orderId },
-    select: { productId: true, variantId: true, quantity: true, sku: true },
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
   });
-  for (const op of orderProducts) {
-    // Check if this is a combo product
-    const product = await tx.product.findUnique({
-      where: { id: op.productId },
-      select: { productType: true, comboItems: { select: { childId: true, variantId: true } }, name: true },
-    });
 
-    if (product?.productType === 'combo' && product.comboItems?.length > 0) {
-      // For combos, check stock of each component
-      for (const ci of product.comboItems) {
-        const componentQty = await getAvailableQty(tx, ci.childId, ci.variantId);
-        if (op.quantity > componentQty) {
-          throw createInsufficientStockError(`Insufficient stock for combo "${product.name || op.productId}". Component has ${componentQty} available but ${op.quantity} is required.`);
-        }
-      }
-    } else {
-      // Regular product - check its own stock
-      const availableQty = await getAvailableQty(tx, op.productId, op.variantId);
-      if (op.quantity > availableQty) {
-        throw createInsufficientStockError(`Insufficient stock: ${op.sku || product?.name || op.productId}. Required: ${op.quantity}, Available: ${availableQty}`);
-      }
+  if (!order) return;
+
+  const aggregated = aggregateOrderRequirements(order);
+  for (const entry of aggregated.values()) {
+    const { productId, variantId, quantity, sku, brandType } = entry;
+
+    // Out-brand items are never blocked for zero local stock
+    if (brandType === 'Out') continue;
+
+    const availableQty = await getAvailableQty(tx, productId, variantId);
+    if (quantity > availableQty) {
+      throw createInsufficientStockError(`Insufficient stock: ${sku}. Required: ${quantity}, Available: ${availableQty}`);
     }
   }
 }
@@ -304,9 +298,20 @@ async function recordStaffIncome(
 async function awardCommissionOnDelivered(tx: Prisma.TransactionClient, orderId: string) {
   const order = await tx.order.findUnique({
     where: { id: orderId },
-    select: { createdBy: true, confirmedBy: true, source: true }
+    select: { createdBy: true, confirmedBy: true, source: true, salesRepresentativeId: true, total: true, orderNumber: true }
   });
   if (!order) return;
+
+  // Sales Representative Commission (Phase 7)
+  if (order.salesRepresentativeId) {
+    await accrueOrderCommission(
+      tx,
+      orderId,
+      order.salesRepresentativeId,
+      order.total,
+      order.orderNumber || orderId
+    );
+  }
 
   const existing = await tx.staffIncome.findMany({
     where: { orderId },
@@ -500,6 +505,8 @@ export async function getOrders(params?: {
   sortField?: 'total' | 'createdAt' | 'id';
   sortOrder?: 'asc' | 'desc';
   excludeComboOnly?: boolean;
+  channel?: 'Retail' | 'Wholesale' | 'all';
+  sourcePlatform?: string;
 }) {
   const MAX_ORDER_PAGE_SIZE = 5000;
   const take = Math.min(Math.max(params?.pageSize ?? 20, 1), MAX_ORDER_PAGE_SIZE);
@@ -511,6 +518,17 @@ export async function getOrders(params?: {
     where.isDeleted = true;
   } else {
     where.isDeleted = false;
+  }
+
+  // channel filter
+  if (params?.channel && params.channel !== 'all') {
+    where.channel = params.channel;
+  } else if (!params?.channel) {
+    where.channel = 'Retail'; // Safe default for existing dashboard lists
+  }
+
+  if (params?.sourcePlatform) {
+    where.sourcePlatform = params.sourcePlatform;
   }
 
   if (params?.status && !isTrashQuery) {
@@ -608,6 +626,9 @@ export async function getOrders(params?: {
     skip: (params?.page && params.page > 1 && !cursorId) ? (params.page - 1) * take : undefined,
     select: {
       id: true,
+      channel: true,
+      sourcePlatform: true,
+      salesRepresentativeId: true,
       type: true,
       isExchange: true,
       parentOrderId: true,
@@ -704,7 +725,7 @@ export async function getOrders(params?: {
   };
 }
 
-export async function getOrderSummaryStats(params?: { from?: Date; to?: Date; businessId?: string }) {
+export async function getOrderSummaryStats(params?: { from?: Date; to?: Date; businessId?: string; channel?: 'Retail' | 'Wholesale' | 'all' }) {
   const displayLabels = Object.values(statusEnumToLabel);
   const canonicalStatusKeys = Object.keys(statusEnumToLabel);
   // ── Activity mode (date range supplied) ──────────────────────────────────
@@ -721,6 +742,7 @@ export async function getOrderSummaryStats(params?: { from?: Date; to?: Date; bu
       type: { not: 'PARTIAL_RETURN' },
       isDeleted: false,
       ...(params?.businessId ? { businessId: params.businessId } : {}),
+      ...(params?.channel && params.channel !== 'all' ? { channel: params.channel } : (!params?.channel ? { channel: 'Retail' } : {})),
     } as any;
 
     const [newCount, logs] = await Promise.all([
@@ -783,6 +805,7 @@ export async function getOrderSummaryStats(params?: { from?: Date; to?: Date; bu
       type: { not: 'PARTIAL_RETURN' },
       isDeleted: false,
       ...(params?.businessId ? { businessId: params.businessId } : {}),
+      ...(params?.channel && params.channel !== 'all' ? { channel: params.channel } : (!params?.channel ? { channel: 'Retail' } : {})),
     },
     _count: { _all: true },
     _sum: { total: true },
@@ -808,16 +831,7 @@ export async function getOrderSummaryStats(params?: { from?: Date; to?: Date; bu
 
 export async function getOrderById(id: string) {
   const include = {
-    products: {
-      include: {
-        product: { 
-          include: { 
-            variants: true, 
-            comboItems: { include: { child: true } },
-          } 
-        },
-      },
-    },
+    ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE.include,
     OrderLog: {
       orderBy: { timestamp: 'desc' as const },
       include: { StaffMember: { select: { id: true, name: true } } },
@@ -1094,6 +1108,31 @@ export async function createOrder(data: any) {
   const phone = normalizedPhone.value;
   const orderDate = data?.date ? new Date(data.date) : new Date();
   const orderSource = data?.source || 'manual';
+  const orderChannel = data?.channel || 'Retail';
+
+  if (data.salesRepresentativeId) {
+    const sr = await prisma.staffMember.findUnique({
+      where: { id: data.salesRepresentativeId },
+      select: { role: true }
+    });
+    if (!sr || sr.role !== 'SalesRepresentative') {
+      const err: any = new Error('Invalid Sales Representative selection.');
+      err.code = 'INVALID_SALES_REP';
+      throw err;
+    }
+  }
+
+  let orderSourcePlatform = data?.sourcePlatform;
+
+  if (!orderSourcePlatform) {
+    if (orderSource === 'woo' || orderSource === 'woo-incomplete') {
+      orderSourcePlatform = 'Woo';
+    } else if (orderSource === 'mobile-create' || orderSource === 'manual') {
+      orderSourcePlatform = 'Manual';
+    } else {
+      orderSourcePlatform = 'Other';
+    }
+  }
 
   // Strict rule: Converted incomplete leads must be 'Confirmed'
   let createdStatus = (data.status as OrderStatus) || 'New';
@@ -1233,6 +1272,9 @@ export async function createOrder(data: any) {
           customerName: data.customerName,
           customerEmail: data.customerEmail || null,
           customerPhone: phone,
+          channel: orderChannel,
+          sourcePlatform: orderSourcePlatform,
+          salesRepresentativeId: data.salesRepresentativeId || null,
           platform: data.platform || (orderSource === 'woo-incomplete' ? inferPlatformFromUrl(data.landingPage || data.meta_data?.find?.((m: any) => m.key === 'landingPage')?.value) : 'Website'),
           source: orderSource,
           date: orderDate,
@@ -1277,7 +1319,7 @@ export async function createOrder(data: any) {
           updatedAt: new Date(),
         },
         include: {
-          products: { include: { product: { include: { variants: true, comboItems: { include: { child: { include: { variants: true } } } } } } } },
+          ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE.include,
           OrderLog: true,
         },
       });
@@ -1346,7 +1388,7 @@ export async function createOrder(data: any) {
             where: { id: createdOrder.id },
             data: { isStockReserved: true },
             include: {
-              products: { include: { product: true } },
+              ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE.include,
               OrderLog: true,
             },
           });
@@ -1363,7 +1405,10 @@ export async function createOrder(data: any) {
         await handlePublishModeStockTransition(tx, createdOrder.id, null, createdOrder.status, actor.name);
         return tx.order.findUnique({
           where: { id: createdOrder.id },
-          include: { products: { include: { product: true } }, OrderLog: true }
+          include: {
+            ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE.include,
+            OrderLog: true
+          }
         }) as any;
       }
       if (createdOrder.status === 'Confirmed' && !createdOrder.isStockDeducted) {
@@ -1375,7 +1420,7 @@ export async function createOrder(data: any) {
           where: { id: createdOrder.id },
           data: { isStockDeducted: true, isStockReserved: false },
           include: {
-            products: { include: { product: true } },
+            ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE.include,
             OrderLog: true,
           },
         });
@@ -1438,6 +1483,15 @@ export async function createOrder(data: any) {
   sendOrderStatusSms(order.id).catch((err) => console.error('[SMS_ORDER_CREATE_ERROR]', err));
 
   await revalidateTags(['orders']);
+
+  // Trigger wholesale classification if applicable
+  try {
+    const { classifyOrderAsWholesale } = await import('@/server/modules/wholesale');
+    await classifyOrderAsWholesale(order.id);
+  } catch (error) {
+    console.error('[Wholesale] Classification failed for new order:', order.id, error);
+  }
+
   return serializeOrder(order);
 }
 
@@ -1598,14 +1652,9 @@ async function handlePublishModeStockTransition(tx: Prisma.TransactionClient, or
   const mode = await getStockSyncMode();
   if (mode !== 'publish') return;
 
-  const godownId = await resolveLocationIdByName(tx, 'Godown');
-  const packingId = await resolveLocationIdByName(tx, 'Packing Section');
-  
   const updated = await tx.order.findUnique({
     where: { id: orderId },
-    include: {
-      products: { include: { product: { include: { variants: true, comboItems: { include: { child: { include: { variants: true } } } } } } } }
-    }
+    ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
   }) as any;
 
   // Transition to Confirmed: Prefer single-location reservation, fallback to mixed locations
@@ -1615,6 +1664,10 @@ async function handlePublishModeStockTransition(tx: Prisma.TransactionClient, or
       data: { isStockReserved: true }
     });
     if (claim.count === 0) return;
+
+    const godownId = await resolveLocationIdByName(tx, 'Godown');
+    const packingId = await resolveLocationIdByName(tx, 'Packing Section');
+
     const canReservePacking = await canReserveAllAtLocation(tx, updated, packingId);
     const canReserveGodown = !canReservePacking ? await canReserveAllAtLocation(tx, updated, godownId) : false;
 
@@ -1644,6 +1697,7 @@ async function handlePublishModeStockTransition(tx: Prisma.TransactionClient, or
 
   // Transition to RTS: Require all reserved allocations to be in Packing (manual-transfer-first policy)
   if (targetStatus === 'RTS__Ready_to_Ship_') {
+    const packingId = await resolveLocationIdByName(tx, 'Packing Section');
     const isReserved = updated.isStockReserved && !updated.isStockDeducted;
 
     if (isReserved) {
@@ -1662,11 +1716,6 @@ async function handlePublishModeStockTransition(tx: Prisma.TransactionClient, or
         // === END DIAGNOSTIC ===
 
         // Filter out allocations that are NOT in Packing Section.
-        // An allocation is considered "in packing" if:
-        //   1. InventoryItem.locationId matches the resolved packingId, OR
-        //   2. InventoryItem.StockLocation.name matches "Packing Section" (case-insensitive fallback)
-        // An allocation with a missing/deleted InventoryItem is treated as orphaned
-        // and should not block the RTS transition (it will be re-reserved from Packing below).
         const notInPacking = reserveAllocations.filter(a => {
           if (!a.InventoryItem) return false; // Orphaned allocation — don't block
           if (a.InventoryItem.locationId === packingId) return false; // Direct ID match
@@ -1786,6 +1835,7 @@ async function handlePublishModeStockTransition(tx: Prisma.TransactionClient, or
     // If the order somehow reached Return Pending/Partial/Returned without deduction,
     // we deduct first (from Packing), then restore into Returned Stock.
     if (!updated.isStockDeducted) {
+      const packingId = await resolveLocationIdByName(tx, 'Packing Section');
       await handleRegularStockMovementTx(tx, updated, actorName, packingId, true);
       await tx.order.update({
         where: { id: orderId },
@@ -1815,6 +1865,7 @@ async function handlePublishModeStockTransition(tx: Prisma.TransactionClient, or
     const consumed = await consumeReservedAllocationsForDeductionTx(tx, updated, actorName);
     if (!consumed) {
       // No reserve allocations — fallback to regular deduction from packing
+      const packingId = await resolveLocationIdByName(tx, 'Packing Section');
       await handleRegularStockMovementTx(tx, updated, actorName, packingId, false);
     }
   }
@@ -1831,7 +1882,7 @@ export async function updateOrderStatus(id: string, action: OrderAction, user?: 
   const order = await prisma.$transaction(async (tx) => {
     const existing = await tx.order.findUnique({
       where: { id },
-      select: { status: true, confirmedBy: true, source: true, assignedToId: true, actualCodAmount: true },
+      ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
     });
     previousStatus = existing?.status ? String(existing.status) : null;
 
@@ -1876,18 +1927,7 @@ export async function updateOrderStatus(id: string, action: OrderAction, user?: 
             },
           },
         },
-        include: {
-          products: {
-            include: {
-              product: {
-                include: {
-                  variants: true,
-                  comboItems: { include: { child: { include: { variants: true } } } }
-                }
-              }
-            }
-          }
-        },
+        ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
       }) as any;
 
       // Guard: block variable products without variant (publish mode)
@@ -1898,13 +1938,12 @@ export async function updateOrderStatus(id: string, action: OrderAction, user?: 
         await awardCommissionOnDelivered(tx, updated.id);
       } else {
         await tx.staffIncome.deleteMany({ where: { orderId: updated.id } });
+        await voidOrderCommissions(tx, updated.id, `Status changed from Delivered to ${targetDisplayStatus}`);
       }
 
       const refreshed = await tx.order.findUnique({
         where: { id },
-        include: {
-          products: { include: { product: { include: { variants: true, comboItems: { include: { child: { include: { variants: true } } } } } } } }
-        }
+        ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
       }) as any;
       return refreshed;
     }
@@ -1934,19 +1973,8 @@ export async function updateOrderStatus(id: string, action: OrderAction, user?: 
           },
         },
       },
-      include: {
-        products: {
-          include: {
-            product: {
-              include: {
-                variants: true,
-                comboItems: { include: { child: { include: { variants: true } } } }
-              }
-            }
-          }
-        }
-      },
-    }) as any;
+      include: ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE.include,
+    } as any) as any;
 
     const orderSource = existing?.source || updated.source || null;
     if (shouldSetConfirmedBy && isExternalOrderSource(orderSource)) {
@@ -2039,6 +2067,7 @@ export async function updateOrderStatus(id: string, action: OrderAction, user?: 
     } else {
       // Hard rule: no commission for any non-Delivered state.
       await tx.staffIncome.deleteMany({ where: { orderId: updated.id } });
+      await voidOrderCommissions(tx, updated.id, `Status changed from Delivered to ${targetDisplayStatus}`);
     }
 
     return updated;
@@ -2118,7 +2147,11 @@ export async function handleStockMovementTx(tx: Prisma.TransactionClient, order:
 
   const logLines: string[] = [];
   for (const entry of aggregated.values()) {
-    const { productId, variantId, quantity, sku } = entry;
+    const { productId, variantId, quantity, sku, brandType } = entry;
+    if (brandType === 'Out') {
+      console.log(`[STOCK_DEDUCT_SKIP] Skipping 'Out' brand product: ${sku}`);
+      continue;
+    }
     const qty = Number(quantity || 0);
     if (qty <= 0) continue;
 
@@ -2206,7 +2239,11 @@ export async function handleStockRestorationTx(tx: Prisma.TransactionClient, ord
 
   const logLines: string[] = [];
   for (const entry of aggregated.values()) {
-    const { productId, variantId, quantity, sku } = entry;
+    const { productId, variantId, quantity, sku, brandType } = entry;
+    if (brandType === 'Out') {
+      console.log(`[STOCK_RESTORE_SKIP] Skipping 'Out' brand product: ${sku}`);
+      continue;
+    }
     const qty = Number(quantity || 0);
     if (qty <= 0) continue;
 
@@ -2314,7 +2351,10 @@ export async function updateOrderStatusDirect(id: string, status: string, user?:
         },
       },
     },
-    include: { products: { include: { product: { include: { variants: true, comboItems: { include: { child: { include: { variants: true } } } } } } } }, OrderLog: true },
+    include: {
+      ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE.include,
+      OrderLog: true
+    },
   }) as any;
 
   // Handle stock movement based on comprehensive status mapping
@@ -2336,6 +2376,7 @@ export async function updateOrderStatusDirect(id: string, status: string, user?:
         await awardCommissionOnDelivered(tx, order.id);
       } else {
         await tx.staffIncome.deleteMany({ where: { orderId: order.id } });
+        await voidOrderCommissions(tx, order.id, `Status changed from Delivered to ${targetDisplayStatus}`);
       }
       return;
     }
@@ -2348,6 +2389,7 @@ export async function updateOrderStatusDirect(id: string, status: string, user?:
     } else {
       // Hard rule: no commission for any non-Delivered state.
       await tx.staffIncome.deleteMany({ where: { orderId: order.id } });
+      await voidOrderCommissions(tx, order.id, `Status changed from Delivered to ${targetDisplayStatus}`);
     }
 
     // New → Reserve stock (inventory mode only)
@@ -2470,54 +2512,11 @@ export async function updateOrderDetails(id: string, payload: any, user = 'Syste
   const actor = await getActorDetails(user || 'System');
   const existing = await prisma.order.findUnique({
     where: { id },
-    select: {
-      id: true,
-      status: true,
-      courierService: true,
-      orderNumber: true,
-      customerName: true,
-      customerEmail: true,
-      customerPhone: true,
-      customerNote: true,
-      officeNote: true,
-      shippingAddress: true,
-      shipping: true,
-      discount: true,
-      total: true,
-      paidAmount: true,
-      paidFromAccountId: true,
-      shippingPaid: true,
-      shippingPaidAmount: true,
-      shippingPaidAccountId: true,
-      businessId: true,
-      platform: true,
-      source: true,
-      rawPayload: true,
-      confirmedBy: true,
-      assignedToId: true,
-      updatedAt: true,
-      statusUpdatedAt: true,
-      products: {
-        select: {
-          productId: true,
-          variantId: true,
-          quantity: true,
-          price: true,
-          siteDiscount: true,
-          product: {
-            select: {
-              variants: true,
-              comboItems: { select: { child: { select: { variants: true } }, variant: true } },
-            },
-          },
-        },
-      },
-      isStockReserved: true,
-      isStockDeducted: true,
+    include: {
+      ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE.include,
       assignedTo: { select: { name: true } },
-      actualCodAmount: true
-    },
-  });
+    }
+  }) as any;
   if (!existing) throw new Error('Order not found');
 
   // B1) Optimistic Concurrency Guard
@@ -2986,25 +2985,7 @@ export async function updateOrderDetails(id: string, payload: any, user = 'Syste
         },
       },
       include: {
-        products: {
-          include: {
-            product: {
-              include: {
-                variants: true,
-                comboItems: {
-                  include: {
-                    child: {
-                      include: {
-                        variants: true
-                      }
-                    },
-                    variant: true
-                  }
-                }
-              }
-            }
-          }
-        },
+        ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE.include,
         assignedTo: { select: { name: true } }
       }
     });
@@ -3062,7 +3043,7 @@ export async function updateOrderDetails(id: string, payload: any, user = 'Syste
       if (needsReservationRefresh) {
         const refreshedOrder = await tx.order.findUnique({
           where: { id },
-          include: { products: { include: { product: { include: { variants: true, comboItems: { include: { child: { include: { variants: true } }, variant: true } } } } } } },
+          ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
         });
         if (refreshedOrder) {
           const mode = await getStockSyncMode();
@@ -3088,7 +3069,7 @@ export async function updateOrderDetails(id: string, payload: any, user = 'Syste
         // Fetch updated products to ensure consistency for deduction
         const updatedOrder = await tx.order.findUnique({
           where: { id },
-          include: { products: { include: { product: { include: { variants: true, comboItems: { include: { child: { include: { variants: true } } } } } } } } }
+          ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
         });
         if (updatedOrder) {
           // Guard: block variable products without variant
@@ -3337,18 +3318,7 @@ export async function handleExchangeOrderAutomation(
         isExchange: true,
         status: { not: 'Delivered' },
       },
-      include: {
-        products: {
-          include: {
-            product: {
-              include: {
-                variants: true,
-                comboItems: { include: { child: { include: { variants: true } } } },
-              },
-            },
-          },
-        },
-      },
+      ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
     });
 
     if (exchangeOrders.length > 0) {
@@ -3369,6 +3339,7 @@ export async function handleExchangeOrderAutomation(
             },
           },
         },
+        ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
       });
 
       if (!updatedEx.isStockDeducted) {

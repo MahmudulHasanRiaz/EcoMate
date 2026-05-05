@@ -17,24 +17,13 @@ function slugifyFilename(filename: string) {
   return `${base || 'file'}-${suffix}${ext || '.bin'}`;
 }
 
-import { enforcePermission } from '@/lib/security';
-
-const MAX_SIZE = 5 * 1024 * 1024; // 5MB
-
 export async function POST(req: NextRequest) {
   try {
-    const { allowed, error } = await enforcePermission('purchases', 'create');
-    if (!allowed) return error;
-
     const form = await req.formData();
     const file = form.get('file');
 
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: 'No file provided.' }, { status: 400 });
-    }
-
-    if (file.size > MAX_SIZE) {
-      return NextResponse.json({ error: 'File size too large (max 5MB).' }, { status: 400 });
     }
 
     if (!ALLOWED_TYPES.includes(file.type)) {

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { clerkClient } from '@clerk/nextjs/server';
 import prisma from '@/lib/prisma';
-import { getPresetPermissions } from '@/lib/permissions';
+import { getPresetPermissions } from '@/lib/staff-permissions';
 import { attachPageAccess } from '@/lib/page-access';
 import { normalizeSalaryDetails, normalizeCommissionDetails } from '@server/utils/staff-compensation';
 import { getStaffPerformance } from '@server/utils/staff-performance';
@@ -21,8 +21,8 @@ const uiToDbRole: Record<string, string> = {
   'Call Centre Manager': 'CallCentreManager',
   'Courier Manager': 'CourierManager',
   'Courier Call Assistant': 'CourierCallAssistant',
-  Partner: 'Vendor_Supplier',
-  'Vendor/Supplier': 'Vendor_Supplier',
+  Partner: 'VendorSupplier',
+  'Vendor/Supplier': 'VendorSupplier',
   'Cutting Master': 'CuttingMan',
   Marketer: 'Marketer',
   'Finance Manager': 'FinanceManager',
@@ -41,7 +41,7 @@ const dbToUiRole: Record<string, string> = {
   CallCentreManager: 'Call Centre Manager',
   CourierManager: 'Courier Manager',
   CourierCallAssistant: 'Courier Call Assistant',
-  Vendor_Supplier: 'Vendor/Supplier',
+  VendorSupplier: 'Vendor/Supplier',
   CuttingMan: 'Cutting Master',
   Marketer: 'Marketer',
   FinanceManager: 'Finance Manager',

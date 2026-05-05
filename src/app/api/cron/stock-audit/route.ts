@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runStockStatusAudit } from '@/server/modules/stock-sync';
+import { enqueueStockAuditJob } from '@/server/queues';
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    console.error('[CRON_ERROR] CRON_SECRET is not configured');
-    return NextResponse.json({ ok: false, error: 'Configuration error' }, { status: 500 });
-  }
-
-  const header = req.headers.get('x-cron-secret');
-  if (header !== secret) {
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  const secret = process.env.CRON_SECRET || process.env.WOO_WEBHOOK_SECRET || '';
+  if (secret) {
+    const header = req.headers.get('x-cron-secret') || '';
+    if (header !== secret) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
   }
   try {
-    await runStockStatusAudit();
-    return NextResponse.json({ ok: true, message: 'Stock audit sync triggered.' });
+    const result = await enqueueStockAuditJob();
+    if (!result.queued) {
+       return NextResponse.json({ ok: false, error: result.reason || 'Queue unavailable' }, { status: 503 });
+    }
+    return NextResponse.json({ ok: true, message: 'Stock audit job enqueued to BullMQ.', jobId: result.jobId }, { status: 202 });
   } catch (err: any) {
     console.error('[STOCK_AUDIT_ERROR]', err);
-    return NextResponse.json({ ok: false, error: err?.message || 'Audit failed' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: err?.message || 'Audit enqueue failed' }, { status: 500 });
   }
 }

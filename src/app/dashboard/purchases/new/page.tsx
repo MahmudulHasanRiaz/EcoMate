@@ -856,7 +856,7 @@ export default function NewPurchaseOrderPage() {
                       )}
                     </div>
                   ))}
-                  {orderItems.length === 0 && <div className="text-center py-6 text-muted-foreground bg-muted/20 rounded-lg border-2 border-dashed">No items added. Click &quot;Add Products&quot; to start.</div>}
+                  {orderItems.length === 0 && <div className="text-center py-6 text-muted-foreground bg-muted/20 rounded-lg border-2 border-dashed">No items added. Click "Add Products" to start.</div>}
                 </div>
 
                 <div className="hidden w-full overflow-x-auto sm:block">
@@ -948,7 +948,7 @@ export default function NewPurchaseOrderPage() {
                       {orderItems.length === 0 && (
                         <TableRow>
                           <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
-                            No items added yet. Click &quot;Add Products&quot; below.
+                            No items added yet. Click "Add Products" below.
                           </TableCell>
                         </TableRow>
                       )}
@@ -1039,7 +1039,7 @@ export default function NewPurchaseOrderPage() {
                         <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
                         Internal Stock Transfer
                       </p>
-                      Items will be deducted from your warehouse inventory. Use the &quot;Lots&quot; button on each item to specify which lots to use.
+                      Items will be deducted from your warehouse inventory. Use the "Lots" button on each item to specify which lots to use.
                     </div>
 
                     <div className="space-y-2">
@@ -1127,7 +1127,7 @@ export default function NewPurchaseOrderPage() {
                       </div>
                     </div>
                   ))}
-                  {generalOrderItems.length === 0 && <div className="text-center py-6 text-muted-foreground bg-muted/20 rounded-lg border-2 border-dashed">No items added. Click &quot;Add Products&quot; to start.</div>}
+                  {generalOrderItems.length === 0 && <div className="text-center py-6 text-muted-foreground bg-muted/20 rounded-lg border-2 border-dashed">No items added. Click "Add Products" to start.</div>}
                 </div>
 
                 <div className="hidden w-full overflow-x-auto sm:block">

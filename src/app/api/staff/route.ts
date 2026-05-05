@@ -5,7 +5,7 @@ import { normalizeSalaryDetails, normalizeCommissionDetails } from '@server/util
 import { enforcePermission } from '@/lib/security';
 import { apiError, apiServerError } from '@/lib/error';
 import { createStaffSchema } from '@/lib/validations/staff';
-import { getPresetPermissions } from '@/lib/permissions';
+import { getPresetPermissions } from '@/lib/staff-permissions';
 import { attachPageAccess } from '@/lib/page-access';
 
 import { getStaffListServer } from '@/server/modules/staff-list';
@@ -20,8 +20,8 @@ const uiToDbRole: Record<string, string> = {
   'Call Centre Manager': 'CallCentreManager',
   'Courier Manager': 'CourierManager',
   'Courier Call Assistant': 'CourierCallAssistant',
-  Partner: 'Vendor_Supplier',
-  'Vendor/Supplier': 'Vendor_Supplier',
+  Partner: 'VendorSupplier',
+  'Vendor/Supplier': 'VendorSupplier',
   'Cutting Master': 'CuttingMan',
   Marketer: 'Marketer',
   'Finance Manager': 'FinanceManager',

@@ -363,6 +363,8 @@ export async function processWooWebhookPayload(
             businessId: integration?.businessId || null,
             businessName: integration?.business?.name || integration?.storeName || integration?.storeUrl || 'WooCommerce',
             platform: inferPlatformFromUrl(data.landingPage || data.meta_data?.find?.((m: any) => m.key === 'landingPage')?.value),
+            channel: 'Retail',
+            sourcePlatform: 'Woo',
             source: 'woo',
             paymentMethod: mapPaymentMethod(data?.payment_method_title) as any,
             paidAmount: data?.status === 'completed' ? total : 0,

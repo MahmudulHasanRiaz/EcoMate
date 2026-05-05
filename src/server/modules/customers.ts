@@ -7,10 +7,14 @@ export type CustomerListParams = {
     cursor?: string;
     dateFrom?: string;
     dateTo?: string;
+    type?: 'Retail' | 'Wholesaler' | 'all';
 };
 
-export async function getCustomerStats(params?: { dateFrom?: string; dateTo?: string }) {
+export async function getCustomerStats(params?: { dateFrom?: string; dateTo?: string; type?: 'Retail' | 'Wholesaler' | 'all' }) {
     const where: any = {};
+    if (params?.type && params.type !== 'all') {
+        where.type = params.type;
+    }
     if (params?.dateFrom || params?.dateTo) {
         where.joinDate = {};
         if (params.dateFrom) where.joinDate.gte = new Date(params.dateFrom);
@@ -46,9 +50,14 @@ export async function getCustomerStats(params?: { dateFrom?: string; dateTo?: st
 export async function getCustomers({
     search,
     pageSize = 20,
-    cursor
+    cursor,
+    type
 }: CustomerListParams = {}) {
     const where: any = {};
+
+    if (type && type !== 'all') {
+        where.type = type;
+    }
 
     if (search) {
         where.OR = [
@@ -99,6 +108,7 @@ export async function getCustomers({
         address: row.address || '',
         district: row.district || '',
         country: row.country || 'BD',
+        type: row.type || 'Retail',
     }));
 
     return { customers, nextCursor };
@@ -126,6 +136,7 @@ export async function getCustomerById(id: string): Promise<Customer | undefined>
         address: row.address || '',
         district: row.district || '',
         country: row.country || 'BD',
+        type: row.type || 'Retail',
     };
 }
 
@@ -138,6 +149,7 @@ export async function createCustomer(data: CustomerCreateInput) {
             address: data.address || '',
             district: data.district || '',
             country: data.country || 'BD',
+            type: (data as any).type || 'Retail',
             joinDate: new Date(),
         },
     });
@@ -154,6 +166,7 @@ export async function updateCustomer(id: string, data: CustomerUpdateInput) {
     if (typeof data.address !== 'undefined') updateData.address = data.address || '';
     if (typeof data.district !== 'undefined') updateData.district = data.district || '';
     if (typeof data.country !== 'undefined') updateData.country = data.country || 'BD';
+    if (typeof (data as any).type !== 'undefined') updateData.type = (data as any).type;
 
     return prisma.customer.update({
         where: { id },

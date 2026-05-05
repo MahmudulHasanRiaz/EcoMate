@@ -59,6 +59,26 @@ export async function GET(req: NextRequest) {
 
     const sortField = (url.searchParams.get('sortField') as any) || undefined;
     const sortOrder = (url.searchParams.get('sortOrder') as any) || undefined;
+    const channel = (url.searchParams.get('channel') as any) || undefined;
+    const sourcePlatform = (url.searchParams.get('sourcePlatform') as any) || undefined;
+
+    // Validation
+    const validChannels = ['Retail', 'Wholesale', 'all'];
+    if (channel && !validChannels.includes(channel)) {
+      return apiError(`Invalid channel: ${channel}. Must be one of ${validChannels.join(', ')}`, 400);
+    }
+
+    const validPlatforms = ['Manual', 'POS', 'Woo', 'Messenger', 'Facebook', 'WhatsApp', 'TikTok', 'Instagram', 'Website', 'Call', 'SR', 'WholesalerPortal', 'Other'];
+    if (sourcePlatform && !validPlatforms.includes(sourcePlatform)) {
+      return apiError(`Invalid sourcePlatform: ${sourcePlatform}. Must be one of ${validPlatforms.join(', ')}`, 400);
+    }
+
+    // Authorization Guard for Wholesale
+    const canAccessWholesale = ['SuperAdmin', 'Admin', 'Manager'].includes(staff?.role || '');
+    const requestedWholesale = channel === 'Wholesale' || channel === 'all';
+    if (requestedWholesale && !canAccessWholesale) {
+      return apiError('Access denied: Wholesale data requires elevated permissions.', 403);
+    }
 
     // Access Control
     const isAdmin = staff?.role === 'Admin';
@@ -95,6 +115,8 @@ export async function GET(req: NextRequest) {
       sortField,
       sortOrder,
       excludeComboOnly: packingView,
+      channel,
+      sourcePlatform,
     });
     return apiSuccess(data);
   } catch (error: any) {
@@ -123,6 +145,9 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     if (error?.code === 'INVALID_PHONE') {
       return apiError('Valid phone number is required', 422, { code: 'INVALID_PHONE', customerPhone: ['Valid phone number is required'] });
+    }
+    if (error?.code === 'INVALID_SALES_REP') {
+      return apiError(error.message || 'Invalid Sales Representative selection.', 422, { code: 'INVALID_SALES_REP' });
     }
     if (error?.code === 'RESERVED_NOT_IN_PACKING') {
       return apiError(

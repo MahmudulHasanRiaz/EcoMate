@@ -121,10 +121,11 @@ type LeadPrefill = {
     }>;
 };
 
-export function NewOrderDialog({ open, onOpenChange, onOrderCreated, orderToEdit, baseOrderForExchange, leadPrefill }: {
+export function NewOrderDialog({ open, onOpenChange, onOrderCreated, onSubmitOverride, orderToEdit, baseOrderForExchange, leadPrefill }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onOrderCreated?: (order?: any) => void;
+    onSubmitOverride?: (payload: any) => Promise<void>;
     orderToEdit?: any; // Using any for flexibility, ideally Order type
     baseOrderForExchange?: any;
     leadPrefill?: LeadPrefill | null;
@@ -1063,6 +1064,14 @@ export function NewOrderDialog({ open, onOpenChange, onOrderCreated, orderToEdit
                 } : {})
             };
 
+            if (onSubmitOverride) {
+                await onSubmitOverride(payload);
+                toast({ title: "Updated", description: `Order processed successfully.` });
+                sessionStorage.removeItem('new_order_draft');
+                onOpenChange(false);
+                return;
+            }
+
             if (orderToEdit) {
                 await updateOrder(orderToEdit.id, payload);
                 toast({ title: "Updated", description: `Order ${orderToEdit.orderNumber || orderToEdit.id} updated successfully.` });
@@ -1213,7 +1222,7 @@ export function NewOrderDialog({ open, onOpenChange, onOrderCreated, orderToEdit
                                                         {isSearchProductsLoading && shouldUseServerProductSearch ? (
                                                             <div className="p-8 text-center text-muted-foreground text-sm">Searching products...</div>
                                                         ) : filteredProducts.length === 0 ? (
-                                                            <div className="p-8 text-center text-muted-foreground text-sm">No products found for &quot;{searchQuery}&quot;</div>
+                                                            <div className="p-8 text-center text-muted-foreground text-sm">No products found for "{searchQuery}"</div>
                                                         ) : (
                                                             filteredProducts.slice(0, 50).map((product: any) => (
                                                                 <div

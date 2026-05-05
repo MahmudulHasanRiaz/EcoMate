@@ -160,6 +160,10 @@ const statusColors: Record<string, string> = {
     'In Progress': 'bg-amber-500/20 text-amber-700',
     'Resolved': 'bg-green-500/20 text-green-700',
     'Closed': 'bg-gray-500/20 text-gray-700',
+    'Wholesale:Pending': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    'Wholesale:Approved': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    'Wholesale:EditedApproved': 'bg-blue-100 text-blue-800 border-blue-200',
+    'Wholesale:Rejected': 'bg-rose-100 text-rose-800 border-rose-200',
 };
 
 // ... existing icons ...
@@ -324,39 +328,120 @@ type StatusUpdateFormValues = z.infer<typeof statusUpdateSchema>;
 const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
 const reportCache = new Map<string, { data: DeliveryReport, timestamp: number }>();
 
-function ProductThumb({ product, size = 64 }: { product: OrderProduct; size?: number }) {
-    const image = (product as any).image ?? (product as any).imageUrl ?? (product as any).product?.image;
-    const initialSrc = resolveImageSrc(image);
-    const [src, setSrc] = React.useState(initialSrc);
-    const [show404, setShow404] = React.useState(initialSrc.includes('placeholder'));
-    const alt = product.name && product.name.trim().length > 0 ? product.name : 'Product image';
+function WholesaleReviewBanner({ order, onAction, onEditClick }: { order: OrderType; onAction: () => void; onEditClick: () => void }) {
+    const { toast } = useToast();
+    const [isProcessing, setIsProcessing] = React.useState(false);
+    const [reviewNote, setReviewNote] = React.useState('');
+    const [actionType, setActionType] = React.useState<'Approved' | 'Rejected' | null>(null);
 
-    React.useEffect(() => {
-        const image = (product as any).image ?? (product as any).imageUrl ?? (product as any).product?.image;
-        const next = resolveImageSrc(image);
-        setSrc(next);
-        setShow404(next.includes('placeholder'));
-    }, [product]);
+    const handleApproval = async () => {
+        if (!actionType) return;
+        if (!reviewNote.trim()) {
+            toast({ variant: 'destructive', title: "Reason Required", description: `Please provide a reason for ${actionType === 'Approved' ? 'approval' : 'rejection'}.` });
+            return;
+        }
+
+        setIsProcessing(true);
+        try {
+            const { processWholesaleApproval } = await import('@/services/wholesale');
+            await processWholesaleApproval({
+                orderId: order.id,
+                action: actionType,
+                note: reviewNote.trim()
+            });
+            toast({ title: `Order ${actionType}`, description: `The wholesale order has been ${actionType.toLowerCase()}.` });
+            onAction();
+            setActionType(null);
+            setReviewNote('');
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: "Action failed", description: error.message });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
 
     return (
-        <div className="relative" style={{ width: size, height: size }}>
-            <Image
-                alt={alt}
-                className="h-full w-full rounded-md object-cover"
-                height={size}
-                width={size}
-                src={src}
-                onError={() => {
-                    setSrc('/placeholder.svg');
-                    setShow404(true);
-                }}
-            />
-            {show404 && (
-                <div className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                    404
+        <Card className="border-yellow-200 bg-yellow-50 shadow-sm overflow-hidden">
+            <CardContent className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-yellow-100 rounded-full">
+                        <Monitor className="h-5 w-5 text-yellow-700" />
+                    </div>
+                    <div>
+                        <h3 className="font-semibold text-yellow-900 flex items-center gap-2">
+                            Pending Wholesale Review
+                            <Badge variant="outline" className="bg-yellow-200 text-yellow-800 border-yellow-300">
+                                {order.WholesaleRule?.name || 'Manual'}
+                            </Badge>
+                        </h3>
+                        <p className="text-sm text-yellow-700">
+                            This order requires administrative approval before it can be processed.
+                        </p>
+                    </div>
                 </div>
-            )}
-        </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="bg-white hover:bg-yellow-100 text-yellow-700 border-yellow-200"
+                        onClick={onEditClick}
+                    >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit & Approve
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white border-transparent"
+                        onClick={() => { setActionType('Approved'); setReviewNote(''); }}
+                    >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Approve
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200"
+                        onClick={() => { setActionType('Rejected'); setReviewNote(''); }}
+                    >
+                        <XCircle className="h-4 w-4 mr-2" />
+                        Reject
+                    </Button>
+                </div>
+            </CardContent>
+
+            <Dialog open={actionType !== null} onOpenChange={(open) => !open && setActionType(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{actionType === 'Approved' ? 'Approve' : 'Reject'} Wholesale Order</DialogTitle>
+                        <DialogDescription>
+                            Please provide a reason for {actionType === 'Approved' ? 'approving' : 'rejecting'} this order. This will be visible in the order logs.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4">
+                        <Label htmlFor="review-note">Review Note</Label>
+                        <Textarea
+                            id="review-note"
+                            placeholder={actionType === 'Approved' ? "e.g., Verified prices, Checked with warehouse..." : "e.g., Minimum quantity not met, Price mismatch..."}
+                            value={reviewNote}
+                            onChange={(e) => setReviewNote(e.target.value)}
+                            className="mt-2"
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setActionType(null)}>Cancel</Button>
+                        <Button
+                            variant={actionType === 'Approved' ? 'default' : 'destructive'}
+                            onClick={handleApproval}
+                            disabled={isProcessing || !reviewNote.trim()}
+                        >
+                            {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : actionType === 'Approved' ? <CheckCircle className="h-4 w-4 mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
+                            Confirm {actionType}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </Card>
     );
 }
 
@@ -386,6 +471,40 @@ export function OrderDetailsView({ orderId, onClose, lockToken, onUpdated }: { o
     const [lastCheckTime, setLastCheckTime] = React.useState<string>(new Date().toISOString());
     const [isExternalChecking, setIsExternalChecking] = React.useState(false);
     const [isRefundDialogOpen, setIsRefundDialogOpen] = React.useState(false);
+    const [wholesaleReviewMode, setWholesaleReviewMode] = React.useState(false);
+
+    const handleWholesaleEditAndApprove = async (data: any) => {
+        if (!order) return;
+        try {
+            const { editAndApproveWholesaleOrder } = await import('@/services/wholesale');
+            await editAndApproveWholesaleOrder({
+                orderId: order.id,
+                note: data.reviewNote || 'Approved with edits via review',
+                editedFields: {
+                    products: data.products,
+                    shipping: data.shipping,
+                    discount: data.discount,
+                    paymentMethod: data.paymentMethod,
+                    customerName: data.customerName,
+                    customerPhone: data.customerPhone,
+                    shippingAddress: data.shippingAddress
+                }
+            });
+            toast({
+                title: "Wholesale Order Approved",
+                description: "The order has been updated and approved.",
+            });
+            setWholesaleReviewMode(false);
+            getOrderById(orderId).then(updated => { if (updated) setOrder(updated); });
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: "Failed to approve wholesale order",
+                description: error.message,
+            });
+        }
+    };
+
     const [refundAmount, setRefundAmount] = React.useState(0);
     const [refundAccountId, setRefundAccountId] = React.useState('');
     const [isRefundSaving, setIsRefundSaving] = React.useState(false);
@@ -603,6 +722,47 @@ export function OrderDetailsView({ orderId, onClose, lockToken, onUpdated }: { o
         }
     };
 
+    const productImageSrc = React.useCallback((product: OrderProduct) => {
+        const image = (product as any).image ?? (product as any).imageUrl ?? (product as any).product?.image;
+        return resolveImageSrc(image);
+    }, []);
+
+    const ProductThumb = React.memo(function ProductThumb({ product, size = 64 }: { product: OrderProduct; size?: number }) {
+        const initialSrc = productImageSrc(product);
+        // eslint-disable-next-line react-hooks/rules-of-hooks
+        const [src, setSrc] = React.useState(initialSrc);
+        // eslint-disable-next-line react-hooks/rules-of-hooks
+        const [show404, setShow404] = React.useState(initialSrc.includes('placeholder'));
+        const alt = product.name && product.name.trim().length > 0 ? product.name : 'Product image';
+
+        // eslint-disable-next-line react-hooks/rules-of-hooks
+        React.useEffect(() => {
+            const next = productImageSrc(product);
+            setSrc(next);
+            setShow404(next.includes('placeholder'));
+        }, [product, productImageSrc]);
+
+        return (
+            <div className="relative" style={{ width: size, height: size }}>
+                <Image
+                    alt={alt}
+                    className="h-full w-full rounded-md object-cover"
+                    height={size}
+                    width={size}
+                    src={src}
+                    onError={() => {
+                        setSrc('/placeholder.svg');
+                        setShow404(true);
+                    }}
+                />
+                {show404 && (
+                    <div className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        404
+                    </div>
+                )}
+            </div>
+        );
+    }, [productImageSrc]);
 
     const deriveShippingAddress = React.useCallback((shippingAddress: any) => {
         const topLevel = shippingAddress && typeof shippingAddress === 'object'
@@ -630,7 +790,7 @@ export function OrderDetailsView({ orderId, onClose, lockToken, onUpdated }: { o
         let utmSource = '';
         let utmMedium = '';
         let utmCampaign = '';
-        
+
         try {
             const scanMeta = (meta: any) => {
                 const k = (meta?.key || '').toString().toLowerCase();
@@ -1158,6 +1318,44 @@ export function OrderDetailsView({ orderId, onClose, lockToken, onUpdated }: { o
 
     return (
         <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6 xl:p-8">
+            {order.channel === 'Wholesale' && order.wholesaleApprovalStatus === 'Pending' && (
+                <WholesaleReviewBanner
+                    order={order}
+                    onAction={() => getOrderById(orderId).then(updated => { if (updated) setOrder(updated); })}
+                    onEditClick={() => setWholesaleReviewMode(true)}
+                />
+            )}
+
+            {wholesaleReviewMode && (
+                <NewOrderDialog
+                    open={wholesaleReviewMode}
+                    onOpenChange={setWholesaleReviewMode}
+                    orderToEdit={order}
+                    onSubmitOverride={async (payload) => {
+                        const note = window.prompt("Please enter a note for approving with these edits:");
+                        if (note === null) throw new Error("Approval cancelled");
+                        if (!note.trim()) {
+                            toast({ variant: 'destructive', title: "Reason Required", description: "Approval note is mandatory." });
+                            throw new Error("Approval note is mandatory");
+                        }
+
+                        try {
+                            const { editAndApproveWholesaleOrder } = await import('@/services/wholesale');
+                            await editAndApproveWholesaleOrder({
+                                orderId: order.id,
+                                note: note.trim(),
+                                editedFields: payload
+                            });
+                            toast({ title: 'Order Approved', description: 'Edits saved and order approved.' });
+                        } catch (e: any) {
+                            toast({ variant: 'destructive', title: 'Approval Error', description: e.message });
+                            throw e; // Rethrow so NewOrderDialog stays open/submitting state handled
+                        }
+                        getOrderById(orderId).then(updated => { if (updated) setOrder(updated); });
+                        setWholesaleReviewMode(false);
+                    }}
+                />
+            )}
             <div className="flex items-center gap-4 pr-10 sm:pr-0">
                 {onClose ? (
                     <Button variant="outline" size="icon" className="h-7 w-7" onClick={onClose}>

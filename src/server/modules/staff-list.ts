@@ -14,13 +14,14 @@ const uiToDbRole: Record<string, string> = {
   'Call Centre Manager': 'CallCentreManager',
   'Courier Manager': 'CourierManager',
   'Courier Call Assistant': 'CourierCallAssistant',
-  Partner: 'Vendor_Supplier',
-  'Vendor/Supplier': 'Vendor_Supplier',
+  Partner: 'VendorSupplier',
+  'Vendor/Supplier': 'VendorSupplier',
   'Cutting Master': 'CuttingMan',
   Marketer: 'Marketer',
   'Finance Manager': 'FinanceManager',
   'Project Manager': 'ProjectManager',
   'Modarator Manager': 'ModaratorManager',
+  'Sales Representative': 'SalesRepresentative',
   Custom: 'Custom',
 };
 
@@ -34,12 +35,13 @@ const dbToUiRole: Record<string, StaffRole> = {
     CallCentreManager: 'Call Centre Manager',
     CourierManager: 'Courier Manager',
     CourierCallAssistant: 'Courier Call Assistant',
-    Vendor_Supplier: 'Vendor/Supplier',
+    VendorSupplier: 'Vendor/Supplier',
     ProjectManager: 'Project Manager',
     ModaratorManager: 'Modarator Manager',
     CuttingMan: 'Cutting Master',
     Marketer: 'Marketer',
     FinanceManager: 'Finance Manager',
+    SalesRepresentative: 'Sales Representative',
     Custom: 'Custom',
 };
 

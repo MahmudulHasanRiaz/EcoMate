@@ -3,7 +3,7 @@ import { randomBytes, createHash } from 'crypto';
 import { enqueueStockSyncJob, enqueueStockSyncBatchJob } from '@/server/queues/index';
 import { pushWooStatusUpdate, normalizeWooStoreUrl } from './integrations';
 import { generateOrderNumber } from '../utils/orderNumber';
-import { handleStockReservation } from './stock-reservation';
+import { handleStockReservation, ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE } from './stock-reservation';
 import { revalidateTags } from '../utils/revalidate';
 import { generateInvalidPhonePlaceholder, normalizeBdPhoneForStorage } from '@/lib/phone';
 import { notifyAdmins } from './notifications';
@@ -719,6 +719,8 @@ export async function syncOneWooOrder(
     customerName,
     customerEmail,
     customerPhone: customer.phone,
+    channel: 'Retail',
+    sourcePlatform: 'Woo',
     platform: inferPlatformFromUrl(wo.landingPage || wo.meta_data?.find?.((m: any) => m.key === 'landingPage')?.value),
     source: 'woo',
     date: new Date(wo.date_created || Date.now()),
@@ -888,18 +890,7 @@ export async function syncOneWooOrder(
       if (mode !== 'publish') {
         const finalOrder = await tx.order.findUnique({
           where: { id: orderId },
-          include: {
-            products: {
-              include: {
-                product: {
-                  include: {
-                    variants: true,
-                    comboItems: { include: { child: { include: { variants: true } } } }
-                  }
-                }
-              }
-            }
-          }
+          ...ORDER_WITH_PRODUCTS_AND_BRANDS_INCLUDE,
         });
         if (finalOrder) {
           console.log('[STOCK_RESERVE] Creating reservation for Woo Sync order', orderId);
@@ -933,6 +924,16 @@ export async function syncOneWooOrder(
         payload: wo,
         integrationBusinessId: integration?.businessId
     });
+  }
+
+  // Trigger wholesale classification if applicable
+  if (orderId) {
+    try {
+      const { classifyOrderAsWholesale } = await import('@/server/modules/wholesale');
+      await classifyOrderAsWholesale(orderId);
+    } catch (error) {
+      console.error('[Wholesale] Classification failed for Woo order:', orderId, error);
+    }
   }
 
   return { action: 'imported', orderId, created: result.createdAt.getTime() === result.updatedAt.getTime() };

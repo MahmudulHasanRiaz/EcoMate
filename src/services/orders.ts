@@ -172,7 +172,9 @@ function normalizeProduct(p: any, source?: string): OrderProduct {
         name: p.name || p.product?.name || 'Product',
         sku: matchedVariant?.sku || p.sku || p.product?.sku,
         variantId,
-        variantName: matchedVariant?.name || (variantAttributes ? Object.values(variantAttributes).join(', ') : undefined),
+        variantName: (variantAttributes && Object.keys(variantAttributes).length > 0) 
+            ? Object.values(variantAttributes).join(', ') 
+            : (matchedVariant?.name || undefined),
         variantAttributes,
         isCombo,
         componentBreakdown,
@@ -218,6 +220,8 @@ export interface OrderListParams {
     sortField?: 'total' | 'createdAt' | 'id';
     sortOrder?: 'asc' | 'desc';
     packingView?: boolean;
+    channel?: 'Retail' | 'Wholesale' | 'all';
+    sourcePlatform?: string;
 }
 ;
 
@@ -248,6 +252,8 @@ export async function getOrders(
             if (params.sortField) sp.set('sortField', params.sortField);
             if (params.sortOrder) sp.set('sortOrder', params.sortOrder);
             if (params.packingView) sp.set('packingView', '1');
+            if (params.channel) sp.set('channel', params.channel);
+            if (params.sourcePlatform) sp.set('sourcePlatform', params.sourcePlatform);
         }
 
         const url = `${API_BASE_URL}/orders?${sp.toString()}`;
@@ -650,12 +656,13 @@ export type IncompleteSummary = {
     successRatioPct: number;
 };
 
-export async function getOrderSummary(params?: { from?: string; to?: string; businessId?: string }): Promise<OrderSummaryStat[]> {
+export async function getOrderSummary(params?: { from?: string; to?: string; businessId?: string; channel?: string }): Promise<OrderSummaryStat[]> {
     try {
         const queryParams = new URLSearchParams();
         if (params?.from) queryParams.set('from', params.from);
         if (params?.to) queryParams.set('to', params.to);
         if (params?.businessId) queryParams.set('businessId', params.businessId);
+        if (params?.channel) queryParams.set('channel', params.channel);
 
         const res = await fetch(`${API_BASE_URL}/orders/summary?${queryParams.toString()}`, {
             next: { revalidate: 60, tags: ['orders', 'order-summary'] }

@@ -147,7 +147,7 @@ export default function BranchesSettingsPage() {
               ) : branches.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
-                    No branches created yet. Click &quot;Add Branch&quot; to start.
+                    No branches created yet. Click "Add Branch" to start.
                   </TableCell>
                 </TableRow>
               ) : branches.map((branch) => (

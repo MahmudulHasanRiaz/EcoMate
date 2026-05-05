@@ -59,6 +59,24 @@ export async function enqueueStockSyncBatchJob(data: any) {
   return true;
 }
 
+export async function enqueueStockAuditJob() {
+  const queue = getQueue('stock-sync');
+  if (!queue) return { queued: false, reason: 'Queue unavailable' };
+  
+  // Deterministic job ID for the current hour to prevent duplicates
+  const d = new Date();
+  const jobId = `stock-audit-${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}-${d.getUTCHours()}`;
+
+  const job = await queue.add('stock-audit', {}, {
+    jobId,
+    removeOnComplete: 100,
+    removeOnFail: 100,
+    attempts: 1, // Audit is heavy, don't auto-retry on fail
+  });
+  
+  return { queued: true, jobId: job.id };
+}
+
 export async function enqueueReportJob(name: string, data: any) {
   const queue = getQueue('reports');
   if (!queue) return { queued: false };

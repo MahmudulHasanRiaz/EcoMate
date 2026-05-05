@@ -1,7 +1,9 @@
+'use server';
+
 import prisma from '@/lib/prisma';
 import { unstable_cache } from 'next/cache';
 
-export const getCategories = unstable_cache(
+const getCachedCategories = unstable_cache(
     async () => {
         return prisma.category.findMany({
             orderBy: { name: 'asc' },
@@ -15,5 +17,9 @@ export const getCategories = unstable_cache(
     ['categories'],
     { tags: ['categories'] }
 );
+
+export async function getCategories() {
+    return getCachedCategories();
+}
 
 export type CategoryWithCount = Awaited<ReturnType<typeof getCategories>>[number];

@@ -15,7 +15,7 @@ const ComingSoonPage = () => {
           We are working hard to bring you new and exciting features.
         </p>
         <p className="text-lg text-gray-600 dark:text-gray-400">
-          Insha&apos;Allah, this module will be available very soon.
+          Insha'Allah, this module will be available very soon.
         </p>
       </div>
     </div>

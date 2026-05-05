@@ -10,7 +10,7 @@ export default function NotFound() {
         <div className="min-h-[80vh] flex flex-col items-center justify-center px-4 sm:px-6 py-12 text-center select-none">
             {/* Cute Floating Ghost */}
             <div className="relative mb-8">
-                <div className="animate-bounce duration-[3000ms] transition-all">
+                <div className="animate-bounce [transition-duration:3000ms] transition-all">
                     <Ghost className="h-24 w-24 sm:h-32 sm:w-32 text-primary/20" strokeWidth={1.5} />
                 </div>
                 {/* Glow behind ghost */}
@@ -26,7 +26,7 @@ export default function NotFound() {
                     Lost in Space?
                 </h2>
                 <p className="text-sm sm:text-base text-muted-foreground leading-relaxed italic">
-                    The page you&apos;re looking for has drifted off into the digital void. Don&apos;t worry, it happens to the best of us!
+                    The page you're looking for has drifted off into the digital void. Don't worry, it happens to the best of us!
                 </p>
             </div>
 

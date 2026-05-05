@@ -154,6 +154,23 @@ const navItems = (permissions: StaffMember['permissions'] | null, role?: string)
             ]
         },
         {
+            group: "Wholesale Management",
+            items: [
+                {
+                    label: "Wholesale",
+                    icon: Building,
+                    access: hasPageAccess(pageAccess, 'pages.wholesaleManagement', (permissions as any)?.wholesaleManagement),
+                    subItems: [
+                        { href: "/dashboard/wholesale/orders", label: "Orders", access: hasPageAccess(pageAccess, 'pages.wholesaleManagement', (permissions as any)?.wholesaleManagement) },
+                        { href: "/dashboard/wholesale/queue", label: "Approval Queue", access: hasPageAccess(pageAccess, 'pages.wholesaleManagement', (permissions as any)?.wholesaleManagement) },
+                        { href: "/dashboard/wholesale/rules", label: "Qualification Rules", access: hasPageAccess(pageAccess, 'pages.wholesaleManagement', (permissions as any)?.wholesaleManagement) },
+                        { href: "/dashboard/wholesale/product-requests", label: "Product Requests", access: hasPageAccess(pageAccess, 'pages.wholesaleManagement', (permissions as any)?.wholesaleManagement) },
+                        { href: "/dashboard/wholesale/settings/pricing", label: "Pricing Settings", access: hasPageAccess(pageAccess, 'pages.wholesaleManagement', (permissions as any)?.wholesaleManagement) },
+                    ]
+                }
+            ]
+        },
+        {
             group: "Fulfillment & Logistics",
             items: [
                 { href: "/dashboard/packing-orders", icon: ClipboardList, label: "Packing Orders", access: hasPageAccess(pageAccess, 'pages.packingOrders', permissions?.packingOrders) },

@@ -45,8 +45,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { useToast } from "@/hooks/use-toast";
-import { getAllProductsLookup, getCategories, getProductById, updateProduct } from '@/services/products';
+import { getAllProductsLookup, getProductById, updateProduct } from '@/services/products';
+import { getCategories, CategoryWithCount } from '@/services/categories';
 import type { Product, Category, ProductVariant, ProductType, ProductImage } from '@/types';
+
 import { Skeleton } from '@/components/ui/skeleton';
 import { ImageUploader } from '@/components/ui/image-uploader';
 import { placeholderImages } from '@/lib/placeholder-images-data';
@@ -92,6 +94,7 @@ const productSchema = z.object({
 
   categoryId: z.string().optional(),
   categoryIds: z.array(z.string()).optional(),
+  brandId: z.string().optional(),
   tags: z.string().optional(),
 
   ornaFabric: z.coerce.number().optional(),
@@ -112,6 +115,7 @@ const productSchema = z.object({
   wholesalePackQuantity: optionalWholesaleNumber,
   wholesaleUnitLabel: z.string().optional(),
   wholesaleNote: z.string().optional(),
+  videoUrl: z.string().optional(),
 }).refine(data => {
   if (data.salePrice && data.price) {
     return data.salePrice < data.price;
@@ -178,7 +182,8 @@ export default function EditProductPage() {
 
   const [product, setProduct] = React.useState<Product | undefined>(undefined);
   const [allProducts, setAllProducts] = React.useState<Product[]>([]);
-  const [allCategories, setAllCategories] = React.useState<Category[]>([]);
+  const [allCategories, setAllCategories] = React.useState<CategoryWithCount[]>([]);
+  const [allBrands, setAllBrands] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isComboSelectorOpen, setIsComboSelectorOpen] = React.useState(false);
@@ -225,6 +230,7 @@ export default function EditProductPage() {
       height: undefined,
       categoryId: '',
       categoryIds: [],
+      brandId: '',
       tags: '',
       ornaFabric: undefined,
       jamaFabric: undefined,
@@ -242,6 +248,7 @@ export default function EditProductPage() {
       wholesalePackQuantity: undefined,
       wholesaleUnitLabel: '',
       wholesaleNote: '',
+      videoUrl: '',
     },
   });
 
@@ -256,11 +263,13 @@ export default function EditProductPage() {
         getProductById(productId),
         getAllProductsLookup({ pageSize: 200 }),
         getCategories(),
+        fetch('/api/brands?isActive=true').then(res => res.json()).catch(() => ({ data: [] })),
         fetch('/api/settings/general').then(res => res.json()).catch(() => ({}))
-      ]).then(([productData, productsData, categoriesData, settingsData]) => {
+      ]).then(([productData, productsData, categoriesData, brandsData, settingsData]) => {
         setProduct(productData);
         setAllProducts(productsData.filter(p => p.id !== productId));
         setAllCategories(categoriesData);
+        setAllBrands(brandsData.data || []);
         setSettings(settingsData);
 
         if (productData) {
@@ -279,6 +288,7 @@ export default function EditProductPage() {
             height: productData.height ?? undefined,
             categoryId: productData.categoryId ?? undefined,
             categoryIds: productData.categoryIds ?? [],
+            brandId: productData.brandId ?? '',
             tags: productData.tags || '',
             ornaFabric: productData.ornaFabric ?? undefined,
             jamaFabric: productData.jamaFabric ?? undefined,
@@ -308,6 +318,7 @@ export default function EditProductPage() {
             wholesalePackQuantity: productData.wholesalePackQuantity ?? undefined,
             wholesaleUnitLabel: productData.wholesaleUnitLabel || '',
             wholesaleNote: productData.wholesaleNote || '',
+            videoUrl: (productData as any).videoUrl || '',
           });
           prevNameRef.current = productData.name || '';
 
@@ -1125,6 +1136,69 @@ export default function EditProductPage() {
                   />
                 </CardContent>
               </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle>Organization</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Categories</Label>
+                    <CategoryTreeSelect
+                      categories={allCategories}
+                      value={form.watch('categoryIds') || []}
+                      onSelect={(v) => form.setValue('categoryIds', Array.isArray(v) ? v : [v])}
+                      multiple
+                    />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="brandId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Brand</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || 'none'}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a brand" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No Brand</SelectItem>
+                            {allBrands.map((brand) => (
+                              <SelectItem key={brand.id} value={brand.id}>
+                                {brand.name} ({brand.type})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                        {allBrands.length === 0 && (
+                          <FormDescription className="text-xs">
+                            No active brands found.{' '}
+                            <Link href="/dashboard/settings/brands" className="text-primary hover:underline">
+                              Configure brands
+                            </Link>
+                          </FormDescription>
+                        )}
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="tags"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tags</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Cotton, Eco-friendly" {...field} value={field.value || ''} />
+                        </FormControl>
+                        <FormDescription>Comma-separated values.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
               <Tabs defaultValue="general" className="w-full">
                 <TabsList className="w-full">
                   <TabsTrigger value="general" className="flex-1">
@@ -1190,6 +1264,26 @@ export default function EditProductPage() {
                             </FormControl>
                             <FormDescription>
                               Leave blank to not have a sale.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="videoUrl"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Product Video URL</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ''}
+                                placeholder="https://youtube.com/watch?v=... or https://facebook.com/..."
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              YouTube or Facebook video link for product showcase
                             </FormDescription>
                             <FormMessage />
                           </FormItem>
@@ -1414,56 +1508,9 @@ export default function EditProductPage() {
                   </Card>
                 </TabsContent>
               </Tabs>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Organization</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="categoryIds"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Categories</FormLabel>
-                        <FormControl>
-                          <CategoryTreeSelect
-                            categories={allCategories as any}
-                            value={field.value || []}
-                            onSelect={(v) => {
-                              const ids = Array.isArray(v) ? v : v ? [v] : [];
-                              field.onChange(ids);
-                              form.setValue('categoryId', ids[0] || '');
-                            }}
-                            multiple
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="tags"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Tags</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Cotton, Eco-friendly"
-                            {...field}
-                            value={field.value || ''}
-                          />
-                        </FormControl>
-                        <FormDescription>Comma-separated values.</FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
       {/* Single Variant Add Modal */}
       <Dialog open={isSingleVariantModalOpen} onOpenChange={setIsSingleVariantModalOpen}>
         <DialogContent className="sm:max-w-lg flex flex-col max-h-[90vh] overflow-hidden p-0">

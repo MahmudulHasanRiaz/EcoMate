@@ -10,9 +10,6 @@ import { getBrandingSettings, getGeneralSettings } from '@/server/utils/app-sett
 // Force Node runtime so server components do not run in edge (avoids headers() sync warnings)
 export const runtime = 'nodejs';
 
-// Force dynamic to avoid prerendering during build (requires DB/Clerk at runtime)
-export const dynamic = 'force-dynamic';
-
 // const poppins = Poppins({
 //   subsets: ['latin'],
 //   display: 'swap',

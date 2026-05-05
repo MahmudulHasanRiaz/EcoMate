@@ -162,6 +162,9 @@ export async function POST(req: NextRequest) {
                     businessId: originalOrder.businessId,
                     businessName: originalOrder.businessName,
                     platform: originalOrder.platform,
+                    channel: originalOrder.channel,
+                    sourcePlatform: originalOrder.sourcePlatform,
+                    salesRepresentativeId: originalOrder.salesRepresentativeId,
                     source: originalOrder.source,
                     updatedAt: new Date(),
 

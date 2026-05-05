@@ -113,31 +113,26 @@ export async function POST(req: NextRequest) {
   const status = payload.status || payload.delivery_status || payload.tracking_status || null;
   const trackingMessage = payload.tracking_message || payload.message || null;
 
-  if (!token) {
-    console.warn('[STEADFAST_WEBHOOK_UNAUTHORIZED] Missing token');
-    return NextResponse.json({ status: 'error', message: 'Unauthorized' }, { status: 401 });
-  }
-
-  // match integration by webhookToken
+  // Optional: match integration by webhookToken if provided
   let integration: any = null;
-  try {
-    integration = await prisma.courierIntegration.findFirst({
-      where: {
-        courierName: 'Steadfast',
-        status: 'Active',
-        credentials: {
-          path: ['webhookToken'],
-          equals: token,
+  if (token) {
+    try {
+      integration = await prisma.courierIntegration.findFirst({
+        where: {
+          courierName: 'Steadfast',
+          status: 'Active',
+          credentials: {
+            path: ['webhookToken'],
+            equals: token,
+          },
         },
-      },
-    });
-  } catch (err) {
-    console.error('[STEADFAST_WEBHOOK_INTEGRATION_LOOKUP_ERROR]', err);
-  }
-
-  if (!integration) {
-    console.warn('[STEADFAST_WEBHOOK_NO_INTEGRATION]', { token: token?.slice(0, 8) + '...', invoice: payload?.invoice });
-    return NextResponse.json({ status: 'error', message: 'Forbidden' }, { status: 403 });
+      });
+    } catch (err) {
+      console.error('[STEADFAST_WEBHOOK_INTEGRATION_LOOKUP_ERROR]', err);
+    }
+    if (!integration) {
+      console.warn('[STEADFAST_WEBHOOK_NO_INTEGRATION]', { token: token?.slice(0, 8) + '...', invoice: payload?.invoice });
+    }
   }
 
   const initialOrder = await findOrderByWebhook(payload);

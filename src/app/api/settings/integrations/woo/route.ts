@@ -1,20 +1,9 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getStaffAuthDetails } from '@/server/modules/staff-auth';
-import { maskSecret } from '@/lib/secret-utils';
-import { apiUnauthorized, apiForbidden } from '@/lib/error';
 
 export const revalidate = 0;
 
 export async function GET() {
-  const auth = await getStaffAuthDetails();
-  if (auth.status !== 'ok') return apiUnauthorized();
-
-  // Only allow Admin/SuperAdmin or users with settings read permission
-  if (auth.staff.role !== 'Admin' && auth.staff.role !== 'SuperAdmin' && !auth.staff.permissions.settings.read) {
-    return apiForbidden();
-  }
-
   const stores = await prisma.wooCommerceIntegration.findMany({
     orderBy: { createdAt: 'desc' },
     include: { business: true },
@@ -29,11 +18,11 @@ export async function GET() {
       businessAddress: s.business?.address || '',
       storeName: s.storeName,
       storeUrl: s.storeUrl,
-      consumerKey: maskSecret(s.consumerKey),
-      consumerSecret: maskSecret(s.consumerSecret),
+      consumerKey: s.consumerKey,
+      consumerSecret: s.consumerSecret,
       webhookUrl: (s as any).webhookUrl || '',
-      webhookSecret: maskSecret((s as any).webhookSecret),
-      apiKey: maskSecret((s as any).apiKey),
+      webhookSecret: (s as any).webhookSecret || '',
+      apiKey: (s as any).apiKey || '',
       incompleteEnabled: (s as any).incompleteEnabled ?? false,
       autoSyncEnabled: (s as any).autoSyncEnabled ?? true,
       restrictionEnabled: (s as any).restrictionEnabled ?? false,

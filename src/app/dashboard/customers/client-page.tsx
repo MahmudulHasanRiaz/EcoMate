@@ -38,14 +38,22 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { createCustomer, updateCustomer, deleteCustomer } from '@/services/customers';
-import type { Customer } from '@/types';
+import type { Customer, CustomerCreateInput, CustomerUpdateInput, CustomerType } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { handleApiResponse } from '@/lib/api-helper';
 import { defaultBadgeRules, getBadgeForValue, normalizeBadgeRules } from '@/lib/badges';
+import { cn } from '@/lib/utils';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -67,6 +75,7 @@ export default function CustomersClientPage() {
   const [deferredSearch, setDeferredSearch] = React.useState(initialSearch);
   const [, startTransition] = React.useTransition();
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>(undefined);
+  const [customerType, setCustomerType] = React.useState<'All' | 'Retail' | 'Wholesaler'>('All');
 
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [editingCustomer, setEditingCustomer] = React.useState<Customer | null>(null);
@@ -118,7 +127,8 @@ export default function CustomersClientPage() {
   const getKey = (pageIndex: number, previousPageData: any) => {
     if (previousPageData && !previousPageData.nextCursor) return null;
     const cursor = previousPageData?.nextCursor || '';
-    return `/api/customers?search=${deferredSearch}&cursor=${cursor}&pageSize=${ITEMS_PER_PAGE}`;
+    const typeQuery = customerType !== 'All' ? `&type=${customerType}` : '';
+    return `/api/customers?search=${deferredSearch}&cursor=${cursor}&pageSize=${ITEMS_PER_PAGE}${typeQuery}`;
   };
 
   const { data: infiniteData, size, setSize, isValidating, mutate, error: customersError } = useSWRInfinite<CustomersApi>(getKey, fetcher);
@@ -180,14 +190,29 @@ export default function CustomersClientPage() {
     }
   };
 
-  const handleSaveCustomer = async (formData: { name: string, phone: string, address: string }) => {
+  const handleSaveCustomer = async (data: { name: string, phone: string, address: string, type: string }) => {
     try {
       if (editingCustomer) {
-        await updateCustomer(editingCustomer.id, formData);
-        toast({ title: "Customer Updated", description: `${formData.name}'s details have been updated.` });
+        const updateData: CustomerUpdateInput = {
+          name: data.name,
+          phone: data.phone,
+          address: data.address,
+          type: data.type as CustomerType,
+        };
+        await updateCustomer(editingCustomer.id, updateData);
+        toast({ title: "Customer Updated", description: `${data.name}'s details have been updated.` });
       } else {
-        await createCustomer({ ...formData, email: '', district: 'Dhaka', country: 'Bangladesh' });
-        toast({ title: "Customer Added", description: `${formData.name} has been added.` });
+        const createData: CustomerCreateInput = {
+          name: data.name,
+          phone: data.phone,
+          address: data.address,
+          type: data.type as CustomerType,
+          email: '',
+          district: 'Dhaka',
+          country: 'Bangladesh',
+        };
+        await createCustomer(createData);
+        toast({ title: "Customer Added", description: `${data.name} has been added.` });
       }
       mutate();
       closeDialog();
@@ -225,6 +250,7 @@ export default function CustomersClientPage() {
         <TableRow>
           <TableHead>Customer Name</TableHead>
           <TableHead className="hidden sm:table-cell">Phone</TableHead>
+          <TableHead>Type</TableHead>
           <TableHead className="hidden md:table-cell">Total Orders</TableHead>
           <TableHead className="hidden md:table-cell text-right">Total Spent</TableHead>
           <TableHead>
@@ -248,6 +274,13 @@ export default function CustomersClientPage() {
               </div>
             </TableCell>
             <TableCell className="hidden sm:table-cell">{customer.phone}</TableCell>
+            <TableCell>
+              <Badge variant="outline" className={cn(
+                customer.type === 'Wholesaler' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'
+              )}>
+                {customer.type || 'Retail'}
+              </Badge>
+            </TableCell>
             <TableCell className="hidden md:table-cell">{customer.totalOrders}</TableCell>
             <TableCell className="hidden md:table-cell text-right font-mono text-primary font-bold">
               Tk {(customer.totalSpent ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -342,9 +375,10 @@ export default function CustomersClientPage() {
     const [name, setName] = React.useState(customer?.name || '');
     const [phone, setPhone] = React.useState(customer?.phone || '');
     const [address, setAddress] = React.useState(customer?.address || '');
+    const [type, setType] = React.useState(customer?.type || 'Retail');
 
     const handleSubmit = () => {
-      onSave({ name, phone, address });
+      onSave({ name, phone, address, type });
     };
 
     return (
@@ -357,6 +391,18 @@ export default function CustomersClientPage() {
           <div className="space-y-2">
             <Label htmlFor="customer-phone">Phone</Label>
             <Input id="customer-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Enter phone number" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="customer-type">Type</Label>
+            <Select value={type} onValueChange={(v: any) => setType(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Retail">Retail</SelectItem>
+                <SelectItem value="Wholesaler">Wholesaler</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="customer-address">Address</Label>
@@ -427,13 +473,23 @@ export default function CustomersClientPage() {
             </div>
             {isValidating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
           </div>
-          <div className="pt-4">
+          <div className="pt-4 flex items-center gap-4">
             <Input
               placeholder="Search by name or phone..."
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="max-w-sm"
             />
+            <Select value={customerType} onValueChange={(v: any) => setCustomerType(v)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Customer Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Types</SelectItem>
+                <SelectItem value="Retail">Retail</SelectItem>
+                <SelectItem value="Wholesaler">Wholesaler</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
         <CardContent>

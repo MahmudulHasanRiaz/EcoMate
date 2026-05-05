@@ -13,6 +13,7 @@ function normalizeRoleToken(role?: string | null): string {
 function hasOrdersUpdateRoleFallback(role?: string | null): boolean {
     const normalized = normalizeRoleToken(role);
     const allow = new Set([
+        'superadmin',
         'admin',
         'manager',
         'moderator',
@@ -28,12 +29,13 @@ function hasStaffReadRoleFallback(role?: string | null): boolean {
     const normalized = normalizeRoleToken(role);
     if (!normalized) return false;
     // Any manager role name (including "callcentremanager", "projectmanager", etc.) + admin.
-    return normalized === 'admin' || normalized.includes('manager');
+    return normalized === 'superadmin' || normalized === 'admin' || normalized.includes('manager');
 }
 
 function hasStaffWriteRoleFallback(role?: string | null): boolean {
     const normalized = normalizeRoleToken(role);
     const allow = new Set([
+        'superadmin',
         'admin',
         'manager',
         'callcentremanager',
@@ -41,6 +43,28 @@ function hasStaffWriteRoleFallback(role?: string | null): boolean {
         'modaratormanager',
     ]);
     return allow.has(normalized);
+}
+
+function hasWholesaleRoleFallback(role?: string | null, action?: PermissionAction): boolean {
+    const normalized = normalizeRoleToken(role);
+    if (!normalized) return false;
+    
+    // Core admins have all
+    if (['superadmin', 'admin', 'manager', 'projectmanager', 'financemanager'].includes(normalized)) {
+        return true;
+    }
+    
+    // SRs shouldn't manage wholesale rules/targets/approvals (they use SR portal)
+    // but they might need specific read access if requested. The Phase 9 instruction:
+    // "explicitly define which additional roles can..."
+    
+    // For 'read' action: moderators might need to view wholesale orders
+    if (action === 'read') {
+        if (['moderator', 'modaratormanager', 'callcentremanager', 'salesrepresentative'].includes(normalized)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -62,8 +86,12 @@ export async function checkPermission(module: string, action: PermissionAction) 
     // If it's an object, check the specific action
     if (perms && typeof perms === 'object' && perms[action]) return { allowed: true, staff };
 
+    // Safety fallback for wholesale permissions
+    if (module === 'wholesaleManagement' && hasWholesaleRoleFallback(staff.role, action)) {
+        return { allowed: true, staff };
+    }
+
     // Safety fallback for order edit permission on core call-center/moderation roles.
-    // This prevents stale/mismatched permission payloads from blocking valid users.
     if (module === 'orders' && action === 'update' && hasOrdersUpdateRoleFallback(staff.role)) {
         return { allowed: true, staff };
     }

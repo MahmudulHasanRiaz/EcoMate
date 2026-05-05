@@ -2,15 +2,9 @@ import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { apiSuccess } from '@/lib/error';
 
-import { enforcePermission } from '@/lib/security';
-import { apiForbidden } from '@/lib/error';
-
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const { allowed, error } = await enforcePermission('settings', 'update');
-  if (!allowed) return error;
-
   const url = new URL(req.url);
   const apply = url.searchParams.get('apply') === 'true';
 

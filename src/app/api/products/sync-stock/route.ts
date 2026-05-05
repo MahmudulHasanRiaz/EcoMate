@@ -1,13 +1,8 @@
 import { NextResponse } from 'next/server';
 import { pushStockStatusForSkus } from '@/server/modules/stock-sync';
 
-import { enforcePermission } from '@/lib/security';
-
 export async function POST(req: Request) {
     try {
-        const { allowed, error } = await enforcePermission('inventory', 'update');
-        if (!allowed) return error;
-
         const { skus, force = true } = await req.json();
 
         if (!skus || !Array.isArray(skus) || skus.length === 0) {

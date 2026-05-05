@@ -1,7 +1,6 @@
 import prisma from '@/lib/prisma';
 import { revalidateTags } from '../utils/revalidate';
 import crypto from "crypto";
-import { isMaskedSecret } from '@/lib/secret-utils';
 
 /**
  * Normalize a Woo store URL:
@@ -172,37 +171,34 @@ export async function updateWooIntegrationCore(payload: UpdateWooPayload): Promi
     if (!id) return { success: false, message: 'Integration ID is required.' };
     try {
         // Fetch current state so we can preserve fields omitted from payload
-        const current = await prisma.wooCommerceIntegration.findUnique({ where: { id } });
+        const current = await prisma.wooCommerceIntegration.findUnique({ where: { id }, select: { autoSyncEnabled: true } });
         // Normalize URL before save
         const normalizedUrl = storeUrl ? normalizeWooStoreUrl(storeUrl) : undefined;
-
-        const updateData: any = {
-            businessId,
-            storeName,
-            storeUrl: normalizedUrl,
-            incompleteEnabled,
-            restrictionEnabled,
-            restrictionScope,
-            restrictionDurationType,
-            restrictionDurationValue,
-            restrictionMessage,
-            restrictionSupportPhone,
-            dedupeMinutes,
-            debounceMs,
-            retrySeconds,
-            autoSyncEnabled: autoSyncEnabled ?? current?.autoSyncEnabled ?? true,
-            updatedAt: new Date()
-        };
-
-        if (consumerKey && !isMaskedSecret(consumerKey)) updateData.consumerKey = consumerKey;
-        if (consumerSecret && !isMaskedSecret(consumerSecret)) updateData.consumerSecret = consumerSecret;
-        if (webhookUrl) updateData.webhookUrl = webhookUrl;
-        if (webhookSecret && !isMaskedSecret(webhookSecret)) updateData.webhookSecret = webhookSecret;
-        if (apiKey && !isMaskedSecret(apiKey)) updateData.apiKey = apiKey;
-
         await prisma.wooCommerceIntegration.update({
             where: { id },
-            data: updateData,
+            data: {
+                businessId,
+                storeName,
+                storeUrl: normalizedUrl,
+                consumerKey,
+                consumerSecret,
+                webhookUrl,
+                webhookSecret,
+                apiKey,
+                incompleteEnabled,
+                restrictionEnabled,
+                restrictionScope,
+                restrictionDurationType,
+                restrictionDurationValue,
+                restrictionMessage,
+                restrictionSupportPhone,
+                dedupeMinutes,
+                debounceMs,
+                retrySeconds,
+                // Preserve existing value when payload omits the flag (prevents silent reset to false)
+                autoSyncEnabled: autoSyncEnabled ?? current?.autoSyncEnabled ?? true,
+                updatedAt: new Date()
+            },
         });
         await revalidateTags(['integrations']);
         const updated = await prisma.wooCommerceIntegration.findUnique({ where: { id } });

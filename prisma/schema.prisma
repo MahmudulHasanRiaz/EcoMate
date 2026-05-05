@@ -14,7 +14,7 @@ model Account {
   id                                         String              @id @default(cuid())
   name                                       String              @unique
   type                                       AccountType
-  group                                      String?             // e.g. 'LIQUID' for payment-eligible accounts
+  group                                      String? // e.g. 'LIQUID' for payment-eligible accounts
   createdAt                                  DateTime            @default(now())
   updatedAt                                  DateTime            @updatedAt
   CourierPayment                             CourierPayment[]
@@ -40,26 +40,26 @@ model AppSetting {
 }
 
 model AttendanceRecord {
-  id                 String           @id @default(cuid())
-  staffId            String
-  date               DateTime         @db.Date
-  status             AttendanceStatus
-  checkInTime        DateTime?
-  checkOutTime       DateTime?
-  expectedMinutes    Int?
-  totalWorkDuration  Int?
-  totalBreakDuration Int?
-  totalInactiveDuration Int? @default(0)
-  isWeekend          Boolean          @default(false)
-  isHoliday          Boolean          @default(false)
-  overtimeMinutes    Int?
-  overtimeBonusAmount Float?          @default(0)
-  leaveRequestId     String?
-  staff              StaffMember      @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  leaveRequest       LeaveRequest?    @relation(fields: [leaveRequestId], references: [id])
-  breaks             BreakRecord[]
-  inactiveRecords    AttendanceInactiveRecord[]
-  editLogs           AttendanceEditLog[]
+  id                    String                     @id @default(cuid())
+  staffId               String
+  date                  DateTime                   @db.Date
+  status                AttendanceStatus
+  checkInTime           DateTime?
+  checkOutTime          DateTime?
+  expectedMinutes       Int?
+  totalWorkDuration     Int?
+  totalBreakDuration    Int?
+  totalInactiveDuration Int?                       @default(0)
+  isWeekend             Boolean                    @default(false)
+  isHoliday             Boolean                    @default(false)
+  overtimeMinutes       Int?
+  overtimeBonusAmount   Float?                     @default(0)
+  leaveRequestId        String?
+  staff                 StaffMember                @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  leaveRequest          LeaveRequest?              @relation(fields: [leaveRequestId], references: [id])
+  breaks                BreakRecord[]
+  inactiveRecords       AttendanceInactiveRecord[]
+  editLogs              AttendanceEditLog[]
 
   @@unique([staffId, date])
   @@index([date])
@@ -93,30 +93,32 @@ model AttendanceInactiveRecord {
 }
 
 model Business {
-  id                     String                   @id @default(cuid())
-  name                   String                   @unique
-  logo                   String?
-  createdAt              DateTime                 @default(now())
-  updatedAt              DateTime                 @updatedAt
-  address                String?
-  phone                  String?
-  CourierIntegration     CourierIntegration[]
-  CourierPayment         CourierPayment[]
-  Expense                Expense[]
-  LedgerEntry            LedgerEntry[]
-  MarketingAttribution   MarketingAttribution[]
-  MarketingCampaign      MarketingCampaign[]
-  MarketingSpend         MarketingSpend[]
-  Order                  Order[]
-  OrderFinancialSnapshot OrderFinancialSnapshot[]
-  OrderPaymentEvent      OrderPaymentEvent[]
-  OrderTransaction       OrderTransaction[]
-  OrderRestriction       OrderRestriction[]
-  WooCheckoutLead        WooCheckoutLead[]
-  WooCommerceIntegration WooCommerceIntegration[]
-  StaffMember            StaffMember[]            @relation("StaffBusinessAccess")
-  CashDrawer             CashDrawer[]
-  CashDrawerTransfer     CashDrawerTransfer[]
+  id                         String                       @id @default(cuid())
+  name                       String                       @unique
+  logo                       String?
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime                     @updatedAt
+  address                    String?
+  phone                      String?
+  CourierIntegration         CourierIntegration[]
+  CourierPayment             CourierPayment[]
+  Expense                    Expense[]
+  LedgerEntry                LedgerEntry[]
+  MarketingAttribution       MarketingAttribution[]
+  MarketingCampaign          MarketingCampaign[]
+  MarketingSpend             MarketingSpend[]
+  Order                      Order[]
+  OrderFinancialSnapshot     OrderFinancialSnapshot[]
+  OrderPaymentEvent          OrderPaymentEvent[]
+  OrderTransaction           OrderTransaction[]
+  OrderRestriction           OrderRestriction[]
+  WooCheckoutLead            WooCheckoutLead[]
+  WooCommerceIntegration     WooCommerceIntegration[]
+  StaffMember                StaffMember[]                @relation("StaffBusinessAccess")
+  CashDrawer                 CashDrawer[]
+  CashDrawerTransfer         CashDrawerTransfer[]
+  WholesaleQualificationRule WholesaleQualificationRule[]
+  WholesalePricingRule       WholesalePricingRule[] // Phase 4: pricing rules
 }
 
 model Category {
@@ -244,19 +246,26 @@ model CourierPayment {
 }
 
 model Customer {
-  id              String            @id @default(cuid())
-  name            String
-  email           String?
-  phone           String            @unique
-  joinDate        DateTime
-  address         String
-  district        String
-  country         String
-  ip              String?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  CustomerAddress CustomerAddress[]
-  Order           Order[]
+  id                      String                    @id @default(cuid())
+  name                    String
+  email                   String?
+  phone                   String                    @unique
+  joinDate                DateTime
+  address                 String
+  district                String
+  country                 String
+  ip                      String?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  type                    CustomerType              @default(Retail)
+  salesRepresentativeId   String?
+  SalesRepresentative     StaffMember?              @relation("CustomerSalesRepresentative", fields: [salesRepresentativeId], references: [id])
+  CustomerAddress         CustomerAddress[]
+  Order                   Order[]
+  WholesaleProductRequest WholesaleProductRequest[]
+
+  @@index([type])
+  @@index([salesRepresentativeId])
 }
 
 model CustomerAddress {
@@ -330,12 +339,12 @@ model ExpenseCategory {
 }
 
 model Branch {
-  id        String   @id @default(cuid())
-  name      String   @unique
+  id        String    @id @default(cuid())
+  name      String    @unique
   code      String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   Expense   Expense[]
 }
 
@@ -556,7 +565,7 @@ model Notification {
 }
 
 model Order {
-  id                                           String                  @id @default(cuid())
+  id                                           String                      @id @default(cuid())
   customerName                                 String
   customerEmail                                String?
   customerPhone                                String
@@ -574,12 +583,12 @@ model Order {
   businessLogo                                 String?
   paymentMethod                                PaymentMethod
   paidAmount                                   Float
-  createdAt                                    DateTime                @default(now())
-  updatedAt                                    DateTime                @updatedAt
+  createdAt                                    DateTime                    @default(now())
+  updatedAt                                    DateTime                    @updatedAt
   shippingAddress                              Json?
   assignedToId                                 String?
   orderDay                                     String?
-  orderNumber                                  String?                 @unique
+  orderNumber                                  String?                     @unique
   orderSerial                                  Int?
   courierConsignmentId                         String?
   courierDispatchedAt                          DateTime?
@@ -593,48 +602,62 @@ model Order {
   transactionId                                String?
   senderPhone                                  String?
   actualCodAmount                              Float?
-  courierChargesSource                         CourierChargesSource    @default(Config)
+  courierChargesSource                         CourierChargesSource        @default(Config)
   chargesLastUpdated                           DateTime?
   chargesUpdatedBy                             String?
   courierCodCharge                             Float?
   courierDeliveryCharge                        Float?
   courierNetPayable                            Float?
-  isStockDeducted                              Boolean                 @default(false)
-  isStockReserved                              Boolean                 @default(false)
+  isStockDeducted                              Boolean                     @default(false)
+  isStockReserved                              Boolean                     @default(false)
   stockReservedFrom                            String?
   exchangeSourceOrderId                        String?
-  isExchange                                   Boolean                 @default(false)
+  isExchange                                   Boolean                     @default(false)
   parentOrderId                                String?
-  type                                         OrderType               @default(REGULAR)
+  type                                         OrderType                   @default(REGULAR)
   allocatedDiscount                            Float?
   allocatedShipping                            Float?
   allocatedSubtotal                            Float?
   paidFromAccountId                            String?
-  shippingPaid                                 Boolean                 @default(false)
+  shippingPaid                                 Boolean                     @default(false)
   shippingPaidAccountId                        String?
-  shippingPaidAmount                           Float                   @default(0)
+  shippingPaidAmount                           Float                       @default(0)
   ipHash                                       String?
   statusUpdatedAt                              DateTime?
-  isDeleted                                    Boolean                 @default(false)
+  isDeleted                                    Boolean                     @default(false)
   deletedAt                                    DateTime?
   deletedById                                  String?
   deleteNote                                   String?
   showroomId                                   String?
+  channel                                      OrderChannel                @default(Retail)
+  sourcePlatform                               OrderSourcePlatform?
+  salesRepresentativeId                        String?
+  SalesRepresentative                          StaffMember?                @relation("SalesRepresentativeOrders", fields: [salesRepresentativeId], references: [id])
+  wholesaleApprovalStatus                      WholesaleApprovalStatus?
+  wholesaleDetectedAt                          DateTime?
+  wholesaleDetectedByRuleId                    String?
+  wholesaleReviewNote                          String?
+  wholesaleReviewedAt                          DateTime?
+  wholesaleReviewedById                        String?
+  WholesaleRule                                WholesaleQualificationRule? @relation(fields: [wholesaleDetectedByRuleId], references: [id], onDelete: SetNull)
+  WholesaleReviewedBy                          StaffMember?                @relation("WholesaleReviewedBy", fields: [wholesaleReviewedById], references: [id], onDelete: SetNull)
+  WholesaleOrderReviewLog                      WholesaleOrderReviewLog[]
+  OrderDiscountApprovalLog                     OrderDiscountApprovalLog[] // Phase 4: discount approval audit
   CourierDispatchLog                           CourierDispatchLog[]
   Issue                                        Issue[]
   MarketingAttribution                         MarketingAttribution[]
-  assignedTo                                   StaffMember?            @relation(fields: [assignedToId], references: [id])
-  Business                                     Business?               @relation(fields: [businessId], references: [id])
-  Customer                                     Customer                @relation(fields: [customerPhone], references: [phone], onDelete: SetNull)
-  Account_Order_paidFromAccountIdToAccount     Account?                @relation("Order_paidFromAccountIdToAccount", fields: [paidFromAccountId], references: [id])
-  Order                                        Order?                  @relation("OrderToOrder", fields: [parentOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  other_Order                                  Order[]                 @relation("OrderToOrder")
-  Account_Order_shippingPaidAccountIdToAccount Account?                @relation("Order_shippingPaidAccountIdToAccount", fields: [shippingPaidAccountId], references: [id])
-  Showroom                                     Showroom?               @relation(fields: [showroomId], references: [id])
+  assignedTo                                   StaffMember?                @relation(fields: [assignedToId], references: [id])
+  Business                                     Business?                   @relation(fields: [businessId], references: [id])
+  Customer                                     Customer                    @relation(fields: [customerPhone], references: [phone], onDelete: NoAction)
+  Account_Order_paidFromAccountIdToAccount     Account?                    @relation("Order_paidFromAccountIdToAccount", fields: [paidFromAccountId], references: [id])
+  Order                                        Order?                      @relation("OrderToOrder", fields: [parentOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_Order                                  Order[]                     @relation("OrderToOrder")
+  Account_Order_shippingPaidAccountIdToAccount Account?                    @relation("Order_shippingPaidAccountIdToAccount", fields: [shippingPaidAccountId], references: [id])
+  Showroom                                     Showroom?                   @relation(fields: [showroomId], references: [id])
   OrderFinancialSnapshot                       OrderFinancialSnapshot?
   OrderLog                                     OrderLog[]
   OrderPaymentEvent                            OrderPaymentEvent[]
-  OrderTransaction                             OrderTransaction[] @relation("OrderTransactions")
+  OrderTransaction                             OrderTransaction[]          @relation("OrderTransactions")
   products                                     OrderProduct[]
   OrderStockAllocation                         OrderStockAllocation[]
   StaffIncome                                  StaffIncome[]
@@ -654,6 +677,12 @@ model Order {
   @@index([platform])
   @@index([showroomId])
   @@index([status, date])
+  @@index([channel, status, date])
+  @@index([channel, date])
+  @@index([sourcePlatform])
+  @@index([salesRepresentativeId])
+  @@index([wholesaleApprovalStatus])
+  @@index([wholesaleDetectedByRuleId])
 }
 
 model OrderFinancialSnapshot {
@@ -801,6 +830,7 @@ model Product {
   wholesalePackQuantity Int?
   wholesaleUnitLabel    String?
   wholesaleNote         String?
+  videoUrl              String?
   Attribute             Attribute[]
   comboChildren         ComboProductItem[]  @relation("ComboProductItem_childIdToProduct")
   comboItems            ComboProductItem[]  @relation("ComboProductItem_parentIdToProduct")
@@ -812,8 +842,32 @@ model Product {
   variants              ProductVariant[]
   PurchaseOrderItem     PurchaseOrderItem[]
 
+  brandId String?
+  Brand   Brand?  @relation(fields: [brandId], references: [id])
+
+  // Phase 8: Product Request link
+  LinkedProductRequests WholesaleProductRequest[] @relation("LinkedProductRequests")
+
   @@index([wholesaleEnabled, wholesaleVisible])
   @@index([categoryId, wholesaleEnabled, wholesaleVisible])
+  @@index([brandId])
+}
+
+model Brand {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  type        BrandType
+  logoUrl     String?
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@index([type])
+  @@index([isActive])
+  @@index([name])
 }
 
 model ProductLog {
@@ -1025,8 +1079,8 @@ model StaffMember {
   staffCode                           String                 @unique
   designation                         String?
   workType                            StaffWorkType          @default(Remote)
-  jobStartDate                            DateTime?              @db.Date
-  jobEndDate                              DateTime?              @db.Date
+  jobStartDate                        DateTime?              @db.Date
+  jobEndDate                          DateTime?              @db.Date
   AttendanceRecord                    AttendanceRecord[]
   Issue                               Issue[]
   MarketingAttribution                MarketingAttribution[]
@@ -1049,18 +1103,34 @@ model StaffMember {
   LeaveBalance                        LeaveBalance[]
   LeaveRequest                        LeaveRequest[]
   StaffShiftOverride                  StaffShiftOverride[]
-  cashDrawersCreated                 CashDrawer[] @relation("CashDrawerCreator")
-  cashDrawerTransfersCreated         CashDrawerTransfer[] @relation("CashDrawerTransferCreator")
+  cashDrawersCreated                  CashDrawer[]           @relation("CashDrawerCreator")
+  cashDrawerTransfersCreated          CashDrawerTransfer[]   @relation("CashDrawerTransferCreator")
   AttendanceEditsMade                 AttendanceEditLog[]    @relation("AttendanceEditedBy")
 
-  CreatedTransactions                 OrderTransaction[]     @relation("CreatedTransactions")
-  ApprovedTransactions                OrderTransaction[]     @relation("ApprovedTransactions")
-  RejectedTransactions                OrderTransaction[]     @relation("RejectedTransactions")
+  CreatedTransactions  OrderTransaction[] @relation("CreatedTransactions")
+  ApprovedTransactions OrderTransaction[] @relation("ApprovedTransactions")
+  RejectedTransactions OrderTransaction[] @relation("RejectedTransactions")
 
-  AccessibleShowrooms                 ShowroomAccess[]
-  OpenedSessions                      CashDrawerSession[]    @relation("SessionOpenedBy")
-  ClosedSessions                      CashDrawerSession[]    @relation("SessionClosedBy")
-  AdjustmentsCreated                  CashDrawerAdjustment[] @relation("AdjustmentCreatedBy")
+  AccessibleShowrooms ShowroomAccess[]
+  OpenedSessions      CashDrawerSession[]    @relation("SessionOpenedBy")
+  ClosedSessions      CashDrawerSession[]    @relation("SessionClosedBy")
+  AdjustmentsCreated  CashDrawerAdjustment[] @relation("AdjustmentCreatedBy")
+
+  SalesRepresentativeOrders Order[]                   @relation("SalesRepresentativeOrders")
+  WholesaleReviewedBy       Order[]                   @relation("WholesaleReviewedBy")
+  WholesaleReviewLogs       WholesaleOrderReviewLog[] @relation("WholesaleReviewActor")
+  Customers                 Customer[]                @relation("CustomerSalesRepresentative")
+
+  // Phase 4: SR Discount Policy relations
+  SrDiscountPolicies       SrDiscountPolicy[]
+  DiscountApprovalRequests OrderDiscountApprovalLog[] @relation("DiscountApprovalRequester")
+  DiscountApprovalsMade    OrderDiscountApprovalLog[] @relation("DiscountApprovalApprover")
+
+  // Phase 7: SR Performance Management relations
+  SrTargets     SrTarget[]        @relation("SrTargets")
+  SrCommissions SrCommissionLog[] @relation("SrCommissions")
+
+  @@index([role])
 }
 
 enum StaffFineStatus {
@@ -1069,13 +1139,13 @@ enum StaffFineStatus {
 }
 
 model StaffFine {
-  id          String          @id @default(cuid())
-  staffId     String
-  date        DateTime        @db.Date
-  amount      Float
-  reason      String
-  notes       String?
-  status      StaffFineStatus @default(Active)
+  id      String          @id @default(cuid())
+  staffId String
+  date    DateTime        @db.Date
+  amount  Float
+  reason  String
+  notes   String?
+  status  StaffFineStatus @default(Active)
 
   // Audit
   createdById   String?
@@ -1321,6 +1391,168 @@ model WooSkuMapping {
   @@index([sku])
 }
 
+model WholesaleQualificationRule {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  isActive         Boolean  @default(true)
+  priority         Int      @default(0)
+  requireApproval  Boolean  @default(true)
+  minTotalQuantity Int?
+  minSubtotal      Float?
+  minGrandTotal    Float?
+  sourcePlatforms  String[]
+  notes            String?
+  businessId       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  Business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  Order    Order[]
+
+  @@index([priority])
+  @@index([isActive])
+}
+
+model WholesaleOrderReviewLog {
+  id             String                   @id @default(cuid())
+  orderId        String
+  action         String
+  note           String
+  previousStatus WholesaleApprovalStatus?
+  nextStatus     WholesaleApprovalStatus?
+  actorStaffId   String?
+  actorName      String?
+  changes        Json?
+  createdAt      DateTime                 @default(now())
+
+  Order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ActorStaff StaffMember? @relation("WholesaleReviewActor", fields: [actorStaffId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+// Phase 4: Wholesale Pricing + Discount Policy Engine
+model WholesalePricingRule {
+  id                String                 @id @default(cuid())
+  name              String                 @unique
+  isActive          Boolean                @default(true)
+  priority          Int                    @default(0)
+  // Rule conditions
+  minTotalQuantity  Int? // Minimum total quantity across order
+  minSubtotal       Float? // Minimum subtotal (before shipping/discount)
+  minGrandTotal     Float? // Minimum grand total (after shipping)
+  sourcePlatforms   String[] // e.g., ['Manual', 'POS', 'Web']
+  customerTypes     CustomerType[] // e.g., ['Wholesaler']
+  // Discount configuration
+  discountType      DiscountType // 'Percentage' or 'FlatAmount'
+  discountValue     Float // e.g., 10 for 10% or 100 for 100 BDT
+  // Constraints
+  maxDiscountAmount Float? // Cap the discount at this amount
+  requireApproval   Boolean                @default(false) // If deviation needs approval
+  // Relations
+  businessId        String?
+  Business          Business?              @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  // Tiers for this rule
+  Tiers             WholesalePricingTier[]
+  // Audit
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@index([priority])
+  @@index([isActive])
+  @@index([businessId])
+}
+
+// Quantity/Amount tier rules for dynamic pricing
+model WholesalePricingTier {
+  id            String               @id @default(cuid())
+  ruleId        String
+  Rule          WholesalePricingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  // Tier conditions (use either qty or amount, not both)
+  minQuantity   Int? // Minimum quantity for this tier
+  maxQuantity   Int? // Maximum quantity (null = unlimited)
+  minAmount     Float? // Minimum amount for this tier
+  maxAmount     Float? // Maximum amount (null = unlimited)
+  // Tier discount
+  discountType  DiscountType // 'Percentage', 'FlatAmount', 'PerQuantity'
+  discountValue Float // Discount value
+  // Ordering
+  tierOrder     Int                  @default(0) // For sorting tiers
+  // Audit
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([ruleId])
+  @@index([tierOrder])
+}
+
+// SR Extra Discount Policy
+model SrDiscountPolicy {
+  id                   String       @id @default(cuid())
+  name                 String       @unique
+  isActive             Boolean      @default(true)
+  // SR Assignment
+  staffId              String? // If null, applies to all SRs
+  Staff                StaffMember? @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  // Discount limits
+  maxDiscountPercent   Float? // e.g., 5 for 5% max extra discount
+  maxDiscountAmount    Float? // e.g., 500 for max 500 BDT
+  // Approval settings
+  requiresApproval     Boolean      @default(true)
+  approvalThresholdPct Float? // If discount > X%, requires approval
+  approvalThresholdAmt Float? // If discount > X amount, requires approval
+  // Target dependency
+  requiresActiveTarget Boolean      @default(false) // Only allow if SR has active target
+  // Audit
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  @@index([staffId])
+  @@index([isActive])
+}
+
+// Discount approval audit log
+model OrderDiscountApprovalLog {
+  id                String         @id @default(cuid())
+  orderId           String
+  Order             Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // What was requested
+  requestedById     String? // SR/Staff who requested
+  RequestedBy       StaffMember?   @relation("DiscountApprovalRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedDiscount Float // The discount amount/percent requested
+  discountType      String // 'Percentage' or 'FlatAmount'
+  reason            String // Why the deviation was needed
+  // Approval status
+  status            ApprovalStatus @default(Pending)
+  approvedById      String? // Staff who approved/rejected
+  ApprovedBy        StaffMember?   @relation("DiscountApprovalApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt        DateTime?
+  approvalNote      String? // Note from approver
+  // Final applied discount
+  appliedDiscount   Float? // What was actually applied after approval
+  // Audit
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Supporting enums
+enum DiscountType {
+  Percentage
+  FlatAmount
+  PerQuantity
+}
+
+enum ApprovalStatus {
+  Pending
+  Approved
+  Rejected
+}
+
 enum AccountType {
   Asset
   Liability
@@ -1428,6 +1660,32 @@ enum OrderPlatform {
   Instagram
   Website
   Call
+}
+
+enum OrderChannel {
+  Retail
+  Wholesale
+}
+
+enum CustomerType {
+  Retail
+  Wholesaler
+}
+
+enum OrderSourcePlatform {
+  Manual
+  POS
+  Woo
+  Messenger
+  Facebook
+  WhatsApp
+  TikTok
+  Instagram
+  Website
+  Call
+  SR
+  WholesalerPortal
+  Other
 }
 
 enum OrderStatus {
@@ -1553,6 +1811,7 @@ enum StaffRole {
   Marketer
   FinanceManager
   ModaratorManager
+  SalesRepresentative
 }
 
 enum TaskPriority {
@@ -1577,13 +1836,13 @@ enum WebhookFailureStatus {
 }
 
 model DatabaseBackupLog {
-  id        String   @id @default(cuid())
-  key       String?
-  kind      String   // scheduled|manual|safety|restore
-  status    String   // success|failed|running
-  sizeBytes Int?
-  error     String?
-  createdAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  key        String?
+  kind       String // scheduled|manual|safety|restore
+  status     String // success|failed|running
+  sizeBytes  Int?
+  error      String?
+  createdAt  DateTime  @default(now())
   finishedAt DateTime?
 }
 
@@ -1671,27 +1930,26 @@ model StaffShiftOverride {
 }
 
 model AttendanceEditLog {
-  id           String           @id @default(cuid())
-  attendanceId String
-  editedById   String
-  reason       String
-  oldCheckIn   DateTime?
-  newCheckIn   DateTime?
-  oldCheckOut  DateTime?
-  newCheckOut  DateTime?
-  oldStatus    String?
-  newStatus    String?
+  id                  String           @id @default(cuid())
+  attendanceId        String
+  editedById          String
+  reason              String
+  oldCheckIn          DateTime?
+  newCheckIn          DateTime?
+  oldCheckOut         DateTime?
+  newCheckOut         DateTime?
+  oldStatus           String?
+  newStatus           String?
   oldInactiveDuration Int?
   newInactiveDuration Int?
   oldOvertimeMinutes  Int?
   newOvertimeMinutes  Int?
-  createdAt    DateTime         @default(now())
-  attendance   AttendanceRecord @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
-  editedBy     StaffMember      @relation("AttendanceEditedBy", fields: [editedById], references: [id])
+  createdAt           DateTime         @default(now())
+  attendance          AttendanceRecord @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  editedBy            StaffMember      @relation("AttendanceEditedBy", fields: [editedById], references: [id])
 
   @@index([attendanceId])
 }
-
 
 enum CourierChargesSource {
   Config
@@ -1699,21 +1957,21 @@ enum CourierChargesSource {
 }
 
 model CourierInvoice {
-  id              String               @id @default(cuid())
-  courierService  String
-  invoiceNumber   String
-  invoiceDate     DateTime?
-  businessId      String?
-  totalRows       Int                  @default(0)
-  matchedRows     Int                  @default(0)
-  mismatchRows    Int                  @default(0)
-  totalCollected  Float                @default(0)
-  totalFee        Float                @default(0)
-  totalBilled     Float                @default(0)
-  importedBy      String
-  importedAt      DateTime             @default(now())
-  
-  items           CourierInvoiceItem[]
+  id             String    @id @default(cuid())
+  courierService String
+  invoiceNumber  String
+  invoiceDate    DateTime?
+  businessId     String?
+  totalRows      Int       @default(0)
+  matchedRows    Int       @default(0)
+  mismatchRows   Int       @default(0)
+  totalCollected Float     @default(0)
+  totalFee       Float     @default(0)
+  totalBilled    Float     @default(0)
+  importedBy     String
+  importedAt     DateTime  @default(now())
+
+  items CourierInvoiceItem[]
 
   @@unique([invoiceNumber, courierService])
   @@index([courierService])
@@ -1721,35 +1979,35 @@ model CourierInvoice {
 }
 
 model CourierInvoiceItem {
-  id                    String         @id @default(cuid())
-  invoiceId             String
-  orderId               String?
-  orderNumber           String?
-  consignmentId         String?
+  id            String  @id @default(cuid())
+  invoiceId     String
+  orderId       String?
+  orderNumber   String?
+  consignmentId String?
 
-  collectableAmount     Float?
-  collectedAmount       Float?
-  codFee                Float?
-  deliveryFee           Float?
-  additionalCharge      Float?
-  discount              Float?
-  totalFee              Float?
-  billingAmount         Float?
+  collectableAmount Float?
+  collectedAmount   Float?
+  codFee            Float?
+  deliveryFee       Float?
+  additionalCharge  Float?
+  discount          Float?
+  totalFee          Float?
+  billingAmount     Float?
 
-  deliveryStatus        String?
-  paymentStatus         String?
-  payoutMethod          String?
-  createdDate           DateTime?
-  deliveredDate         DateTime?
-  invoicedDate          DateTime?
+  deliveryStatus String?
+  paymentStatus  String?
+  payoutMethod   String?
+  createdDate    DateTime?
+  deliveredDate  DateTime?
+  invoicedDate   DateTime?
 
   mismatchReason        String?
   dueMismatchAmount     Float?
   billingMismatchAmount Float?
 
-  raw                   Json?          // Stores the exact row from CSV
+  raw Json? // Stores the exact row from CSV
 
-  invoice               CourierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice CourierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@index([orderNumber])
@@ -1767,16 +2025,16 @@ model CashDrawer {
   updatedAt   DateTime @updatedAt
   createdById String?
 
-  Account     Account  @relation(fields: [accountId], references: [id], onDelete: NoAction)
-  Business    Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  CreatedBy   StaffMember? @relation("CashDrawerCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  Account   Account      @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  Business  Business?    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  CreatedBy StaffMember? @relation("CashDrawerCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
   TransfersOut CashDrawerTransfer[] @relation("TransfersFrom")
   TransfersIn  CashDrawerTransfer[] @relation("TransfersTo")
 
-  Showroom     Showroom?
-  Sessions     CashDrawerSession[]
-  Adjustments  CashDrawerAdjustment[]
+  Showroom    Showroom?
+  Sessions    CashDrawerSession[]
+  Adjustments CashDrawerAdjustment[]
 
   @@index([businessId])
 }
@@ -1792,10 +2050,10 @@ model CashDrawerTransfer {
   createdAt    DateTime @default(now())
   createdById  String?
 
-  FromDrawer   CashDrawer @relation("TransfersFrom", fields: [fromDrawerId], references: [id], onDelete: NoAction)
-  ToDrawer     CashDrawer @relation("TransfersTo", fields: [toDrawerId], references: [id], onDelete: NoAction)
-  Business     Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  CreatedBy    StaffMember? @relation("CashDrawerTransferCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  FromDrawer CashDrawer   @relation("TransfersFrom", fields: [fromDrawerId], references: [id], onDelete: NoAction)
+  ToDrawer   CashDrawer   @relation("TransfersTo", fields: [toDrawerId], references: [id], onDelete: NoAction)
+  Business   Business?    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  CreatedBy  StaffMember? @relation("CashDrawerTransferCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([businessId])
   @@index([fromDrawerId])
@@ -1812,86 +2070,86 @@ model Showroom {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  StockLocation      StockLocation @relation(fields: [locationId], references: [id])
-  CashDrawer         CashDrawer    @relation(fields: [cashDrawerId], references: [id])
-  Accesses           ShowroomAccess[]
-  Orders             Order[]
+  StockLocation StockLocation    @relation(fields: [locationId], references: [id])
+  CashDrawer    CashDrawer       @relation(fields: [cashDrawerId], references: [id])
+  Accesses      ShowroomAccess[]
+  Orders        Order[]
 }
 
 model ShowroomAccess {
-  id                 String   @id @default(cuid())
-  showroomId         String
-  staffId            String
-  createdAt          DateTime @default(now())
+  id         String   @id @default(cuid())
+  showroomId String
+  staffId    String
+  createdAt  DateTime @default(now())
 
-  Showroom           Showroom     @relation(fields: [showroomId], references: [id], onDelete: Cascade)
-  StaffMember        StaffMember  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  Showroom    Showroom    @relation(fields: [showroomId], references: [id], onDelete: Cascade)
+  StaffMember StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
 
   @@unique([showroomId, staffId])
 }
 
 model CashDrawerSession {
-  id                 String   @id @default(cuid())
-  cashDrawerId       String
-  openedById         String?
-  closedById         String?
-  openedAt           DateTime @default(now())
-  closedAt           DateTime?
-  openingBalance     Float
-  closingBalance     Float?
-  status             String   @default("Open")
-  notes              String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id             String    @id @default(cuid())
+  cashDrawerId   String
+  openedById     String?
+  closedById     String?
+  openedAt       DateTime  @default(now())
+  closedAt       DateTime?
+  openingBalance Float
+  closingBalance Float?
+  status         String    @default("Open")
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  CashDrawer         CashDrawer   @relation(fields: [cashDrawerId], references: [id])
-  OpenedBy           StaffMember? @relation("SessionOpenedBy", fields: [openedById], references: [id])
-  ClosedBy           StaffMember? @relation("SessionClosedBy", fields: [closedById], references: [id])
+  CashDrawer CashDrawer   @relation(fields: [cashDrawerId], references: [id])
+  OpenedBy   StaffMember? @relation("SessionOpenedBy", fields: [openedById], references: [id])
+  ClosedBy   StaffMember? @relation("SessionClosedBy", fields: [closedById], references: [id])
 
   @@index([cashDrawerId])
 }
 
 model CashDrawerAdjustment {
-  id                 String   @id @default(cuid())
-  cashDrawerId       String
-  createdById        String?
-  amount             Float
-  reason             String
-  postingGroup       String
-  createdAt          DateTime @default(now())
+  id           String   @id @default(cuid())
+  cashDrawerId String
+  createdById  String?
+  amount       Float
+  reason       String
+  postingGroup String
+  createdAt    DateTime @default(now())
 
-  CashDrawer         CashDrawer   @relation(fields: [cashDrawerId], references: [id])
-  CreatedBy          StaffMember? @relation("AdjustmentCreatedBy", fields: [createdById], references: [id])
+  CashDrawer CashDrawer   @relation(fields: [cashDrawerId], references: [id])
+  CreatedBy  StaffMember? @relation("AdjustmentCreatedBy", fields: [createdById], references: [id])
 
   @@index([cashDrawerId])
 }
 
 model OrderTransaction {
-  id              String   @id @default(cuid())
-  orderId         String
-  businessId      String?
-  amount          Float
-  paymentMethod   PaymentMethod
-  paymentType     String?  // e.g., "Full", "Partial"
-  reference       String?  // Phone / Tnx ID / Bank Ac number
-  status          String   @default("Pending") // Pending, Approved, Rejected
-  accountId       String?  // The account to deposit into
-  
-  createdBy       String?
-  approvedBy      String?
-  rejectedBy      String?
-  approvedAt      DateTime?
-  rejectedAt      DateTime?
+  id            String        @id @default(cuid())
+  orderId       String
+  businessId    String?
+  amount        Float
+  paymentMethod PaymentMethod
+  paymentType   String? // e.g., "Full", "Partial"
+  reference     String? // Phone / Tnx ID / Bank Ac number
+  status        String        @default("Pending") // Pending, Approved, Rejected
+  accountId     String? // The account to deposit into
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdBy  String?
+  approvedBy String?
+  rejectedBy String?
+  approvedAt DateTime?
+  rejectedAt DateTime?
 
-  Order           Order    @relation("OrderTransactions", fields: [orderId], references: [id], onDelete: Cascade)
-  Business        Business? @relation(fields: [businessId], references: [id])
-  Account         Account? @relation(fields: [accountId], references: [id])
-  StaffCreator    StaffMember? @relation("CreatedTransactions", fields: [createdBy], references: [id])
-  StaffApprover   StaffMember? @relation("ApprovedTransactions", fields: [approvedBy], references: [id])
-  StaffRejecter   StaffMember? @relation("RejectedTransactions", fields: [rejectedBy], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  Order         Order        @relation("OrderTransactions", fields: [orderId], references: [id], onDelete: Cascade)
+  Business      Business?    @relation(fields: [businessId], references: [id])
+  Account       Account?     @relation(fields: [accountId], references: [id])
+  StaffCreator  StaffMember? @relation("CreatedTransactions", fields: [createdBy], references: [id])
+  StaffApprover StaffMember? @relation("ApprovedTransactions", fields: [approvedBy], references: [id])
+  StaffRejecter StaffMember? @relation("RejectedTransactions", fields: [rejectedBy], references: [id])
 
   @@index([orderId])
   @@index([status])
@@ -1908,20 +2166,20 @@ enum CutoffStatus {
 }
 
 model CutoffRevision {
-  id                     String       @id @default(cuid())
-  revisionNumber         Int          @default(1)
-  cutoffDate             DateTime     @db.Date
-  status                 CutoffStatus @default(DRAFT)
-  notes                  String?
+  id             String       @id @default(cuid())
+  revisionNumber Int          @default(1)
+  cutoffDate     DateTime     @db.Date
+  status         CutoffStatus @default(DRAFT)
+  notes          String?
 
   // Validation
-  validatedAt            DateTime?
-  validationReport       Json?
+  validatedAt      DateTime?
+  validationReport Json?
 
   // Application
-  appliedAt              DateTime?
-  appliedById            String?
-  appliedByName          String?
+  appliedAt     DateTime?
+  appliedById   String?
+  appliedByName String?
 
   // Supersession
   supersededAt           DateTime?
@@ -1929,10 +2187,10 @@ model CutoffRevision {
   supersededByRevisionId String?
 
   // Audit
-  createdById            String?
-  createdByName          String?
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   OpeningBalance           OpeningBalance[]
   OpeningInventorySnapshot OpeningInventorySnapshot[]
@@ -1945,21 +2203,21 @@ model CutoffRevision {
 }
 
 model OpeningBalance {
-  id              String   @id @default(cuid())
-  revisionId      String
-  entityType      String   // 'supplier' | 'vendor' | 'customer' | 'staff' | 'account'
-  entityId        String
-  entityName      String   // Denormalized for readability
+  id         String @id @default(cuid())
+  revisionId String
+  entityType String // 'supplier' | 'vendor' | 'customer' | 'staff' | 'account'
+  entityId   String
+  entityName String // Denormalized for readability
 
-  suggestedAmount Float    @default(0)
-  finalAmount     Float    @default(0)
-  isOverridden    Boolean  @default(false)
+  suggestedAmount Float   @default(0)
+  finalAmount     Float   @default(0)
+  isOverridden    Boolean @default(false)
   overrideReason  String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  CutoffRevision  CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  CutoffRevision CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
 
   @@unique([revisionId, entityType, entityId])
   @@index([revisionId])
@@ -1967,24 +2225,24 @@ model OpeningBalance {
 }
 
 model CutoffSettlement {
-  id                 String          @id @default(cuid())
-  revisionId         String
-  entityType         String          // 'supplier' | 'vendor'
-  entityId           String          // supplierId or vendorId
+  id         String @id @default(cuid())
+  revisionId String
+  entityType String // 'supplier' | 'vendor'
+  entityId   String // supplierId or vendorId
 
-  cash               Float           @default(0)
-  check              Float           @default(0)
-  checkDate          DateTime?
-  checkStatus        CheckStatus?
-  checkNo            String?
-  paidFromAccountId  String?
-  paymentMethod      String?
+  cash              Float        @default(0)
+  check             Float        @default(0)
+  checkDate         DateTime?
+  checkStatus       CheckStatus?
+  checkNo           String?
+  paidFromAccountId String?
+  paymentMethod     String?
 
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  CutoffRevision     CutoffRevision  @relation(fields: [revisionId], references: [id], onDelete: Cascade)
-  Account            Account?        @relation(fields: [paidFromAccountId], references: [id])
+  CutoffRevision CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  Account        Account?       @relation(fields: [paidFromAccountId], references: [id])
 
   @@index([revisionId])
   @@index([entityType, entityId])
@@ -1992,34 +2250,34 @@ model CutoffSettlement {
 }
 
 model OpeningInventorySnapshot {
-  id              String   @id @default(cuid())
-  revisionId      String
-  productId       String
-  variantId       String?
+  id         String  @id @default(cuid())
+  revisionId String
+  productId  String
+  variantId  String?
 
-  totalQuantity   Int      @default(0)
-  totalValue      Float    @default(0)
-  lotCount        Int      @default(1)
+  totalQuantity Int   @default(0)
+  totalValue    Float @default(0)
+  lotCount      Int   @default(1)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  CutoffRevision  CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
-  Lots            OpeningInventoryLot[]
+  CutoffRevision CutoffRevision        @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  Lots           OpeningInventoryLot[]
 
   @@unique([revisionId, productId, variantId])
   @@index([revisionId])
 }
 
 model OpeningInventoryLot {
-  id              String   @id @default(cuid())
-  snapshotId      String
-  lotNumber       String
-  quantity        Int      @default(0)
-  unitCost        Float    @default(0)
+  id         String @id @default(cuid())
+  snapshotId String
+  lotNumber  String
+  quantity   Int    @default(0)
+  unitCost   Float  @default(0)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   OpeningInventorySnapshot OpeningInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
@@ -2027,19 +2285,19 @@ model OpeningInventoryLot {
 }
 
 model OpeningWipEntry {
-  id              String   @id @default(cuid())
-  revisionId      String
-  productId       String
-  variantId       String?
-  currentStep     String   // PLANNING | FABRIC | PRINTING | CUTTING
-  quantity        Int      @default(0)
-  estimatedCost   Float    @default(0)
-  notes           String?
+  id            String  @id @default(cuid())
+  revisionId    String
+  productId     String
+  variantId     String?
+  currentStep   String // PLANNING | FABRIC | PRINTING | CUTTING
+  quantity      Int     @default(0)
+  estimatedCost Float   @default(0)
+  notes         String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  CutoffRevision  CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  CutoffRevision CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
 
   @@unique([revisionId, productId, variantId, currentStep])
   @@index([revisionId])
@@ -2048,14 +2306,175 @@ model OpeningWipEntry {
 model CutoffAuditLog {
   id              String   @id @default(cuid())
   revisionId      String
-  action          String   // CREATED | VALIDATED | APPLIED | SUPERSEDED | BALANCE_OVERRIDDEN | LOT_EDITED
+  action          String // CREATED | VALIDATED | APPLIED | SUPERSEDED | BALANCE_OVERRIDDEN | LOT_EDITED
   detail          Json?
   performedById   String?
   performedByName String?
   createdAt       DateTime @default(now())
 
-  CutoffRevision  CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  CutoffRevision CutoffRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
 
   @@index([revisionId])
+  @@index([createdAt])
+}
+
+enum WholesaleApprovalStatus {
+  Pending
+  Approved
+  Rejected
+  EditedApproved
+}
+
+enum BrandType {
+  Self
+  Out
+}
+
+// ============================================================
+// Phase 7: SR Performance Management
+// ============================================================
+
+enum SrTargetStatus {
+  Active
+  Completed
+  Expired
+  Cancelled
+}
+
+enum SrTargetType {
+  SalesAmount
+  Quantity
+}
+
+enum SrIncentiveType {
+  CommissionRate // percentage of order total
+  FlatBonus // fixed amount on target achievement
+  DiscountUnlock // elevates the max discount cap
+  CampaignOffer // links to a time-limited campaign
+}
+
+enum SrCommissionStatus {
+  Accrued // calculated but not yet confirmed
+  Confirmed // order delivered, commission locked
+  Voided // order returned/cancelled, commission reversed
+}
+
+model SrTarget {
+  id                String         @id @default(cuid())
+  staffId           String
+  title             String
+  type              SrTargetType
+  targetValue       Float // the goal (amount in BDT or count)
+  currentValue      Float          @default(0)
+  startDate         DateTime       @db.Date
+  endDate           DateTime       @db.Date
+  status            SrTargetStatus @default(Active)
+  incentivePolicyId String?
+  notes             String?
+
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  Staff           StaffMember        @relation("SrTargets", fields: [staffId], references: [id], onDelete: Cascade)
+  IncentivePolicy SrIncentivePolicy? @relation(fields: [incentivePolicyId], references: [id], onDelete: SetNull)
+
+  @@index([staffId, status])
+  @@index([staffId, startDate, endDate])
+  @@index([status])
+}
+
+model SrIncentivePolicy {
+  id            String          @id @default(cuid())
+  name          String
+  description   String?
+  incentiveType SrIncentiveType
+  value         Float // percentage or flat amount depending on type
+  isActive      Boolean         @default(true)
+
+  // Phase 7 Gap 6 Extensions
+  discountCapOverride Float?
+  campaignCode        String?
+  campaignStartDate   DateTime?
+  campaignEndDate     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  Targets SrTarget[]
+
+  @@index([isActive])
+}
+
+model SrCommissionLog {
+  id          String  @id @default(cuid())
+  staffId     String
+  orderId     String
+  orderNumber String?
+  targetId    String?
+  policyId    String?
+
+  orderTotal       Float // order.total at time of accrual
+  commissionRate   Float? // percentage used, if applicable
+  commissionAmount Float // calculated amount
+  status           SrCommissionStatus @default(Accrued)
+
+  accrualNote String? // e.g. "5% commission on order #20260502-0001"
+  voidReason  String?
+
+  accrualDate DateTime  @default(now())
+  confirmedAt DateTime?
+  voidedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  Staff StaffMember @relation("SrCommissions", fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, status])
+  @@index([staffId, accrualDate])
+  @@index([orderId])
+  @@index([targetId])
+}
+
+// ============================================================
+// Phase 8: Wholesaler Product Request Flow
+// ============================================================
+
+enum ProductRequestStatus {
+  Pending
+  Reviewing
+  Sourced
+  Rejected
+  Completed
+}
+
+model WholesaleProductRequest {
+  id            String               @id @default(cuid())
+  customerPhone String
+  customerName  String
+  imageUrl      String?
+  description   String
+  status        ProductRequestStatus @default(Pending)
+
+  // Backoffice tracking
+  assignedToId    String?
+  assignedToName  String?
+  linkedProductId String?
+  adminNote       String?
+  rejectionReason String?
+
+  reviewedAt DateTime?
+  resolvedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  Customer      Customer @relation(fields: [customerPhone], references: [phone], onDelete: Cascade)
+  LinkedProduct Product? @relation("LinkedProductRequests", fields: [linkedProductId], references: [id], onDelete: SetNull)
+
+  @@index([customerPhone])
+  @@index([status])
   @@index([createdAt])
 }

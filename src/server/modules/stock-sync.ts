@@ -306,8 +306,8 @@ async function readSkuMapCache(cacheKey: string): Promise<WooTarget[] | null> {
   }
 }
 
-async function writeSkuMapCache(cacheKey: string, targets: WooTarget[]) {
-  skuMapCache.set(cacheKey, { expires: Date.now() + CACHE_TTL_MS, targets });
+async function writeSkuMapCache(cacheKey: string, targets: WooTarget[], ttl: number = CACHE_TTL_MS) {
+  skuMapCache.set(cacheKey, { expires: Date.now() + ttl, targets });
   const redis = getRedisClient();
   if (!redis) return;
   try {
@@ -315,7 +315,7 @@ async function writeSkuMapCache(cacheKey: string, targets: WooTarget[]) {
       buildRedisKey('sku-map', cacheKey),
       JSON.stringify(targets),
       'PX',
-      CACHE_TTL_MS,
+      ttl,
     );
   } catch (err) {
     console.warn('[WOO_SKU_CACHE_REDIS_WRITE_FAIL]', err);
@@ -392,12 +392,18 @@ async function getProductTypeBySku(sku: string): Promise<string | null> {
   return productType;
 }
 
-async function performWooSkuLookup(integration: any, sku: string): Promise<WooTarget[]> {
+type SkuLookupResult = {
+  targets: WooTarget[];
+  status: 'found' | 'confirmedMissing' | 'lookupFailed';
+};
+
+async function performWooSkuLookup(integration: any, sku: string): Promise<SkuLookupResult> {
   const skuLower = sku.trim().toLowerCase();
   const auth = Buffer.from(`${integration.consumerKey}:${integration.consumerSecret}`).toString('base64');
   const baseUrl = integration.storeUrl.replace(/\/$/, '');
 
   const targets: WooTarget[] = [];
+  let hadFailure = false;
 
   // Strategy: 1. Try direct SKU filter first (Fastest)
   const productUrl = new URL('/wp-json/wc/v3/products', baseUrl);
@@ -414,11 +420,12 @@ async function performWooSkuLookup(integration: any, sku: string): Promise<WooTa
     if (res.ok) {
       prods = await res.json();
     } else {
+      hadFailure = true;
       console.error(`[WOO_LOOKUP_FAIL] Direct SKU filter failed for ${skuLower}: ${res.status}`);
     }
 
-    // Step 2. Fallback to broad search if no products found by direct SKU filter
-    if (prods.length === 0) {
+    // Step 2. Fallback to broad search if no products found by direct SKU filter and no failure occurred
+    if (prods.length === 0 && !hadFailure) {
       const searchUrl = new URL('/wp-json/wc/v3/products', baseUrl);
       searchUrl.searchParams.set('search', skuLower);
       searchUrl.searchParams.set('per_page', '10');
@@ -429,6 +436,7 @@ async function performWooSkuLookup(integration: any, sku: string): Promise<WooTa
       if (res.ok) {
         prods = await res.json();
       } else {
+        hadFailure = true;
         console.error(`[WOO_LOOKUP_FAIL] General search failed for ${skuLower}: ${res.status}`);
       }
     }
@@ -458,6 +466,9 @@ async function performWooSkuLookup(integration: any, sku: string): Promise<WooTa
               targets.push({ productId: p.id, variationId: v.id });
             }
           }
+        } else {
+            hadFailure = true;
+            console.error(`[WOO_LOOKUP_FAIL] Variation search failed for parent ${p.id}: ${vres.status}`);
         }
         // Also check if the parent SKU itself matches (though we usually skip this for variable)
         if (pSku === skuLower) {
@@ -469,18 +480,28 @@ async function performWooSkuLookup(integration: any, sku: string): Promise<WooTa
       }
     }
   } catch (err) {
+    hadFailure = true;
     console.error('[WOO_SKU_LOOKUP_ERROR]', err);
     await recordWooPushFailure(integration.id);
   }
 
-  if (targets.length === 0) {
-    console.log(`[WOO_LOOKUP_NONE] No match found on Woo for SKU: ${skuLower}`);
-  } else {
-    console.log(`[WOO_LOOKUP_MATCH] Found ${targets.length} targets for SKU: ${skuLower}`);
+  if (hadFailure) {
+      console.log(`[WOO_SKU_LOOKUP_FAILED] Lookup failed for SKU: ${skuLower}`);
+      return { targets, status: targets.length > 0 ? 'found' : 'lookupFailed' };
   }
 
-  return targets;
+  if (targets.length === 0) {
+    console.log(`[WOO_SKU_LOOKUP_CONFIRMED_MISSING] No match found on Woo for SKU: ${skuLower}`);
+    return { targets, status: 'confirmedMissing' };
+  } else {
+    console.log(`[WOO_LOOKUP_MATCH] Found ${targets.length} targets for SKU: ${skuLower}`);
+    return { targets, status: 'found' };
+  }
 }
+
+const WOO_SKU_NEGATIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+const inFlightLookups = new Map<string, Promise<WooTarget[]>>();
 
 async function fetchWooTargetsBySku(
   integration: any,
@@ -490,26 +511,55 @@ async function fetchWooTargetsBySku(
   const skuLower = sku.trim().toLowerCase();
   if (!skuLower) return [];
   const forceRefresh = Boolean(options.forceRefresh);
+  // Include forceRefresh in the in-flight key to prevent reusing non-refresh promises
+  const inFlightKey = `${integration.id}|${skuLower}|force:${forceRefresh}`;
   const cacheKey = `${integration.id}|${skuLower}`;
-  if (!forceRefresh) {
-    const cached = await readSkuMapCache(cacheKey);
-    if (cached && cached.length) return cached;
+
+  if (inFlightLookups.has(inFlightKey)) {
+    return inFlightLookups.get(inFlightKey)!;
   }
 
-  // 1. Direct SKU lookup (Works for simple products and parent entries)
-  const mapping = await prisma.wooSkuMapping.findUnique({
-    where: { integrationId_sku: { integrationId: integration.id, sku: skuLower } },
-    select: { targets: true, lastVerifiedAt: true },
-  });
-  const mappedTargets = normalizeWooTargets(mapping?.targets);
-  if (!forceRefresh && mappedTargets.length && isMappingFresh(mapping?.lastVerifiedAt)) {
-    await writeSkuMapCache(cacheKey, mappedTargets);
-    return mappedTargets;
-  }
+  const doLookup = async (): Promise<WooTarget[]> => {
+    if (!forceRefresh) {
+      const cached = await readSkuMapCache(cacheKey);
+      if (cached !== null) {
+        if (cached.length === 0) {
+          console.log(`[WOO_NEGATIVE_CACHE_HIT] Skipping WooCommerce API for missing SKU: ${skuLower}`);
+        }
+        return cached;
+      }
+    }
 
-  let targets = await performWooSkuLookup(integration, skuLower);
-  if (targets.length) {
-    const normalized = normalizeWooTargets(targets);
+    // 1. Direct SKU lookup (Works for simple products and parent entries)
+    const mapping = await prisma.wooSkuMapping.findUnique({
+      where: { integrationId_sku: { integrationId: integration.id, sku: skuLower } },
+      select: { targets: true, lastVerifiedAt: true },
+    });
+    
+    // Support negative caching from DB
+    if (mapping && !forceRefresh && isMappingFresh(mapping.lastVerifiedAt)) {
+      const mappedTargets = normalizeWooTargets(mapping.targets);
+      // Set correct TTL for cache hydration
+      const ttl = mappedTargets.length === 0 ? WOO_SKU_NEGATIVE_CACHE_TTL_MS : CACHE_TTL_MS;
+      await writeSkuMapCache(cacheKey, mappedTargets, ttl);
+      return mappedTargets;
+    }
+
+    let lookupResult = await performWooSkuLookup(integration, skuLower);
+    
+    if (lookupResult.status === 'lookupFailed') {
+      if (mapping && mapping.targets) {
+        console.warn(`[WOO_MAPPING_STALE_FALLBACK] Lookup failed. Using stale mapping for SKU: ${skuLower}`);
+        const mappedTargets = normalizeWooTargets(mapping.targets);
+        return mappedTargets;
+      }
+      console.error(`[WOO_SKU_LOOKUP_FAILED] No prior mapping to fall back to for SKU: ${skuLower}`);
+      return []; // Do NOT cache the failure
+    }
+
+    const normalized = normalizeWooTargets(lookupResult.targets);
+    
+    // Save the result (Negative Caching is applied here since status is found or confirmedMissing)
     const now = new Date();
     await prisma.wooSkuMapping.upsert({
       where: { integrationId_sku: { integrationId: integration.id, sku: skuLower } },
@@ -523,64 +573,19 @@ async function fetchWooTargetsBySku(
         updatedAt: now,
       },
     });
-    await writeSkuMapCache(cacheKey, normalized);
+    
+    const ttl = normalized.length === 0 ? WOO_SKU_NEGATIVE_CACHE_TTL_MS : CACHE_TTL_MS;
+    await writeSkuMapCache(cacheKey, normalized, ttl);
     return normalized;
+  };
+
+  const lookupPromise = doLookup();
+  inFlightLookups.set(inFlightKey, lookupPromise);
+  try {
+    return await lookupPromise;
+  } finally {
+    inFlightLookups.delete(inFlightKey);
   }
-
-  // 2. Fallback: If no direct match, check if this matches any variation under any product
-  if (targets.length === 0) {
-    const auth = Buffer.from(`${integration.consumerKey}:${integration.consumerSecret}`).toString('base64');
-    const baseUrl = integration.storeUrl.replace(/\/$/, '');
-
-    // Search for any product related to this SKU
-    const searchUrl = new URL('/wp-json/wc/v3/products', baseUrl);
-    searchUrl.searchParams.set('search', skuLower);
-    searchUrl.searchParams.set('per_page', '10');
-
-    try {
-      const res = await fetch(searchUrl.toString(), { headers: { 'Authorization': `Basic ${auth}` } });
-      if (res.ok) {
-        const potentialParents = await res.json();
-        for (const p of (potentialParents || [])) {
-          if (p.type === 'variable') {
-            const wooVars = await fetchWooVariations(integration, p.id);
-            const match = wooVars.find(wv => (wv.sku || '').trim().toLowerCase() === skuLower);
-            if (match) {
-              targets.push({ productId: p.id, variationId: match.id });
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error('[WOO_DEEP_LOOKUP_ERR]', skuLower, err);
-    }
-  }
-
-  if (targets.length) {
-    const normalized = normalizeWooTargets(targets);
-    const now = new Date();
-    await prisma.wooSkuMapping.upsert({
-      where: { integrationId_sku: { integrationId: integration.id, sku: skuLower } },
-      update: { targets: serializeWooTargets(normalized), lastVerifiedAt: now },
-      create: {
-        integrationId: integration.id,
-        sku: skuLower,
-        targets: serializeWooTargets(normalized),
-        lastVerifiedAt: now,
-        updatedAt: now,
-      },
-    });
-    await writeSkuMapCache(cacheKey, normalized);
-    return normalized;
-  }
-
-  if (mappedTargets.length) {
-    console.warn(`[WOO_MAPPING_STALE_FALLBACK] Using stale mapping for SKU: ${skuLower}`);
-    await writeSkuMapCache(cacheKey, mappedTargets);
-    return mappedTargets;
-  }
-
-  return [];
 }
 
 async function attemptPushTargets(

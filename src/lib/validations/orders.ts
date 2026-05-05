@@ -10,6 +10,8 @@ export const orderStatusSchema = z.enum([
 ]);
 
 export const orderPlatformSchema = z.enum(['TikTok', 'Messenger', 'Facebook', 'Instagram', 'Website', 'Call']);
+export const orderChannelSchema = z.enum(['Retail', 'Wholesale']);
+export const orderSourcePlatformSchema = z.enum(['Manual', 'POS', 'Woo', 'Messenger', 'Facebook', 'WhatsApp', 'TikTok', 'Instagram', 'Website', 'Call', 'SR', 'WholesalerPortal', 'Other']);
 export const paymentMethodSchema = z.enum([
     'CashOnDelivery',
     'PaidShippingCOD',
@@ -54,6 +56,9 @@ export const createOrderSchemaBase = z.object({
     customerEmail: z.string().email().optional().nullable().or(z.literal('')),
     leadId: z.string().optional().nullable(),
     status: orderStatusSchema.default('New'),
+    channel: orderChannelSchema.default('Retail').optional(),
+    sourcePlatform: orderSourcePlatformSchema.optional().nullable(),
+    salesRepresentativeId: z.string().optional().nullable(),
     platform: orderPlatformSchema.optional().nullable(),
     source: z.string().optional().nullable(),
     date: z.string().datetime().or(z.date()).optional(),

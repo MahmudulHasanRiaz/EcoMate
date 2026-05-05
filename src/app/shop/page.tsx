@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/pagination";
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Search, X } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 
 const ITEMS_PER_PAGE = 12;
@@ -45,14 +47,21 @@ function ProductCard({ product }: { product: Product }) {
                         {product.name}
                     </h3>
                     <div className="mt-auto pt-2">
-                        <div className="flex items-baseline gap-2">
-                            {hasSalePrice ? (
-                                <>
-                                    <span className="font-bold text-lg text-primary">৳{product.salePrice!.toLocaleString()}</span>
-                                    <span className="text-sm text-muted-foreground line-through opacity-50">৳{product.price.toLocaleString()}</span>
-                                </>
-                            ) : (
-                                <span className="font-bold text-lg">৳{product.price.toLocaleString()}</span>
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-baseline gap-2">
+                                {hasSalePrice ? (
+                                    <>
+                                        <span className="font-bold text-lg text-primary">৳{product.salePrice!.toLocaleString()}</span>
+                                        <span className="text-sm text-muted-foreground line-through opacity-50">৳{product.price.toLocaleString()}</span>
+                                    </>
+                                ) : (
+                                    <span className="font-bold text-lg">৳{product.price.toLocaleString()}</span>
+                                )}
+                            </div>
+                            {product.wholesaleEnabled && product.wholesaleVisible && (
+                                <span className="text-[10px] font-bold text-primary/70 bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
+                                    WS: ৳{product.wholesalePrice?.toLocaleString()}
+                                </span>
                             )}
                         </div>
 
@@ -85,6 +94,7 @@ function ShopPageContent() {
     const [products, setProducts] = React.useState<Product[]>([]);
     const [categories, setCategories] = React.useState<Category[]>([]);
     const [isLoading, setIsLoading] = React.useState(true);
+    const [searchQuery, setSearchQuery] = React.useState("");
 
     const selectedCategoryId = searchParams.get('category');
     const page = searchParams.get('page') ? parseInt(searchParams.get('page') as string, 10) : 1;
@@ -99,17 +109,33 @@ function ShopPageContent() {
     }, []);
 
     const filteredProducts = React.useMemo(() => {
-        if (!selectedCategoryId) {
-            return products;
+        let result = products;
+
+        // Category filter
+        if (selectedCategoryId) {
+            const getDescendantIds = (parentId: string): string[] => {
+                const children = categories.filter(c => c.parentId === parentId);
+                let ids = children.map(c => c.id);
+                for (const child of children) {
+                    ids = ids.concat(getDescendantIds(child.id));
+                }
+                return ids;
+            };
+            const allTargetCategoryIds = [selectedCategoryId, ...getDescendantIds(selectedCategoryId)];
+            result = result.filter(p => p.categoryId && allTargetCategoryIds.includes(p.categoryId));
         }
-        let currentCategory = categories.find(c => c.id === selectedCategoryId);
-        if (currentCategory && !currentCategory.parentId) {
-            const childCategoryIds = categories.filter(c => c.parentId === selectedCategoryId).map(c => c.id);
-            const allIds = [selectedCategoryId, ...childCategoryIds];
-            return products.filter(p => p.categoryId && allIds.includes(p.categoryId));
+
+        // Search filter
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase().trim();
+            result = result.filter(p => 
+                p.name.toLowerCase().includes(query) || 
+                (p.sku && p.sku.toLowerCase().includes(query))
+            );
         }
-        return products.filter(p => p.categoryId === selectedCategoryId);
-    }, [products, categories, selectedCategoryId]);
+
+        return result;
+    }, [products, categories, selectedCategoryId, searchQuery]);
 
     const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
     const paginatedProducts = React.useMemo(() => {
@@ -124,7 +150,46 @@ function ShopPageContent() {
     }
 
     return (
-        <>
+        <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <div className="relative w-full max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Search products..."
+                        className="pl-9 pr-10 rounded-full bg-muted/30 border-muted-foreground/10 focus-visible:ring-primary/20"
+                        value={searchQuery}
+                        onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            const params = new URLSearchParams(searchParams.toString());
+                            params.set('page', '1'); // Reset to page 1 on search
+                            router.push(`/shop?${params.toString()}`, { scroll: false });
+                        }}
+                    />
+                    {searchQuery && (
+                        <button 
+                            onClick={() => setSearchQuery("")}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    )}
+                </div>
+                {selectedCategoryId && (
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-xs text-muted-foreground hover:text-primary"
+                        onClick={() => {
+                            const params = new URLSearchParams(searchParams.toString());
+                            params.delete('category');
+                            router.push(`/shop?${params.toString()}`);
+                        }}
+                    >
+                        Clear Category Filter
+                    </Button>
+                )}
+            </div>
+
             {isLoading ? (
                 <ShopLoadingSkeleton />
             ) : (
@@ -135,8 +200,28 @@ function ShopPageContent() {
                 </div>
             )}
             {!isLoading && filteredProducts.length === 0 && (
-                <div className="text-center text-muted-foreground py-16">
-                    <p>No products found in this category.</p>
+                <div className="text-center py-24 border rounded-3xl bg-muted/5">
+                    <div className="bg-muted/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Search className="h-8 w-8 text-muted-foreground/40" />
+                    </div>
+                    <h3 className="font-bold text-lg">No products found</h3>
+                    <p className="text-muted-foreground max-w-[250px] mx-auto text-sm mt-1">
+                        Try adjusting your search or category filters to find what you're looking for.
+                    </p>
+                    {(searchQuery || selectedCategoryId) && (
+                        <Button 
+                            variant="link" 
+                            className="mt-4"
+                            onClick={() => {
+                                setSearchQuery("");
+                                const params = new URLSearchParams(searchParams.toString());
+                                params.delete('category');
+                                router.push(`/shop?${params.toString()}`);
+                            }}
+                        >
+                            Clear all filters
+                        </Button>
+                    )}
                 </div>
             )}
 
@@ -173,7 +258,7 @@ function ShopPageContent() {
                     </Pagination>
                 </div>
             )}
-        </>
+        </div>
     );
 }
 
