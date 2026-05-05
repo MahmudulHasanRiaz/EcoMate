@@ -39,10 +39,10 @@ next-env.d.ts
 
 .genkit/*
 .env*
+!.env.example
 
-# firebase
-firebase-debug.log
-firestore-debug.log
+
+
 # clerk configuration (can include secrets)
 /.clerk/
 
@@ -53,9 +53,9 @@ firestore-debug.log
 typecheck.log
 typecheck*.txt
 
-# Local operational files (often contain PII or are machine-specific)
-/draft/invoice/*.csv
-/draft/invoice/*.xlsx
-/draft/invoice/*.xls
+# Working drafts and agent artifacts
+/draft/
+
+# Local operational files
 /scripts/_carrybee_invoice_status_update_*.json
 /.kilo/
