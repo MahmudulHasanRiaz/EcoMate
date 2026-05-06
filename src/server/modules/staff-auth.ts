@@ -297,10 +297,18 @@ export async function getStaffAuthDetails(): Promise<StaffAuthResult> {
     if (needsWrite) {
       const getUniqueTargets = (error: any): string[] => {
         if (error?.code !== 'P2002') return [];
+        const targets = [];
         const target = error?.meta?.target;
-        if (Array.isArray(target)) return target.map(String);
-        if (typeof target === 'string') return [target];
-        return [];
+        if (Array.isArray(target)) targets.push(...target.map(String));
+        else if (typeof target === 'string') targets.push(target);
+        
+        // Robust fallback for different adapter error formats
+        const msg = (error?.message || '').toLowerCase();
+        if (msg.includes('email')) targets.push('email');
+        if (msg.includes('phone')) targets.push('phone');
+        if (msg.includes('staffcode') || msg.includes('staff_code')) targets.push('staffCode');
+        
+        return targets;
       };
 
       const hasTarget = (targets: string[], field: string) =>
