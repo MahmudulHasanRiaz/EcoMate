@@ -41,10 +41,12 @@ const roleMap: Record<string, string> = {
     'Courier Manager': 'CourierManager',
     'Courier Call Assistant': 'CourierCallAssistant',
     'Vendor/Supplier': 'Vendor_Supplier',
+    'Sales Representative': 'SalesRepresentative',
     'Custom': 'Custom',
 };
 
 const staffSeed = [
+    /*
     {
         id: 'STAFF001',
         clerkId: 'user_2fABS5XqS69aT5tL6uA7aJ3bYz8',
@@ -60,6 +62,7 @@ const staffSeed = [
         permissions: {},
         businessIds: ['BIZ001', 'BIZ002', 'BIZ003'],
     },
+    */
     {
         id: 'STAFF002',
         clerkId: 'user_2fA9y9Z8fX6vS5tL6uA7aJ3bYz8',
@@ -141,6 +144,99 @@ const staffSeed = [
         permissions: {},
         businessIds: ['BIZ001'],
     },
+    {
+        id: 'STAFF007',
+        clerkId: 'clerk_sr_riaz',
+        name: 'Mahmudul Hasan Riaz',
+        email: 'mahmudriaz.bd@gmail.com',
+        phone: '01601701567',
+        staffCode: 'EM-SR-001',
+        role: 'Sales Representative',
+        lastLogin: new Date(),
+        paymentType: 'Commission',
+        salaryDetails: null,
+        commissionDetails: { onOrderCreate: 50 },
+        permissions: {},
+        businessIds: ['BIZ001', 'BIZ002', 'BIZ003'],
+    },
+];
+
+const customerSeed = [
+    {
+        id: 'CUST001',
+        name: 'General Wholesale Store',
+        phone: '01601701567',
+        email: 'wholesale@example.com',
+        address: '123 Wholesale Market, Dhaka',
+        district: 'Dhaka',
+        country: 'Bangladesh',
+        type: 'Wholesaler',
+        joinDate: new Date(),
+    },
+    {
+        id: 'CUST002',
+        name: 'Individual Retailer',
+        phone: '01700000007',
+        email: 'retailer@example.com',
+        address: '456 Retail St, Chittagong',
+        district: 'Chittagong',
+        country: 'Bangladesh',
+        type: 'Retail',
+        joinDate: new Date(),
+    },
+];
+
+const productSeed = [
+    {
+        id: 'PROD001',
+        name: 'Premium Cotton Three-Piece',
+        categoryId: 'cat-1-1',
+        price: 2500,
+        basePrice: 1500,
+        inventory: 100,
+        sku: 'TCP-COT-001',
+    },
+    {
+        id: 'PROD002',
+        name: 'Linen Collection Kurti',
+        categoryId: 'cat-1-2',
+        price: 1800,
+        basePrice: 1000,
+        inventory: 50,
+        sku: 'LIN-KUR-001',
+    },
+];
+
+const inventorySeed = [
+    {
+        productId: 'PROD001',
+        locationId: 'LOC001',
+        quantity: 100,
+        lotNumber: 'LOT-001',
+        unitCost: 1500,
+    },
+    {
+        productId: 'PROD002',
+        locationId: 'LOC002',
+        quantity: 50,
+        lotNumber: 'LOT-002',
+        unitCost: 1000,
+    },
+];
+
+const orderSeed = [
+    {
+        id: 'ORD001',
+        customerPhone: '01601701567',
+        customerName: 'General Wholesale Store',
+        total: 25000,
+        status: 'New',
+        paymentMethod: 'Cash',
+        businessId: 'BIZ001',
+        items: [
+            { productId: 'PROD001', quantity: 10, price: 2500 }
+        ]
+    }
 ];
 
 
@@ -220,6 +316,102 @@ async function main() {
                 accessibleBusinesses: {
                     connect: member.businessIds.map(id => ({ id })),
                 },
+            } as any,
+        });
+    }
+
+    for (const customer of customerSeed) {
+        await prisma.customer.upsert({
+            where: { phone: customer.phone },
+            update: { name: customer.name, type: customer.type as any },
+            create: {
+                id: customer.id,
+                name: customer.name,
+                phone: customer.phone,
+                email: customer.email,
+                address: customer.address,
+                district: customer.district,
+                country: customer.country,
+                type: customer.type as any,
+                joinDate: customer.joinDate,
+            },
+        });
+    }
+
+    for (const product of productSeed) {
+        await prisma.product.upsert({
+            where: { id: product.id },
+            update: { 
+                name: product.name, 
+                price: product.price,
+                inventory: product.inventory,
+                sku: product.sku,
+            },
+            create: {
+                id: product.id,
+                name: product.name,
+                price: product.price,
+                inventory: product.inventory,
+                sku: product.sku,
+                ProductCategory: product.categoryId ? {
+                    create: {
+                        categoryId: product.categoryId
+                    }
+                } : undefined,
+            },
+        });
+    }
+
+    for (const inv of inventorySeed) {
+        const existing = await prisma.inventoryItem.findFirst({
+            where: {
+                productId: inv.productId,
+                variantId: null,
+                locationId: inv.locationId,
+                lotNumber: inv.lotNumber,
+            }
+        });
+
+        if (existing) {
+            await prisma.inventoryItem.update({
+                where: { id: existing.id },
+                data: { quantity: inv.quantity },
+            });
+        } else {
+            await prisma.inventoryItem.create({
+                data: {
+                    productId: inv.productId,
+                    locationId: inv.locationId,
+                    quantity: inv.quantity,
+                    lotNumber: inv.lotNumber,
+                    unitCost: inv.unitCost,
+                    receivedDate: new Date(),
+                },
+            });
+        }
+    }
+
+    for (const order of orderSeed) {
+        await prisma.order.upsert({
+            where: { id: order.id },
+            update: { status: order.status as any },
+            create: {
+                id: order.id,
+                customerPhone: order.customerPhone,
+                customerName: order.customerName,
+                total: order.total,
+                status: order.status as any,
+                paymentMethod: order.paymentMethod as any,
+                businessId: order.businessId,
+                date: new Date(),
+                paidAmount: 0,
+                products: {
+                    create: order.items.map(item => ({
+                        productId: item.productId,
+                        quantity: item.quantity,
+                        price: item.price,
+                    }))
+                }
             } as any,
         });
     }
