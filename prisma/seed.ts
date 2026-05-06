@@ -52,7 +52,7 @@ const staffSeed = [
         email: 'commerciansbd@gmail.com',
         phone: '01700000001',
         staffCode: 'EM001',
-        role: 'Admin',
+        role: 'SuperAdmin',
         lastLogin: new Date('2024-05-27T10:00:00Z'),
         paymentType: 'Salary',
         salaryDetails: { amount: 50000, frequency: 'Monthly' },

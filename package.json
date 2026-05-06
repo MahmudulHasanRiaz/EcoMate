@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npx prisma generate && next dev --turbopack -p 9002",
+    "dev": "npx prisma generate && next dev --turbopack -p 3000",
     "build": "npx prisma generate && next build",
     "start": "next start",
     "worker": "tsx scripts/bullmq-worker.ts",
