@@ -91,7 +91,7 @@ export async function POST(request: Request) {
       },
     });
 
-    revalidateTag('businesses');
+    revalidateTag('businesses', 'page');
     return NextResponse.json(newBusiness, { status: 201 });
 
   } catch (error: any) {
@@ -143,7 +143,7 @@ export async function PUT(request: Request) {
       },
     });
 
-    revalidateTag('businesses');
+    revalidateTag('businesses', 'page');
     return NextResponse.json(updatedBusiness);
 
   } catch (error: any) {
@@ -184,7 +184,7 @@ export async function DELETE(request: Request) {
       where: { id },
     });
 
-    revalidateTag('businesses');
+    revalidateTag('businesses', 'page');
     return new NextResponse(null, { status: 204 }); // No Content
 
   } catch (error: any) {

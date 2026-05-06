@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       },
       include: { Business: true },
     });
-    revalidateTag('integrations');
+    revalidateTag('integrations', 'page');
     return NextResponse.json({ ...created, businessName: created.Business?.name || '' });
   } catch (err: any) {
     if (err?.code === 'P2002') {
@@ -70,7 +70,7 @@ export async function PUT(req: NextRequest) {
       },
       include: { Business: true },
     });
-    revalidateTag('integrations');
+    revalidateTag('integrations', 'page');
     return NextResponse.json({ ...updated, businessName: updated.Business?.name || '' });
   } catch (err) {
     console.error('[COURIER_INTEGRATION_UPDATE_ERROR]', err);
@@ -88,7 +88,7 @@ export async function DELETE(req: NextRequest) {
     await prisma.courierIntegration.delete({
       where: { id },
     });
-    revalidateTag('integrations');
+    revalidateTag('integrations', 'page');
     return NextResponse.json({ message: 'Integration deleted successfully' });
   } catch (err) {
     console.error('[COURIER_INTEGRATION_DELETE_ERROR]', err);

@@ -2,7 +2,7 @@
 export async function revalidateTags(tags: string[]) {
   try {
     const { revalidateTag } = await import('next/cache');
-    await Promise.all(tags.map((tag) => revalidateTag(tag)));
+    await Promise.all(tags.map((tag) => revalidateTag(tag, 'page')));
   } catch {
     // Non-Next runtime (e.g., Express) — ignore
   }

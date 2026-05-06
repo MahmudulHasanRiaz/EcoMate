@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       data: { name },
     });
 
-    revalidateTag('locations');
+    revalidateTag('locations', 'page');
     return NextResponse.json(newLocation, { status: 201 });
 
   } catch (error: any) {
@@ -74,7 +74,7 @@ export async function PUT(request: Request) {
       data: { name },
     });
 
-    revalidateTag('locations');
+    revalidateTag('locations', 'page');
     return NextResponse.json(updatedLocation);
 
   } catch (error: any) {
@@ -113,7 +113,7 @@ export async function DELETE(request: Request) {
       where: { id },
     });
 
-    revalidateTag('locations');
+    revalidateTag('locations', 'page');
     return new NextResponse(null, { status: 204 }); // No Content
 
   } catch (error: any) {

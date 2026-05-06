@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
   // 3. Revalidate the cache for the given tag
   // This function will invalidate all fetch requests that have been tagged with the specified tag.
-  revalidateTag(tag);
+  revalidateTag(tag, 'page');
 
   // 4. Return a success response
   // This confirms that the revalidation request was received and processed.

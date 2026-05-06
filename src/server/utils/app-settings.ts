@@ -237,6 +237,6 @@ export const updateBackupSettings = async (data: Partial<BackupSettings>) => {
     });
     
     // Revalidate cache after update
-    revalidateTag('settings');
-    revalidateTag('backup');
+    revalidateTag('settings', 'page');
+    revalidateTag('backup', 'page');
 };

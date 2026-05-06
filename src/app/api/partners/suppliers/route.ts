@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     }
 
     const newSupplier = await prisma.supplier.create({ data: body });
-    revalidateTag('partners');
+    revalidateTag('partners', 'page');
     return NextResponse.json(newSupplier, { status: 201 });
   } catch (error: any) {
     console.error('[API_ERROR:CREATE_SUPPLIER]', error);
@@ -57,7 +57,7 @@ export async function PUT(request: Request) {
       where: { id },
       data,
     });
-    revalidateTag('partners');
+    revalidateTag('partners', 'page');
     return NextResponse.json(updatedSupplier);
   } catch (error: any) {
     console.error('[API_ERROR:UPDATE_SUPPLIER]', error);
@@ -85,7 +85,7 @@ export async function DELETE(request: Request) {
     }
 
     await prisma.supplier.delete({ where: { id } });
-    revalidateTag('partners');
+    revalidateTag('partners', 'page');
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
     console.error('[API_ERROR:DELETE_SUPPLIER]', error);

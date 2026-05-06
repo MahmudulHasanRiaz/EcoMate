@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     create: { key: KEY, value: merged },
   });
   const { revalidateTag } = await import('next/cache');
-  revalidateTag('settings');
-  revalidateTag('general');
+  revalidateTag('settings', 'page');
+  revalidateTag('general', 'page');
   return NextResponse.json({ success: true });
 }

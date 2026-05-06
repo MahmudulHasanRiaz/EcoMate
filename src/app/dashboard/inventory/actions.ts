@@ -161,8 +161,8 @@ export async function adjustStock(payload: AdjustmentPayload) {
       }
     });
 
-    revalidateTag('inventory');
-    revalidateTag('products');
+    revalidateTag('inventory', 'page');
+    revalidateTag('products', 'page');
 
     return { success: true, message: 'Stock adjusted successfully.' };
   } catch (error: any) {
@@ -175,8 +175,8 @@ export async function transferStock(payload: TransferPayload) {
   try {
     const { transferStockLogic } = await import('@/server/modules/inventory-transfers');
     await transferStockLogic(payload);
-    revalidateTag('inventory');
-    revalidateTag('products');
+    revalidateTag('inventory', 'page');
+    revalidateTag('products', 'page');
     return { success: true, message: 'Stock transferred successfully.' };
   } catch (error: any) {
     console.error('[SERVER_ACTION_ERROR:transferStock]', error);
@@ -192,8 +192,8 @@ export async function transferGodownStockAggregated(payload: {
   try {
     const { transferGodownStockAggregatedLogic } = await import('@/server/modules/inventory-transfers');
     await transferGodownStockAggregatedLogic(payload);
-    revalidateTag('inventory');
-    revalidateTag('products');
+    revalidateTag('inventory', 'page');
+    revalidateTag('products', 'page');
     return { success: true, message: 'Stock transferred successfully.' };
   } catch (error: any) {
     console.error('[SERVER_ACTION_ERROR:transferGodownStockAggregated]', error);
@@ -213,8 +213,8 @@ export async function transferReservedStockAggregated(payload: {
   try {
     const { transferReservedStockAggregatedLogic } = await import('@/server/modules/inventory-transfers');
     const result = await transferReservedStockAggregatedLogic(payload);
-    revalidateTag('inventory');
-    revalidateTag('products');
+    revalidateTag('inventory', 'page');
+    revalidateTag('products', 'page');
     return result || { success: true, message: 'Reserved stock transferred successfully.' };
   } catch (error: any) {
     console.error('[SERVER_ACTION_ERROR:transferReservedStockAggregated]', error);

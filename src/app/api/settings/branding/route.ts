@@ -55,6 +55,6 @@ export async function POST(request: Request) {
     create: { key: KEY, value: normalized },
   });
   const { revalidateTag } = await import('next/cache');
-  revalidateTag('settings');
+  revalidateTag('settings', 'page');
   return NextResponse.json({ success: true, value: normalized });
 }

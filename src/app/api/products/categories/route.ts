@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       },
     });
 
-    revalidateTag('categories');
+    revalidateTag('categories', 'page');
     return NextResponse.json(newCategory, { status: 201 });
 
   } catch (error) {
@@ -64,7 +64,7 @@ export async function PUT(request: Request) {
       },
     });
 
-    revalidateTag('categories');
+    revalidateTag('categories', 'page');
     return NextResponse.json(updatedCategory);
 
   } catch (error) {
@@ -116,7 +116,7 @@ export async function DELETE(request: Request) {
       where: { id },
     });
 
-    revalidateTag('categories');
+    revalidateTag('categories', 'page');
     return new NextResponse(null, { status: 204 }); // No Content
 
   } catch (error) {
