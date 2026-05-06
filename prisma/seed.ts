@@ -1,7 +1,12 @@
-
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
+import pg from 'pg'
 
-const prisma = new PrismaClient()
+const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+})
+const adapter = new PrismaPg(pool)
+const prisma = new PrismaClient({ adapter })
 
 const categories = [
     { id: 'cat-1', name: 'Three-Piece' },
@@ -35,7 +40,7 @@ const roleMap: Record<string, string> = {
     'Call Centre Manager': 'CallCentreManager',
     'Courier Manager': 'CourierManager',
     'Courier Call Assistant': 'CourierCallAssistant',
-    'Vendor/Supplier': 'VendorSupplier',
+    'Vendor/Supplier': 'Vendor_Supplier',
     'Custom': 'Custom',
 };
 
@@ -46,6 +51,7 @@ const staffSeed = [
         name: 'Admin User',
         email: 'commerciansbd@gmail.com',
         phone: '01700000001',
+        staffCode: 'EM001',
         role: 'Admin',
         lastLogin: new Date('2024-05-27T10:00:00Z'),
         paymentType: 'Salary',
@@ -60,6 +66,7 @@ const staffSeed = [
         name: 'Saleha Akter',
         email: 'saleha@ecomate.com',
         phone: '01700000002',
+        staffCode: 'EM002',
         role: 'Moderator',
         lastLogin: new Date('2024-05-26T14:30:00Z'),
         paymentType: 'Commission',
@@ -80,6 +87,7 @@ const staffSeed = [
         name: 'Kamrul Hasan',
         email: 'kamrul@ecomate.com',
         phone: '01700000003',
+        staffCode: 'EM003',
         role: 'Packing Assistant',
         lastLogin: new Date('2024-05-27T09:00:00Z'),
         paymentType: 'Both',
@@ -94,6 +102,7 @@ const staffSeed = [
         name: 'Fabric House Ltd.',
         email: 'rahim@fabric-house.com',
         phone: '01700000004',
+        staffCode: 'EM004',
         role: 'Vendor/Supplier',
         lastLogin: new Date('2024-05-25T11:00:00Z'),
         paymentType: 'Commission',
@@ -108,6 +117,7 @@ const staffSeed = [
         name: 'Courier Manager Guy',
         email: 'courier.manager@ecomate.com',
         phone: '01700000005',
+        staffCode: 'EM005',
         role: 'Courier Manager',
         lastLogin: new Date('2024-05-27T11:00:00Z'),
         paymentType: 'Salary',
@@ -122,6 +132,7 @@ const staffSeed = [
         name: 'Call Center Agent',
         email: 'call.agent@ecomate.com',
         phone: '01700000006',
+        staffCode: 'EM006',
         role: 'Call Assistant',
         lastLogin: new Date('2024-05-27T15:00:00Z'),
         paymentType: 'Salary',
@@ -180,6 +191,7 @@ async function main() {
                 name: member.name,
                 email: member.email,
                 phone: member.phone,
+                staffCode: member.staffCode,
                 role: prismaRole as any,
                 clerkId: member.clerkId,
                 lastLogin: member.lastLogin,
@@ -198,6 +210,7 @@ async function main() {
                 name: member.name,
                 email: member.email,
                 phone: member.phone,
+                staffCode: member.staffCode,
                 role: prismaRole as any,
                 lastLogin: member.lastLogin,
                 paymentType: member.paymentType,
