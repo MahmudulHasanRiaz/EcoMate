@@ -1284,7 +1284,7 @@ const ProductThumb = React.useCallback(({ product, size = 64 }: { product: Order
         );
     }
 
-    const whatsappMessage = `Hello ${order.customerName}, regarding your order ${order.orderNumber || order.id}:\n- Total: ?${order.total.toFixed(2)}\n- Status: ${order.status}\n\nWe will update you shortly. Thank you!`;
+    const whatsappMessage = `Hello ${order.customerName}, regarding your order ${order.orderNumber || order.id}:\n- Total: ?${Number(order.total ?? 0).toFixed(2)}\n- Status: ${order.status}\n\nWe will update you shortly. Thank you!`;
     const phoneMeta = normalizeBdPhoneForStorage(order.customerPhone);
     const phoneDisplay = phoneMeta.isValid ? phoneMeta.last11 : (phoneMeta.value || order.customerPhone);
     const telHref = formatTelHref(order.customerPhone);
@@ -1592,11 +1592,11 @@ const ProductThumb = React.useCallback(({ product, size = 64 }: { product: Order
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="text-right">{product.quantity}</TableCell>
-                                                        <TableCell className="text-right font-mono">Tk{product.price.toFixed(2)}</TableCell>
+                                                        <TableCell className="text-right font-mono">Tk{Number(product.price ?? 0).toFixed(2)}</TableCell>
                                                         <TableCell className="text-right font-mono text-amber-600">
-                                                            {product.siteDiscount ? `Tk${product.siteDiscount.toFixed(2)}` : 'Tk0.00'}
+                                                            {product.siteDiscount ? `Tk${Number(product.siteDiscount).toFixed(2)}` : 'Tk0.00'}
                                                         </TableCell>
-                                                        <TableCell className="text-right font-mono">Tk{(product.price * product.quantity - (product.siteDiscount || 0)).toFixed(2)}</TableCell>
+                                                        <TableCell className="text-right font-mono">Tk{(Number(product.price ?? 0) * (product.quantity ?? 1) - (product.siteDiscount || 0)).toFixed(2)}</TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
@@ -1628,7 +1628,7 @@ const ProductThumb = React.useCallback(({ product, size = 64 }: { product: Order
                                                         </div>
                                                         <div className="flex justify-between items-center mt-2">
                                                             <p className="text-sm">Qty: {product.quantity}</p>
-                                                            <p className="font-medium font-mono">Tk{(product.price * product.quantity - (product.siteDiscount || 0)).toFixed(2)}</p>
+                                                            <p className="font-medium font-mono">Tk{(Number(product.price ?? 0) * (product.quantity ?? 1) - (product.siteDiscount || 0)).toFixed(2)}</p>
                                                         </div>
                                                         <p className="text-xs text-amber-600 mt-1">Site Disc: Tk{product.siteDiscount?.toFixed(2) || '0.00'}</p>
                                                     </div>
@@ -1646,7 +1646,7 @@ const ProductThumb = React.useCallback(({ product, size = 64 }: { product: Order
                                     <CardContent className='space-y-2 text-sm px-4 pb-4'>
                                         <div className="flex items-center justify-between"><span className="text-muted-foreground">Subtotal</span><span className='font-mono'>Tk{subtotal.toFixed(0)}</span></div>
                                         <div className="flex items-center justify-between"><span className="text-muted-foreground">Discount</span><span className='font-mono text-red-500'>- Tk{effectiveDiscount.toFixed(0)}</span></div>
-                                        <div className="flex items-center justify-between"><span className="text-muted-foreground">Shipping</span><span className='font-mono'>Tk{order.shipping.toFixed(0)}</span></div>
+                                        <div className="flex items-center justify-between"><span className="text-muted-foreground">Shipping</span><span className='font-mono'>Tk{Number(order.shipping ?? 0).toFixed(0)}</span></div>
                                         <Separator className="my-1" />
                                         <div className="flex items-center justify-between font-bold text-base"><span className="">Total</span><span className='font-mono'>Tk{total.toFixed(0)}</span></div>
                                         <div className="flex items-center justify-between"><span className="text-muted-foreground">Paid</span><span className='font-mono text-green-600'>Tk{paidAmount.toFixed(0)}</span></div>

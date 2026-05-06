@@ -227,14 +227,58 @@ const inventorySeed = [
 const orderSeed = [
     {
         id: 'ORD001',
+        orderNumber: 'EM-ORD-240506-001',
         customerPhone: '01601701567',
         customerName: 'General Wholesale Store',
         total: 25000,
         status: 'New',
         paymentMethod: 'Cash',
         businessId: 'BIZ001',
+        channel: 'Wholesale',
         items: [
             { productId: 'PROD001', quantity: 10, price: 2500 }
+        ]
+    },
+    {
+        id: 'ORD002',
+        orderNumber: 'EM-ORD-240506-002',
+        customerPhone: '01700000007',
+        customerName: 'Individual Retailer',
+        total: 1800,
+        status: 'Confirmed',
+        paymentMethod: 'bKash',
+        businessId: 'BIZ001',
+        channel: 'Retail',
+        items: [
+            { productId: 'PROD002', quantity: 1, price: 1800 }
+        ]
+    },
+    {
+        id: 'ORD003',
+        orderNumber: 'EM-ORD-240506-003',
+        customerPhone: '01601701567',
+        customerName: 'General Wholesale Store',
+        total: 12500,
+        status: 'Confirmed',
+        paymentMethod: 'Bank',
+        businessId: 'BIZ002',
+        channel: 'Wholesale',
+        items: [
+            { productId: 'PROD001', quantity: 5, price: 2500 }
+        ]
+    },
+    {
+        id: 'ORD004',
+        orderNumber: 'EM-ORD-240506-004',
+        customerPhone: '01700000007',
+        customerName: 'Individual Retailer',
+        total: 5000,
+        status: 'New',
+        paymentMethod: 'Nagad',
+        businessId: 'BIZ001',
+        channel: 'Retail',
+        items: [
+            { productId: 'PROD001', quantity: 2, price: 2500 }
         ]
     }
 ];
@@ -394,15 +438,21 @@ async function main() {
     for (const order of orderSeed) {
         await prisma.order.upsert({
             where: { id: order.id },
-            update: { status: order.status as any },
+            update: { 
+                status: order.status as any,
+                orderNumber: order.orderNumber,
+                channel: order.channel as any,
+            },
             create: {
                 id: order.id,
+                orderNumber: order.orderNumber,
                 customerPhone: order.customerPhone,
                 customerName: order.customerName,
                 total: order.total,
                 status: order.status as any,
                 paymentMethod: order.paymentMethod as any,
                 businessId: order.businessId,
+                channel: order.channel as any,
                 date: new Date(),
                 paidAmount: 0,
                 products: {
