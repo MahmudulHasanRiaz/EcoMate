@@ -284,10 +284,11 @@ export default function AccountPage() {
         load();
     }, [isLoaded, clerkUser, activePeriod]);
 
+    const nonTerminalStatuses = ['Draft', 'Incomplete', 'Incomplete-Cancelled'];
     const performanceChartData = React.useMemo(() => {
         if (!loggedInStaff || !loggedInStaff.performance) return [];
         return Object.entries(loggedInStaff.performance.statusBreakdown)
-            .filter(([, value]) => value > 0)
+            .filter(([status, value]) => value > 0 && !nonTerminalStatuses.includes(status))
             .map(([status, value], index) => ({
                 status: status as OrderStatus,
                 value,
@@ -312,7 +313,8 @@ export default function AccountPage() {
             deliveryRate: 0, returnRate: 0, confirmedCancellationRate: 0,
 
             incompleteWorked: 0, incompleteConverted: 0, incompleteConversionRate: 0,
-            ordersWorked: 0, totalActions: 0, combinedCancellationRate: 0, combinedDeliveryRate: 0
+            ordersWorked: 0, totalActions: 0, combinedCancellationRate: 0, combinedDeliveryRate: 0,
+            terminalOrders: 0, totalDistinctOrders: 0
         };
 
         const { performance } = loggedInStaff;
@@ -350,14 +352,20 @@ export default function AccountPage() {
             ? (incompleteConverted / incompleteWorked) * 100
             : 0;
 
-        // 4. Overall
-        const totalActions = performance.totalOrderActions ?? (createdTotal + confirmedTotal);
-        const ordersWorked = performance.ordersWorked ?? totalActions;
-        const totalCanceled = createdCanceled + confirmedCanceled;
-        const totalDelivered = createdDelivered + confirmedDelivered;
+        // 4. Overall — use statusBreakdown (distinct orders, no double-count)
+        const statusBd = performance.statusBreakdown || {};
+        const totalDistinctOrders = Object.values(statusBd).reduce((sum, v) => sum + v, 0);
+        const deliveredOrders = statusBd['Delivered'] || 0;
+        const returnedOrders = (statusBd['Returned'] || 0) + (statusBd['Paid_Return'] || 0);
+        const canceledOrders = statusBd['Canceled'] || 0;
+        const terminalOrders = deliveredOrders + returnedOrders + canceledOrders;
 
-        const combinedCancellationRate = totalActions > 0 ? (totalCanceled / totalActions) * 100 : 0;
-        const combinedDeliveryRate = totalActions > 0 ? (totalDelivered / totalActions) * 100 : 0;
+        const combinedDeliveryRate = (deliveredOrders + returnedOrders) > 0
+            ? (deliveredOrders / (deliveredOrders + returnedOrders)) * 100
+            : 0;
+        const combinedCancellationRate = terminalOrders > 0
+            ? (canceledOrders / terminalOrders) * 100
+            : 0;
 
         return {
             createdTotal,
@@ -382,10 +390,12 @@ export default function AccountPage() {
             incompleteConverted,
             incompleteConversionRate,
 
-            ordersWorked,
-            totalActions,
+            ordersWorked: performance.ordersWorked ?? totalDistinctOrders,
+            totalActions: performance.totalOrderActions ?? totalDistinctOrders,
             combinedCancellationRate,
-            combinedDeliveryRate
+            combinedDeliveryRate,
+            terminalOrders,
+            totalDistinctOrders
         };
     }, [loggedInStaff]);
 

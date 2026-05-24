@@ -245,7 +245,7 @@ export async function getStaffAuthDetails(): Promise<StaffAuthResult> {
     const permissions = attachPageAccess(basePermissions, role);
 
     const inviteBusinessIds = Array.isArray(invite?.businessIds) ? (invite.businessIds as string[]) : [];
-    const dbAccessibleBusinessIds = (dbStaff?.accessibleBusinesses || []).map((b) => b.id);
+    const dbAccessibleBusinessIds = (dbStaff?.accessibleBusinesses || []).map((b: any) => b.id);
     let usingInviteBusinessIds = false;
 
     let allBusinessIdsCache: string[] | null = null;

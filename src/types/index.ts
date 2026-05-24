@@ -271,6 +271,7 @@ export type Business = {
     id: string;
     name: string;
     logo: string;
+    isDefault?: boolean;
     phone?: string | null;
     address?: string | null;
 };
@@ -988,16 +989,20 @@ export type Branch = {
     updatedAt?: string;
 };
 
-export type WooCommerceIntegration = {
+export type IntegrationPlatform = 'woocommerce' | 'laravel' | 'nextjs' | 'custom';
+
+export type WebsiteIntegration = {
     id: string;
     storeName: string;
     storeUrl: string;
-    consumerKey: string;
-    consumerSecret: string;
+    platform: IntegrationPlatform;
+    consumerKey?: string | null;
+    consumerSecret?: string | null;
     status: 'Active' | 'Inactive';
     businessId: string;
     businessName: string;
     apiKey?: string;
+    callbackUrl?: string | null;
     settings?: any;
     autoSyncEnabled?: boolean;
     incompleteEnabled?: boolean;
@@ -1013,6 +1018,9 @@ export type WooCommerceIntegration = {
     webhookUrl?: string;
     webhookSecret?: string;
 };
+
+/** @deprecated Use WebsiteIntegration instead */
+export type WooCommerceIntegration = WebsiteIntegration;
 
 export type PathaoCredentials = {
     clientId: string;

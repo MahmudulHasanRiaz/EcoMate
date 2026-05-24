@@ -31,7 +31,7 @@ import {
     Coffee,
     LogOut,
     LogIn,
-    BookUser,
+    BookOpen,
     MonitorSmartphone,
     Megaphone,
     ListTodo,
@@ -193,7 +193,7 @@ const navItems = (permissions: StaffMember['permissions'] | null, role?: string)
             items: [
                 {
                     label: "Accounting",
-                    icon: BookUser,
+                    icon: BookOpen,
                     access: hasPageAccess(pageAccess, 'pages.accounting', permissions?.accounting),
                     subItems: [
                         { href: "/dashboard/accounting", label: "Ledger & Journal", access: hasPageAccess(pageAccess, 'pages.accounting', permissions?.accounting) },
@@ -221,6 +221,7 @@ const navItems = (permissions: StaffMember['permissions'] | null, role?: string)
                     icon: User,
                     access: hasPageAccess(pageAccess, 'pages.staff', permissions?.staff) || hasPageAccess(pageAccess, 'pages.staffAssignmentReport'),
                     subItems: [
+                        { href: "/dashboard/staff/analytics", label: "Staff Analytics", access: hasPageAccess(pageAccess, 'pages.staffAnalytics') },
                         { href: "/dashboard/staff", label: "All Staff", access: hasPageAccess(pageAccess, 'pages.staff', permissions?.staff) },
                         { href: "/dashboard/staff/off-days", label: "Off Day Schedule", access: hasPageAccess(pageAccess, 'pages.staff', permissions?.staff) },
                         { href: "/dashboard/staff/assignment-report", label: "Assignment Report", access: hasPageAccess(pageAccess, 'pages.staffAssignmentReport') },
@@ -241,6 +242,7 @@ const navItems = (permissions: StaffMember['permissions'] | null, role?: string)
                     ]
                 },
                 { href: "/dashboard/webhook-failures", icon: AlertCircle, label: "Webhook Failures", access: hasPageAccess(pageAccess, 'pages.webhookFailures', permissions?.integrations) },
+                { href: "/dashboard/help", icon: BookOpen, label: "Help & Tutorial", access: true },
                 { href: "/dashboard/settings", icon: Settings, label: "Settings", access: hasPageAccess(pageAccess, 'pages.settings', permissions?.settings) },
             ]
         }

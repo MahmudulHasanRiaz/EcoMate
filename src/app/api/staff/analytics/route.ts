@@ -26,12 +26,14 @@ export async function GET(request: NextRequest) {
     const dateFrom = new Date(dateFromStr);
     const dateTo = new Date(dateToStr);
 
+    // Validate date range (max 31 days)
     const diffTime = Math.abs(dateTo.getTime() - dateFrom.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     if (diffDays > 31) {
       return NextResponse.json({ error: 'Date range cannot exceed 31 days' }, { status: 400 });
     }
 
+    // 1. Fetch Staff and Commission Details
     const staff = await prisma.staffMember.findUnique({
       where: { id: staffId },
       select: {
@@ -50,6 +52,7 @@ export async function GET(request: NextRequest) {
 
     const commission = staff.commissionDetails as unknown as CommissionDetails;
 
+    // 2. Fetch Attendance Records
     const attendance = await prisma.attendanceRecord.findMany({
       where: {
         staffId,
@@ -61,6 +64,7 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    // 3. Fetch Orders and Logs
     const orders = await prisma.order.findMany({
       where: {
         OR: [
@@ -82,6 +86,9 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    // 4. Calculate Analytics
+
+    // A. Active vs Present Days
     const presentDays = new Set(
       attendance
         .filter(a => a.status === 'Present' || a.status === 'Late')
@@ -92,6 +99,7 @@ export async function GET(request: NextRequest) {
       orders.map(o => format(o.date, 'yyyy-MM-dd'))
     );
 
+    // Process orders for commission logic
     const ordersByDay: Record<string, typeof orders> = {};
     eachDayOfInterval({ start: startOfDay(dateFrom), end: endOfDay(dateTo) }).forEach(day => ordersByDay[format(day, 'yyyy-MM-dd')] = []);
     
@@ -102,10 +110,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Sort each day's orders chronologically
     for (const dayKey in ordersByDay) {
         ordersByDay[dayKey].sort((a, b) => a.date.getTime() - b.date.getTime());
     }
 
+    // B. Daily Stats and Commissionable Tasks
     const dailyStats: Record<string, { 
       created: number; confirmed: number; converted: number; delivered: number; 
       commissionable: number 

@@ -275,9 +275,9 @@ async function ensureOrderStockAvailable(tx: Prisma.TransactionClient, orderId: 
 
 async function recordStaffIncome(
   tx: Prisma.TransactionClient,
-  params: { staffId: string; orderId: string; action: 'Created' | 'Confirmed' | 'Packed'; amount: number; notes?: string }
+  params: { staffId: string; orderId: string; action: 'Created' | 'Confirmed' | 'Packed'; amount: number; notes?: string; referenceDate?: Date }
 ) {
-  const { staffId, orderId, action, amount, notes } = params;
+  const { staffId, orderId, action, amount, notes, referenceDate } = params;
   if (!staffId || !orderId || !amount || amount <= 0) return;
   try {
     await tx.staffIncome.create({
@@ -287,6 +287,7 @@ async function recordStaffIncome(
         action,
         amount,
         notes: notes || null,
+        referenceDate,
       },
     });
   } catch (err: any) {
@@ -295,10 +296,10 @@ async function recordStaffIncome(
   }
 }
 
-async function awardCommissionOnDelivered(tx: Prisma.TransactionClient, orderId: string) {
+export async function awardCommissionOnDelivered(tx: Prisma.TransactionClient, orderId: string) {
   const order = await tx.order.findUnique({
     where: { id: orderId },
-    select: { createdBy: true, confirmedBy: true, source: true, salesRepresentativeId: true, total: true, orderNumber: true }
+    select: { createdBy: true, confirmedBy: true, source: true, salesRepresentativeId: true, total: true, orderNumber: true, date: true }
   });
   if (!order) return;
 
@@ -327,7 +328,7 @@ async function awardCommissionOnDelivered(tx: Prisma.TransactionClient, orderId:
     });
     const isConvert = order.source === 'woo-incomplete';
     const amount = isConvert
-      ? getCommissionAmount(staff?.commissionDetails, 'onOrderConvert')
+      ? (getCommissionAmount(staff?.commissionDetails, 'onOrderConvert') || getCommissionAmount(staff?.commissionDetails, 'onOrderCreate'))
       : getCommissionAmount(staff?.commissionDetails, 'onOrderCreate');
     if (amount > 0 && !existingKey.has(`${order.createdBy}:Created`)) {
       await recordStaffIncome(tx, {
@@ -335,7 +336,8 @@ async function awardCommissionOnDelivered(tx: Prisma.TransactionClient, orderId:
         orderId,
         action: 'Created',
         amount,
-        notes: isConvert ? 'Converted from incomplete' : undefined
+        notes: isConvert ? 'Converted from incomplete' : undefined,
+        referenceDate: order.date,
       });
     }
   }
@@ -348,7 +350,19 @@ async function awardCommissionOnDelivered(tx: Prisma.TransactionClient, orderId:
     });
     const amount = getCommissionAmount(staff?.commissionDetails, 'onOrderConfirm');
     if (amount > 0 && !existingKey.has(`${order.confirmedBy}:Confirmed`)) {
-      await recordStaffIncome(tx, { staffId: order.confirmedBy, orderId, action: 'Confirmed', amount });
+      await recordStaffIncome(tx, { staffId: order.confirmedBy, orderId, action: 'Confirmed', amount, referenceDate: order.date });
+    }
+  }
+
+  // Packed — awarded to creator
+  if (order.createdBy) {
+    const staff = await tx.staffMember.findUnique({
+      where: { id: order.createdBy },
+      select: { commissionDetails: true }
+    });
+    const amount = getCommissionAmount(staff?.commissionDetails, 'onOrderPacked');
+    if (amount > 0 && !existingKey.has(`${order.createdBy}:Packed`)) {
+      await recordStaffIncome(tx, { staffId: order.createdBy, orderId, action: 'Packed', amount, referenceDate: order.date });
     }
   }
 }
@@ -576,9 +590,16 @@ export async function getOrders(params?: {
   }
 
   if (params?.dateFrom || params?.dateTo) {
-    where.date = {};
-    if (params.dateFrom) where.date.gte = params.dateFrom;
-    if (params.dateTo) where.date.lte = params.dateTo;
+    const dateFilter = {
+      ...(params?.dateFrom ? { gte: params.dateFrom } : {}),
+      ...(params?.dateTo ? { lte: params.dateTo } : {}),
+    };
+
+    if (params?.status && params.status !== 'all') {
+      where.statusUpdatedAt = dateFilter;
+    } else {
+      where.date = dateFilter;
+    }
   }
 
   if (params?.search) {
@@ -1108,7 +1129,7 @@ export async function createOrder(data: any) {
   const phone = normalizedPhone.value;
   const orderDate = data?.date ? new Date(data.date) : new Date();
   const orderSource = data?.source || 'manual';
-  const orderChannel = data?.channel || 'Retail';
+  let orderChannel: any = data?.channel || 'Retail';
 
   if (data.salesRepresentativeId) {
     const sr = await prisma.staffMember.findUnique({
@@ -1199,6 +1220,55 @@ export async function createOrder(data: any) {
   // Consolidate input items (handle both 'items' or 'products' from frontend)
   const inputItems = Array.isArray(data.items) ? data.items : (Array.isArray(data.products) ? data.products : []);
   const now = new Date();
+
+  // Auto-detect wholesale: if customer phone matches a Wholesaler, apply wholesale pricing
+  if (orderChannel !== 'Wholesale' && inputItems.length > 0) {
+    const customer = await prisma.customer.findUnique({
+      where: { phone },
+      select: { type: true },
+    });
+    if (customer?.type === 'Wholesaler') {
+      try {
+        const { calculateWholesalePricing } = await import('@/server/modules/wholesale-pricing');
+        const pricingResult = await calculateWholesalePricing({
+          items: inputItems.map((item: any) => ({
+            productId: item.productId,
+            variantId: item.variantId || undefined,
+            quantity: Number(item.quantity || 0),
+            basePrice: Number(item.price || 0),
+          })),
+          context: {
+            customerType: 'Wholesaler',
+            sourcePlatform: orderSourcePlatform,
+            totalQuantity: inputItems.reduce((sum: number, i: any) => sum + Number(i.quantity || 0), 0),
+            subtotal: 0,
+            grandTotal: 0,
+          },
+        });
+        // Replace input item prices with wholesale pricing
+        const updatedItems = pricingResult.items.map((pricedItem: any) => {
+          const originalItem = inputItems.find((i: any) =>
+            i.productId === pricedItem.productId && (i.variantId || null) === (pricedItem.variantId || null)
+          );
+          return {
+            ...(originalItem || {}),
+            price: pricedItem.finalPrice / pricedItem.quantity,
+          };
+        });
+        inputItems.length = 0;
+        inputItems.push(...updatedItems);
+        (data as any).channel = 'Wholesale';
+        (data as any).sourcePlatform = data.sourcePlatform || 'Manual';
+        // Wholesale discount replaces any manual discount (avoid double-discounting)
+        (data as any).discount = pricingResult.totalDiscount;
+        (data as any).wholesaleApprovalStatus = pricingResult.requiresApproval ? 'Pending' : 'Approved';
+        (data as any).wholesaleDetectedAt = new Date().toISOString();
+        orderChannel = 'Wholesale';
+      } catch (pricingErr) {
+        console.error('[Wholesale] Pricing failed during order creation, falling back to retail:', pricingErr);
+      }
+    }
+  }
 
   // Resolve SKU → ID for all line items (validates IDs if no SKU provided)
   const resolvedItems = await resolveOrderLineItems(inputItems);
@@ -1303,6 +1373,9 @@ export async function createOrder(data: any) {
           shippingPaidAccountId: resolvedShippingPaidAccountId,
           shippingAddress: data.shippingAddress || {},
           products: productCreates.length ? { create: productCreates } : undefined,
+          wholesaleApprovalStatus: data.wholesaleApprovalStatus || null,
+          wholesaleDetectedAt: data.wholesaleDetectedAt ? new Date(data.wholesaleDetectedAt) : null,
+          wholesaleDetectedByRuleId: data.wholesaleDetectedByRuleId || null,
           OrderLog: {
             create: [
               {
@@ -1658,7 +1731,7 @@ async function handlePublishModeStockTransition(tx: Prisma.TransactionClient, or
   }) as any;
 
   // Transition to Confirmed: Prefer single-location reservation, fallback to mixed locations
-  if (targetStatus === 'Confirmed' && !updated.isStockReserved && !updated.isStockDeducted) {
+  if (targetStatus === 'Confirmed' && !updated.isStockReserved && !updated.isStockDeducted && updated.channel !== 'Wholesale') {
     const claim = await tx.order.updateMany({
       where: { id: orderId, isStockReserved: false, isStockDeducted: false },
       data: { isStockReserved: true }
@@ -1901,6 +1974,16 @@ export async function updateOrderStatus(id: string, action: OrderAction, user?: 
       throw new Error('Paid Return status is only allowed from Return Pending, Partial, or Returned orders');
     }
 
+    // Block status transitions for Pending wholesale orders (must be approved/rejected first)
+    if (existing?.channel === 'Wholesale' && (existing as any)?.wholesaleApprovalStatus === 'Pending') {
+      const allowedForPending = ['Canceled', 'Returned', 'Paid_Return'];
+      if (!allowedForPending.includes(targetStatus)) {
+        const err: any = new Error('Wholesale approval is pending for this order. Approve or reject before changing status.');
+        err.code = 'WHOLESALE_PENDING';
+        throw err;
+      }
+    }
+
     // Publish-mode flow: handle stock transitions before regular logic
     if (mode === 'publish') {
       const fromStatus = existing ? presentStatus(existing.status as any) || existing.status : 'Unknown';
@@ -2006,7 +2089,9 @@ export async function updateOrderStatus(id: string, action: OrderAction, user?: 
     }
 
     // Confirmed/Shipped/Delivered → Release reservation (if any) + Deduct
-    if (shouldDeduct && !updated.isStockDeducted) {
+    // Wholesale: skip stock deduction at Confirmed (validate only from RTS onwards)
+    const isWholesaleConfirmed = existing?.channel === 'Wholesale' && newStatus === 'Confirmed';
+    if (shouldDeduct && !updated.isStockDeducted && !isWholesaleConfirmed) {
       if (updated.isStockReserved) {
         console.log('[STOCK_RESERVE] Releasing reservation via updateOrderStatus', id);
         await handleStockReservationRelease(tx, updated, actor.name);
@@ -2299,7 +2384,7 @@ export async function updateOrderStatusDirect(id: string, status: string, user?:
   const actor = await getActorDetails(user || 'System');
   const existing = await prisma.order.findUnique({
     where: { id },
-    select: { status: true, courierService: true, orderNumber: true, confirmedBy: true, source: true, assignedToId: true, actualCodAmount: true },
+    select: { status: true, courierService: true, orderNumber: true, confirmedBy: true, source: true, assignedToId: true, actualCodAmount: true, channel: true, wholesaleApprovalStatus: true },
   });
   const normalizedStatus = normalizeStatusInput(status);
   if (!normalizedStatus) throw new Error('Invalid status');
@@ -2322,6 +2407,16 @@ export async function updateOrderStatusDirect(id: string, status: string, user?:
   }
   if (targetStatus === ('Paid_Return' as any) && !isReturnPendingLikeStatus(existing?.status as any) && existing?.status !== 'Returned') {
     throw new Error('Paid Return status is only allowed from Return Pending, Partial, or Returned orders');
+  }
+
+  // Block status transitions for Pending wholesale orders
+  if ((existing as any)?.channel === 'Wholesale' && (existing as any)?.wholesaleApprovalStatus === 'Pending') {
+    const allowedForPending = ['Canceled', 'Returned', 'Paid_Return'];
+    if (!allowedForPending.includes(targetStatus)) {
+      const err: any = new Error('Wholesale approval is pending for this order. Approve or reject before changing status.');
+      err.code = 'WHOLESALE_PENDING';
+      throw err;
+    }
   }
 
   const fromStatus = existing ? presentStatus(existing.status as any) || existing.status : 'Unknown';
@@ -2410,6 +2505,9 @@ export async function updateOrderStatusDirect(id: string, status: string, user?:
     }
 
     if (shouldDeduct && !order.isStockDeducted) {
+      // Wholesale: skip stock deduction at Confirmed
+      const isWholesaleConfirmed = order.channel === 'Wholesale' && normalizedStatus === 'Confirmed';
+      if (!isWholesaleConfirmed) {
       if (order.isStockReserved) {
         console.log('[STOCK_RESERVE] Releasing reservation via updateOrderStatusDirect', id);
         await handleStockReservationRelease(tx, order, actor.name);
@@ -2427,6 +2525,7 @@ export async function updateOrderStatusDirect(id: string, status: string, user?:
         }
         throw err;
       }
+      } // end if (!isWholesaleConfirmed)
     } else if (shouldRestore) {
       const targetLocationId = (targetStatus === 'Returned' || targetStatus === 'Paid_Return')
         ? await getReturnedStockLocationOrThrow(tx)
@@ -3134,7 +3233,9 @@ export async function updateOrderDetails(id: string, payload: any, user = 'Syste
       }
 
       // Confirmed/Shipped/Delivered → Release reservation (if any) + Deduct
-      if (shouldDeduct && !finalOrder.isStockDeducted) {
+      // Wholesale: skip stock deduction at Confirmed
+      const isWholesaleDeductSkip = finalOrder.channel === 'Wholesale' && normalizedStatus === 'Confirmed';
+      if (shouldDeduct && !finalOrder.isStockDeducted && !isWholesaleDeductSkip) {
         if (finalOrder.isStockReserved) {
           console.log('[STOCK_RESERVE] Releasing reservation via updateOrderDetails', id);
           await handleStockReservationRelease(tx, finalOrder, actor.name);

@@ -233,9 +233,6 @@ export const ROLE_PAGE_ACCESS: Record<StaffRole, PageAccessKey[] | 'ALL'> = {
   ],
   'Sales Representative': [
     'pages.dashboard',
-    'pages.products',
-    'pages.orders',
-    'pages.customers',
     'pages.tasks',
   ],
   Custom: [],

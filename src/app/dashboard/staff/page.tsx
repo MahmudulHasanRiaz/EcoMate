@@ -2,7 +2,7 @@
 
 'use client';
 
-import { MoreHorizontal, PlusCircle, DollarSign, TrendingUp, KeyRound, ShieldCheck, User, Clock } from "lucide-react";
+import { MoreHorizontal, PlusCircle, DollarSign, TrendingUp, KeyRound, ShieldCheck, User, Clock, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,6 +58,7 @@ import { DateRange } from 'react-day-picker';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { format } from "date-fns";
 import { useAuthErrorHandler } from "@/hooks/use-auth-error-handler";
+import { useToast } from '@/hooks/use-toast';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -742,6 +743,13 @@ export default function StaffPage() {
         [generalSettings]
     );
 
+    const { toast } = useToast();
+
+    const [isRecalcDialogOpen, setIsRecalcDialogOpen] = useState(false);
+    const [isRecalculating, setIsRecalculating] = useState(false);
+    const [recalcDays, setRecalcDays] = useState(30);
+    const [recalcProgress, setRecalcProgress] = useState<{ jobId: string; state: string; progress: any; result?: any } | null>(null);
+
     const releaseFocus = () => {
         try {
             document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -987,6 +995,116 @@ export default function StaffPage() {
         }
     };
 
+    const handleRecalculate = async () => {
+        setIsRecalculating(true);
+        setRecalcProgress(null);
+        try {
+            const res = await fetch('/api/staff/recalculate-commissions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ days: recalcDays }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || data.error || 'Recalculation failed');
+
+            const jobId = data.jobId;
+            setRecalcProgress({ jobId, state: 'queued', progress: 0 });
+
+            const poll = async () => {
+                try {
+                    const statusRes = await fetch(`/api/staff/recalculate-commissions?jobId=${jobId}`);
+                    if (!statusRes.ok) {
+                        const msg = await statusRes.text();
+                        throw new Error(msg || 'Failed to check job status');
+                    }
+                    const status = await statusRes.json();
+
+                    if (status.state === 'completed') {
+                        setIsRecalcDialogOpen(false);
+                        const r = status.result || { ordersProcessed: 0, staffSalaryProcessed: 0, errors: [] };
+                        toast({
+                            title: 'Recalculation Complete',
+                            description: `${r.ordersProcessed} orders, ${r.staffSalaryProcessed} salary entries. ${r.errors?.length || 0} errors.`,
+                        });
+                        if (r.errors?.length) {
+                            console.warn('[RECALCULATE_ERRORS]', r.errors);
+                        }
+                        setIsRecalculating(false);
+                        setRecalcProgress(null);
+                        return;
+                    }
+
+                    if (status.state === 'failed') {
+                        setIsRecalcDialogOpen(false);
+                        toast({ variant: 'destructive', title: 'Recalculation Failed', description: status.failedReason || 'Job failed' });
+                        setIsRecalculating(false);
+                        setRecalcProgress(null);
+                        return;
+                    }
+
+                    setRecalcProgress({ jobId, state: status.state, progress: status.progress, result: status.result });
+                    setTimeout(poll, 3000);
+                } catch (err: any) {
+                    setIsRecalcDialogOpen(false);
+                    setIsRecalculating(false);
+                    setRecalcProgress(null);
+                    toast({ variant: 'destructive', title: 'Polling Failed', description: err.message });
+                }
+            };
+
+            setTimeout(poll, 2000);
+        } catch (err: any) {
+            setIsRecalcDialogOpen(false);
+            setIsRecalculating(false);
+            setRecalcProgress(null);
+            toast({ variant: 'destructive', title: 'Recalculation Failed', description: err.message });
+        }
+    };
+
+    const handleTerminateStaff = async (id: string) => {
+        releaseFocus();
+        if (!confirm('Are you sure you want to fire this staff member? They will lose all access immediately.')) return;
+        try {
+            setIsSaving(true);
+            const res = await fetch(`/api/staff/${id}/terminate`, { method: 'POST' });
+            if (!res.ok) {
+                const msg = await res.text();
+                throw new Error(msg || 'Failed to terminate staff');
+            }
+            await loadStaff();
+            toast({ title: 'Staff terminated', description: 'Access has been revoked.' });
+        } catch (error) {
+            console.error('Failed to terminate staff', error);
+            if (await handleError(error)) return;
+            toast({ title: 'Error', description: 'Failed to terminate staff', variant: 'destructive' });
+        } finally {
+            setIsSaving(false);
+            resetMenuFocus();
+        }
+    };
+
+    const handleReinstateStaff = async (id: string) => {
+        releaseFocus();
+        if (!confirm('Reinstate this staff member? They will regain access to the dashboard.')) return;
+        try {
+            setIsSaving(true);
+            const res = await fetch(`/api/staff/${id}/reinstate`, { method: 'POST' });
+            if (!res.ok) {
+                const msg = await res.text();
+                throw new Error(msg || 'Failed to reinstate staff');
+            }
+            await loadStaff();
+            toast({ title: 'Staff reinstated', description: 'Dashboard access restored.' });
+        } catch (error) {
+            console.error('Failed to reinstate staff', error);
+            if (await handleError(error)) return;
+            toast({ title: 'Error', description: 'Failed to reinstate staff', variant: 'destructive' });
+        } finally {
+            setIsSaving(false);
+            resetMenuFocus();
+        }
+    };
+
     const totals = React.useMemo(() => {
         if (summaryTotals) {
             return {
@@ -1047,6 +1165,58 @@ export default function StaffPage() {
                                 <Button variant="outline" onClick={closeAddDialog}>Cancel</Button>
                                 <Button onClick={handleCreateStaff} disabled={isSaving}>
                                     {isSaving ? 'Saving...' : 'Send Invitation'}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
+                    <Dialog open={isRecalcDialogOpen} onOpenChange={(open) => { if (!isRecalculating) setIsRecalcDialogOpen(open); }}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="w-full sm:w-auto">
+                                <RefreshCw className="h-4 w-4 mr-2" />
+                                Recalculate Earnings
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-md">
+                            <DialogHeader>
+                                <DialogTitle>Recalculate Earnings</DialogTitle>
+                                <DialogDescription>
+                                    Rebuilds commission (Created, Confirmed, Packed) + salary + weekend/overtime bonus
+                                    records for the specified period. Safe and idempotent.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="px-6 pb-2 space-y-3">
+                                <div>
+                                    <Label>Recalculate last (days)</Label>
+                                    <Input type="number" min={1} value={recalcDays}
+                                        onChange={(e) => setRecalcDays(Math.max(1, Number(e.target.value) || 60))}
+                                        disabled={isRecalculating} />
+                                </div>
+                                {isRecalculating && recalcProgress && (
+                                    <div className="bg-muted/30 rounded-lg p-3 text-sm space-y-2">
+                                        <div className="flex items-center gap-2">
+                                            <RefreshCw className="h-4 w-4 animate-spin" />
+                                            <span className="font-medium capitalize">{recalcProgress.state}</span>
+                                        </div>
+                                        {typeof recalcProgress.progress === 'number' && (
+                                            <div className="w-full bg-muted rounded-full h-2">
+                                                <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${recalcProgress.progress}%` }} />
+                                            </div>
+                                        )}
+                                        <p className="text-xs text-muted-foreground">Job ID: {recalcProgress.jobId}</p>
+                                    </div>
+                                )}
+                            </div>
+                            <DialogFooter className="gap-2">
+                                <Button variant="outline" onClick={() => { if (!isRecalculating) setIsRecalcDialogOpen(false); }} disabled={isRecalculating}>
+                                    Cancel
+                                </Button>
+                                <Button onClick={handleRecalculate} disabled={isRecalculating}>
+                                    {isRecalculating ? (
+                                        <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Processing...</>
+                                    ) : (
+                                        <><RefreshCw className="h-4 w-4 mr-2" /> Run Recalculation</>
+                                    )}
                                 </Button>
                             </DialogFooter>
                         </DialogContent>
@@ -1249,7 +1419,8 @@ export default function StaffPage() {
                                                                             <Link href={`/dashboard/staff/${member.id}`}>View Details</Link>
                                                                         </DropdownMenuItem>
                                                                         <DropdownMenuItem onSelect={() => handleEditClick(member)}>Edit Staff</DropdownMenuItem>
-                                                                        <DropdownMenuItem className="text-red-600" onSelect={() => openAfterMenu(() => handleDeactivateStaff(member.id))}>Deactivate Account</DropdownMenuItem>
+                                                                        <DropdownMenuItem onSelect={() => openAfterMenu(() => handleReinstateStaff(member.id))}>Reinstate Staff</DropdownMenuItem>
+                                                                        <DropdownMenuItem className="text-red-600" onSelect={() => openAfterMenu(() => handleTerminateStaff(member.id))}>Fire Staff</DropdownMenuItem>
                                                                     </>
                                                                 )}
                                                             </DropdownMenuContent>
@@ -1339,7 +1510,8 @@ export default function StaffPage() {
                                                                 <>
                                                                     <DropdownMenuItem asChild><Link href={`/dashboard/staff/${member.id}`}>View Details</Link></DropdownMenuItem>
                                                                     <DropdownMenuItem onSelect={() => handleEditClick(member)}>Edit Staff</DropdownMenuItem>
-                                                                    <DropdownMenuItem className="text-red-600" onSelect={() => openAfterMenu(() => handleDeactivateStaff(member.id))}>Deactivate Account</DropdownMenuItem>
+                                                                    <DropdownMenuItem onSelect={() => openAfterMenu(() => handleReinstateStaff(member.id))}>Reinstate Staff</DropdownMenuItem>
+                                                                    <DropdownMenuItem className="text-red-600" onSelect={() => openAfterMenu(() => handleTerminateStaff(member.id))}>Fire Staff</DropdownMenuItem>
                                                                 </>
                                                             )}
                                                         </DropdownMenuContent>

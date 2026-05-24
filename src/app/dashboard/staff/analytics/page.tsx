@@ -38,6 +38,8 @@ import { StaffCombobox } from '@/components/orders/staff-combobox';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { type DateRange } from 'react-day-picker';
 
+
+// Types
 interface AnalyticsResponse {
   staff: {
     id: string;
@@ -104,6 +106,7 @@ export default function StaffAnalyticsPage() {
   const handleSearch = (id: string) => {
     if (id) {
       setStaffId(id);
+      // Default to last 30 days if no range selected
       if (!dateRange) {
         const to = new Date();
         const from = new Date();
@@ -119,16 +122,21 @@ export default function StaffAnalyticsPage() {
     setDateRange(range);
     if (range?.from && range?.to) {
       if (differenceInDays(range.to, range.from) > 31) {
+        // In a real app, we'd show a toast. For now, just clamp or warn.
+        // For simplicity, we just don't trigger if too large.
         return;
       }
       mutate();
     }
   };
 
+
+
   if (error || swrError) return <div className="p-8 text-destructive">Error loading analytics. Please try again.</div>;
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 lg:gap-8 lg:p-6">
+      {/* Header & Search */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Staff Performance Analytics</h1>
@@ -140,7 +148,6 @@ export default function StaffAnalyticsPage() {
               value={staffId || ""} 
               onChange={handleSearch} 
               staffMembers={allStaff}
-              placeholder="Search Staff (ID, Name, etc.)"
             />
           </div>
 
@@ -177,6 +184,7 @@ export default function StaffAnalyticsPage() {
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Overview Section */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -224,6 +232,7 @@ export default function StaffAnalyticsPage() {
             </Card>
           </div>
 
+          {/* Commission Detail Card */}
           {data.summary.commission.enabled && (
              <Card className="border-primary/20 bg-primary/5">
                <CardHeader>
@@ -257,6 +266,8 @@ export default function StaffAnalyticsPage() {
              </Card>
           )}
 
+
+          {/* Daily Performance Grid */}
           <Card>
             <CardHeader>
               <CardTitle>Daily Performance Breakdown</CardTitle>

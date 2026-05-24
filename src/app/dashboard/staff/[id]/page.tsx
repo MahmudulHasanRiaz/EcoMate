@@ -717,6 +717,10 @@ export default function StaffDetailsPage() {
             }));
     }, [staffMember]);
 
+    const totalOrdersInChart = React.useMemo(() => {
+        return performanceChartData.reduce((sum, entry) => sum + entry.value, 0);
+    }, [performanceChartData]);
+
     const chartConfig: ChartConfig = React.useMemo(() => {
         if (!performanceChartData) return {};
         return performanceChartData.reduce((acc, { status, fill }) => {
@@ -735,7 +739,8 @@ export default function StaffDetailsPage() {
             deliveryRate: 0, returnRate: 0, confirmedCancellationRate: 0,
 
             incompleteWorked: 0, incompleteConverted: 0, incompleteConversionRate: 0,
-            ordersWorked: 0, totalActions: 0, combinedCancellationRate: 0, combinedDeliveryRate: 0
+            ordersWorked: 0, totalActions: 0, combinedCancellationRate: 0, combinedDeliveryRate: 0,
+            terminalOrders: 0, totalDistinctOrders: 0
         };
 
         const performance = staffMember.performance || {};
@@ -771,14 +776,20 @@ export default function StaffDetailsPage() {
             ? (incompleteConverted / incompleteWorked) * 100
             : 0;
 
-        // 4. Overall
-        const totalActions = performance.totalOrderActions ?? (createdTotal + confirmedTotal);
-        const ordersWorked = performance.ordersWorked ?? totalActions;
-        const totalCanceled = createdCanceled + confirmedCanceled;
-        const totalDelivered = createdDelivered + confirmedDelivered;
+        // 4. Overall — use statusBreakdown (distinct orders, no double-count)
+        const statusBd = performance.statusBreakdown || {};
+        const totalDistinctOrders = Object.values(statusBd).reduce((sum, v) => sum + v, 0);
+        const deliveredOrders = statusBd['Delivered'] || 0;
+        const returnedOrders = (statusBd['Returned'] || 0) + (statusBd['Paid_Return'] || 0);
+        const canceledOrders = statusBd['Canceled'] || 0;
+        const terminalOrders = deliveredOrders + returnedOrders + canceledOrders;
 
-        const combinedCancellationRate = totalActions > 0 ? (totalCanceled / totalActions) * 100 : 0;
-        const combinedDeliveryRate = totalActions > 0 ? (totalDelivered / totalActions) * 100 : 0;
+        const combinedDeliveryRate = (deliveredOrders + returnedOrders) > 0
+            ? (deliveredOrders / (deliveredOrders + returnedOrders)) * 100
+            : 0;
+        const combinedCancellationRate = terminalOrders > 0
+            ? (canceledOrders / terminalOrders) * 100
+            : 0;
 
         return {
             createdTotal,
@@ -803,10 +814,12 @@ export default function StaffDetailsPage() {
             incompleteConverted,
             incompleteConversionRate,
 
-            ordersWorked,
-            totalActions,
+            ordersWorked: performance.ordersWorked ?? totalDistinctOrders,
+            totalActions: performance.totalOrderActions ?? totalDistinctOrders,
             combinedCancellationRate,
-            combinedDeliveryRate
+            combinedDeliveryRate,
+            terminalOrders,
+            totalDistinctOrders
         };
     }, [staffMember]);
 
@@ -885,6 +898,7 @@ export default function StaffDetailsPage() {
                     <div className="flex-1">
                         <h1 className="font-headline text-xl font-semibold sm:text-2xl">{staffMember.name}</h1>
                         <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-2 mt-1">
+                            {staffMember.status === 'Terminated' && <Badge variant="destructive">Terminated</Badge>}
                             <Badge variant="outline">{staffMember.role}</Badge>
                             {staffMember.designation && (
                                 <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
@@ -1114,14 +1128,14 @@ export default function StaffDetailsPage() {
                                                                     y={viewBox.cy}
                                                                     className="fill-foreground text-3xl font-bold"
                                                                 >
-                                                                    {stats.totalActions}
-                                                                </tspan>
-                                                                <tspan
-                                                                    x={viewBox.cx}
-                                                                    y={(viewBox.cy || 0) + 24}
-                                                                    className="fill-muted-foreground text-xs"
-                                                                >
-                                                                    Actions
+                                                                    {totalOrdersInChart}
+                                                                 </tspan>
+                                                                 <tspan
+                                                                     x={viewBox.cx}
+                                                                     y={(viewBox.cy || 0) + 24}
+                                                                     className="fill-muted-foreground text-xs"
+                                                                 >
+                                                                     Orders
                                                                 </tspan>
                                                             </text>
                                                         )
@@ -1256,6 +1270,17 @@ export default function StaffDetailsPage() {
                                         })()}
                                     </div>
                                 </div>
+                                {staffMember.jobEndDate ? (
+                                    <div className="space-y-1 col-span-2">
+                                        <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold text-destructive">End Date</div>
+                                        <div className="text-sm font-semibold text-destructive">
+                                            {(() => {
+                                                const d = new Date(staffMember.jobEndDate!);
+                                                return isNaN(d.getTime()) ? 'N/A' : format(d, 'MMM d, yyyy');
+                                            })()}
+                                        </div>
+                                    </div>
+                                ) : null}
                             </div>
                             <Separator className="opacity-40" />
                             <div className="flex justify-between items-center">
@@ -1331,6 +1356,12 @@ export default function StaffDetailsPage() {
                                     <span className={cn("text-xl font-black font-mono", staffMember.financials.dueAmount > 0 ? "text-destructive" : "text-foreground")}>Tk {staffMember.financials.dueAmount.toLocaleString()}</span>
                                 </div>
                             </div>
+
+                            {staffMember.status === 'Terminated' && (
+                                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-xs text-destructive text-center">
+                                    This staff member has been terminated. Only final settlement actions (payments) are available.
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-2">
                                 <HistoryDialog title="Payment History" data={paymentHistory}>

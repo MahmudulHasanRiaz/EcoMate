@@ -1352,9 +1352,11 @@ model WooCommerceIntegration {
   businessId               String
   storeName                String
   storeUrl                 String
-  consumerKey              String
-  consumerSecret           String
+  platform                 String             @default("woocommerce")
+  consumerKey              String?
+  consumerSecret           String?
   status                   String             @default("Active")
+  callbackUrl              String?
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt
   webhookSecret            String?

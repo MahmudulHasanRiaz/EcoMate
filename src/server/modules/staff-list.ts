@@ -329,6 +329,7 @@ export async function getStaffListServer(params: StaffListParams) {
           email: inv.email,
           phone: (inv as any).phone || '',
           role: dbToUiRole[inv.role] || inv.role as StaffRole,
+          status: 'Active',
           workType: 'Remote',
           accessibleBusinessIds: businessIds,
           accessibleBusinesses: businessIds.map((id: string) => ({ id, name: id })), // Approximation
