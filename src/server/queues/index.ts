@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq';
 import { getBullmqConnection } from './redis';
 
-type QueueName = 'notifications' | 'sms' | 'stock-sync' | 'reports' | 'courier-ops' | 'backups';
+type QueueName = 'notifications' | 'sms' | 'stock-sync' | 'reports' | 'courier-ops' | 'backups' | 'earnings-recalc';
 
 const queues = new Map<QueueName, Queue>();
 

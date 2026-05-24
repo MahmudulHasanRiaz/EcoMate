@@ -801,6 +801,7 @@ export type StaffMemberUI = {
     id: string;
     clerkId: string;
     staffCode: string;
+    status: string;
     avatarUrl?: string | null;
     name: string;
     email: string;

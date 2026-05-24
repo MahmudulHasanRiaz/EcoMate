@@ -202,10 +202,23 @@ export async function getStaffAuthDetails(): Promise<StaffAuthResult> {
       || user.phoneNumbers?.[0]?.phoneNumber
       || (user as any)?.phone_numbers?.[0]?.phone_number;
 
-    const dbStaff = await prisma.staffMember.findFirst({
-      where: { clerkId: userId },
-      include: { accessibleBusinesses: { select: { id: true } } },
-    });
+    let dbStaff: any;
+    try {
+      dbStaff = await prisma.staffMember.findFirst({
+        where: { clerkId: userId },
+        include: { accessibleBusinesses: { select: { id: true } } },
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2022') {
+        console.warn('[AUTH_DB_MIGRATION_PENDING] StaffMember.status column missing — skipping status check');
+      } else {
+        throw err;
+      }
+    }
+
+    if (dbStaff?.status === 'Terminated') {
+      return { status: 'blocked' };
+    }
 
     let role: string | undefined = normalizeRole(publicMetadata.role as string | undefined)
       || normalizeRole((dbStaff as any)?.role);

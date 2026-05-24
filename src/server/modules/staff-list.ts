@@ -60,6 +60,7 @@ function mapStaff(member: any, avatarUrl?: string | null, incomeTotal = 0, paidT
     id: member.id,
     clerkId: member.clerkId || '',
     staffCode: member.staffCode || '',
+    status: member.status || 'Active',
     avatarUrl: avatarUrl || member.avatarUrl || null,
     name: member.name || '',
     email: member.email || '',

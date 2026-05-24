@@ -24,6 +24,7 @@ export const PAGE_ACCESS_KEYS = [
   'pages.tasks',
   'pages.webhookFailures',
   'pages.staffAssignmentReport',
+  'pages.staffAnalytics',
   'pages.saleReport',
   'pages.wholesaleManagement',
 ] as const;
@@ -54,11 +55,12 @@ export const PAGE_ACCESS_LIST: { key: PageAccessKey; label: string; routes: stri
   { key: 'pages.tasks', label: 'Tasks', routes: '/dashboard/tasks*' },
   { key: 'pages.webhookFailures', label: 'Webhook Failures', routes: '/dashboard/webhook-failures' },
   { key: 'pages.staffAssignmentReport', label: 'Staff Assignment Report', routes: '/dashboard/staff/assignment-report' },
+  { key: 'pages.staffAnalytics', label: 'Staff Analytics', routes: '/dashboard/staff/analytics' },
   { key: 'pages.saleReport', label: 'Sale Report', routes: '/dashboard/orders/sale-report' },
   { key: 'pages.wholesaleManagement', label: 'Wholesale Management', routes: '/dashboard/wholesale/*' },
 ];
 
-const ROLE_PAGE_ACCESS: Record<StaffRole, PageAccessKey[] | 'ALL'> = {
+export const ROLE_PAGE_ACCESS: Record<StaffRole, PageAccessKey[] | 'ALL'> = {
   SuperAdmin: 'ALL',
   Admin: 'ALL',
   Manager: [
@@ -84,6 +86,7 @@ const ROLE_PAGE_ACCESS: Record<StaffRole, PageAccessKey[] | 'ALL'> = {
     'pages.staffAssignmentReport',
     'pages.saleReport',
     'pages.wholesaleManagement',
+    'pages.staffAnalytics',
   ],
   Moderator: [
     'pages.dashboard',
@@ -197,6 +200,7 @@ const ROLE_PAGE_ACCESS: Record<StaffRole, PageAccessKey[] | 'ALL'> = {
     'pages.attendance',
     'pages.tasks',
     'pages.staffAssignmentReport',
+    'pages.staffAnalytics',
   ],
   'Project Manager': [
     'pages.dashboard',
@@ -259,6 +263,7 @@ const MODULE_PAGE_FALLBACK: Partial<Record<PageAccessKey, keyof StaffMember['per
   'pages.tasks': 'tasks',
   'pages.webhookFailures': 'integrations',
   'pages.staffAssignmentReport': 'tasks',
+  'pages.staffAnalytics': 'staff',
   'pages.saleReport': 'orders',
   'pages.wholesaleManagement': 'wholesaleManagement',
 };
@@ -330,6 +335,7 @@ export function attachPageAccess(
 export function getPageAccessKey(pathname: string): PageAccessKey | null {
   if (pathname === '/dashboard') return 'pages.dashboard';
   if (pathname === '/dashboard/staff/assignment-report') return 'pages.staffAssignmentReport';
+  if (pathname === '/dashboard/staff/analytics') return 'pages.staffAnalytics';
   if (pathname === '/dashboard/orders/sale-report') return 'pages.saleReport';
   if (pathname.startsWith('/dashboard/orders')) return 'pages.orders';
   if (pathname.startsWith('/dashboard/issues')) return 'pages.issues';

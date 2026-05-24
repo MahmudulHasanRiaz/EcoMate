@@ -190,6 +190,23 @@ const backupWorker = new Worker(
   { connection, concurrency: 1 }
 );
 
+const earningsRecalcWorker = new Worker(
+  'earnings-recalc',
+  async (job) => {
+    if (job.name === 'recalculate') {
+      const { days, staffId } = job.data as { days: number; staffId?: string };
+      console.log(`[EARNINGS_RECALC] Starting job ${job.id}: days=${days}, staffId=${staffId || 'all'}`);
+
+      const { recalculateCommissions } = await import('@/server/modules/commission-recalculation');
+      const result = await recalculateCommissions({ days, staffId, onProgress: (pct) => job.updateProgress(pct) });
+      console.log(`[EARNINGS_RECALC] Job ${job.id} done:`, result);
+      return result;
+    }
+    return { ok: false, reason: 'unknown_job' };
+  },
+  { connection, concurrency: 1 }
+);
+
 const shutdown = async () => {
   await smsWorker.close();
   await notificationWorker.close();
@@ -198,6 +215,7 @@ const shutdown = async () => {
   await courierWorker.close();
   await maintenanceWorker.close();
   await backupWorker.close();
+  await earningsRecalcWorker.close();
   process.exit(0);
 };
 

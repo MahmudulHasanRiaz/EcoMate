@@ -1079,6 +1079,7 @@ model StaffMember {
   workType                            StaffWorkType          @default(Remote)
   jobStartDate                        DateTime?              @db.Date
   jobEndDate                          DateTime?              @db.Date
+  status                              StaffStatus            @default(Active)
   AttendanceRecord                    AttendanceRecord[]
   Issue                               Issue[]
   MarketingAttribution                MarketingAttribution[]
@@ -1134,6 +1135,11 @@ model StaffMember {
 enum StaffFineStatus {
   Active
   Voided
+}
+
+enum StaffStatus {
+  Active
+  Terminated
 }
 
 model StaffFine {
