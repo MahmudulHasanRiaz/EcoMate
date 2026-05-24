@@ -185,11 +185,17 @@ async function checkLowStockAlert(productId: string, variantId: string | null, a
   }
 }
 
+async function lockInventoryItems(tx: Prisma.TransactionClient, ids: string[]) {
+  if (ids.length === 0) return;
+  await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ANY(${ids}::text[]) FOR UPDATE`;
+}
+
 async function getInventoryItems(
   tx: Prisma.TransactionClient,
   productId: string,
   variantId?: string | null,
-  locationId?: string | null
+  locationId?: string | null,
+  forUpdate: boolean = false
 ) {
   // Hard rule: variable products must always specify a variant for stock ops.
   // Base SKU of variable products should never hold stock directly.
@@ -238,6 +244,11 @@ async function getInventoryItems(
     });
   }
 
+  // Pessimistic locking: prevent concurrent transactions from reading stale stock
+  if (forUpdate && items.length > 0) {
+    await lockInventoryItems(tx, items.map((i) => i.id));
+  }
+
   return {
     items: sortInventoryItems(items, locationPriority.map((l) => l.id), 'asc'),
     locationPriority,
@@ -250,7 +261,7 @@ export async function reserveStockAcrossLots(
   variantId: string | null,
   quantity: number
 ) {
-  const { items, locationPriority } = await getInventoryItems(tx, productId, variantId);
+  const { items, locationPriority } = await getInventoryItems(tx, productId, variantId, undefined, true);
   if (!items.length) {
     return buildAllocationResult(quantity, 0, 0, []);
   }
@@ -296,7 +307,7 @@ export async function releaseReservedStockAcrossLots(
   variantId: string | null,
   quantity: number
 ) {
-  const { items } = await getInventoryItems(tx, productId, variantId);
+  const { items } = await getInventoryItems(tx, productId, variantId, undefined, true);
   if (!items.length) {
     return buildAllocationResult(quantity, 0, 0, []);
   }
@@ -345,7 +356,7 @@ export async function deductStockAcrossLots(
   variantId: string | null,
   quantity: number
 ) {
-  const { items, locationPriority } = await getInventoryItems(tx, productId, variantId);
+  const { items, locationPriority } = await getInventoryItems(tx, productId, variantId, undefined, true);
   if (!items.length) {
     return buildAllocationResult(quantity, 0, 0, []);
   }
@@ -402,7 +413,7 @@ export async function restoreStockAcrossLots(
   variantId: string | null,
   quantity: number
 ) {
-  const { items, locationPriority } = await getInventoryItems(tx, productId, variantId);
+  const { items, locationPriority } = await getInventoryItems(tx, productId, variantId, undefined, true);
   if (!items.length) {
     return buildAllocationResult(quantity, 0, 0, []);
   }
@@ -563,7 +574,7 @@ export async function reserveStockFromLocation(
   quantity: number,
   locationId: string
 ) {
-  const { items } = await getInventoryItems(tx, productId, variantId, locationId);
+  const { items } = await getInventoryItems(tx, productId, variantId, locationId, true);
   if (!items.length) {
     return buildAllocationResult(quantity, 0, 0, []);
   }
@@ -607,7 +618,7 @@ export async function releaseReservedStockFromLocation(
   quantity: number,
   locationId: string
 ) {
-  const { items } = await getInventoryItems(tx, productId, variantId, locationId);
+  const { items } = await getInventoryItems(tx, productId, variantId, locationId, true);
   items.sort((a, b) => b.reservedQuantity - a.reservedQuantity);
   
   const availableBefore = items.reduce(
@@ -657,7 +668,7 @@ export async function deductStockFromLocation(
   locationId: string,
   deductFromReserved: boolean = false
 ) {
-  const { items } = await getInventoryItems(tx, productId, variantId, locationId);
+  const { items } = await getInventoryItems(tx, productId, variantId, locationId, true);
   if (deductFromReserved) {
     items.sort((a, b) => b.reservedQuantity - a.reservedQuantity);
   } else {

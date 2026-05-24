@@ -134,7 +134,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             .update(rawBody, 'utf8')
             .digest('base64');
 
-        if (computed !== signature) {
+        let signatureValid = false;
+        try {
+            const computedBuf = Buffer.from(computed);
+            const signatureBuf = Buffer.from(signature);
+            signatureValid = computedBuf.length === signatureBuf.length
+                && crypto.timingSafeEqual(computedBuf, signatureBuf);
+        } catch {
+            signatureValid = false;
+        }
+
+        if (!signatureValid) {
             console.error(`[WOO_WEBHOOK_SIG_FAIL] ID=${integrationId} sig_match=false isRealWoo=${isRealWoo}`);
             await recordWebhookFailure({
                 source: 'woo-signature-mismatch',

@@ -394,7 +394,7 @@ model InventoryItem {
   reservedQuantity     Int                    @default(0)
   FabricLotUsage       FabricLotUsage[]
   StockLocation        StockLocation          @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  Product              Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  Product              Product                @relation(fields: [productId], references: [id], onDelete: NoAction)
   ProductVariant       ProductVariant?        @relation(fields: [variantId], references: [id], onDelete: Cascade)
   InventoryMovement    InventoryMovement[]
   OrderStockAllocation OrderStockAllocation[]
@@ -464,7 +464,7 @@ model LedgerEntry {
   entryNumber         String?
   postingGroup        String?
   snapshotId          String?
-  Account             Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  Account             Account   @relation(fields: [accountId], references: [id], onDelete: NoAction)
   Business            Business? @relation(fields: [businessId], references: [id])
 
   @@unique([postingGroup, accountId])
@@ -947,7 +947,7 @@ model PurchaseOrder {
   offlineInvoiceUrl String?
   FabricLotUsage    FabricLotUsage[]
   ProductionStep    ProductionStep[]
-  Supplier          Supplier              @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  Supplier          Supplier              @relation(fields: [supplierId], references: [id], onDelete: NoAction)
   PurchaseOrderItem PurchaseOrderItem[]
   PurchaseOrderLog  PurchaseOrderLog[]
   PurchasePayment   PurchasePayment[]
