@@ -747,7 +747,7 @@ export default function StaffPage() {
 
     const [isRecalcDialogOpen, setIsRecalcDialogOpen] = useState(false);
     const [isRecalculating, setIsRecalculating] = useState(false);
-    const [recalcDays, setRecalcDays] = useState(30);
+    const [recalcDays, setRecalcDays] = useState(60);
     const [recalcProgress, setRecalcProgress] = useState<{ jobId: string; state: string; progress: any; result?: any } | null>(null);
 
     const releaseFocus = () => {
@@ -1354,8 +1354,9 @@ export default function StaffPage() {
                                                                 </span>
                                                             ) : (
                                                                 <div className="flex flex-col gap-1">
-                                                                    <Link href={`/dashboard/staff/${member.id}`} className="hover:underline">
+                                                                    <Link href={`/dashboard/staff/${member.id}`} className="hover:underline inline-flex items-center gap-1">
                                                                         {member.name}
+                                                                        {member.status === 'Terminated' && <Badge variant="destructive" className="ml-1">Terminated</Badge>}
                                                                     </Link>
                                                                     {staffBadges.length > 0 && (
                                                                         <div className="flex flex-wrap gap-1">
@@ -1413,16 +1414,23 @@ export default function StaffPage() {
                                                                     >
                                                                         Cancel Invitation
                                                                     </DropdownMenuItem>
+                                                                ) : member.status === 'Terminated' ? (
+                                                                        <>
+                                                                                <DropdownMenuItem asChild>
+                                                                                    <Link href={`/dashboard/staff/${member.id}`}>View Details</Link>
+                                                                                </DropdownMenuItem>
+                                                                                <DropdownMenuItem onSelect={() => handleEditClick(member)}>Edit Staff</DropdownMenuItem>
+                                                                                <DropdownMenuItem onSelect={() => openAfterMenu(() => handleReinstateStaff(member.id))}>Reinstate Staff</DropdownMenuItem>
+                                                                        </>
                                                                 ) : (
-                                                                    <>
-                                                                        <DropdownMenuItem asChild>
-                                                                            <Link href={`/dashboard/staff/${member.id}`}>View Details</Link>
-                                                                        </DropdownMenuItem>
-                                                                        <DropdownMenuItem onSelect={() => handleEditClick(member)}>Edit Staff</DropdownMenuItem>
-                                                                        <DropdownMenuItem onSelect={() => openAfterMenu(() => handleReinstateStaff(member.id))}>Reinstate Staff</DropdownMenuItem>
-                                                                        <DropdownMenuItem className="text-red-600" onSelect={() => openAfterMenu(() => handleTerminateStaff(member.id))}>Fire Staff</DropdownMenuItem>
-                                                                    </>
-                                                                )}
+                                                                        <>
+                                                                                <DropdownMenuItem asChild>
+                                                                                    <Link href={`/dashboard/staff/${member.id}`}>View Details</Link>
+                                                                                </DropdownMenuItem>
+                                                                                <DropdownMenuItem onSelect={() => handleEditClick(member)}>Edit Staff</DropdownMenuItem>
+                                                                                <DropdownMenuItem className="text-red-600" onSelect={() => openAfterMenu(() => handleTerminateStaff(member.id))}>Fire Staff</DropdownMenuItem>
+                                                                        </>
+                                                                        )}
                                                             </DropdownMenuContent>
                                                         </DropdownMenu>
                                                     </TableCell>
@@ -1472,9 +1480,12 @@ export default function StaffPage() {
                                                                     {member.name} <Badge variant="outline" className="ml-1">Invited</Badge>
                                                                 </span>
                                                             ) : (
-                                                                <Link href={`/dashboard/staff/${member.id}`} className="font-semibold hover:underline block truncate max-w-[170px]">
-                                                                    {member.name}
-                                                                </Link>
+                                                                        <div className="flex items-center gap-1">
+                                                                            <Link href={`/dashboard/staff/${member.id}`} className="font-semibold hover:underline block truncate max-w-[170px]">
+                                                                                {member.name}
+                                                                            </Link>
+                                                                            {member.status === 'Terminated' && <Badge variant="destructive" className="shrink-0">Terminated</Badge>}
+                                                                        </div>
                                                             )}
                                                             {!isInvite && staffBadges.length > 0 && (
                                                                 <div className="flex flex-wrap gap-1">
@@ -1506,14 +1517,19 @@ export default function StaffPage() {
                                                                 >
                                                                     Cancel Invitation
                                                                 </DropdownMenuItem>
+                                                            ) : member.status === 'Terminated' ? (
+                                                                        <>
+                                                                                <DropdownMenuItem asChild><Link href={`/dashboard/staff/${member.id}`}>View Details</Link></DropdownMenuItem>
+                                                                                <DropdownMenuItem onSelect={() => handleEditClick(member)}>Edit Staff</DropdownMenuItem>
+                                                                                <DropdownMenuItem onSelect={() => openAfterMenu(() => handleReinstateStaff(member.id))}>Reinstate Staff</DropdownMenuItem>
+                                                                        </>
                                                             ) : (
-                                                                <>
-                                                                    <DropdownMenuItem asChild><Link href={`/dashboard/staff/${member.id}`}>View Details</Link></DropdownMenuItem>
-                                                                    <DropdownMenuItem onSelect={() => handleEditClick(member)}>Edit Staff</DropdownMenuItem>
-                                                                    <DropdownMenuItem onSelect={() => openAfterMenu(() => handleReinstateStaff(member.id))}>Reinstate Staff</DropdownMenuItem>
-                                                                    <DropdownMenuItem className="text-red-600" onSelect={() => openAfterMenu(() => handleTerminateStaff(member.id))}>Fire Staff</DropdownMenuItem>
-                                                                </>
-                                                            )}
+                                                                        <>
+                                                                                <DropdownMenuItem asChild><Link href={`/dashboard/staff/${member.id}`}>View Details</Link></DropdownMenuItem>
+                                                                                <DropdownMenuItem onSelect={() => handleEditClick(member)}>Edit Staff</DropdownMenuItem>
+                                                                                <DropdownMenuItem className="text-red-600" onSelect={() => openAfterMenu(() => handleTerminateStaff(member.id))}>Fire Staff</DropdownMenuItem>
+                                                                        </>
+                                                                        )}
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
                                                 </div>

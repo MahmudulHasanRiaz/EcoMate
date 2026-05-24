@@ -51,12 +51,7 @@ function mapStaff(member: any, avatarUrl?: string | null, incomeTotal = 0, paidT
     ordersConfirmed: number;
     ordersWorked: number;
     totalOrderActions: number;
-    incompleteWorked: number;
-    incompleteConverted: number;
-    incompleteConversionRate: number;
     statusBreakdown: Record<string, number>;
-    createdStatusBreakdown: Record<string, number>;
-    confirmedStatusBreakdown: Record<string, number>;
   }): StaffMemberUI {
   const payments = Array.isArray(member.payments) ? member.payments : [];
   const totalPaid =
@@ -98,18 +93,31 @@ function mapStaff(member: any, avatarUrl?: string | null, incomeTotal = 0, paidT
     overtimeBonusPercent: member.overtimeBonusPercent,
     salaryDetails: normalizeSalaryDetails(member.paymentType, member.salaryDetails) as StaffMemberUI['salaryDetails'],
     commissionDetails: normalizeCommissionDetails(member.paymentType, member.commissionDetails) as StaffMemberUI['commissionDetails'],
-    performance: {
-      ordersCreated: performance?.ordersCreated ?? 0,
-      ordersConfirmed: performance?.ordersConfirmed ?? 0,
-      ordersWorked: performance?.ordersWorked ?? 0,
-      totalOrderActions: performance?.totalOrderActions ?? 0,
-      incompleteWorked: performance?.incompleteWorked ?? 0,
-      incompleteConverted: performance?.incompleteConverted ?? 0,
-      incompleteConversionRate: performance?.incompleteConversionRate ?? 0,
-      statusBreakdown: performance?.statusBreakdown ?? {},
-      createdStatusBreakdown: performance?.createdStatusBreakdown ?? {},
-      confirmedStatusBreakdown: performance?.confirmedStatusBreakdown ?? {},
-    },
+    performance: performance
+      ? {
+          ordersCreated: performance.ordersCreated,
+          ordersConfirmed: performance.ordersConfirmed,
+          ordersWorked: performance.ordersWorked,
+          totalOrderActions: performance.totalOrderActions,
+          incompleteWorked: 0,
+          incompleteConverted: 0,
+          incompleteConversionRate: 0,
+          statusBreakdown: performance.statusBreakdown,
+          createdStatusBreakdown: {},
+          confirmedStatusBreakdown: {},
+        }
+      : {
+          ordersCreated: 0,
+          ordersConfirmed: 0,
+          ordersWorked: 0,
+          totalOrderActions: 0,
+          incompleteWorked: 0,
+          incompleteConverted: 0,
+          incompleteConversionRate: 0,
+          statusBreakdown: {},
+          createdStatusBreakdown: {},
+          confirmedStatusBreakdown: {},
+        },
     financials: {
       totalEarned,
       totalPaid,
@@ -368,18 +376,7 @@ export async function getStaffListServer(params: StaffListParams) {
       return mapStaff({
         ...m,
         accessibleBusinesses: isAdmin ? allBusinesses : m.accessibleBusinesses,
-      }, avatarMap[m.clerkId], incomeMap[m.id] ?? 0, runningPaidMap.get(m.id) ?? 0, finesMap.get(m.id) ?? 0, perf ? {
-        ordersCreated: perf.ordersCreated,
-        ordersConfirmed: perf.ordersConfirmed,
-        ordersWorked: perf.ordersWorked,
-        totalOrderActions: perf.totalOrderActions,
-        incompleteWorked: 0,
-        incompleteConverted: 0,
-        incompleteConversionRate: 0,
-        statusBreakdown: perf.statusBreakdown,
-        createdStatusBreakdown: {},
-        confirmedStatusBreakdown: {},
-      } : undefined);
+      }, avatarMap[m.clerkId], incomeMap[m.id] ?? 0, runningPaidMap.get(m.id) ?? 0, finesMap.get(m.id) ?? 0, perf);
     });
 
     return {

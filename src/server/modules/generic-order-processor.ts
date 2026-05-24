@@ -255,7 +255,7 @@ export async function processGenericOrder(
         externalOrderId,
         status: 'received',
         apiKey: integration.apiKey,
-      }).catch(e => console.error('[GENERIC_CALLBACK_ERR]', e));
+      }).catch((e: any) => console.error('[GENERIC_CALLBACK_ERR]', e));
     } catch (e) {
       console.error('[GENERIC_CALLBACK_IMPORT_ERR]', e);
     }

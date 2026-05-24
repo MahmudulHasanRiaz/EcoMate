@@ -262,3 +262,26 @@ export async function deleteWooIntegrationCore(id: string): Promise<{ success: b
         return { success: false, message: error.message || 'Failed to delete integration.' };
     }
 }
+
+export async function pushGenericStatusUpdate(params: {
+    callbackUrl: string;
+    externalOrderId: string;
+    status: string;
+    apiKey: string;
+}) {
+    const { callbackUrl, externalOrderId, status, apiKey } = params;
+    const res = await fetch(callbackUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ externalOrderId, status }),
+        signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Status push failed (${res.status}): ${text}`);
+    }
+    return res.json();
+}

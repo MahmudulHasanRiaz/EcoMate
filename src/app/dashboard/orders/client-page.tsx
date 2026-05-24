@@ -256,7 +256,7 @@ function OrderImages({ products, orderId }: { products: OrderProduct[], orderId?
   return <OrderThumb item={firstProduct} alt={firstProduct.name || (firstProduct as any).product?.name} />;
 }
 
-export default function OrdersClientPage() {
+export default function OrdersClientPage({ defaultChannel }: { defaultChannel?: 'Retail' | 'Wholesale' }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const permissions = usePermissions();
@@ -434,6 +434,7 @@ export default function OrdersClientPage() {
     return getOrders({
       pageSize: itemsPerPage,
       page: currentPage,
+      channel: defaultChannel || undefined,
       status: statusFilter !== 'all' ? statusFilter : undefined,
       businessId: businessFilter !== 'all' ? businessFilter : undefined,
       platform: platformFilter !== 'all' ? platformFilter : undefined,
@@ -1097,6 +1098,11 @@ export default function OrdersClientPage() {
                                     <button onClick={() => handleOpenOrder(order.id)} className="font-medium hover:underline text-left">
                                       {order.orderNumber}
                                     </button>
+                                    {order.channel === 'Wholesale' && (
+                                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 bg-purple-50 text-purple-700 border-purple-200">
+                                        Wholesale
+                                      </Badge>
+                                    )}
                                     {order.shipmentStale && (
                                       <span title="Shipment stale: No update for 12h+">
                                         <AlertCircle className="h-4 w-4 text-red-600 animate-pulse" />
@@ -1261,164 +1267,169 @@ export default function OrdersClientPage() {
                                <OrderImages products={order.products || []} orderId={order.orderNumber || undefined} />
                                <div className="flex flex-col gap-0.5 overflow-hidden">
                                  <div className="flex items-center gap-1.5">
-                                   <button onClick={() => handleOpenOrder(order.id)} className="font-medium hover:underline text-left">
-                                     {order.orderNumber}
-                                   </button>
-                                   {order.shipmentStale && (
-                                     <span title="Shipment stale: No update for 12h+">
-                                       <AlertCircle className="h-4 w-4 text-red-600 animate-pulse" />
-                                     </span>
-                                   )}
-                                 </div>
-                                 {(() => {
-                                   const orderTime = formatOrderTime(order);
-                                   return orderTime && (
-                                     <div className="text-[10px] text-muted-foreground leading-tight">
-                                       {orderTime}
-                                     </div>
-                                   );
-                                 })()}
-                                 {order.customerPhone && courierSummaries[order.customerPhone] ? (
-                                   courierSummaries[order.customerPhone].total > 0 ? (
-                                     <div
-                                       className="flex flex-col gap-0.5 mt-0.5 cursor-help"
-                                       onClick={(e) => { e.stopPropagation(); window.open(`/dashboard/courier-report?phone=${order.customerPhone}`, '_blank'); }}
-                                       title={`Courier: Total ${courierSummaries[order.customerPhone].total} | Success ${courierSummaries[order.customerPhone].successPct}% | Failed ${courierSummaries[order.customerPhone].failedPct}%`}
-                                     >
-                                       <div className="text-[9px] whitespace-nowrap leading-tight flex items-center gap-1.5">
-                                         <span className="text-muted-foreground font-medium">Tot: {courierSummaries[order.customerPhone].total}</span>
-                                         <span className="text-emerald-600 font-bold">{courierSummaries[order.customerPhone].successPct}%</span>
-                                         <span className="text-red-500 font-bold">{courierSummaries[order.customerPhone].failedPct}%</span>
-                                       </div>
-                                       <div className="flex h-[3px] w-20 overflow-hidden rounded-full bg-slate-100">
-                                         <div
-                                           className="h-full bg-emerald-500 transition-all duration-300"
-                                           style={{ width: `${courierSummaries[order.customerPhone].successPct}%` }}
-                                         />
-                                         <div
-                                           className="h-full bg-red-500 transition-all duration-300"
-                                           style={{ width: `${courierSummaries[order.customerPhone].failedPct}%` }}
-                                         />
-                                       </div>
-                                     </div>
-                                   ) : (
-                                     <button
-                                       type="button"
-                                       className="mt-1 text-[9px] text-muted-foreground/70 italic underline-offset-2 hover:underline"
-                                       onClick={(e) => {
-                                         e.preventDefault();
-                                         e.stopPropagation();
-                                         window.open(`/dashboard/courier-report?phone=${order.customerPhone}`, '_blank');
-                                       }}
-                                     >
-                                       No report (check)
-                                     </button>
-                                   )
-                                 ) : null}
-                               </div>
-                             </div>
-                           </TableCell>
-                           <TableCell>
-                             <div className="flex flex-col gap-0.5 min-w-[180px] max-w-[250px]">
-                               <span className="font-semibold truncate text-sm" title={order.customerName}>{order.customerName}</span>
-                               <a
-                                 href={`tel:${order.customerPhone}`}
-                                 className="text-[11px] text-blue-600 hover:underline w-fit"
-                                 onClick={e => e.stopPropagation()}
-                               >
-                                 {order.customerPhone}
-                               </a>
-                               <span
-                                 className="text-[11px] text-muted-foreground truncate"
-                                 title={order.shippingAddress?.address || ''}
-                               >
-                                 {order.shippingAddress?.address || 'No address'}
-                               </span>
-                             </div>
+                                    <button onClick={() => handleOpenOrder(order.id)} className="font-medium hover:underline text-left">
+                                      {order.orderNumber}
+                                    </button>
+                                    {order.channel === 'Wholesale' && (
+                                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 bg-purple-50 text-purple-700 border-purple-200">
+                                        Wholesale
+                                      </Badge>
+                                    )}
+                                    {order.shipmentStale && (
+                                      <span title="Shipment stale: No update for 12h+">
+                                        <AlertCircle className="h-4 w-4 text-red-600 animate-pulse" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  {(() => {
+                                    const orderTime = formatOrderTime(order);
+                                    return orderTime && (
+                                      <div className="text-[10px] text-muted-foreground leading-tight">
+                                        {orderTime}
+                                      </div>
+                                    );
+                                  })()}
+                                  {order.customerPhone && courierSummaries[order.customerPhone] ? (
+                                    courierSummaries[order.customerPhone].total > 0 ? (
+                                      <div
+                                        className="flex flex-col gap-0.5 mt-0.5 cursor-help"
+                                        onClick={(e) => { e.stopPropagation(); window.open(`/dashboard/courier-report?phone=${order.customerPhone}`, '_blank'); }}
+                                        title={`Courier: Total ${courierSummaries[order.customerPhone].total} | Success ${courierSummaries[order.customerPhone].successPct}% | Failed ${courierSummaries[order.customerPhone].failedPct}%`}
+                                      >
+                                        <div className="text-[9px] whitespace-nowrap leading-tight flex items-center gap-1.5">
+                                          <span className="text-muted-foreground font-medium">Tot: {courierSummaries[order.customerPhone].total}</span>
+                                          <span className="text-emerald-600 font-bold">{courierSummaries[order.customerPhone].successPct}%</span>
+                                          <span className="text-red-500 font-bold">{courierSummaries[order.customerPhone].failedPct}%</span>
+                                        </div>
+                                        <div className="flex h-[3px] w-20 overflow-hidden rounded-full bg-slate-100">
+                                          <div
+                                            className="h-full bg-emerald-500 transition-all duration-300"
+                                            style={{ width: `${courierSummaries[order.customerPhone].successPct}%` }}
+                                          />
+                                          <div
+                                            className="h-full bg-red-500 transition-all duration-300"
+                                            style={{ width: `${courierSummaries[order.customerPhone].failedPct}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="mt-1 text-[9px] text-muted-foreground/70 italic underline-offset-2 hover:underline"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          window.open(`/dashboard/courier-report?phone=${order.customerPhone}`, '_blank');
+                                        }}
+                                      >
+                                        No report (check)
+                                      </button>
+                                    )
+                                  ) : null}
+                                </div>
+                              </div>
                             </TableCell>
-                           <TableCell>
-                             <Select
-                               value={order.status}
-                               onValueChange={(v) => handleStatusUpdate(order.id, v as OrderStatus)}
-                               disabled={inlineSaving[order.id]}
-                             >
-                               <SelectTrigger className={cn("h-7 w-fit border-none shadow-none p-0 bg-transparent hover:bg-muted/50 transition-colors uppercase font-bold text-[10px]", statusColors[order.status])}>
-                                 <div className={cn("px-2.5 py-0.5 rounded-full flex items-center gap-1.5", statusColors[order.status])}>
-                                   {formatLabel(order.status)}
-                                   {inlineSaving[order.id] ? <RotateCw className="h-3 w-3 animate-spin" /> : <ChevronDown className="h-3 w-3 opacity-50" />}
-                                 </div>
-                               </SelectTrigger>
-                               <SelectContent>
-                                 {getAvailableStatuses(order.status, orderListStatuses).map(s => (
-                                   <SelectItem key={s} value={s} className="text-[11px] uppercase font-bold">{formatLabel(s)}</SelectItem>
-                                 ))}
-                               </SelectContent>
-                             </Select>
-                           </TableCell>
-                           <TableCell>
-                             <StaffCombobox
-                               value={order.assignedToId || 'unassigned'}
-                               onChange={(v) => handleInlineAssign(order.id, v)}
-                               staffMembers={allStaff}
-                               mode="assign"
-                             />
-                           </TableCell>
-                           <TableCell className="text-right font-mono text-sm font-medium">
-                             Tk {order.total?.toLocaleString() || '0'}
-                           </TableCell>
-                           <TableCell className="text-center">
-                            {(() => {
-                              const url = buildTrackingUrl(order);
-                              return url ? (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  title={`Open ${(order.courierService || 'Courier')} tracking`}
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    window.open(url, '_blank');
-                                  }}
+                            <TableCell>
+                              <div className="flex flex-col gap-0.5 min-w-[180px] max-w-[250px]">
+                                <span className="font-semibold truncate text-sm" title={order.customerName}>{order.customerName}</span>
+                                <a
+                                  href={`tel:${order.customerPhone}`}
+                                  className="text-[11px] text-blue-600 hover:underline w-fit"
+                                  onClick={e => e.stopPropagation()}
                                 >
-                                  <ExternalLink className="h-4 w-4" />
-                                </Button>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">--</span>
-                              );
-                            })()}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal /></Button></DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleOpenOrder(order.id)}>View / Edit</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleInlineAssign(order.id, 'me')}>Assign to Me</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => {
-                                  const win = window.open(`/print/invoice/${order.id}`, '_blank');
-                                  win?.focus();
-                                }}>Print Invoice</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => {
-                                  const win = window.open(`/print/sticker/${order.id}`, '_blank');
-                                  win?.focus();
-                                }}>Print Sticker</DropdownMenuItem>
-                                {isAdminUser && (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem className="text-red-600" onClick={() => setDeleteDialog({ isOpen: true, orderId: order.id })}>Delete</DropdownMenuItem>
-                                  </>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-        </CardContent>
+                                  {order.customerPhone}
+                                </a>
+                                <span
+                                  className="text-[11px] text-muted-foreground truncate"
+                                  title={order.shippingAddress?.address || ''}
+                                >
+                                  {order.shippingAddress?.address || 'No address'}
+                                </span>
+                              </div>
+                             </TableCell>
+                            <TableCell>
+                              <Select
+                                value={order.status}
+                                onValueChange={(v) => handleStatusUpdate(order.id, v as OrderStatus)}
+                                disabled={inlineSaving[order.id]}
+                              >
+                                <SelectTrigger className={cn("h-7 w-fit border-none shadow-none p-0 bg-transparent hover:bg-muted/50 transition-colors uppercase font-bold text-[10px]", statusColors[order.status])}>
+                                  <div className={cn("px-2.5 py-0.5 rounded-full flex items-center gap-1.5", statusColors[order.status])}>
+                                    {formatLabel(order.status)}
+                                    {inlineSaving[order.id] ? <RotateCw className="h-3 w-3 animate-spin" /> : <ChevronDown className="h-3 w-3 opacity-50" />}
+                                  </div>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {getAvailableStatuses(order.status, orderListStatuses).map(s => (
+                                    <SelectItem key={s} value={s} className="text-[11px] uppercase font-bold">{formatLabel(s)}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell>
+                              <StaffCombobox
+                                value={order.assignedToId || 'unassigned'}
+                                onChange={(v) => handleInlineAssign(order.id, v)}
+                                staffMembers={allStaff}
+                                mode="assign"
+                              />
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm font-medium">
+                              Tk {order.total?.toLocaleString() || '0'}
+                            </TableCell>
+                            <TableCell className="text-center">
+                             {(() => {
+                               const url = buildTrackingUrl(order);
+                               return url ? (
+                                 <Button
+                                   size="icon"
+                                   variant="ghost"
+                                   title={`Open ${(order.courierService || 'Courier')} tracking`}
+                                   onClick={(e) => {
+                                     e.preventDefault();
+                                     e.stopPropagation();
+                                     window.open(url, '_blank');
+                                   }}
+                                 >
+                                   <ExternalLink className="h-4 w-4" />
+                                 </Button>
+                               ) : (
+                                 <span className="text-xs text-muted-foreground">--</span>
+                               );
+                             })()}
+                           </TableCell>
+                           <TableCell className="text-right">
+                             <DropdownMenu>
+                               <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal /></Button></DropdownMenuTrigger>
+                               <DropdownMenuContent align="end">
+                                 <DropdownMenuItem onClick={() => handleOpenOrder(order.id)}>View / Edit</DropdownMenuItem>
+                                 <DropdownMenuItem onClick={() => handleInlineAssign(order.id, 'me')}>Assign to Me</DropdownMenuItem>
+                                 <DropdownMenuItem onClick={() => {
+                                   const win = window.open(`/print/invoice/${order.id}`, '_blank');
+                                   win?.focus();
+                                 }}>Print Invoice</DropdownMenuItem>
+                                 <DropdownMenuItem onClick={() => {
+                                   const win = window.open(`/print/sticker/${order.id}`, '_blank');
+                                   win?.focus();
+                                 }}>Print Sticker</DropdownMenuItem>
+                                 {isAdminUser && (
+                                   <>
+                                     <DropdownMenuSeparator />
+                                     <DropdownMenuItem className="text-red-600" onClick={() => setDeleteDialog({ isOpen: true, orderId: order.id })}>Delete</DropdownMenuItem>
+                                   </>
+                                 )}
+                               </DropdownMenuContent>
+                             </DropdownMenu>
+                           </TableCell>
+                         </TableRow>
+                       ))
+                     )}
+                   </TableBody>
+                 </Table>
+               </div>
+             </div>
+           )}
+         </CardContent>
         <CardFooter className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-sm text-muted-foreground w-full sm:w-auto text-center sm:text-left">
             Showing {allOrders.length} of {totalOrders}

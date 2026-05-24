@@ -521,6 +521,7 @@ export async function getOrders(params?: {
   excludeComboOnly?: boolean;
   channel?: 'Retail' | 'Wholesale' | 'all';
   sourcePlatform?: string;
+  excludeChannel?: 'Retail' | 'Wholesale';
 }) {
   const MAX_ORDER_PAGE_SIZE = 5000;
   const take = Math.min(Math.max(params?.pageSize ?? 20, 1), MAX_ORDER_PAGE_SIZE);
@@ -539,6 +540,10 @@ export async function getOrders(params?: {
     where.channel = params.channel;
   } else if (!params?.channel) {
     where.channel = 'Retail'; // Safe default for existing dashboard lists
+  }
+
+  if (params?.excludeChannel) {
+    where.channel = { not: params.excludeChannel };
   }
 
   if (params?.sourcePlatform) {
