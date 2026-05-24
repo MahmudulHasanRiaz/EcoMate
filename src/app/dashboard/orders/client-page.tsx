@@ -6,6 +6,8 @@ import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { MoreHorizontal, PlusCircle, ScanLine, Edit, RotateCw, Check, ChevronsUpDown, File as FileIcon, X as XIcon, ChevronDown, ExternalLink, AlertCircle } from "lucide-react";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { type DateRange } from "react-day-picker";
 import { format, formatDistanceToNow, differenceInHours } from "date-fns";
 
 import { Badge } from "@/components/ui/badge";
@@ -302,6 +304,7 @@ export default function OrdersClientPage() {
   const initialSearch = searchParams.get('search') || "";
   const [searchTerm, setSearchTerm] = React.useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = React.useState(initialSearch);
+  const [dateRange, setDateRange] = React.useState<DateRange | undefined>(undefined);
   const [platformFilter, setPlatformFilter] = React.useState("all");
   const [isCustomRowsDialogOpen, setIsCustomRowsDialogOpen] = React.useState(false);
   const [tempCustomRows, setTempCustomRows] = React.useState("");
@@ -416,6 +419,8 @@ export default function OrdersClientPage() {
     if (businessFilter !== 'all') params.set('businessId', businessFilter);
     if (platformFilter !== 'all') params.set('platform', platformFilter);
     if (debouncedSearch) params.set('search', debouncedSearch);
+    if (dateRange?.from) params.set('dateFrom', dateRange.from.toISOString());
+    if (dateRange?.to) params.set('dateTo', dateRange.to.toISOString());
     params.set('includeTotal', 'true');
     if (assigneeFilter === 'me') params.set('assignedToId', staffIdForFilters || '__NO_STAFF__');
     else if (assigneeFilter !== 'all') params.set('assignedToId', assigneeFilter);
@@ -434,6 +439,8 @@ export default function OrdersClientPage() {
       platform: platformFilter !== 'all' ? platformFilter : undefined,
       search: debouncedSearch || undefined,
       assignedToId: assigneeFilter === 'me' ? (staffIdForFilters || '__NO_STAFF__') : (assigneeFilter !== 'all' ? assigneeFilter : undefined),
+      dateFrom: dateRange?.from?.toISOString(),
+      dateTo: dateRange?.to?.toISOString(),
       includeTotal: true,
       sortField,
       sortOrder,
@@ -943,6 +950,16 @@ export default function OrdersClientPage() {
                   onChange={(v) => { setAssigneeFilter(v); setCurrentPage(1); }}
                   staffMembers={allStaff}
                   mode="filter"
+                />
+              </div>
+              <div className="w-full sm:w-auto sm:min-w-[220px]">
+                <DateRangePicker
+                  date={dateRange}
+                  onDateChange={(range) => {
+                    setDateRange(range);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full"
                 />
               </div>
               <div className="hidden lg:block w-[130px]">

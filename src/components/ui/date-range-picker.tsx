@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { Calendar as CalendarIcon, ChevronDown } from "lucide-react"
 import { addDays, format, subDays, startOfDay, endOfDay, isSameDay } from "date-fns"
-import { DateRange } from "react-day-picker"
+import { CalendarIcon, ChevronDown } from "lucide-react"
+import { type DateRange } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -44,6 +44,9 @@ const futurePresets: { value: Preset; label: string }[] = [
     { value: "custom", label: "Custom Range" },
 ];
 
+const dateFormat = "dd MMM";
+const dateFormatFull = "dd MMM, yyyy";
+
 export function DateRangePicker({
   date,
   onDateChange,
@@ -53,17 +56,16 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
   const isMobile = useIsMobile();
   const [isPopoverOpen, setIsPopoverOpen] = React.useState(false);
-  const presets = presetMode === "future" ? futurePresets : pastPresets;
+  const [showCalendar, setShowCalendar] = React.useState(false);
 
-  // Match the current actual date purely mathematically against presets
   const getActivePreset = (): Preset | null => {
       if (!date?.from && !date?.to) return "all-time";
       if (!date.from || !date.to) return "custom";
 
       const now = new Date();
-      
+
       if (isSameDay(date.from, startOfDay(now)) && isSameDay(date.to, endOfDay(now))) return "today";
-      
+
       const yesterday = subDays(now, 1);
       if (isSameDay(date.from, startOfDay(yesterday)) && isSameDay(date.to, endOfDay(yesterday))) return "yesterday";
 
@@ -81,9 +83,17 @@ export function DateRangePicker({
   };
 
   const activePreset = getActivePreset();
+  const presets = presetMode === "future" ? futurePresets : pastPresets;
+
+  React.useEffect(() => {
+    if (!isPopoverOpen) setShowCalendar(false);
+  }, [isPopoverOpen]);
 
   const handlePresetClick = (presetValue: Preset) => {
-    if (presetValue === "custom") return;
+    if (presetValue === "custom") {
+      setShowCalendar(true);
+      return;
+    }
 
     if (presetValue === "all-time") {
         onDateChange(undefined);
@@ -103,25 +113,25 @@ export function DateRangePicker({
             newRange = { from: startOfDay(yesterday), to: endOfDay(yesterday) };
             break;
         case 'last7':
-            newRange = presetMode === "future" 
+            newRange = presetMode === "future"
                 ? { from: startOfDay(now), to: endOfDay(addDays(now, 6)) }
                 : { from: startOfDay(subDays(now, 6)), to: endOfDay(now) };
             break;
         case 'last30':
-            newRange = presetMode === "future" 
+            newRange = presetMode === "future"
                 ? { from: startOfDay(now), to: endOfDay(addDays(now, 29)) }
                 : { from: startOfDay(subDays(now, 29)), to: endOfDay(now) };
             break;
         case 'last365':
-            newRange = presetMode === "future" 
+            newRange = presetMode === "future"
                 ? { from: startOfDay(now), to: endOfDay(addDays(now, 364)) }
                 : { from: startOfDay(subDays(now, 364)), to: endOfDay(now) };
             break;
     }
-    
+
     if (newRange) {
         onDateChange(newRange);
-        setIsPopoverOpen(false); // Close modal when a quick preset is clicked
+        setIsPopoverOpen(false);
     }
   };
 
@@ -134,9 +144,13 @@ export function DateRangePicker({
 
     if (date?.from) {
       if (date.to) {
-        return `${format(date.from, "LLL dd")} - ${format(date.to, "LLL dd, y")}`;
+        const sameYear = date.from.getFullYear() === date.to.getFullYear();
+        if (sameYear) {
+          return `${format(date.from, dateFormat)} - ${format(date.to, dateFormatFull)}`;
+        }
+        return `${format(date.from, dateFormatFull)} - ${format(date.to, dateFormatFull)}`;
       }
-      return format(date.from, "LLL dd, y");
+      return format(date.from, dateFormatFull);
     }
     return placeholder;
   };
@@ -148,58 +162,63 @@ export function DateRangePicker({
           <Button
             variant="outline"
             className={cn(
-              "w-full justify-start text-left font-normal bg-background hover:bg-muted/50",
-              !date && "text-muted-foreground"
+              date ? "justify-start text-left font-normal" : "justify-start text-left font-normal text-muted-foreground",
+              "w-full bg-background hover:bg-muted/50"
             )}
           >
             <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="flex-1 truncate">{displayValue()}</span>
+            <span className="flex-1 truncate text-xs sm:text-sm">{displayValue()}</span>
             <ChevronDown className="ml-2 h-4 w-4 opacity-50 shrink-0" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0 flex flex-col sm:flex-row shadow-xl rounded-xl" align="end" avoidCollisions={true}>
-          
-          {/* Presets Sidebar (Desktop) or Topbar (Mobile) */}
-          <div className="flex sm:flex-col gap-1.5 p-3 border-b sm:border-b-0 sm:border-r bg-muted/10 sm:min-w-[150px] overflow-x-auto max-w-[100vw]">
-             {presets.map((preset) => (
-                <Button
+        <PopoverContent
+          className={cn("w-auto p-0", !showCalendar && "shadow-xl rounded-xl")}
+          align={showCalendar ? "start" : "end"}
+          sideOffset={showCalendar ? 8 : 4}
+        >
+          {!showCalendar ? (
+            <div className="flex flex-col gap-1 p-2">
+              {presets.map((preset) => {
+                const isCustom = preset.value === "custom";
+                const isActive = activePreset === preset.value;
+                return (
+                  <Button
                     key={preset.value}
-                    variant={activePreset === preset.value ? "secondary" : "ghost"}
+                    variant={isActive ? "secondary" : "ghost"}
                     size="sm"
                     className={cn(
-                        "sm:justify-start justify-center shrink-0 h-9 text-xs sm:text-sm font-medium transition-colors",
-                        activePreset === preset.value ? "bg-primary/10 text-primary hover:bg-primary/20" : "text-muted-foreground hover:text-foreground"
+                      "justify-start h-9 text-sm font-medium transition-colors",
+                      isActive && "bg-primary/10 text-primary hover:bg-primary/20",
+                      !isActive && "text-muted-foreground hover:text-foreground"
                     )}
                     onClick={() => handlePresetClick(preset.value)}
-                >
+                  >
                     {preset.label}
-                </Button>
-             ))}
-          </div>
-
-          {/* Calendar Range Picker */}
-          <div className="p-3 flex flex-col">
-            <Calendar
-                initialFocus
-                mode="range"
-                defaultMonth={date?.from}
-                selected={date}
-                onSelect={(range) => {
-                    let adjusted = range;
-                    if (range?.to) adjusted = { ...range, to: endOfDay(range.to) };
-                    onDateChange(adjusted);
-                }}
-                numberOfMonths={isMobile ? 1 : 2}
-                className="rounded-md"
-            />
-            <div className="flex justify-between items-center mt-2 pt-2 border-t border-border/50 px-2">
-                <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Selected Range</span>
-                <Button variant="ghost" size="sm" onClick={() => { onDateChange(undefined); setIsPopoverOpen(false); }} className="text-muted-foreground hover:text-destructive h-8 text-xs font-semibold">
-                   Clear Selection
-                </Button>
+                    {isActive && !isCustom && (
+                      <span className="ml-auto text-[10px] opacity-50">&#10003;</span>
+                    )}
+                  </Button>
+                );
+              })}
             </div>
-          </div>
-
+          ) : (
+            <Calendar
+              mode="range"
+              defaultMonth={date?.from}
+              selected={date}
+              onSelect={(range) => {
+                if (!range) {
+                  onDateChange(undefined);
+                  return;
+                }
+                onDateChange({
+                  from: range.from ? startOfDay(range.from) : undefined,
+                  to: range.to ? endOfDay(range.to) : undefined,
+                });
+              }}
+              numberOfMonths={isMobile ? 1 : 2}
+            />
+          )}
         </PopoverContent>
       </Popover>
     </div>

@@ -5,9 +5,10 @@ const statusLabelMap: Record<string, string> = {
   Draft: 'Draft',
   New: 'New',
   Confirmed: 'Confirmed',
+  Confirmed_Waiting: 'Confirmed Waiting',
   Packing_Hold: 'Packing Hold',
   Canceled: 'Canceled',
-  C2C: 'C2C',
+  C2C: 'Canceled',
   Hold: 'Hold',
   In_Courier: 'In-Courier',
   RTS__Ready_to_Ship_: 'RTS (Ready to Ship)',
@@ -17,6 +18,7 @@ const statusLabelMap: Record<string, string> = {
   Returned: 'Returned',
   Paid_Return: 'Paid Return',
   Partial: 'Partial',
+  No_Response: 'No Response',
   Incomplete: 'Incomplete',
   Incomplete_Cancelled: 'Incomplete-Cancelled',
   Damaged: 'Damaged',
@@ -24,10 +26,6 @@ const statusLabelMap: Record<string, string> = {
 
 function presentStatus(status: OrderStatus) {
   return statusLabelMap[status] || status;
-}
-
-function normalizeCanceledLikeTitle(title?: string | null) {
-  return title === 'C2C' ? 'Canceled' : (title || 'Other');
 }
 
 type DateRange = {
@@ -68,7 +66,6 @@ export async function getStaffPerformance(staffId: string, range?: DateRange) {
   staffName = staff?.name || null;
 
   if (range) {
-    // Use action timestamps for range-based reporting:
     const [createdOrders, allLogs, incompleteAssignedLeads, convertedOrders] = await Promise.all([
       prisma.order.findMany({
         where: {
@@ -136,30 +133,25 @@ export async function getStaffPerformance(staffId: string, range?: DateRange) {
     ordersCreated = createdOrderIds.length;
     ordersConfirmed = confirmedOrderIds.length;
 
-    // totalOrderActions = total number of valid order actions done by staff in range (from OrderLog)
-    const totalOrderActions = allLogs.length + (range ? 0 : 0); // Placeholder if we needed more
+    const totalOrderActions = allLogs.length;
 
-    // ordersWorked = distinct orderIds touched by that staff in range
     const workedOrderIds = new Set([
       ...createdOrderIds,
       ...allLogs.map(l => l.orderId).filter((id): id is string => Boolean(id))
     ]);
     ordersWorked = workedOrderIds.size;
 
-    // Status breakdown for "handled actions" should be action-based (log-driven), unique per order
-    const statusOrderMap = new Map<string, Set<string>>();
-    for (const log of allLogs) {
-        if (!log.orderId) continue;
-        const label = normalizeCanceledLikeTitle(log.title);
-        if (!statusOrderMap.has(label)) {
-            statusOrderMap.set(label, new Set());
-        }
-        statusOrderMap.get(label)!.add(log.orderId);
-    }
-    
+    const workedOrderIdsArr = Array.from(workedOrderIds);
+    const workedOrderStatuses = workedOrderIdsArr.length
+      ? await prisma.order.findMany({
+          where: { id: { in: workedOrderIdsArr } },
+          select: { status: true }
+        })
+      : [];
     const statusBreakdown: Record<string, number> = {};
-    for (const [label, orderSet] of statusOrderMap.entries()) {
-        statusBreakdown[label] = orderSet.size;
+    for (const o of workedOrderStatuses) {
+      const label = presentStatus(o.status);
+      statusBreakdown[label] = (statusBreakdown[label] || 0) + 1;
     }
 
     const createdOrdersWithStatus = await prisma.order.findMany({
@@ -266,31 +258,17 @@ export async function getStaffPerformance(staffId: string, range?: DateRange) {
     const workedOrderIds = new Set(workedIdsRows.map(r => r.orderId).filter(Boolean));
     ordersWorked = workedOrderIds.size;
 
-    // For all-time, we count the unique orders that entered each status (driven by log distinct orderId)
-    // The previous logTitlesGrouped was counting total logs. Let's do it right.
-    const allLogsRows = await prisma.orderLog.findMany({
-        where: {
-          OR: [
-            { userId: staffId },
-            ...(staffName ? [{ userId: null, user: staffName }] : []),
-          ],
-        },
-        select: { orderId: true, title: true }
-    });
-
-    const statusOrderMap = new Map<string, Set<string>>();
-    for (const log of allLogsRows) {
-        if (!log.orderId) continue;
-        const label = normalizeCanceledLikeTitle(log.title);
-        if (!statusOrderMap.has(label)) {
-            statusOrderMap.set(label, new Set());
-        }
-        statusOrderMap.get(label)!.add(log.orderId);
-    }
-
+    const workedOrderIdsArr = Array.from(workedOrderIds);
+    const workedOrderStatuses = workedOrderIdsArr.length
+      ? await prisma.order.findMany({
+          where: { id: { in: workedOrderIdsArr } },
+          select: { status: true }
+        })
+      : [];
     const statusBreakdown: Record<string, number> = {};
-    for (const [label, orderSet] of statusOrderMap.entries()) {
-        statusBreakdown[label] = orderSet.size;
+    for (const o of workedOrderStatuses) {
+      const label = presentStatus(o.status);
+      statusBreakdown[label] = (statusBreakdown[label] || 0) + 1;
     }
 
     const createdStatusGroups = await prisma.order.groupBy({
@@ -334,4 +312,125 @@ export async function getStaffPerformance(staffId: string, range?: DateRange) {
       confirmedStatusBreakdown,
     };
   }
+}
+
+type StaffListPerfValue = {
+  ordersCreated: number;
+  ordersConfirmed: number;
+  ordersWorked: number;
+  totalOrderActions: number;
+  statusBreakdown: Record<string, number>;
+};
+
+export async function batchGetStaffListPerformance(
+  staffIds: string[],
+  range?: DateRange,
+): Promise<Map<string, StaffListPerfValue>> {
+  const perfMap = new Map<string, StaffListPerfValue>();
+  if (!staffIds.length) return perfMap;
+
+  for (const id of staffIds) {
+    perfMap.set(id, { ordersCreated: 0, ordersConfirmed: 0, ordersWorked: 0, totalOrderActions: 0, statusBreakdown: {} });
+  }
+
+  const rangeFilter = range
+    ? { createdAt: { gte: range.start, lte: range.end } }
+    : {};
+  const logRangeFilter = range
+    ? { timestamp: { gte: range.start, lte: range.end } }
+    : {};
+  const sourceFilter = [{ source: 'manual' }, { source: 'mobile-create' }, { source: null }];
+
+  const [createdGroups, createdOrderRows] = await Promise.all([
+    prisma.order.groupBy({
+      by: ['createdBy'],
+      where: { createdBy: { in: staffIds }, OR: sourceFilter, ...rangeFilter },
+      _count: { _all: true },
+    }),
+    prisma.order.findMany({
+      where: { createdBy: { in: staffIds }, OR: sourceFilter, ...rangeFilter },
+      select: { id: true, createdBy: true },
+    }),
+  ]);
+
+  for (const g of createdGroups) {
+    if (g.createdBy && perfMap.has(g.createdBy)) {
+      perfMap.get(g.createdBy)!.ordersCreated = g._count._all;
+    }
+  }
+
+  const createdByStaff = new Map<string, Set<string>>();
+  for (const row of createdOrderRows) {
+    if (!row.createdBy) continue;
+    if (!createdByStaff.has(row.createdBy)) createdByStaff.set(row.createdBy, new Set());
+    createdByStaff.get(row.createdBy)!.add(row.id);
+  }
+
+  const confirmedGroups = await prisma.order.groupBy({
+    by: ['confirmedBy'],
+    where: { confirmedBy: { in: staffIds }, NOT: { source: 'woo-incomplete' }, ...rangeFilter },
+    _count: { _all: true },
+  });
+  for (const g of confirmedGroups) {
+    if (g.confirmedBy && perfMap.has(g.confirmedBy)) {
+      perfMap.get(g.confirmedBy)!.ordersConfirmed = g._count._all;
+    }
+  }
+
+  const allLogs = await prisma.orderLog.findMany({
+    where: { userId: { in: staffIds }, ...logRangeFilter },
+    select: { userId: true, orderId: true },
+  });
+
+  const logCountPerStaff = new Map<string, number>();
+  const logOrderIdsPerStaff = new Map<string, Set<string>>();
+  for (const log of allLogs) {
+    if (!log.userId || !log.orderId) continue;
+    logCountPerStaff.set(log.userId, (logCountPerStaff.get(log.userId) || 0) + 1);
+    if (!logOrderIdsPerStaff.has(log.userId)) logOrderIdsPerStaff.set(log.userId, new Set());
+    logOrderIdsPerStaff.get(log.userId)!.add(log.orderId);
+  }
+
+  const allWorkedIds = new Set<string>();
+  const workedPerStaff = new Map<string, Set<string>>();
+  for (const [staffId, ids] of createdByStaff) {
+    workedPerStaff.set(staffId, new Set(ids));
+    for (const id of ids) allWorkedIds.add(id);
+  }
+  for (const [staffId, ids] of logOrderIdsPerStaff) {
+    if (!workedPerStaff.has(staffId)) workedPerStaff.set(staffId, new Set());
+    for (const id of ids) {
+      workedPerStaff.get(staffId)!.add(id);
+      allWorkedIds.add(id);
+    }
+  }
+
+  const orderStatusMap = allWorkedIds.size
+    ? new Map(
+        (await prisma.order.findMany({
+          where: { id: { in: Array.from(allWorkedIds) } },
+          select: { id: true, status: true },
+        })).map(o => [o.id, o.status])
+      )
+    : new Map<string, OrderStatus>();
+
+  for (const [staffId, orderIds] of workedPerStaff) {
+    const perf = perfMap.get(staffId);
+    if (!perf) continue;
+
+    perf.ordersWorked = orderIds.size;
+    perf.totalOrderActions = logCountPerStaff.get(staffId) || 0;
+
+    const breakdown: Record<string, number> = {};
+    for (const orderId of orderIds) {
+      const status = orderStatusMap.get(orderId);
+      if (status) {
+        const label = presentStatus(status);
+        breakdown[label] = (breakdown[label] || 0) + 1;
+      }
+    }
+    perf.statusBreakdown = breakdown;
+  }
+
+  return perfMap;
 }

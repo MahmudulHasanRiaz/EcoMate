@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { clerkClient } from '@clerk/nextjs/server';
 import { normalizeSalaryDetails, normalizeCommissionDetails } from '@server/utils/staff-compensation';
+import { batchGetStaffListPerformance } from '@server/utils/staff-performance';
 import { attachPageAccess } from '@/lib/page-access';
 import { StaffMemberUI, StaffRole } from '@/types';
 
@@ -45,7 +46,18 @@ const dbToUiRole: Record<string, StaffRole> = {
     Custom: 'Custom',
 };
 
-function mapStaff(member: any, avatarUrl?: string | null, incomeTotal = 0, paidTotal?: number, finesTotal = 0): StaffMemberUI {
+function mapStaff(member: any, avatarUrl?: string | null, incomeTotal = 0, paidTotal?: number, finesTotal = 0, performance?: {
+    ordersCreated: number;
+    ordersConfirmed: number;
+    ordersWorked: number;
+    totalOrderActions: number;
+    incompleteWorked: number;
+    incompleteConverted: number;
+    incompleteConversionRate: number;
+    statusBreakdown: Record<string, number>;
+    createdStatusBreakdown: Record<string, number>;
+    confirmedStatusBreakdown: Record<string, number>;
+  }): StaffMemberUI {
   const payments = Array.isArray(member.payments) ? member.payments : [];
   const totalPaid =
     paidTotal !== undefined
@@ -87,16 +99,16 @@ function mapStaff(member: any, avatarUrl?: string | null, incomeTotal = 0, paidT
     salaryDetails: normalizeSalaryDetails(member.paymentType, member.salaryDetails) as StaffMemberUI['salaryDetails'],
     commissionDetails: normalizeCommissionDetails(member.paymentType, member.commissionDetails) as StaffMemberUI['commissionDetails'],
     performance: {
-      ordersCreated: 0,
-      ordersConfirmed: 0,
-      ordersWorked: 0,
-      totalOrderActions: 0,
-      incompleteWorked: 0,
-      incompleteConverted: 0,
-      incompleteConversionRate: 0,
-      statusBreakdown: {},
-      createdStatusBreakdown: {},
-      confirmedStatusBreakdown: {},
+      ordersCreated: performance?.ordersCreated ?? 0,
+      ordersConfirmed: performance?.ordersConfirmed ?? 0,
+      ordersWorked: performance?.ordersWorked ?? 0,
+      totalOrderActions: performance?.totalOrderActions ?? 0,
+      incompleteWorked: performance?.incompleteWorked ?? 0,
+      incompleteConverted: performance?.incompleteConverted ?? 0,
+      incompleteConversionRate: performance?.incompleteConversionRate ?? 0,
+      statusBreakdown: performance?.statusBreakdown ?? {},
+      createdStatusBreakdown: performance?.createdStatusBreakdown ?? {},
+      confirmedStatusBreakdown: performance?.confirmedStatusBreakdown ?? {},
     },
     financials: {
       totalEarned,
@@ -248,6 +260,12 @@ export async function getStaffListServer(params: StaffListParams) {
       incomeTotals.map((item) => [item.staffId, Number(item._sum.amount || 0)]),
     );
 
+    const perfRange = (from || to) ? {
+      start: from ? new Date(from) : new Date(0),
+      end: to ? new Date(to) : new Date(),
+    } : undefined;
+    const perfMap = await batchGetStaffListPerformance(memberIds, perfRange);
+
     const { batchGetRunningStaffPaid } = await import('@/server/modules/staff');
     const { batchGetActiveFineTotals } = await import('@/server/modules/staff-fines');
 
@@ -345,10 +363,22 @@ export async function getStaffListServer(params: StaffListParams) {
 
     const mappedMembers = members.map((m) => {
       const isAdmin = m.role === 'Admin';
+      const perf = perfMap.get(m.id);
       return mapStaff({
         ...m,
         accessibleBusinesses: isAdmin ? allBusinesses : m.accessibleBusinesses,
-      }, avatarMap[m.clerkId], incomeMap[m.id] ?? 0, runningPaidMap.get(m.id) ?? 0, finesMap.get(m.id) ?? 0);
+      }, avatarMap[m.clerkId], incomeMap[m.id] ?? 0, runningPaidMap.get(m.id) ?? 0, finesMap.get(m.id) ?? 0, perf ? {
+        ordersCreated: perf.ordersCreated,
+        ordersConfirmed: perf.ordersConfirmed,
+        ordersWorked: perf.ordersWorked,
+        totalOrderActions: perf.totalOrderActions,
+        incompleteWorked: 0,
+        incompleteConverted: 0,
+        incompleteConversionRate: 0,
+        statusBreakdown: perf.statusBreakdown,
+        createdStatusBreakdown: {},
+        confirmedStatusBreakdown: {},
+      } : undefined);
     });
 
     return {
