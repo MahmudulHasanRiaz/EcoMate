@@ -1,0 +1,106 @@
+# EcoMate SaaS — Platform Notes
+
+**Status:** Phase 0 (repo split + guardrails) complete; multi-tenant conversion in progress on `feat/saas-multitenant`.
+
+## Scope
+
+- **Initial conversion:** the current `main` codebase only. It becomes the multi-tenant SaaS product.
+- **Central commerce / multi-store:** deferred. The upstream `feat/central-commerce` branch is still in development; it will be ported later as additive migrations with `tenant_id` + RLS from its first migration.
+- **No existing client data:** the SaaS starts with a fresh baseline; there is no backfill.
+- **License server:** KeyMate/Keygen is being removed. Plans and features come from the platform control plane.
+
+## Target architecture
+
+```
+Landing / SaaS admin / platform API  ->  ecomate_platform DB
+Tenant hosts (subdomain / custom)    ->  backend + storefront + admin/POS
+                                         ->  ecomate DB (shared, tenant_id + RLS)
+```
+
+- One pooled backend serves all tenants; tenant context comes from `Host` and lives in `AsyncLocalStorage`.
+- Every tenant table has `tenant_id`; PostgreSQL RLS is the hard isolation boundary.
+- Platform API/admin/landing are separate apps (Phase 1).
+- Storefront is host-aware and uses tenant-scoped cache tags.
+
+## Domains
+
+| Item | Default / rule |
+|---|---|
+| Primary domain | `ecomate.bd` |
+| Tenant subdomain | `{slug}.ecomate.bd` |
+| Additional base domains | `SAAS_BASE_DOMAINS` (ordered; first must equal primary); can be added at runtime |
+| Fallback domain | `SAAS_FALLBACK_DOMAIN`; a separate registered domain is recommended; must be in the base list unless `SAAS_ALLOW_EXTERNAL_FALLBACK=true` |
+| Custom-domain CNAME | `cname.ecomate.bd` (`SAAS_CUSTOM_DOMAIN_CNAME`) |
+| Platform hosts | `www.ecomate.bd` (landing), `saas.ecomate.bd` (platform admin), `api.ecomate.bd` (platform API/webhooks) |
+| Reserved slugs | `www`, `api`, `saas`, `admin`, `app`, `status`, `docs`, `mail`, `webhooks`, `cname` |
+
+Canonical host preference: a verified custom domain (when the tenant's plan includes `custom_domain`) → `{slug}.ecomate.bd`. Alias hosts 301 to the canonical host for storefront/admin/POS; `/api` answers on aliases. Unknown hosts never fall back to another tenant.
+
+The bootstrap values live in `.env.example`; runtime values live in the platform DB `PlatformSetting.domains` and are editable from the SaaS admin.
+
+## Important environment variables
+
+```bash
+SAAS_PRIMARY_DOMAIN=ecomate.bd
+SAAS_BASE_DOMAINS=ecomate.bd
+SAAS_FALLBACK_DOMAIN=
+SAAS_CUSTOM_DOMAIN_CNAME=cname.ecomate.bd
+SAAS_ALLOW_EXTERNAL_FALLBACK=false
+
+PLATFORM_DATABASE_URL=postgresql://.../ecomate_platform
+TENANT_DATABASE_URL=postgresql://.../ecomate
+TENANT_MIGRATION_DATABASE_URL=postgresql://.../ecomate
+PLATFORM_JWT_SECRET=
+PLATFORM_JWT_REFRESH_SECRET=
+INTERNAL_SERVICE_SECRET=
+APP_ENCRYPTION_KEY=          # replaces LICENSE_ENCRYPTION_KEY
+```
+
+## Phase 0 — done
+
+- Pushed the current `main` to `https://github.com/MahmudulHasanRiaz/EcoMate.git`.
+- Tagged the baseline `single-tenant-baseline`.
+- New CI image names are `ecomate-saas-*` so they cannot overwrite the archived per-client images.
+- The manual deploy workflow is SaaS-only and guarded by the repository and `SAAS_DEPLOY_ENABLED`.
+- Added ADR 007 and this runbook.
+
+## Runbook skeleton
+
+### Domain / fallback outage
+
+1. Check DNS for the primary domain and the fallback domain.
+2. Verify TLS certificates and the ingress `on_demand_tls` ask endpoint.
+3. Confirm the tenant's canonical host in the platform admin.
+4. If the primary is unhealthy, set the fallback for new links and verify tenant aliases still resolve.
+5. Never route an unknown host to a tenant; return 404 or the landing page.
+
+### Platform DB migration
+
+1. Run the platform Prisma migrations before the tenant DB migration.
+2. Verify `PlatformSetting.domains` is valid after deployment.
+3. Run the SaaS smoke checks (platform login, tenant list, public plans).
+
+### Tenant DB migration
+
+1. Run the single shared migration against `ecomate`; there is no per-tenant fan-out.
+2. Run the RLS coverage check; fail the deploy if any tenant table lacks RLS/policy/trigger.
+3. Run the two-tenant isolation suite.
+
+### Tenant isolation incident
+
+1. Treat any cross-tenant read/write as a security incident.
+2. Disable the affected route/feature, preserve logs, and audit the tenant IDs involved.
+3. Fix the query/raw SQL, add a regression test to the isolation suite, and verify RLS coverage.
+
+### Central Commerce port (future)
+
+1. Wait until the upstream branch is final and verified.
+2. Port it as additive migrations with `tenant_id` + RLS from the first migration.
+3. Implement the store→tenant binding and external webhook/install/bridge resolution before enabling the feature.
+4. Keep the feature keys out of plans until the store isolation tests pass.
+
+## References
+
+- `docs/2-ARCHITECTURE/ADR/007-shared-schema-multi-tenancy.md`
+- `docs/Commandcode/EcoMate SaaS — Multi-Tenant Conversion Plan`
+- `~/.commandcode/plans/saas-multi-tenant-platform.md`

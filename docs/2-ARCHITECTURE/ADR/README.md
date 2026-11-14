@@ -9,6 +9,6 @@ Each ADR records a significant architecture decision, its context, options consi
 | 001 | Dual Auth System | Accepted | 2026-06 |
 | 002 | Fastify over Express | Accepted | 2026-06 |
 | 003 | Dual Stock Tracking | Technical Debt | 2026-06 |
-| 004 | Per-Client Deployment | Accepted | 2026-06 |
+| 004 | Per-Client Deployment | Superseded by 007 | 2026-06 |
 | 005 | C++ N-API Addon for License | Accepted (STUB) | 2026-06 |
-| 006 | License Guard vs Feature Guard | Accepted (Incomplete) | 2026-06 |
+| 006 | License Guard vs Feature Guard | Accepted (Incomplete) | 2026-06 || 007 | Shared-Schema Multi-Tenancy (tenant_id + RLS) | Accepted | 2026-11 |

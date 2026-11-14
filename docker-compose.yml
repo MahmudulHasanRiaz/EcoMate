@@ -61,7 +61,7 @@ services:
           memory: 64M
 
   backend:
-    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-backend:latest
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-backend:latest
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
@@ -184,7 +184,7 @@ services:
   # backend-migrate is removed — migrations run automatically in backend service startup.sh
 
   storefront:
-    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-storefront:latest
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-storefront:latest
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
@@ -236,7 +236,7 @@ services:
           memory: 256M
 
   admin:
-    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-admin:latest
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-admin:latest
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
@@ -272,7 +272,7 @@ services:
           memory: 64M
 
   pos:
-    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-pos:latest
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-pos:latest
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped

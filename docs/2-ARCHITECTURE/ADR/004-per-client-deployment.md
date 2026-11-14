@@ -1,8 +1,10 @@
 # ADR 004: Per-Client Deployment (Docker Stack) over Multi-Tenant DB
 
-**Status:** Accepted  
+**Status:** Superseded by ADR 007 (2026-11-14)
 **Date:** 2026-06 (Phase Prep)  
-**Decider:** Lead Architect  
+**Decider:** Lead Architect
+
+> **Superseded:** the per-client deployment model remains the archived single-tenant product. The SaaS product uses shared-schema multi-tenancy; see ADR 007.
 
 ## Context
 
@@ -37,7 +39,7 @@ Multi-tenant DB considered but rejected.
 
 - `clients/client-example/` — template for new client deployments
 - `docs/portainer-deployment.md` — Portainer setup per stack
-- `.github/workflows/deploy-client.yml` — CI workflow per-client
+- `.github/workflows/deploy-saas.yml` — manual SaaS deploy (the archived product used `deploy-client.yml`)
 
 ## Alternatives
 

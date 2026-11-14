@@ -1,0 +1,1061 @@
+# EcoMate SaaS — Multi-Tenant Conversion Plan
+### Current `main` first · Central Commerce deferred
+
+**Status:** Revised — initial conversion is current `main` only; central commerce is a later port  
+**Date:** 2026-11-14  
+**Target repo:** `https://github.com/MahmudulHasanRiaz/EcoMate.git` (new, empty, public)  
+**Source repo:** `https://github.com/MahmudulHasanRiaz/EcoMate-Web.git` (existing single-tenant product)  
+**Deferred feature source:** `origin/feat/central-commerce` @ `a7ea95f5` — **not part of the initial conversion**
+
+---
+
+## 0. Executive summary (বাংলা)
+
+আমরা **বর্তমান `main` ব্রাঞ্চের EcoMate-Web**-কে নতুন `EcoMate` রিপোতে নিয়ে সেটাকে সম্পূর্ণ SaaS প্ল্যাটফর্মে রূপান্তর করব। `feat/central-commerce` ব্রাঞ্চটা এখনো আগের প্রজেক্টে ডেভেলপ হচ্ছে — তাই **এখনই সেটা নেব না**। ওটা ফাইনাল হলে তখন আলাদা additive migration হিসেবে tenantId/RLS সহ পোর্ট করা হবে; প্রস্তুতি হিসেবে প্ল্যানে তার tenancy contract রাখা হলো।
+
+- **একটাই shared database**, প্রতিটি tenant-এর ডেটা `tenant_id` কলামে আলাদা, আর **PostgreSQL Row-Level Security (RLS)** দিয়ে hard isolation।
+- একটা **platform control plane** (আলাদা DB + API + admin panel) — tenant, plan, feature, subscription, invoice, manual payment, domain, usage, audit সব এখান থেকে Manage হবে।
+- **Landing page** থেকে self-serve signup → subdomain tenant → trial → plan purchase।
+- **Plans 100% dynamic**: SaaS admin থেকে যেকোনো নাম, দাম, interval, feature set, limit, free plan তৈরি/এডিট করা যাবে।
+- **Domain**: primary `ecomate.bd`; `SAAS_BASE_DOMAINS` দিয়ে একাধিক base domain (alias) রাখা যাবে; `SAAS_FALLBACK_DOMAIN` দিয়ে আলাদা fallback domain; সবই runtime-এ SaaS admin থেকে editable।
+- **Custom domain** plan feature; tenant নিজেই domain যোগ/verify করবে, TLS অটোমেটিক।
+- **Billing**: manual gateway (bKash/Nagad/Rocket/bank) + proof upload + SaaS admin verification; ভবিষ্যতে gateway adapter।
+- **License server/KeyMate সম্পূর্ণ বাদ**। existing feature gates একই থাকবে, source of truth হবে platform entitlement।
+- **Central Commerce (WooCommerce/Shopify/custom bridge)**: এখন scope-এর বাইরে। ওটা upstream-এ ফাইনাল হলে তখন ১৮টি নতুন টেবিল additive migration হিসেবে tenantId/RLS সহ আসবে — §3.12-এর port contract অনুযায়ী।
+
+> Initial conversion scope: ২০৩টি current Prisma model − ২টি license model = **২০১ tenant-scoped model**। Central commerce এলে আরও ১৮টি যোগ হবে (~২১৯)। Initial baseline-এ store tables থাকবে না।
+
+---
+
+## 1. Locked decisions
+
+| Area | Decision |
+|---|---|
+| Tenancy model | **Shared DB, shared schema, `tenant_id` on every tenant table + PostgreSQL RLS** |
+| Initial scope | **Current `main` only** — central commerce is deferred until the upstream branch is finished |
+| Existing client data | **None** — greenfield SaaS; no migration/backfill |
+| Tenant onboarding | **Self-serve signup on subdomain**, e.g. `acme.ecomate.bd`; 14-day trial (configurable) |
+| Custom domain | **Plan feature** (`custom_domain`); self-service add/verify + automatic TLS |
+| Pricing/plans | **100% dynamic** from SaaS admin: name, price, interval, features, limits, free plan, visibility, versioning |
+| SaaS billing | **Manual gateway + proof upload + admin verification first**; gateway adapters later (bKash API etc.) |
+| Feature gating | Reuse existing `@RequiresFeature` gates and feature keys; replace license source with entitlement snapshot |
+| Storefront | **One Next.js app, host-based tenant resolution**, tenant-scoped cache tags; per-tenant containers are a later scale lever |
+| Platform stack | New `apps/platform-api` (NestJS), `apps/platform-admin` (Vite React), `apps/landing` (Next.js) |
+| Git strategy | Push current `main` to new repo first (full history), tag `single-tenant-baseline`, convert on `main`. |
+| Central Commerce port | **Deferred** until `feat/central-commerce` is finished upstream. Then additive migrations with tenantId/RLS from day one; no backfill. |
+| Primary domain | `SAAS_PRIMARY_DOMAIN=ecomate.bd` |
+| Base domains / aliases | `SAAS_BASE_DOMAINS=ecomate.bd` initially; any additional domains can be added at runtime; first = canonical |
+| Fallback domain | `SAAS_FALLBACK_DOMAIN=<fallback-domain>` — configurable; a separate registered domain is recommended; must be in the base list or explicitly allowed |
+| Runtime domain config | Stored in platform DB (`PlatformSetting`) and editable from SaaS admin; env values are bootstrap defaults |
+
+**Assumptions (changeable without redesign):** 14-day trial, 7-day grace, BDT currency, tax 0% by default, max 2 DB connections per tenant pool, LRU cache of 100 tenant Prisma clients. All are env/config values.
+
+---
+
+## 2. Current-state findings that drive the plan
+
+| Finding | Evidence | Impact |
+|---|---|---|
+| 203 Prisma models, 5,530-line schema | `apps/backend/prisma/schema.prisma` | ~201 tenant-scoped models after removing license models; each needs `tenantId`, composite uniques, indexes, RLS |
+| 155 unique constraints | schema | Most become tenant-composite; global idempotency keys need special handling |
+| 872 `findUnique` / `findUniqueOrThrow` calls, 164 files | backend | TypeScript errors guide codemod; only composite-unique models need changes |
+| 66 raw SQL calls, 30 files | backend | RLS is the backstop; each needs tenant context/audit |
+| 128 `$transaction` calls, 51 files | backend | Tenant client must be transaction-safe |
+| 8 BullMQ queues + 15+ `setInterval` jobs | `*.processor.ts`, services | Every job must carry/set tenant context; global loops must fan out per tenant |
+| 413 feature-gate occurrences | backend | Keep API, change source of truth only |
+| Better Auth uses a **global** `baPrisma` | `apps/backend/src/better-auth/prisma.ts`, `auth.config.ts` | Must be per-tenant; per-tenant email uniqueness needs an adapter shim |
+| License gate is global | `apps/backend/src/license/*`, `packages/license-engine`, `packages/feature-flags` | Remove provider, keep guard shape |
+| `LICENSE_ENCRYPTION_KEY` also encrypts attendance device + marketing OAuth secrets | `common/utils/encryption.ts`, `encryption-key-provisioner.ts` | Rename to `APP_ENCRYPTION_KEY`, keep key volume; do not delete blindly |
+| Storefront uses ISR/`generateStaticParams` and a global license fetch | `apps/storefront/app/(main)`, `lib/api/storefront-config-server.ts` | Host-aware dynamic rendering + tenant cache tags; remove license fetch |
+| Backups call `pg_dump` from the tenant app | `apps/backend/src/backup/*` | In shared DB a tenant admin must never dump the whole DB; replace with per-tenant export |
+| No tenant concept in schema except two feed models | `ProductFeedConfig`, `ProductFeedLog` | Greenfield baseline makes the transformation tractable |
+| `Order.idempotencyKey` is global unique | `schema.prisma:952` | Change to `[tenantId, idempotencyKey]` now |
+| Other global idempotency keys | `StockTransfer.idempotencyKey`, `RawAttendanceEvent.idempotencyKey`, `CourierWebhookAttempt (courier, idempotencyKey)` | Change to tenant-composite now |
+| **Central commerce is a future port** | `origin/feat/central-commerce` @ `a7ea95f5` | Not in the initial baseline; §3.12 defines the future contract |
+| Central commerce inventory (for later) | 199 files, 18 new tables, 14 enums, 5 features, 6 queues | Future additive migration; every new table must be tenantId/RLS from day one |
+
+---
+
+## 3. Target architecture
+
+### 3.1 Runtime topology
+
+```
+                         ┌──────────────────────────────┐
+  www.ecomate.bd ───────▶│ apps/landing (Next.js)       │
+  saas.ecomate.bd ──────▶│ apps/platform-admin (SPA)    │
+  api-saas.ecomate.bd ──▶│ apps/platform-api (NestJS)   │──▶ ecomate_platform DB
+                         └──────────────────────────────┘
+                                      │ internal signed API
+                                      ▼
+  acme.ecomate.bd ──────▶ Ingress (Caddy/Traefik, wildcard + custom domains)
+  acme.<alias-domain> ──▶   ├─ /api/*  ─▶ apps/backend (NestJS, pooled, tenant-aware)
+  custom-domain.com ────▶   ├─ /admin/* ─▶ static admin build
+                             ├─ /pos/*  ─▶ static POS build
+                             └─ /*      ─▶ apps/storefront (Next.js, host-aware)
+                                      │
+                                      ▼
+                         ecomate DB (shared, tenant_id + RLS)
+                         Redis (tenant-prefixed keys + host registry)
+                         Object storage (tenant-prefixed media)
+```
+
+- **One pooled backend** serves every tenant. Tenant is resolved from `Host` (or a signed internal tenant header), stored in `AsyncLocalStorage`, and every DB query runs through a connection whose `app.tenant_id` is fixed.
+- **Platform API is separate** from tenant runtime: its own DB, auth, domain, and secrets. A tenant request can never reach platform tables.
+- **Storefront is one app** with host-based resolution. If ISR performance becomes a problem at scale, the same image can be deployed per tenant without changing the DB model (later lever).
+- **Multiple base domains** are supported from day one: any host matching `*.<base>` for a configured base resolves to the tenant slug; the canonical host is the primary base (or the tenant's verified custom domain).
+
+### 3.2 Database architecture
+
+**Two databases on one Postgres cluster:**
+
+1. `ecomate_platform` — control plane only: tenants, domains, plans, features, subscriptions, invoices, payments, usage, audit, platform users.
+2. `ecomate` — all tenant data. Every tenant-scoped table has `tenant_id UUID NOT NULL` and RLS.
+
+**Roles:**
+
+| Role | Used by | Privileges |
+|---|---|---|
+| `ecomate_migrator` | migrations, provisioning, purge | table owner; `BYPASSRLS` for controlled backfills only |
+| `ecomate_app` | tenant runtime | SELECT/INSERT/UPDATE/DELETE; **no** DDL; **no** BYPASSRLS |
+| `ecomate_platform` | platform API | platform DB only; no access to tenant DB |
+| `ecomate_support` | audited export/purge job | `BYPASSRLS`; credentials only in job runtime, never in web app |
+
+**Tenant column contract (every tenant table):**
+
+```sql
+tenant_id UUID NOT NULL DEFAULT (current_setting('app.tenant_id', true))::uuid
+```
+
+```sql
+-- generic guard, attached to every tenant table
+CREATE OR REPLACE FUNCTION enforce_tenant_id() RETURNS trigger AS $$
+BEGIN
+  NEW.tenant_id := (current_setting('app.tenant_id', true))::uuid;
+  IF NEW.tenant_id IS NULL THEN
+    RAISE EXCEPTION 'tenant context missing';
+  END IF;
+  RETURN NEW;
+END; $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tenant_id_guard
+BEFORE INSERT OR UPDATE ON "Product"
+FOR EACH ROW EXECUTE FUNCTION enforce_tenant_id();
+```
+
+**RLS template (generated for every tenant table):**
+
+```sql
+ALTER TABLE "Product" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "Product" FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON "Product"
+  USING (tenant_id = (current_setting('app.tenant_id', true))::uuid)
+  WITH CHECK (tenant_id = (current_setting('app.tenant_id', true))::uuid);
+```
+
+Fail-closed properties:
+- no tenant context → `current_setting` is NULL → zero rows / insert rejected.
+- cannot reassign `tenant_id` on update (trigger overwrites it).
+- raw SQL is subject to the same policy.
+- app role is not the table owner and has no `BYPASSRLS`.
+
+**Prisma schema field:**
+
+```prisma
+tenantId String @default(dbgenerated("(current_setting('app.tenant_id'::text, true))::uuid")) @db.Uuid
+```
+
+This keeps `tenantId` optional in Prisma create inputs, so 1,000+ existing `create` calls do not need editing; the DB default fills it. A Prisma query extension may additionally inject the value at the top level for clarity. The DB trigger remains the authority.
+
+**Connection strategy (critical for RLS correctness):**
+
+- `TenantPrismaManager` keeps an LRU of `PrismaClient` instances keyed by tenant.
+- Each client gets a `pg.Pool` with `max=2` and startup option:
+  `options=-c app.tenant_id=<tenant-uuid>`.
+- Session-level setting is fixed for that pool's connections, so no per-query round-trip and no cross-tenant session leakage.
+- Idle clients are disconnected after 10 minutes; LRU cap 100 (configurable).
+- Direct Postgres connections at launch; **PgBouncer session mode** when connection count grows. Transaction-mode PgBouncer is incompatible with session-level tenant GUCs; do not enable it for the tenant pool without switching to a `SET LOCAL` design.
+- Scale ceiling: ~200 tenants × 2 connections = 400 server connections. At 1,000+ tenants, move to a single pool + request-scoped transaction with `SET LOCAL`, or partition/shard. This is an explicit future architecture decision, not a launch blocker.
+
+**Platform DB** uses an ordinary Prisma client (`platformPrisma`). It never connects to the tenant DB.
+
+### 3.3 Tenant resolution and request lifecycle
+
+1. Ingress preserves `Host` (`proxy_set_header Host $host`).
+2. `TenantMiddleware` runs **before** IP blocking and rate limiting:
+   - Skip list: `/api/health`, `/api/internal/*` (signed), `/api/better-auth/*` (resolved inside handler), `/api/tenant-registry/*`, static assets.
+   - Resolve host from `x-tenant-host` (trusted internal only) or `Host`.
+   - Match host in this order: exact custom domain → `{slug}.{base}` for each configured base domain → platform host.
+   - Lookup in `TenantRegistryService` (in-memory map refreshed every 60s from platform API + Redis pub/sub invalidation).
+   - Unknown host → 404; suspended tenant → 403 with billing code.
+   - Store `{ tenantId, slug, status, primaryHost, canonicalHost, baseDomain, features }` in `AsyncLocalStorage`.
+3. `TenantGuard` rejects tenant routes without context; `@SkipTenant()` for health/public platform routes.
+4. Prisma and `baPrisma` proxies read the ALS and return the tenant client.
+5. Response/log includes `tenantId` for observability; never exposed as a client trust input.
+
+**Internal service calls** (storefront SSR → backend) carry `x-tenant-id` + `x-internal-secret` HMAC. A raw client-supplied `x-tenant-id` is ignored.
+
+**Domain aliases:**
+- Any `{slug}.<base>` for a configured base domain resolves the same tenant.
+- The canonical host is the tenant's verified custom domain when `custom_domain` is active, else `{slug}.<SAAS_PRIMARY_DOMAIN>`.
+- Storefront/alias requests 301 to the canonical host; `/api` can answer on any alias (same tenant) so external integrations and API clients are not broken by redirects.
+- Admin login always redirects to the canonical host so Better Auth cookies are created on one origin.
+- `SAAS_FALLBACK_DOMAIN` is used for absolute URLs (emails, invoices, redirects) when the canonical host is unavailable; it is also a valid alias base for every tenant.
+
+### 3.4 Platform control plane (new app)
+
+`apps/platform-api` — NestJS + Fastify + Prisma (platform DB), separate auth:
+
+- **Auth:** platform users only; email/password + refresh token; optional TOTP MFA; roles `superadmin | billing | support | readonly`; sessions on `saas.*` domain only.
+- **Tenant management:** create, list, detail, change plan, extend trial, suspend/reactivate, reset owner password, impersonate, export, soft delete.
+- **Plan builder:** fully dynamic plans + immutable versions; feature picker with dependency validation; limits; price/interval; free plan; visibility; badge/CTA text.
+- **Feature catalog:** seeded from `packages/shared-types/src/license-types.ts` `FEATURES` (current main only); display metadata editable; keys immutable. Central-commerce keys are added only when the port lands.
+- **Subscriptions:** status, period, trial, cancellation, plan changes, add-ons, credits.
+- **Billing:** invoices, manual payment methods, proof review queue, approve/reject, receipts, credit notes, dunning.
+- **Domains:** primary/base domain list, fallback domain, tenant domains, verification status, TLS status, force re-check.
+- **Usage:** per-tenant metrics and limits.
+- **Audit:** every platform action and impersonation.
+- **Metrics:** MRR/ARR, active/trial/past-due tenants, revenue collected, outstanding, churn, signups.
+- **Settings:** domain config, platform SMTP, default trial/grace, payment methods/instructions, tax, branding.
+- **Internal API (signed):** resolve host/registry, entitlement snapshot, usage ingest, TLS ask, impersonation exchange.
+
+### 3.5 Entitlements replace licenses
+
+**Source of truth:** `Subscription` + `PlanVersion` + tenant overrides in `ecomate_platform`.
+
+**Flow:**
+```
+platform-api ──(signed internal)──▶ backend EntitlementService
+                                       ├─ Redis cache 60s
+                                       ├─ in-memory last-known-good
+                                       └─ tenant DB TenantEntitlementCache (fallback)
+```
+
+- `FeatureFlagsService` keeps `canUse()` and `getActiveFeatures()` so existing gates stay untouched; internals call `EntitlementService`.
+- Add `getLimit()`, `assertWithinLimit()`, `getPlan()`, `isTrial()`, `isReadOnly()`.
+- Platform invalidates cache on plan/subscription/tenant change via Redis pub/sub.
+- If platform API is unavailable, the last snapshot is used until `validUntil`; after that, **fail closed for new writes** but keep read-only access. Never silently unlock.
+- `LicenseGuard` is deleted; `SubscriptionGuard` handles:
+  - `TRIAL` / `ACTIVE` → full access.
+  - `PAST_DUE` within grace → full access + banner.
+  - `PAST_DUE` after grace → read-only (GET allowed; mutations 402/403).
+  - `SUSPENDED` → admin/API blocked except login, billing, export; storefront maintenance.
+  - `CANCELLED` → at period end downgrade to free plan or read-only; data retained 30 days.
+
+**Limits (v1, current main):** `products`, `orders_per_month`, `users`, `warehouses`, `custom_domains`, `storage_gb`, `api_requests_per_month`, `email_sends_per_month`. Counts live in tenant DB `UsageCounter` for event metrics; direct counts for products/users. Warnings at 80%, hard block at 100%, platform override possible.
+
+### 3.6 Billing (manual first)
+
+**Platform models:** `PaymentMethod`, `Invoice`, `InvoiceLine`, `PaymentProof`, `Payment`, `CreditNote`, `Coupon`.
+
+Flow:
+1. Invoice generated on signup/upgrade/renewal (`INV-YYYYMM-####`).
+2. Tenant sees instructions (bKash/Nagad/Rocket/bank), copies number, uploads proof: transaction ID, sender number, amount, screenshot.
+3. SaaS admin reviews queue → approve/reject with reason.
+4. Approve (transaction): invoice `PAID`, payment recorded, subscription period extended, entitlement snapshot refreshed, email + audit.
+5. Partial payments allowed; invoice paid when sum ≥ total; overpayment → credit note.
+6. Duplicate transaction ID is rejected per payment method.
+7. Renewal cron in platform API: reminder at 7/3/1 days; grace 7 days → read-only; 14 days → suspended; 30 days → cancelled.
+8. Future gateways implement `PaymentProvider { createCheckout, verifyWebhook, refund }`; manual is the first adapter.
+
+### 3.7 Custom domains
+
+- Feature key already exists: `custom_domain`.
+- Tenant adds domain → platform generates verification token:
+  - `TXT _ecomate-verify.<domain> = <token>`
+  - `CNAME <domain> → SAAS_CUSTOM_DOMAIN_CNAME` (default `cname.ecomate.bd`; configurable per platform domain)
+- Verify via DNS lookup; on success mark `VERIFIED`, enqueue TLS.
+- TLS with Caddy on-demand TLS:
+  ```
+  on_demand_tls { ask http://platform-api:4000/internal/tls/ask }
+  ```
+  `/internal/tls/ask` returns 200 only for verified, active tenant domains.
+- Ingress routes all hosts to storefront; `/api` to backend; host resolution picks tenant.
+- Primary domain: one per tenant; custom domain wins over the base-domain subdomain for canonical URLs, sitemap and email links. Subdomain 301s to the custom domain for storefront; admin login uses the canonical host.
+- Removal disables cert/routing and audits.
+- Reserved hosts (`www`, `api`, `saas`, `admin`, `app`, `status`, `docs`, `mail`, `webhooks`, `cname`) cannot be claimed as tenant slugs on any base domain.
+- CNAME target is configurable so additional base domains or a fallback domain can have their own `cname.<base>`.
+
+### 3.8 Storefront multi-tenancy
+
+- `proxy.ts` / middleware resolves host → tenant id, injects `x-tenant-id` for SSR fetches; client fetches stay relative `/api` (same host).
+- Remove global license fetch in `apps/storefront/lib/api/storefront-config-server.ts` (lines ~86–97, 234–238); replace with `/api/entitlements/public`.
+- Tenant pages become **dynamic** (read `headers()`); no cross-tenant full-route cache. Use `fetch`/`unstable_cache` with tenant-scoped tags:
+  `t:<tenantId>:config`, `t:<tenantId>:products`, `t:<tenantId>:menu`.
+- On-demand revalidation stays, but tags are tenant-prefixed; backend `RevalidationService` includes tenant.
+- `generateStaticParams` removed or returns `[]` for tenant-dependent routes; new tenants must work without a rebuild.
+- Per-tenant: branding, colors, logo/favicon, SEO metadata, sitemap/robots, canonical domain, PWA manifest, OG image, landing pages.
+- Base-domain aliases are `noindex` and 301 to the canonical host; only the canonical host (custom domain or primary base) is indexed.
+- Media URLs become tenant-prefixed (`/uploads/<tenantId>/...`); storefront image loader unchanged.
+- If CDN is used, host-keyed caching is natural; verify no shared HTML cache across hosts.
+
+### 3.9 Admin / POS
+
+- Same builds, served under each tenant host: `https://<host>/admin/`, `/pos/`.
+- API is same-origin `/api`; host resolves tenant.
+- Remove license activation route/store/page; add:
+  - Plan & Usage (current plan, features, limits, usage bars, trial countdown)
+  - Invoices & Payments (instructions, proof upload, history)
+  - Domains (custom domain add/verify, feature-gated; shows canonical + fallback aliases)
+  - Upgrade/downgrade CTA on feature/limit denial
+- `FeaturesProvider` calls `/api/entitlements/me`; keep `hasFeature()` API to limit UI changes.
+- `require-feature.ts` redirects to billing with an upgrade modal, not a dead-end 403.
+- POS session/cashier features unchanged; tenant scoping via host.
+
+### 3.10 Landing + signup
+
+`apps/landing` (Next.js, separate from storefront):
+- `/`, `/pricing` (dynamic from platform API), `/features`, `/custom-domain`, `/contact`, `/login`, `/signup`, `/legal/*`.
+- Pricing cards and comparison table generated from `Plan` + `Feature` metadata; no hardcoded plans.
+- Signup wizard: plan → business info → subdomain choice → owner account → email verification → provisioning progress → `https://<slug>.<primary-base>/admin/`.
+- Subdomain validation checks all base domains and reserved words; alias bases resolve automatically.
+- Login from landing asks for workspace subdomain and redirects to the tenant admin login on the canonical host; avoids ambiguous email lookup.
+- SEO, OG, sitemap, analytics, consent, legal pages.
+
+### 3.11 Domain configuration and fallback
+
+Domain configuration is **data, not code**. Env seeds it; SaaS admin can change it without a redeploy.
+
+**Bootstrap env:**
+```
+SAAS_PRIMARY_DOMAIN=ecomate.bd
+SAAS_BASE_DOMAINS=ecomate.bd                  # initial; add more base domains at runtime if needed
+SAAS_FALLBACK_DOMAIN=<fallback-domain>        # a separate registered domain is recommended
+SAAS_CUSTOM_DOMAIN_CNAME=cname.ecomate.bd     # default CNAME target for custom domains
+SAAS_ALLOW_EXTERNAL_FALLBACK=false            # allow a fallback outside SAAS_BASE_DOMAINS
+```
+
+**PlatformSetting `domains` JSON (source of truth after bootstrap):**
+```json
+{
+  "primaryDomain": "ecomate.bd",
+  "baseDomains": ["ecomate.bd"],
+  "fallbackDomain": "<fallback-domain>",
+  "customDomainCname": "cname.ecomate.bd",
+  "platformHosts": {
+    "landing": "www.ecomate.bd",
+    "platformAdmin": "saas.ecomate.bd",
+    "platformApi": "api.ecomate.bd",
+    "webhooks": "api.ecomate.bd"
+  }
+}
+```
+
+**Rules:**
+- `primaryDomain` must be the first entry of `baseDomains`.
+- `fallbackDomain` must be in `baseDomains` unless `allowExternalFallback=true`.
+- Every base domain gets `www.<base>`, `saas.<base>`, `api.<base>`, `cname.<base>` as reserved platform hosts; only the primary base serves the platform apps, others 301.
+- Tenant subdomains are generated dynamically for every base domain: `{slug}.<base>`. No per-alias DB row is required; `TenantDomain` stores the canonical subdomain + custom domains.
+- Host resolver returns `{ tenantId, slug, baseDomain, canonicalHost, isAlias }`.
+- Canonical host preference: verified custom domain (if `custom_domain` active) → `{slug}.<primaryDomain>`.
+- Alias hosts 301 to canonical for storefront/admin/POS; `/api` answers directly on aliases.
+- Fallback behavior:
+  - Absolute URLs (emails, invoices, redirects, password reset) use canonical → primary base → fallback.
+  - If the primary domain/TLS is unhealthy, the fallback domain remains a working alias; platform health checks and tenant links use it.
+  - An unknown host never falls back to another tenant; it gets a 404/landing page.
+- Startup validation fails fast if the config is invalid, if reserved slugs collide, or if TLS/DNS health checks fail for the primary.
+- Better Auth `trustedOrigins` includes all base domains and verified custom domains; cookies stay host-scoped.
+- SEO: aliases `noindex`; canonical tags point to the canonical host.
+
+### 3.12 Central Commerce / Multi-Store — deferred port contract
+
+**Status:** DEFERRED. `origin/feat/central-commerce` @ `a7ea95f5` is still being developed upstream. Do not port it for the initial SaaS conversion. This section is the contract the future port must satisfy so it does not break tenancy.
+
+#### 3.12.1 What will arrive later
+
+When the upstream branch is final, it brings approximately:
+
+- 199 files, 7 migrations, 18 new tables (`Store`, `StoreCredential`, `StoreHealthCheck`, `ProductStoreAssignment`, `StoreAvailabilityRule`, `ProductStoreFieldState`, `SyncRun`, `SyncRunItem`, `SyncAttempt`, `StoreSyncIssue`, `StoreWebhookDelivery`, `StoreProductMapping`, `StoreVariantMapping`, `StoreCategoryMapping`, `StoreSkuMapping`, `StoreMediaMapping`, `StoreOrderMapping`, `StoreOrderStatusMap`).
+- 14 new enums.
+- 5 new feature keys: `admin_stores`, `store_product_sync`, `store_order_sync`, `store_stock_sync`, `admin_sync_center`.
+- 6 new queues: `store-product-sync`, `store-stock-sync`, `store-order-ingest`, `store-order-push`, `store-reconcile`, `store-maintenance`.
+- Admin `features/channels` UI, routes and sidebar entries.
+
+The initial SaaS baseline will **not** contain these tables. When the port lands, it will be an additive migration set; no backfill is needed because no tenant will have used central commerce before the port.
+
+#### 3.12.2 Port timing and strategy
+
+- Finish/verify central commerce in the old project first (the user's explicit direction).
+- Port it to the SaaS repo as a dedicated branch after the initial SaaS conversion is stable.
+- Every new table gets `tenant_id`, tenant indexes, RLS policy and trigger **in its first migration**. There is no later "add tenantId" pass.
+- Keep the 5 feature keys **out of the live plan catalog** until the port passes the two-tenant isolation tests; then add them to the catalog and let the SaaS admin include them in plans.
+- Do not port the branch's old single-tenant migrations; generate new additive migrations on top of the SaaS baseline.
+- Treat the upstream branch as the source only until the port is verified; after that the SaaS repo is the source of truth. Document the port commit and sync boundary.
+- If upstream evolves while the port is in progress, use `git range-diff`/cherry-pick and re-run the checklist; do not let the two forks drift.
+
+#### 3.12.3 External endpoint tenant resolution (the hardest part)
+
+External stores do not call tenant subdomains. They call a platform-stable URL:
+
+```
+POST https://api.<base>/api/webhooks/stores/woocommerce/:storeKey
+POST https://api.<base>/api/webhooks/stores/shopify/:storeKey
+POST https://api.<base>/api/webhooks/stores/custom/:storeKey
+GET  https://api.<base>/store-install?shop=...&hmac=...&timestamp=...&state=...
+GET  https://api.<base>/api/store-bridge/v1/contact-check?storeId=...&phone=...&ip=...&timestamp=...&signature=...
+```
+
+`storeKey` is the `Store.id` UUID. Tenant resolution must happen **before** any tenant DB query:
+
+1. `@SkipTenant()` on the external controller.
+2. `ExternalStoreResolver.resolveByStoreId(storeId)` or `resolveByShopDomain(provider, domain)`:
+   - Redis `extstore:<storeId> -> tenantId` / `extstore:domain:<provider>:<domain> -> tenantId`.
+   - On miss, call platform API `GET /internal/external-stores/resolve?...` with the service token.
+   - On platform outage + cache miss → fail closed (401/503). Never fall back to a global Prisma query.
+3. `runWithTenant({ tenantId }, () => existingService.intake(...))`.
+4. Unknown, unbound, disabled, NATIVE, or disconnected store → the same generic 401. No oracle for store IDs or connection state.
+
+Required refactors when porting:
+
+- `StoreWebhookService.intake`: remove the initial `prisma.store.findUnique` before context; resolve tenant first, then load the store inside `runWithTenant`.
+- `StoresService.verifyInstallCallback`: resolve `shop` domain → tenant via binding; verify HMAC with that tenant's store secret; if an OAuth `state` is present, verify it and ensure it matches the tenant.
+- `StoreBridgeController.contactCheck`: resolve `storeId` → tenant first, then verify HMAC and read blocked entries inside the tenant.
+- `StoreInstallController`: move from `@Controller()` root to `@Controller('store-install')`; keep `@Public()`.
+- Webhook rate limiting: key by `storeId` + IP, not just IP.
+- If the tenant's plan no longer includes the relevant sync feature, acknowledge the webhook with 200 **without ingesting**; audit it; do not enqueue.
+- Custom bridge callback URL must include `:storeKey`; update the published protocol and `ensureWebhooks`.
+- Raw-body capture stays route-scoped; tenant middleware must not consume the body.
+
+#### 3.12.4 Platform external-store binding
+
+Add to the platform DB when the port lands:
+
+```prisma
+model TenantExternalStoreBinding {
+  storeId             String   @id          // same UUID as tenant DB Store.id
+  tenantId            String
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider            StoreProvider          // WOOCOMMERCE | SHOPIFY | CUSTOM
+  providerStoreId     String?
+  domainNormalised    String?
+  identityFingerprint String   @unique
+  status              BindingStatus @default(PENDING) // PENDING | ACTIVE | DISCONNECTED | BLOCKED
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  @@unique([provider, domainNormalised])
+  @@index([tenantId])
+}
+```
+
+Connect flow: pre-generate `storeId` → platform claim → tenant `Store` insert → on failure release; `PENDING` binding expires after 10 minutes; disconnect updates status; tenant purge removes the binding. A cross-tenant duplicate returns a generic `409 STORE_ALREADY_BOUND` with no identifying data. Catch Prisma `P2002` because RLS prevents `findFirst` from seeing another tenant's row.
+
+#### 3.12.5 Future global uniqueness exceptions
+
+Keep these global when the port lands (RLS still applies to reads/writes):
+
+| Constraint | Why it stays global |
+|---|---|
+| `Store.identityFingerprint` | One external store must bind to exactly one EcoMate tenant |
+| `Store(kind, domainNormalised)` | Prevents two tenants connecting the same external store/domain |
+| `StoreWebhookDelivery.deliveryKey` | Contains globally unique `storeId` |
+| `StoreOrderMapping.orderId` | `orderId` is a globally unique UUID |
+| All `[storeId, ...]` store-module uniques | `storeId` is globally unique and belongs to one tenant |
+
+`Order.idempotencyKey` and the other global idempotency keys are **already** changed to tenant-composite in the initial conversion, so the future port inherits the right behavior.
+
+#### 3.12.6 Future features, limits, queues
+
+- Feature keys (added to the catalog only when the port is verified): `admin_stores`, `store_product_sync`, `store_order_sync`, `store_stock_sync`, `admin_sync_center`; dependencies on `admin_products`/`admin_orders`.
+- Add an `external_stores` plan limit; enforce on claim/connect.
+- Existing env flags (`THIRD_PARTY_STORES_ENABLED`, `store_*_enabled`) remain **platform kill switches**; effective gate = platform kill switch AND tenant entitlement.
+- Every job carries `tenantId`; processors use `runWithTenant`; `sync-all` is tenant-scoped; `order-reconcile-tick` and `retention-purge` fan out per tenant.
+- Per-store serialization/circuit breaker must use Redis locks or a documented single-replica constraint.
+- Store credentials use `APP_ENCRYPTION_KEY`; write-only, rotation, no secret echoes.
+- `ProviderUrlGuard` (SSRF/egress) is mandatory before enabling external stores.
+- Admin channels UI/routes/sidebar ported and feature-gated.
+- Platform admin tenant detail gets an "External Stores" panel (bindings, health, last sync/error, force-unbind, no credentials).
+
+#### 3.12.7 Central Commerce port checklist (future)
+
+- [ ] Every new table has `tenant_id` + tenant index + RLS policy/trigger in its first migration.
+- [ ] Store-scoped `[storeId, ...]` uniques stay unchanged; store IDs are globally unique.
+- [ ] Global store identity/domain/delivery/order-id uniques are allowlisted and 409 is generic.
+- [ ] `Order.idempotencyKey` and other idempotency keys remain tenant-composite.
+- [ ] Webhooks/install/bridge resolve store→tenant before any Prisma query; `@SkipTenant`.
+- [ ] Platform `TenantExternalStoreBinding` claim/release is the connect path; P2002 handled.
+- [ ] Every queue job carries `tenantId`; repeatable ticks fan out; `sync-all` tenant-scoped.
+- [ ] Feature keys + `external_stores` limit + platform kill switch wired.
+- [ ] Credentials use `APP_ENCRYPTION_KEY`; write-only; redaction tests.
+- [ ] `ProviderUrlGuard` blocks private/reserved targets and redirect abuse.
+- [ ] Redis per-store lock/circuit or single-replica constraint.
+- [ ] Two-tenant store isolation, webhook/install/bridge routing, SSRF and downgrade tests.
+- [ ] `prisma validate`, backend jest, `nest build`, admin vitest/tsc, storefront tests green.
+
+---
+
+## 4. Platform database model (new `apps/platform-api/prisma/schema.prisma`)
+
+| Model | Key fields |
+|---|---|
+| `PlatformUser` | id, email unique, passwordHash, name, role enum, status, mfaSecret?, lastLoginAt |
+| `PlatformRefreshToken` | id, userId, tokenHash, expiresAt, revokedAt |
+| `Tenant` | id, slug unique, name, status enum, ownerEmail, ownerPhone, planVersionId?, trialEndsAt?, currentPeriodStart/End?, graceEndsAt?, suspendedAt?, deletedAt?, createdAt/updatedAt |
+| `TenantDomain` | id, tenantId, host unique, type `SUBDOMAIN|CUSTOM`, baseDomain?, isCanonical, verificationToken, status `PENDING|VERIFIED|ACTIVE|FAILED|DISABLED`, tlsStatus, verifiedAt, lastCheckedAt |
+| `Feature` | key @id, name, description, category, dependencies String[], unit?, isActive, sortOrder |
+| `Plan` | id, slug unique, name, description, isActive, isPublic, isFree, sortOrder, badge?, createdAt/updatedAt |
+| `PlanVersion` | id, planId, version, price Decimal, currency, interval `MONTHLY|YEARLY|CUSTOM`, intervalDays?, trialDays, features String[], limits Json, graceDays, effectiveFrom, archivedAt; `@@unique([planId, version])` |
+| `Subscription` | id, tenantId unique, planVersionId, status enum, startedAt, currentPeriodStart, currentPeriodEnd, trialEndsAt?, cancelAtPeriodEnd, canceledAt?, endedAt?, entitlementsSnapshot Json, createdAt/updatedAt |
+| `AddOn` / `SubscriptionAddOn` | optional extra features/limits per subscription |
+| `Invoice` | id, tenantId, number unique, subscriptionId?, status `DRAFT|OPEN|PAID|VOID|UNCOLLECTIBLE`, subtotal, discount, tax, total, currency, dueAt, paidAt?, periodStart, periodEnd, notes? |
+| `InvoiceLine` | id, invoiceId, description, quantity, unitPrice, amount |
+| `PaymentMethod` | id, type `BKASH|NAGAD|ROCKET|BANK|MANUAL`, name, accountName, accountNumber, instructions, qrMediaUrl?, isActive, sortOrder |
+| `PaymentProof` | id, invoiceId, tenantId, methodId, amount, transactionId, senderNumber, screenshotUrl, note?, status `PENDING|APPROVED|REJECTED`, reviewedBy?, reviewedAt?, rejectionReason? |
+| `Payment` | id, invoiceId, tenantId, amount, currency, methodId, proofId?, reference, receivedAt, recordedBy |
+| `CreditNote` | id, tenantId, amount, currency, reason, appliedInvoiceId?, createdAt |
+| `Coupon` / `CouponRedemption` | code unique, type, value, duration, planIds, maxRedemptions, expiresAt |
+| `UsageDaily` | id, tenantId, date, metric, value; `@@unique([tenantId,date,metric])` |
+| `AuditLog` | id, actorType, actorId?, tenantId?, action, entity, entityId?, before Json?, after Json?, ip, userAgent, createdAt |
+| `ImpersonationSession` | id, platformUserId, tenantId, tokenJti unique, expiresAt, revokedAt?, createdAt |
+| `ProvisioningJob` | id, tenantId, status, step, error?, attempts, createdAt/updatedAt |
+| `PlatformSetting` | key @id, value Json (includes `domains`) |
+| `OutboxEvent` | id, type, payload Json, processedAt?, attempts |
+| `TenantExternalStoreBinding` | **future, added with central-commerce port** (see §3.12.4) |
+
+**Tenant DB additions:**
+
+- `TenantEntitlementCache` (one row): tenantId, snapshot Json, validUntil, updatedAt — offline fallback.
+- `UsageCounter`: tenantId, metric, periodStart, value; `@@unique([tenantId, metric, periodStart])`.
+- Remove `LicenseActivation`, `LicenseActivationHistory`.
+- Keep `ProductFeedConfig.tenantId` but normalize to the same type/default.
+
+---
+
+## 5. Tenant schema conversion (~201 models initially)
+
+### 5.1 Classification
+
+- **Tenant-scoped:** every current model except `_prisma_migrations` (203 − 2 license models = ~201).
+- **Removed:** `LicenseActivation`, `LicenseActivationHistory`.
+- **Platform-only:** lives in `ecomate_platform`, not the tenant DB.
+- **Future:** the 18 central-commerce tables are not in the initial baseline; they get tenantId/RLS when ported.
+- Any future global reference table must be explicitly allowlisted in `scripts/saas/global-models.ts` and exempted from RLS checks.
+
+### 5.2 Mechanical changes
+
+For every tenant-scoped model:
+
+1. Add:
+   ```prisma
+   tenantId String @default(dbgenerated("(current_setting('app.tenant_id'::text, true))::uuid")) @db.Uuid
+   ```
+2. Add `@@index([tenantId])` if no index starts with it.
+3. Prefix every `@@index` with `tenantId` (including trgm/full-text helper indexes where applicable).
+4. Convert every `@unique` field to `@@unique([tenantId, field])`.
+5. Prefix every existing `@@unique([...])` with `tenantId`.
+6. **Exceptions:** keep globally unique opaque values only where a collision across tenants is cryptographically impossible or intentionally global; document each exception. In the initial scope, the important ones are the global idempotency keys that must be changed, not kept.
+7. Change global idempotency uniques:
+   - `Order.idempotencyKey` → `@@unique([tenantId, idempotencyKey])`
+   - `StockTransfer.idempotencyKey` → `@@unique([tenantId, idempotencyKey])`
+   - `RawAttendanceEvent.idempotencyKey` → `@@unique([tenantId, idempotencyKey])`
+   - `CourierWebhookAttempt (courier, idempotencyKey)` → prefix with `tenantId`
+8. Do **not** add composite foreign keys in the first pass. RLS plus parent lookups enforce isolation; a later hardening migration can add generic FK tenant guards.
+
+### 5.3 Known high-impact uniques (must be reviewed manually)
+
+`Product.slug`, `ProductVariant.sku`, `Category.slug`, `Brand.slug`, `Tag.slug`, `Coupon.code`, `CmsPage.slug`, `LandingPage.slug`, `SystemSetting.key`, `PaymentOption.type`, `PaymentGateway.code`, `Order.displayId`, `Order.idempotencyKey`, `OrderCounter`, `ReturnCounter`, `PurchaseCounter`, `StockTransfer.idempotencyKey`, `RawAttendanceEvent.idempotencyKey`, `UserProfile.email`, `UserProfile.username`, `CustomerProfile` email/phone, `betterAuthUser.email`, `betterAuthAccount (providerId, accountId)`, `Review` unique product+customer, `Invoice` numbers, `CourierSettlementInvoice.invoiceNumber`, `Employee` codes, `Warehouse` codes.
+
+Future: `Store.identityFingerprint`, `Store(kind, domainNormalised)`, `StoreWebhookDelivery.deliveryKey`, `StoreOrderMapping.orderId`, and all `[storeId, ...]` store-module keys.
+
+### 5.4 Code changes driven by composite uniques
+
+- `findUnique({ where: { slug } })` → `findFirst({ where: { slug } })` or `findUnique({ where: { tenantId_slug: { tenantId, slug } } })`.
+- `upsert({ where: { code } })` → composite `where`.
+- `SystemSetting` lookups by `key` → `findFirst` / composite id.
+- `Order.idempotencyKey` lookups/upserts → composite key; all idempotency-key generators must be tenant-scoped.
+- Better Auth adapter: its Prisma adapter calls `findUnique` by email/account fields. Since those become tenant-composite, inject a **delegate proxy** that rewrites `findUnique` → `findFirst` for the auth models, or provide a custom adapter. Prototype this before mass migration.
+- Future central-commerce store-scoped `findUnique` calls (`storeId_sku`, `storeId_externalStatus`, etc.) will not change because those uniques remain valid and `storeId` is globally unique.
+
+### 5.5 Baseline reset (because no existing clients)
+
+- Push current `main` to the new repo and tag `single-tenant-baseline`.
+- Create fresh migrations:
+  - `0001_saas_baseline` — full current schema with tenantId/composite uniques/indexes and documented global exceptions.
+  - `0002_rls_and_tenant_guards` — roles, defaults, trigger function, policies, grants, RLS coverage view.
+- Delete the 129 legacy migrations from the SaaS branch; they remain in the old repo and the baseline tag.
+- Replace `PrismaService` auto-heal (`ensureSchemaColumns`, `dropStaleColumns`, `validateSchemaCompleteness`, boot seeding) with:
+  - a startup **RLS coverage check** that fails fast if any tenant table lacks RLS/policy/trigger;
+  - migrations-only schema management.
+- Keep `prisma migrate deploy` in `startup.sh`; add platform DB migration step.
+- Central commerce later: additive migrations on top of this baseline, each with tenantId/RLS from the start.
+
+---
+
+## 6. Tenancy runtime (backend)
+
+### 6.1 New module layout
+
+```
+apps/backend/src/tenancy/
+  tenancy.module.ts
+  tenant-context.ts           // ALS, requireTenant(), runWithTenant()
+  tenant.middleware.ts        // host → tenant, status check, base-domain aliases
+  tenant.guard.ts             // @SkipTenant support
+  tenant-registry.service.ts  // in-memory host map + platform sync + pub/sub
+  tenant-prisma.manager.ts    // LRU PrismaClient per tenant
+  tenant-prisma.proxy.ts      // PrismaService/baPrisma forwarding
+  tenant-cors.service.ts      // origin allowlist per tenant + base domains
+  tenant-bootstrap.service.ts // seed a new tenant
+  rls-coverage.service.ts     // fail-fast verification
+  tenant-usage.service.ts     // counters + platform sync
+  domain-config.service.ts    // primary/base/fallback domains, canonical + alias logic
+```
+
+Future (with central commerce): `external-store.resolver.ts`, `tenant-store-job.runner.ts`.
+
+### 6.2 PrismaService refactor
+
+Current: `apps/backend/src/prisma/prisma.service.ts` extends `PrismaClient`, reads `DATABASE_URL`, heals schema, seeds.
+
+Target:
+- `PrismaService` becomes a facade/proxy:
+  ```ts
+  @Injectable()
+  export class PrismaService {
+    constructor(private manager: TenantPrismaManager) {
+      return new Proxy(this, {
+        get: (target, prop, receiver) => {
+          if (prop in target) return Reflect.get(target, prop, receiver);
+          const client = this.manager.getClient(requireTenant().tenantId);
+          const value = (client as any)[prop];
+          return typeof value === 'function' ? value.bind(client) : value;
+        },
+      });
+    }
+  }
+  export interface PrismaService extends PrismaClient {}
+  ```
+- Keep `isRestoreWriteBlocked` semantics? Restore is platform-level; tenant runtime should not expose restore controls.
+- Prototype the proxy typing/runtime in Phase 2 before mass codemods. Fallback if the proxy is unstable: expose `get client()` and codemod `this.prisma.` → `this.prisma.client.` with ts-morph.
+
+### 6.3 Better Auth
+
+Current singleton `auth` + global `baPrisma` cannot work with shared multi-tenancy.
+
+Target:
+- `createAuthForTenant(tenantId, prisma, host)` factory; cache per `(tenantId, host)`.
+- `baPrisma` becomes a proxy to the current tenant client.
+- `main.ts` Better Auth handler resolves tenant from Host and calls `getAuthForTenant(...).handler(req)`.
+- `DualModeAuthGuard` uses `getAuthForTenant(...).api.getSession`.
+- `customSession` queries use the passed tenant client, not global.
+- `baseURL`/`trustedOrigins` per tenant domain, including all base domains and verified custom domains; cookies host-scoped (never a wildcard domain).
+- Same email can exist in two tenants — validate with a two-tenant auth test.
+- `auth.service.ts`, `users.service.ts`, `employees.service.ts`, `customer-linking.service.ts` continue to use `baPrisma` proxy.
+
+### 6.4 Background jobs and intervals
+
+Every queue/interval must run with a tenant context.
+
+**Existing 8 queues:** `email`, `media`, `import`, `tracking`, `marketing`, `backup`, `security-dashboard`, `courier-settlement-import` — every job payload gets `tenantId`; processor wraps handler in `runWithTenant(tenantId, ...)`.
+
+| Area | Files / change |
+|---|---|
+| Intervals | auth cleanup, blocked-entries expiry, security cleanup, cache cleanup, rate-limit cleanup, page-view buffer, outbox relay, reconciler, retention cleanup, courier webhook cleanup, backup timer, security-dashboard retention — convert to tenant fan-out or platform-only |
+| Raw SQL aggregates | `security-dashboard/services/event-aggregator.service.ts`, `dashboard-query.service.ts`, `analytics` — add tenant predicates / iterate tenants |
+| Tracking | `page-view-buffer`, `outbox-relay`, `reconciler`, `retention-cleanup` — per-tenant |
+| Cache/rate limit | Prefix all Redis keys with `t:<tenantId>:`; cache purge scoped to current tenant (platform admin can purge all) |
+| IP block | Move `IpBlockMiddleware` after `TenantMiddleware`; blocks are tenant-scoped |
+| Media | Storage paths `uploads/<tenantId>/...`; media queue payload tenantId |
+
+Future central commerce adds 6 store queues; see §3.12.6.
+
+Add a `TenantJobRunner` helper:
+```ts
+await tenantJobRunner.forEachActiveTenant(async (tenantId) => {
+  await runWithTenant({ tenantId }, () => service.run());
+});
+```
+Paginate tenants; never load all at once.
+
+### 6.5 Backups / export
+
+- Remove tenant-facing `pg_dump`/restore. A tenant admin must never trigger a full-DB dump.
+- `BackupService` becomes platform-only or is removed from the tenant app.
+- New `TenantExportService` / `scripts/saas/export-tenant.ts`:
+  - sets `app.tenant_id`, iterates all tenant tables in dependency order, writes JSON/CSV + media zip.
+  - used by platform admin for support/offboarding.
+- Tenant-facing `db_backup` feature becomes "Data export" (bounded, async, emailed link).
+- Platform full backup + PITR covers disaster recovery.
+
+### 6.6 Media, storage, mobile
+
+- Local volume and R2 both use `tenantId/` prefix.
+- URLs: `/uploads/<tenantId>/<uuid>.<ext>`; public product media remains public, private files require authenticated tenant access.
+- Media derivative queue jobs carry tenantId.
+- Mobile builder jobs carry tenant host/config and store artifacts under `tenantId/`; feature-gated (`mobile_distribution*`).
+- POS PWA is served per origin (`/pos/`), so service-worker scope is naturally tenant-specific.
+
+---
+
+## 7. Implementation phases
+
+> No durations are estimated. Phases are ordered by dependency. Phase 2 is the critical path.
+
+### Phase 0 — Repo split and guardrails (current main only)
+
+- [ ] Add new remote and push:
+  ```bash
+  git remote add saas https://github.com/MahmudulHasanRiaz/EcoMate.git
+  git push saas main
+  git tag single-tenant-baseline && git push saas single-tenant-baseline
+  ```
+- [ ] Keep `origin` (EcoMate-Web) as archive/LTS; document that the old repo is not dual-maintained unless explicitly decided.
+- [ ] New repo is **public** — confirm intentional; rotate any secret that ever appeared in history (none found in current scan).
+- [ ] **Do not port central commerce now.** Record `origin/feat/central-commerce` @ `a7ea95f5` as the future port source; track it until it is finished upstream.
+- [ ] Rename CI image names to `ecomate-saas-*` and add a repo guard so new workflows cannot deploy to old client stacks.
+- [ ] Add `docs/2-ARCHITECTURE/ADR/007-shared-schema-multi-tenancy.md`; mark ADR 004 superseded.
+- [ ] Rewrite README for SaaS; add `.env.example` entries (platform DB, primary/base/fallback domains, service token, app encryption key).
+- [ ] Add `SAAS.md` + runbooks skeleton, including a domain/fallback runbook and a future central-commerce port runbook.
+
+**Files:** `README.md`, `.env.example`, `docker-compose.yml`, `.github/workflows/*`, `docs/2-ARCHITECTURE/ADR/004-per-client-deployment.md`, new ADR.
+
+### Phase 1 — Platform control plane foundation (parallel with Phase 2)
+
+- [ ] Scaffold `apps/platform-api` (NestJS + Fastify + Prisma + platform DB).
+- [ ] Platform schema + baseline migration (`Tenant`, `TenantDomain`, `Feature`, `Plan`, `PlanVersion`, `Subscription`, `Invoice`, `PaymentMethod`, `PaymentProof`, `Payment`, `AuditLog`, `PlatformUser`, `PlatformSetting`, `ProvisioningJob`).
+- [ ] Platform auth + roles + refresh tokens + optional MFA.
+- [ ] Feature catalog sync from `FEATURES` + `DEPENDENCY_MAP`; `LIMIT_KEYS` catalog.
+- [ ] Plan/PlanVersion CRUD, publish/archive, public plans API.
+- [ ] Tenant CRUD, domain records, status transitions.
+- [ ] Domain config service: primary/base/fallback domains, platform hosts, reserved slugs, runtime validation; seed from env into `PlatformSetting`.
+- [ ] Audit log service.
+- [ ] Scaffold `apps/platform-admin` (Vite + TanStack Router + existing UI kit): login, shell, dashboard, tenants list/detail, plans, subscriptions, invoices, payments, domains, settings.
+- [ ] Scaffold `apps/landing` (Next.js): layout, pricing page fed by `/public/plans`, signup shell, legal pages.
+- [ ] Internal signed API client (`x-service-token` HMAC) + `/internal/registry`, `/internal/entitlements/:tenantId`, `/internal/tls/ask`, `/internal/usage`.
+
+**Acceptance:** dynamic plan created in SaaS admin appears on landing; manual tenant created and visible in admin; domain config (primary + alias + fallback) validates and resolves; platform auth works; audit rows written.
+
+### Phase 2 — Tenant schema + RLS + runtime (critical path)
+
+**2A — Schema baseline**
+- [ ] Archive/remove legacy migrations on the SaaS branch; create `0001_saas_baseline` from the current schema (**no central-commerce tables**).
+- [ ] Add `tenantId` to all tenant models; remove license models.
+- [ ] Prefix uniques/indexes with tenantId; change global idempotency keys to tenant-composite.
+- [ ] Add `UsageCounter`, `TenantEntitlementCache`.
+- [ ] Add `0002_rls_and_tenant_guards` (roles, defaults, trigger, policies, grants, coverage view).
+- [ ] Remove auto-heal/boot seeding; add `RlsCoverageService` startup check.
+- [ ] Add `scripts/saas/check-rls.ts` CI gate + `global-uniques.ts` allowlist.
+
+**2B — Runtime tenancy**
+- [ ] `TenantContext` ALS + `runWithTenant`.
+- [ ] `TenantMiddleware` + `TenantGuard` + `@SkipTenant`.
+- [ ] `TenantRegistryService` (memory + Redis + 60s refresh + pub/sub) + base-domain suffix matching.
+- [ ] `DomainConfigService` (primary/base/fallback, canonical/alias, reserved slugs).
+- [ ] `TenantPrismaManager` (LRU, pool options `-c app.tenant_id=...`, max 2).
+- [ ] `PrismaService` proxy + type declaration merge (spike first).
+- [ ] `baPrisma` proxy + per-tenant Better Auth factory; update `main.ts` handler and `DualModeAuthGuard`.
+- [ ] Tenant-aware CORS; reorder IP block/rate limit after tenant resolution.
+- [ ] Redis key prefixing for cache/rate limit; tenant-scoped cache purge.
+- [ ] Media path prefixing.
+
+**2C — Code/test migration**
+- [ ] ts-morph codemod for composite-unique `findUnique`/`upsert` calls; TypeScript errors as the guide.
+- [ ] Fix Better Auth adapter shim for per-tenant email uniqueness.
+- [ ] Queue/interval tenant fan-out for all existing queues.
+- [ ] Jest global test tenant context; run full backend suite and fix failures.
+- [ ] Two-tenant isolation tests (Prisma + raw SQL + API).
+- [ ] Remove `LicenseGuard` wiring only after entitlements land (Phase 3) to keep the suite green.
+
+**Spikes / go-no-go before mass codemods:**
+1. Prisma proxy returns tenant-scoped data through an existing service.
+2. Same email signs up in two tenants via Better Auth.
+3. Cross-tenant raw SQL returns zero rows; insert without context fails.
+4. Two hosts render different storefront data with no cache leakage.
+5. Base-domain alias resolves the same tenant; canonical redirect works; fallback domain works.
+
+**Acceptance:** two tenants coexist in one DB with isolated reads/writes; RLS coverage check passes; backend suite green with the test harness; no raw-SQL bypass; alias/fallback domains resolve correctly.
+
+### Phase 3 — Entitlements + license removal
+
+- [ ] `EntitlementService` + platform sync + Redis/in-memory/tenant-snapshot fallback.
+- [ ] Adapt `packages/feature-flags` internals to entitlements; keep `canUse()`/`getActiveFeatures()`.
+- [ ] `SubscriptionGuard` status behavior (trial/active/past_due/grace/read-only/suspended).
+- [ ] Remove `LicenseModule`, `LicenseGuard`, `packages/license-engine`, `portainer/keygen`, license UI/store/pages, KeyMate envs.
+- [ ] Rename `LICENSE_ENCRYPTION_KEY` → `APP_ENCRYPTION_KEY` with backward-compatible fallback; keep the key volume for attendance/marketing.
+- [ ] Admin: Plan & Usage, Invoices, Payment Proof, Domains, Upgrade CTA; `FeaturesProvider` → `/entitlements/me`.
+- [ ] Storefront: `/entitlements/public`; remove license status fetch and `licenseFeatures`.
+- [ ] Add `@RequiresLimit` / service-level limit checks + 80% warnings.
+
+**Acceptance:** toggling a plan feature in SaaS admin changes API/admin/storefront behavior; all license code/env removed; feature parity tests pass.
+
+### Phase 4 — Host routing, storefront, custom domains
+
+- [ ] Storefront middleware resolves host → tenant id; SSR header to backend; client calls relative `/api`.
+- [ ] Base-domain aliases: dynamic `{slug}.<base>` resolution, 301 to canonical for storefront/admin/POS, `/api` answers directly.
+- [ ] Remove tenant-dependent `generateStaticParams`/ISR assumptions; dynamic rendering + tenant cache tags.
+- [ ] Tenant-scoped revalidation; sitemap/robots/canonicals/PWA/OG per tenant.
+- [ ] `noindex` on alias hosts; canonical to custom domain or primary base.
+- [ ] Custom domain add/verify UI + API; DNS polling; Caddy on-demand TLS ask endpoint; configurable CNAME target; statuses.
+- [ ] Fallback domain behavior: absolute URLs, health checks, outage fallback; never route unknown hosts to a tenant.
+- [ ] Admin/POS served under tenant host paths; login on canonical host; alias redirect.
+- [ ] Media URLs/tenant prefix and access checks.
+- [ ] Two-tenant browser E2E + custom-domain E2E (mock DNS) + alias/fallback E2E.
+
+**Acceptance:** two subdomains show distinct branding/catalogs/auth; a second base domain resolves the same tenant and 301s to canonical; custom domain routes and gets TLS; fallback domain works; no cross-host cache leakage.
+
+### Phase 5 — Signup and provisioning
+
+- [ ] Landing signup wizard + email verification + CAPTCHA/rate limit.
+- [ ] Slug validation (3–30, lowercase, reserved list across all base domains, uniqueness).
+- [ ] Provisioning job: tenant row → tenant seed → owner account → subdomain(s) → trial subscription → entitlement snapshot → welcome email.
+- [ ] `TenantBootstrapService`: roles/permissions, order statuses, payment options, system settings, default warehouse/store, email templates, legal pages, sample data off by default.
+- [ ] Idempotent retries, rollback on failure, provisioning progress API/UI.
+- [ ] Tenant soft delete/export/purge job (30-day retention).
+- [ ] Trial abuse controls (disposable email, phone/domain dedupe).
+
+**Acceptance:** a new user signs up on the landing page and reaches a working admin/storefront without manual intervention; alias/fallback URLs are correct in emails and redirects.
+
+### Phase 6 — SaaS admin completion
+
+- [ ] Tenant detail actions: change plan, extend trial, suspend/reactivate, reset owner password, impersonate, export, delete.
+- [ ] Impersonation tokens + tenant exchange endpoint + audit.
+- [ ] Payment proof review queue + approve/reject + invoice/payment ledger.
+- [ ] Subscription/plan change UI, credit notes, coupons.
+- [ ] Domain management: primary/base/fallback config, tenant domains, verification/TLS status, force re-check.
+- [ ] Usage dashboards + limit overrides.
+- [ ] Metrics dashboard (MRR/ARR/trials/past-due/churn).
+- [ ] Platform settings (payment methods, SMTP, trial/grace, tax, branding, domain config).
+- [ ] Platform users/roles, audit search/export.
+
+**Acceptance:** full tenant lifecycle and billing can be operated entirely from the SaaS admin.
+
+### Phase 7 — Billing lifecycle, limits, plan changes
+
+- [ ] Renewal invoice job + reminders + grace/suspend/cancel state machine.
+- [ ] Manual payment verification transaction (invoice → payment → subscription extension → entitlement refresh).
+- [ ] Partial payments, overpayment credit, duplicate transaction detection.
+- [ ] Upgrade/downgrade with effective dates, proration policy (manual credit first).
+- [ ] Plan version application to existing subscriptions (explicit action, not silent).
+- [ ] Usage counters + limit enforcement + upgrade CTA.
+- [ ] Email templates: verification, welcome, invoice, payment approved/rejected, trial ending, suspension, reactivation.
+- [ ] Invoice PDF/receipt.
+
+**Acceptance:** end-to-end trial → invoice → proof → approve → active → expiry → grace → read-only → suspend → reactivate.
+
+### Phase 8 — Hardening and launch
+
+- [ ] Security review: RLS coverage, role separation, CORS, cookies, secrets, impersonation, rate limits, OWASP, penetration test.
+- [ ] Multi-tenant load test (k6): noisy neighbor, pool saturation, storefront cache, alias/fallback routing.
+- [ ] Backup/restore drill; per-tenant export; purge.
+- [ ] Observability: tenant-tagged logs/metrics/traces, alerts, queue dashboard, slow-query review; domain/TLS health.
+- [ ] Runbooks: provisioning failure, payment backlog, tenant suspension, custom-domain failure, domain/fallback outage, DB restore.
+- [ ] Full E2E: landing signup → tenant → admin → storefront → billing → custom domain → alias/fallback.
+- [ ] Canary tenants, then public launch.
+- [ ] Archive old repo/LTS decision; document maintenance policy.
+
+### Phase 9 — Central Commerce port (only after upstream is finished)
+
+This phase is **not part of the initial launch**. Start it only when `feat/central-commerce` is final in the old project.
+
+- [ ] Freeze the upstream port commit and run its full suite/build.
+- [ ] Port to a dedicated branch on top of the stable SaaS baseline.
+- [ ] Add the 18 tables as additive migrations **with tenantId/RLS in the first migration**.
+- [ ] Implement `ExternalStoreResolver` + `TenantExternalStoreBinding` claim/release/resolve.
+- [ ] Add the 5 feature keys + `external_stores` limit to the catalog; keep them off in plans until tests pass.
+- [ ] Add the 6 store queues with `tenantId`; fan-out repeatable ticks; Redis per-store lock/circuit.
+- [ ] Add `ProviderUrlGuard` (SSRF/egress) and credential redaction.
+- [ ] Port admin channels UI/routes/sidebar with feature gates.
+- [ ] Run the §3.12.7 checklist, two-tenant store isolation, webhook/install/bridge routing, SSRF and downgrade tests.
+- [ ] Enable the features in plans and onboard the first external-store tenant.
+
+---
+
+## 8. Codemods and tooling to build first
+
+| Script | Purpose |
+|---|---|
+| `scripts/saas/add-tenant-id.ts` | Insert `tenantId` + tenant index into every model except allowlisted globals |
+| `scripts/saas/composite-uniques.ts` | Convert `@unique`/`@@unique` to tenant-composite; report manual review |
+| `scripts/saas/global-uniques.ts` | Allowlist intentional global exceptions; flag global idempotency keys that must change |
+| `scripts/saas/prefix-indexes.ts` | Prefix all indexes with tenantId |
+| `scripts/saas/find-unique-codemod.ts` | ts-morph rewrite of composite-unique lookups |
+| `scripts/saas/rls-generator.ts` | Generate roles/defaults/triggers/policies from schema |
+| `scripts/saas/check-rls.ts` | CI gate: every tenant table has RLS + policy + trigger; global uniques allowlisted |
+| `scripts/saas/tenant-isolation-test.ts` | Two-tenant cross-read/write/raw-SQL suite |
+| `scripts/saas/export-tenant.ts` | Per-tenant JSON/CSV/media export |
+| `scripts/saas/purge-tenant.ts` | Dependency-ordered deletion + media purge |
+| `scripts/saas/queue-audit.ts` | Find job producers missing tenantId |
+| `scripts/saas/domain-config-check.ts` | Validate primary/base/fallback domains, reserved slugs, CNAME target |
+| `scripts/saas/backfill-owner.ts` | Create owner + seed a tenant (provisioning) |
+
+Future central-commerce scripts (add with Phase 9): `store-binding-audit.ts`, `ssrf-check.ts`, `store-isolation-test.ts`.
+
+Add an ESLint rule / grep CI check:
+- no `new PrismaClient` outside `tenancy/` and platform scripts;
+- no `$queryRawUnsafe` without a tenant context wrapper;
+- no new model without `tenantId` (schema check);
+- no outbound URL fetch without the domain/SSRF guard (future store providers).
+
+---
+
+## 9. Testing and verification
+
+### 9.1 Tenant isolation (must be automated, CI-blocking)
+
+- Tenant A reads/writes/deletes Tenant B rows through Prisma → zero/404.
+- Raw SQL `SELECT/UPDATE/DELETE` without/with wrong tenant → zero rows.
+- Insert without tenant context → exception.
+- Attempt to change `tenant_id` → trigger restores/rejects.
+- Same slug/email/code/idempotencyKey in two tenants → both valid; lookups resolve per tenant.
+- Login on wrong tenant host → 401.
+- Storefront host A never serves host B config/product/cache.
+- Background job for tenant A never touches tenant B.
+- Alias base domain A resolves tenant A; a different tenant cannot claim the same slug on another base.
+- Fallback domain never routes an unknown host to a tenant.
+
+### 9.2 Functional
+
+- Platform: dynamic plan CRUD/versioning, public pricing, tenant lifecycle, impersonation/audit, domain config.
+- Entitlements: feature on/off, plan change invalidation, fallback snapshot, read-only/suspended states.
+- Billing: invoice, proof, approve/reject, partial/overpayment, renewal/grace/suspend.
+- Custom domain: add/verify/TLS/route/remove; CNAME target configurable.
+- Domains: primary, multiple base domains, fallback, canonical/alias redirects, reserved slugs.
+- Limits: products/users/orders/warehouses/storage, warning/block/override.
+- Storefront/admin/POS parity on two tenants.
+- Existing test suites remain green (backend/admin/storefront/POS) with the tenant test harness.
+
+### 9.3 Non-functional
+
+- Load: 50–200 simulated tenants, mixed read/write, pool saturation, slow tenant isolation, alias/fallback routing.
+- Backup/restore: full platform+tenant DB, per-tenant export, purge.
+- Security: dependency scan, secret scan, OWASP, RLS penetration test, cookie/CORS checks, domain/TLS validation.
+- Observability: every log line has tenantId; dashboards show per-tenant error/latency; domain/TLS health.
+
+---
+
+## 10. Deployment, migration, operations
+
+### 10.1 Services (target compose)
+
+`postgres` (tenant + platform DBs), `redis`, `backend`, `storefront`, `admin-static`, `pos-static`, `platform-api`, `platform-admin`, `landing`, `caddy`/ingress, `media-static`. Remove `portainer/keygen` and license volume; rename key volume to `app-keys`.
+
+Future central commerce adds no new service, only queues/workers; optional `store-egress-proxy`.
+
+### 10.2 Environment additions
+
+```
+SAAS_PRIMARY_DOMAIN=ecomate.bd
+SAAS_BASE_DOMAINS=ecomate.bd
+SAAS_FALLBACK_DOMAIN=<fallback-domain>
+SAAS_CUSTOM_DOMAIN_CNAME=cname.ecomate.bd
+SAAS_ALLOW_EXTERNAL_FALLBACK=false
+TENANT_DATABASE_URL=postgresql://ecomate_app:...@postgres:5432/ecomate
+TENANT_MIGRATION_DATABASE_URL=postgresql://ecomate_migrator:...@postgres:5432/ecomate
+PLATFORM_DATABASE_URL=postgresql://ecomate_platform:...@postgres:5432/ecomate_platform
+PLATFORM_JWT_SECRET=...
+PLATFORM_JWT_REFRESH_SECRET=...
+INTERNAL_SERVICE_SECRET=...
+APP_ENCRYPTION_KEY=...          # replaces LICENSE_ENCRYPTION_KEY
+CADDY_ADMIN_URL=http://caddy:2019
+PLATFORM_SMTP_HOST/PORT/USER/PASS/FROM=...
+SENTRY_DSN=...
+```
+
+Remove `KEYMATE_API_URL`, `LICENSE_ENCRYPTION_KEY`, `LICENSE_DATA_DIR` (keep backward-compatible read alias for `APP_ENCRYPTION_KEY`).
+
+Future central commerce adds `STORE_EGRESS_PROXY_URL`, `ALLOW_INSECURE_STORE_URLS`, and the `THIRD_PARTY_STORES_ENABLED`/`store_*` kill switches.
+
+### 10.3 Migrations
+
+- `platform-api/prisma/migrations` — platform DB.
+- `apps/backend/prisma/migrations` — one baseline + additive tenant migrations.
+- One migration applies to all tenants (shared schema) — no per-tenant fan-out.
+- Deploy order: platform DB migration → tenant DB migration → app rollout.
+- Expand/contract for zero-downtime; never destructive in the same release.
+- `prisma migrate status` + drift check in CI.
+
+### 10.4 Backups and DR
+
+- Postgres PITR + daily full backup for both DBs.
+- Restore drill with measured RTO/RPO.
+- Per-tenant export for offboarding/GDPR.
+- Tenant purge after 30-day retention; media cleanup.
+
+### 10.5 Observability
+
+- Structured logs: `requestId`, `tenantId`, `userId`, `route`, `status`, `duration`, `host`, `impersonatedBy?`.
+- Metrics: per-tenant RPS/latency/errors, DB connections, queue lag, storage, limit usage; platform MRR/tenants/churn; domain/TLS health.
+- Alerts: provisioning failures, payment backlog, RLS coverage failure, tenant suspension spike, pool saturation, platform API down, **primary/fallback domain or TLS failure**.
+- `pg_stat_statements`, slow query log, BullMQ dashboard.
+
+---
+
+## 11. Risks and mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Cross-tenant leak via missed query/raw SQL | RLS as hard boundary + non-owner app role + two-tenant isolation suite + no BYPASSRLS in runtime |
+| RLS + pooling misconfiguration | Per-tenant pools with startup GUC; session-mode PgBouncer only; assert tenant setting on connect; load test |
+| Better Auth per-tenant email uniqueness | Prototype early; delegate proxy/`findFirst` shim; two-tenant auth test |
+| Prisma proxy typing/runtime | Spike before codemods; fallback `prisma.client` codemod |
+| Storefront cache leakage | Dynamic rendering + host-aware tenant tags + two-host E2E; no shared full-route cache |
+| Background job misses tenant | Job payload contract + queue audit + processor wrapper + per-tenant tests |
+| ~201-model schema edit errors | Scripted edits + review checkpoints + baseline fresh DB + `prisma validate` + snapshot diff |
+| Existing test suite breakage | Global tenant test harness; run suite after each sub-phase; fix TypeScript-guided |
+| Noisy neighbor | Per-tenant rate limits, query timeouts, limits, pool caps, load test |
+| Shared-DB backup/offboarding | Platform PITR + per-tenant export/purge; never expose `pg_dump` to tenants |
+| Manual billing fraud/abuse | Proof review, duplicate transaction ID, audit, amount cross-check, credits |
+| SaaS admin compromise | Separate domain/auth, MFA, roles, IP allowlist optional, audit, no direct tenant DB access |
+| Plan edits changing existing customers | Immutable `PlanVersion` + explicit "apply to existing" action |
+| Custom domain TLS failure | DNS polling, status UI, retries, Caddy ask endpoint, manual override in SaaS admin |
+| Domain/alias confusion | Primary/base/fallback validation; canonical redirects; 404 for unknown hosts; reserved slugs across all bases |
+| Fallback domain outage | Health checks, monitoring, fallback used only for absolute URLs, never as a tenant guess |
+| Central-commerce port divergence | Deferred until upstream is final; additive migrations with tenantId/RLS from day one; §3.12.7 checklist |
+| Two-product divergence (old repo) | Decide archive/LTS; no dual maintenance by default; central-commerce port commit + checklist |
+
+---
+
+## 12. Definition of done (initial SaaS release)
+
+- [ ] New repo contains the SaaS product; `single-tenant-baseline` tag preserved; old repo archived/LTS.
+- [ ] One shared tenant DB with `tenant_id` + RLS on every tenant table; CI RLS coverage gate green.
+- [ ] Tenant A cannot read/write Tenant B via Prisma, raw SQL, API, storefront, or jobs.
+- [ ] Two tenants run simultaneously on subdomains with distinct data/branding/auth.
+- [ ] Platform admin can create/edit dynamic plans (names, prices, intervals, features, limits, free plan) with no deploy.
+- [ ] Landing pricing and signup are driven by the platform API.
+- [ ] Signup → provisioning → tenant admin/storefront works self-serve.
+- [ ] Entitlements gate all existing feature checks; license/KeyMate code and env removed.
+- [ ] Trial/active/past-due/grace/read-only/suspended lifecycle works end-to-end.
+- [ ] Manual invoice → proof → approve → subscription extension works; rejection/resubmit works.
+- [ ] Custom domain add/verify/TLS/routing works and is feature-gated.
+- [ ] Primary `ecomate.bd`, any configured alias base domains, and the configured fallback domain resolve correctly; aliases 301 to canonical; unknown hosts 404.
+- [ ] Limits enforced with warnings and upgrade CTA.
+- [ ] Tenant export/purge works; no tenant access to full-DB backups.
+- [ ] All existing feature suites remain green (backend/admin/storefront/POS).
+- [ ] Load, security, backup/restore, and observability checks pass.
+- [ ] Runbooks and docs complete; canary tenants validated.
+- [ ] Central commerce is explicitly out of scope for this release; the future port contract is documented.
+
+**Central Commerce DoD (separate, when ported):**
+- [ ] 18 tables come with tenantId/RLS from first migration.
+- [ ] External webhooks/install/bridge resolve store→tenant before tenant queries.
+- [ ] Same external store cannot bind to two tenants; conflicts are generic.
+- [ ] 5 feature keys + `external_stores` limit are plan-gated.
+- [ ] SSRF/egress guard, credential redaction, Redis per-store locks, tenant-scoped queues all green.
+- [ ] Two-tenant store isolation and webhook routing tests pass.
+
+---
+
+## 13. Open items to confirm during Phase 0/1 (non-blocking)
+
+1. **Domains**: primary is `ecomate.bd`. Initial `SAAS_BASE_DOMAINS` is just `ecomate.bd`; additional alias domains can be added at runtime. You provide a separate fallback domain (or the system defaults to the primary until configured).
+2. **Platform hosts**: confirm `www.ecomate.bd` (landing), `saas.ecomate.bd` (platform admin), `api.ecomate.bd` (platform API), and whether webhooks use `api.` or a dedicated `webhooks.` host.
+3. **Custom-domain CNAME target**: `cname.ecomate.bd` proposed; confirm DNS/provider.
+4. **Trial length / grace days / tax rate** defaults (14 / 7 / 0 proposed; all configurable).
+5. **Old repo policy**: archive vs LTS vs sync selected fixes. Default: archive after cutover.
+6. **Public repo visibility**: new repo is public; if it should be private, change before the first push.
+7. **Platform admin hostname** and whether IP allowlist/MFA is mandatory from day one.
+8. **Invoice PDF** format/branding and legal entity details.
+9. **Plan add-ons** at launch vs v1.1.
+10. **Central commerce port timing**: start Phase 9 only after the upstream branch is final and verified.
+
+---
+
+## 14. Immediate next actions (after plan approval)
+
+1. Phase 0 push + tag + CI guardrails; **do not port central commerce**.
+2. Scaffold platform DB/schema and `apps/platform-api` auth + plans/features/tenants + domain config.
+3. Run the Phase 2 spikes (Prisma proxy, Better Auth two-tenant, RLS cross-tenant, storefront host cache, alias/fallback domain) before mass schema codemods.
+4. Start the `tenantId` schema codemod on current `main` and generate the baseline + RLS migration.
+5. Build the two-tenant isolation test harness while the schema work lands.
+6. Implement primary/base/fallback domain resolution and validation early, because every later phase depends on it.
+7. Defer all central-commerce work to Phase 9; keep `origin/feat/central-commerce` @ `a7ea95f5` recorded as the future port source.

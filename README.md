@@ -1,6 +1,19 @@
-# EcoMate Web
+# EcoMate SaaS
 
-Production-grade, multi-tenant e-commerce platform with admin panel, storefront, and API — monorepo architecture. Licensed per-client via KeyMate/Keygen integration. Deployed via Docker + Portainer on VPS with GitHub Actions CI/CD.
+Production-grade SaaS e-commerce platform with admin panel, storefront, and API — monorepo architecture. The current `main` is the single-tenant EcoMate-Web baseline; the multi-tenant SaaS conversion is in progress on `feat/saas-multitenant`.
+
+## SaaS conversion status
+
+- **Initial scope:** convert the current `main` codebase to shared-schema multi-tenancy (`tenant_id` + PostgreSQL RLS).
+- **Platform control plane:** `apps/platform-api` + `apps/platform-admin` + `apps/landing` are being added.
+- **Plans/entitlements:** dynamic plans replace the KeyMate/Keygen license server.
+- **Domain:** primary `ecomate.bd`; configurable base-domain aliases + fallback domain.
+- **Central commerce:** deferred until the upstream `feat/central-commerce` branch is finished; it will be ported later with tenantId/RLS from its first migration.
+- **Docs:** `SAAS.md`, `docs/2-ARCHITECTURE/ADR/007-shared-schema-multi-tenancy.md`, and `docs/Commandcode/EcoMate SaaS — Multi-Tenant Conversion Plan`.
+
+## Domain configuration
+
+Primary `ecomate.bd`; tenant subdomains are `{slug}.ecomate.bd`. Additional base domains can be added at runtime, and a separate fallback domain can be configured. See `SAAS.md` and `.env.example` for `SAAS_PRIMARY_DOMAIN`, `SAAS_BASE_DOMAINS`, and `SAAS_FALLBACK_DOMAIN`.
 
 ## Architecture
 
@@ -10,7 +23,10 @@ EcoMate Web/
 │   ├── admin/          React 19 SPA — Dashboard, orders, products, CRM, HR/accounting
 │   ├── backend/        NestJS 11 (Fastify) — REST API, Prisma 7 + PostgreSQL 16
 │   ├── pos/            React 19 SPA — Point of Sale (PWA, offline-capable)
-│   └── storefront/     Next.js 16 — Public storefront, landing pages, checkout
+│   ├── storefront/     Next.js 16 — Public storefront, landing pages, checkout
+│   ├── platform-api/   NestJS — SaaS control plane (planned, Phase 1)
+│   ├── platform-admin/ React SPA — SaaS admin (planned, Phase 1)
+│   └── landing/        Next.js — SaaS marketing/signup (planned, Phase 1)
 ├── packages/
 │   ├── feature-flags/  NestJS module — runtime feature gating via license entitlements
 │   ├── license-engine/ License validation client — KeyMate API + 7-day local cache
@@ -42,7 +58,7 @@ EcoMate Web/
 | **Reverse Proxy** | Traefik (VPS) or Nginx (admin Docker image) |
 | **Email** | Nodemailer |
 | **File Storage** | AWS S3 + local uploads via sharp |
-| **License Server** | Keygen CE (self-hosted) + KeyMate SaaS |
+| **Licensing** | SaaS entitlements from the platform control plane (KeyMate/Keygen being removed) |
 | **Security** | Helmet (Fastify), rate limiting, JS obfuscation, CSP headers, account lockout |
 
 ## Applications
@@ -65,7 +81,7 @@ Fastify-based API at port 4000. Key modules:
 - **CMS** — Pages, landing pages (template + custom HTML), media gallery
 - **Tracking** — Server-side event tracking: Meta Conversions API (CAPI), TikTok Events API, GA4 Measurement Protocol, Google Ads offline conversions. BullMQ queue-backed with page view buffering
 - **Operations** — Warehouses, suppliers, delivery areas, coupons, tasks
-- **License** — License activation via KeyMate, encrypted credential storage (AES-256-GCM)
+- **License (legacy)** — KeyMate activation to be removed in the SaaS conversion; encryption utilities retained as `APP_ENCRYPTION_KEY`
 - **Security** — IP/phone blocking system, throttling, Helmet CSP
 - **Platform** — Search, import/export, product feed (Google/Meta), queue management, cache, image processing, uploads, system settings
 
@@ -117,8 +133,8 @@ PWA with offline support via service worker + IndexedDB. Features:
 
 | Package | Description |
 |---------|-------------|
-| `@ecomate/license-engine` | License validation against KeyMate API. Native addon (node-gyp). 7-day local cache. |
-| `@ecomate/feature-flags` | NestJS module for runtime feature gating, driven by license entitlements. |
+| `@ecomate/license-engine` | **Legacy** — KeyMate license validation; removed when SaaS entitlements land. |
+| `@ecomate/feature-flags` | NestJS module for runtime feature gating; being re-pointed at SaaS entitlements. |
 | `@ecomate/shared-types` | Shared TypeScript interfaces and types used across apps. |
 
 ## Quick Start (Development)
@@ -206,7 +222,7 @@ Push to `main` or `develop` (and PRs to `main`) triggers automated build + push 
 ### Per-Client Deployment
 
 ```bash
-# Manual workflow: .github/workflows/deploy-client.yml
+# Legacy single-tenant workflow; the SaaS repo uses .github/workflows/deploy-saas.yml
 # Select client + license plan → builds client-tagged images → triggers Portainer webhook
 ```
 
@@ -297,10 +313,10 @@ Backend Docker build applies `javascript-obfuscator` (control flow flattening, s
 
 ## Multi-Tenancy
 
-Per-client isolated deployment model:
+The SaaS product uses **shared-schema multi-tenancy**: one PostgreSQL database, `tenant_id` on every tenant table, and PostgreSQL Row-Level Security. The platform control plane owns tenants, plans, subscriptions and domains; the archived single-tenant product used one Docker stack per client.
 
-1. Each client gets a dedicated Docker stack on Portainer
-2. Client-specific env vars + domain
-3. License plan determines feature entitlement
-4. Deploy via `deploy-client.yml` GitHub Actions workflow
-5. Images tagged per client (e.g., `ecomate-backend:fixeplus`)
+1. One shared tenant database, isolated by `tenant_id` + RLS.
+2. One platform control plane (`ecomate_platform`) for tenants, plans, billing and domains.
+3. Feature entitlements come from the plan, not from a KeyMate license.
+4. Tenant hosts are `{slug}.ecomate.bd` plus optional base-domain aliases and custom domains.
+5. SaaS images are tagged `ecomate-saas-*`; the legacy per-client images remain in the archived product.
