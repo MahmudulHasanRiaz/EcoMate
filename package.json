@@ -24,7 +24,8 @@
     "platform:dev": "npm run start:dev --workspace=platform-api",
     "platform:build": "npm run build --workspace=platform-api",
     "platform:migrate": "npm run prisma:deploy --workspace=platform-api",
-    "platform:generate": "npm run prisma:generate --workspace=platform-api"
+    "platform:generate": "npm run prisma:generate --workspace=platform-api",
+    "platform:seed": "npm run prisma:seed --workspace=platform-api"
   },
   "overrides": {
     "exceljs": {
