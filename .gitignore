@@ -50,3 +50,5 @@ query_*.js
 
 # Generated license encryption key (never committed — see EncryptionKeyProvisioner)
 .license-data/
+apps/platform-api/src/generated/
+apps/platform-api/dist/

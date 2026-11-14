@@ -104,3 +104,17 @@ APP_ENCRYPTION_KEY=          # replaces LICENSE_ENCRYPTION_KEY
 - `docs/2-ARCHITECTURE/ADR/007-shared-schema-multi-tenancy.md`
 - `docs/Commandcode/EcoMate SaaS — Multi-Tenant Conversion Plan`
 - `~/.commandcode/plans/saas-multi-tenant-platform.md`
+
+
+## Platform API (Phase 1 foundation)
+
+`apps/platform-api` is the control-plane NestJS service with its own **`ecomate_platform`** database. The baseline migration is `apps/platform-api/prisma/migrations/0001_platform_baseline`.
+
+```bash
+npm run platform:generate
+npm run platform:migrate     # PLATFORM_DATABASE_URL must point at ecomate_platform
+npm run platform:dev         # port 4100
+npm run platform:build
+```
+
+Current endpoints: `GET /api/health` and `GET /api/public/plans`. Platform auth, tenant CRUD, plan editing and billing are the next Phase 1 increments.

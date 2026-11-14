@@ -1,0 +1,544 @@
+// EcoMate SaaS platform control-plane schema.
+// This database is separate from the tenant database (`ecomate`).
+// Tenant data is never stored here; only the tenant registry, plans,
+// subscriptions, invoices, payments, domains, usage and audit.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PlatformUserRole {
+  SUPERADMIN
+  BILLING
+  SUPPORT
+  READONLY
+}
+
+enum PlatformUserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum TenantStatus {
+  PENDING_VERIFICATION
+  PROVISIONING
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  DELETED
+}
+
+enum TenantDomainType {
+  SUBDOMAIN
+  CUSTOM
+}
+
+enum TenantDomainStatus {
+  PENDING
+  VERIFIED
+  ACTIVE
+  FAILED
+  DISABLED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+  CUSTOM
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+enum PaymentMethodType {
+  BKASH
+  NAGAD
+  ROCKET
+  BANK
+  MANUAL
+}
+
+enum PaymentProofStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CouponType {
+  PERCENT
+  FIXED
+}
+
+enum CouponDuration {
+  ONCE
+  FOREVER
+  MONTHS
+}
+
+enum AuditActorType {
+  PLATFORM
+  TENANT
+  SYSTEM
+}
+
+enum ProvisioningStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model PlatformUser {
+  id           String             @id @default(uuid())
+  email        String             @unique
+  passwordHash String
+  name         String
+  role         PlatformUserRole   @default(READONLY)
+  status       PlatformUserStatus @default(ACTIVE)
+  mfaSecret    String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  refreshTokens  PlatformRefreshToken[]
+  auditLogs      AuditLog[]
+  impersonations ImpersonationSession[]
+
+  @@index([role, status])
+}
+
+model PlatformRefreshToken {
+  id        String       @id @default(uuid())
+  userId    String
+  user      PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String       @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime     @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model Tenant {
+  id                 String       @id @default(uuid())
+  slug               String       @unique
+  name               String
+  status             TenantStatus @default(PENDING_VERIFICATION)
+  ownerEmail         String
+  ownerPhone         String?
+  planVersionId      String?
+  planVersion        PlanVersion? @relation(fields: [planVersionId], references: [id], onDelete: SetNull)
+  trialEndsAt        DateTime?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  graceEndsAt        DateTime?
+  suspendedAt        DateTime?
+  deletedAt          DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  domains           TenantDomain[]
+  subscription      Subscription?
+  invoices          Invoice[]
+  paymentProofs     PaymentProof[]
+  payments          Payment[]
+  creditNotes       CreditNote[]
+  couponRedemptions CouponRedemption[]
+  usage             UsageDaily[]
+  auditLogs         AuditLog[]
+  impersonations    ImpersonationSession[]
+  provisioningJobs  ProvisioningJob[]
+
+  @@index([status, createdAt])
+  @@index([ownerEmail])
+  @@index([planVersionId])
+}
+
+model TenantDomain {
+  id                String             @id @default(uuid())
+  tenantId          String
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  host              String             @unique
+  type              TenantDomainType   @default(SUBDOMAIN)
+  baseDomain        String?
+  isPrimary         Boolean            @default(false)
+  verificationToken String?
+  status            TenantDomainStatus @default(PENDING)
+  tlsStatus         String?
+  verifiedAt        DateTime?
+  lastCheckedAt     DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([tenantId, isPrimary])
+  @@index([status])
+}
+
+model Feature {
+  key          String   @id
+  name         String
+  description  String?
+  category     String
+  dependencies String[] @default([])
+  unit         String?
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([category, sortOrder])
+}
+
+model Plan {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  isPublic    Boolean  @default(true)
+  isFree      Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  badge       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions PlanVersion[]
+
+  @@index([isActive, isPublic, sortOrder])
+}
+
+model PlanVersion {
+  id            String          @id @default(uuid())
+  planId        String
+  plan          Plan            @relation(fields: [planId], references: [id], onDelete: Cascade)
+  version       Int
+  price         Decimal         @db.Decimal(12, 2)
+  currency      String          @default("BDT")
+  interval      BillingInterval @default(MONTHLY)
+  intervalDays  Int?
+  trialDays     Int             @default(14)
+  features      String[]        @default([])
+  limits        Json            @default("{}")
+  graceDays     Int             @default(7)
+  effectiveFrom DateTime        @default(now())
+  archivedAt    DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  tenants       Tenant[]
+  subscriptions Subscription[]
+
+  @@unique([planId, version])
+  @@index([planId, effectiveFrom])
+}
+
+model Subscription {
+  id                   String             @id @default(uuid())
+  tenantId             String             @unique
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planVersionId        String
+  planVersion          PlanVersion        @relation(fields: [planVersionId], references: [id])
+  status               SubscriptionStatus @default(TRIAL)
+  startedAt            DateTime           @default(now())
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  trialEndsAt          DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  canceledAt           DateTime?
+  endedAt              DateTime?
+  entitlementsSnapshot Json               @default("{}")
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  invoices Invoice[]
+  addOns   SubscriptionAddOn[]
+
+  @@index([status, currentPeriodEnd])
+  @@index([planVersionId])
+}
+
+model AddOn {
+  id          String          @id @default(uuid())
+  slug        String          @unique
+  name        String
+  description String?
+  price       Decimal         @db.Decimal(12, 2)
+  currency    String          @default("BDT")
+  interval    BillingInterval @default(MONTHLY)
+  features    String[]        @default([])
+  limits      Json            @default("{}")
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  subscriptions SubscriptionAddOn[]
+}
+
+model SubscriptionAddOn {
+  id             String       @id @default(uuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  addOnId        String
+  addOn          AddOn        @relation(fields: [addOnId], references: [id], onDelete: Restrict)
+  startedAt      DateTime     @default(now())
+  endedAt        DateTime?
+
+  @@unique([subscriptionId, addOnId])
+  @@index([addOnId])
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  number         String        @unique
+  status         InvoiceStatus @default(OPEN)
+  subtotal       Decimal       @db.Decimal(12, 2)
+  discount       Decimal       @default(0) @db.Decimal(12, 2)
+  tax            Decimal       @default(0) @db.Decimal(12, 2)
+  total          Decimal       @db.Decimal(12, 2)
+  currency       String        @default("BDT")
+  dueAt          DateTime
+  paidAt         DateTime?
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  lines              InvoiceLine[]
+  proofs             PaymentProof[]
+  payments           Payment[]
+  creditNotes        CreditNote[]
+  couponRedemptions  CouponRedemption[]
+
+  @@index([tenantId, status])
+  @@index([status, dueAt])
+}
+
+model InvoiceLine {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Int     @default(1)
+  unitPrice   Decimal @db.Decimal(12, 2)
+  amount      Decimal @db.Decimal(12, 2)
+
+  @@index([invoiceId])
+}
+
+model PaymentMethod {
+  id            String            @id @default(uuid())
+  type          PaymentMethodType
+  name          String
+  accountName   String?
+  accountNumber String?
+  instructions  String?           @db.Text
+  qrMediaUrl    String?
+  isActive      Boolean           @default(true)
+  sortOrder     Int               @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  proofs   PaymentProof[]
+  payments Payment[]
+
+  @@index([type, isActive])
+}
+
+model PaymentProof {
+  id              String             @id @default(uuid())
+  invoiceId       String
+  invoice         Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tenantId        String
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  methodId        String
+  method          PaymentMethod      @relation(fields: [methodId], references: [id], onDelete: Restrict)
+  amount          Decimal            @db.Decimal(12, 2)
+  transactionId   String
+  senderNumber    String?
+  screenshotUrl   String?
+  note            String?
+  status          PaymentProofStatus @default(PENDING)
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  payments Payment[]
+
+  @@unique([methodId, transactionId])
+  @@index([tenantId, status])
+  @@index([status, createdAt])
+}
+
+model Payment {
+  id         String         @id @default(uuid())
+  invoiceId  String
+  invoice    Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tenantId   String
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  methodId   String
+  method     PaymentMethod  @relation(fields: [methodId], references: [id], onDelete: Restrict)
+  proofId    String?
+  proof      PaymentProof?  @relation(fields: [proofId], references: [id], onDelete: SetNull)
+  amount     Decimal        @db.Decimal(12, 2)
+  currency   String         @default("BDT")
+  reference  String?
+  receivedAt DateTime       @default(now())
+  recordedBy String?
+  createdAt  DateTime       @default(now())
+
+  @@index([tenantId, receivedAt])
+  @@index([invoiceId])
+}
+
+model CreditNote {
+  id               String   @id @default(uuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  amount           Decimal  @db.Decimal(12, 2)
+  currency         String   @default("BDT")
+  reason           String
+  appliedInvoiceId String?
+  appliedInvoice   Invoice? @relation(fields: [appliedInvoiceId], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model Coupon {
+  id             String         @id @default(uuid())
+  code           String         @unique
+  type           CouponType
+  value          Decimal        @db.Decimal(12, 2)
+  duration       CouponDuration
+  durationMonths Int?
+  planIds        String[]       @default([])
+  maxRedemptions Int?
+  redeemedCount  Int            @default(0)
+  expiresAt      DateTime?
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  redemptions CouponRedemption[]
+}
+
+model CouponRedemption {
+  id        String   @id @default(uuid())
+  couponId  String
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@unique([couponId, tenantId])
+  @@index([tenantId])
+}
+
+model UsageDaily {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  metric    String
+  value     Decimal  @default(0) @db.Decimal(18, 4)
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, date, metric])
+  @@index([metric, date])
+}
+
+model AuditLog {
+  id        String          @id @default(uuid())
+  actorType AuditActorType
+  actorId   String?
+  actor     PlatformUser?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  tenantId  String?
+  tenant    Tenant?         @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime        @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+}
+
+model ImpersonationSession {
+  id             String       @id @default(uuid())
+  platformUserId String
+  platformUser   PlatformUser @relation(fields: [platformUserId], references: [id], onDelete: Cascade)
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tokenJti       String       @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
+model ProvisioningJob {
+  id        String             @id @default(uuid())
+  tenantId  String
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  status    ProvisioningStatus @default(PENDING)
+  step      String             @default("queued")
+  error     String?            @db.Text
+  attempts  Int                @default(0)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([tenantId, status])
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model OutboxEvent {
+  id          String    @id @default(uuid())
+  type        String
+  payload     Json
+  processedAt DateTime?
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([processedAt, createdAt])
+}

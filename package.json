@@ -20,7 +20,11 @@
     "build": "concurrently \"npm run build:skip-tsc --workspace=admin\" \"npm run build --workspace=storefront\" \"npm run build --workspace=backend\" \"npm run build --workspace=pos\"",
     "start": "concurrently -n backend,storefront,admin,pos -c blue,green,yellow,magenta \"npm run start:prod --workspace=backend\" \"node scripts/wait-for-backend.js && npm run start --workspace=storefront\" \"node scripts/wait-for-backend.js && npm run preview --workspace=admin\" \"node scripts/wait-for-backend.js && npm run preview --workspace=pos\"",
     "prod": "npm run build && npm run start",
-    "install:all": "npm install"
+    "install:all": "npm install",
+    "platform:dev": "npm run start:dev --workspace=platform-api",
+    "platform:build": "npm run build --workspace=platform-api",
+    "platform:migrate": "npm run prisma:deploy --workspace=platform-api",
+    "platform:generate": "npm run prisma:generate --workspace=platform-api"
   },
   "overrides": {
     "exceljs": {
