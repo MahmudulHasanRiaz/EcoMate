@@ -9,7 +9,7 @@
 - Active backend schema is now the tenant-aware schema (203 models; 200 tenant-scoped; 3 global reference tables).
 - Active migrations are `0001_saas_baseline` + `0002_rls_and_tenant_guards` (legacy migrations removed from this branch; they remain in the old branch/tag).
 - Backend `nest build`: **green (0 TypeScript errors)**.
-- Backend Jest: **6107 passed, 55 failed, 9 skipped** (429 suites; 25 failing suites). The remaining failures are test-migration work; 12 are the pre-existing DB-backed marketing integration suites.
+- Backend Jest: **6121 passed, 41 failed, 9 skipped** (429 suites; 19 failing suites). 14 failures are the pre-existing DB-backed marketing integration suites; the rest are test-migration assertions.
 
 ## Applied changes
 
@@ -33,16 +33,17 @@ Failures reduced from **388 → 55** across this pass:
 - Fixed 105 duplicate `findFirst` mock keys created by the mechanical rename; later duplicates now remain `findUnique` and no longer override the intended mock.
 - Updated `jest.spyOn(..., 'findUnique')` targets, counter expectations (`tenantId_date_family`), SystemSetting expectations (`tenantId_key`), and scanner/payroll/hr/accounts/refunds/payment-gateway mocks.
 - Restored UUID detail lookups to `findUnique` (orders findOne/token path); only the displayId fallback uses `findFirst`.
-- Payment helpers now check for `findFirst` delegates (the source calls `findFirst` after the codemod); this fixed refunds/HR payments.
+- Payment helpers now check for `findFirst` delegates (the source calls `findFirst` after the codemod); this fixed refunds/HR payments, gateway settlement bootstrap, payment settings and the append-only ledger tests.
 - Removed obsolete single-tenant migration SQL specs (payment backfill, access-preset repair, probe coverage) whose files no longer exist in the new baseline.
+- Fixed RTN order lookup fake, scanner displayId lookup, accounting/employee/POS counter expectations, payroll/HR-leave sequences, and order-staff email fallback.
 
 ## Remaining test work
 
-The 55 failures are concentrated in:
+The 41 failures are concentrated in:
 
-1. **DB-backed integration suites (12)** — marketing P0 campaign/financial integration specs need a seeded local Postgres; environmental, not tenancy logic.
-2. **Payment/reconciliation/dispatch mock shapes (≈25)** — remaining `findFirst`/`findUnique` where-shape expectations and tenant composite keys.
-3. **Miscellaneous assertion drift (≈18)** — scanner batch, marketing funding/attribution, order staff performance, accounting.
+1. **DB-backed integration suites (14)** — marketing P0 campaign/financial integration specs need a seeded local Postgres; environmental, not tenancy logic.
+2. **Payment journal / reconciliation / dispatch / courier-mapping mock shapes (~20)** — remaining `findFirst`/`findUnique` where-shape expectations and tenant composite keys.
+3. **Miscellaneous assertions (~7)** — ReturnsService actor attribution, marketing funding/attribution, Pathao bulk.
 
 ## Next steps
 

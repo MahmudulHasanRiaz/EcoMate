@@ -70,9 +70,11 @@ describe('OrderStaffPerformanceService', () => {
     // employeeId came out NULL — making the whole feature attribute zero
     // orders. This is the exact input that broke it.
     it('resolves an EMAIL actor, which is what the order controller actually passes', async () => {
-      prisma.employee.findFirst.mockResolvedValue(null);
       prisma.userProfile.findFirst.mockResolvedValue(null);
-      prisma.employee.findFirst.mockResolvedValueOnce({ id: 'emp-1' });
+      prisma.employee.findFirst
+        .mockResolvedValueOnce(null) // direct id
+        .mockResolvedValueOnce(null) // betterAuthUserId
+        .mockResolvedValueOnce({ id: 'emp-1' }); // email fallback
 
       await expect(service.resolveEmployeeByUserId('staff@ecomate.com')).resolves.toBe('emp-1');
       expect(prisma.employee.findFirst).toHaveBeenCalledWith(

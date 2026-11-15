@@ -67,6 +67,17 @@ function makePrismaFake(state: {
   const tx = {
     order: {
       findFirst: async ({ where }: any) => {
+        if (where.returnOfOrderId !== undefined) {
+          const matchesOpen =
+            where.returnedAt === undefined
+              ? () => true
+              : (o: any) =>
+                  where.returnedAt === null ? o.returnedAt == null : o.returnedAt === where.returnedAt;
+          const found = orders.find(
+            (o) => o.returnOfOrderId === where.returnOfOrderId && matchesOpen(o),
+          );
+          return found ? withItems(found) : null;
+        }
         const found =
           where.id === original.id ? original : orders.find((o) => o.id === where.id) ?? null;
         return found ? withItems(found) : null;

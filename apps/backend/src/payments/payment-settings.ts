@@ -87,7 +87,7 @@ export async function resolveEffectivePaymentSettings(
       findMany: (args: unknown) => Promise<Array<{ key: string; value: string }>>;
     };
     paymentGateway?: {
-      findUnique: (args: unknown) => Promise<{
+      findFirst: (args: unknown) => Promise<{
         staffAutoVerifiedOverride?: boolean | null;
         editAllowedOverride?: boolean | null;
       } | null>;
@@ -105,7 +105,7 @@ export async function resolveEffectivePaymentSettings(
   } | null = null;
   try {
     gw =
-      (await db.paymentGateway?.findUnique?.({
+      (await db.paymentGateway?.findFirst?.({
         where: { code: gatewayCode },
         select: {
           staffAutoVerifiedOverride: true,

@@ -333,7 +333,7 @@ describe('AccountingService', () => {
       });
 
       expect(txUpsert!).toHaveBeenCalledWith({
-        where: {  date: '260702', family: 'JE'  },
+        where: { tenantId_date_family: expect.objectContaining({ date: '260702', family: 'JE' }) },
         update: { seq: { increment: 1 } },
         create: { date: '260702', family: 'JE', seq: 1 },
       });

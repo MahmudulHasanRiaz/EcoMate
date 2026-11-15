@@ -326,7 +326,7 @@ export async function ensureGatewaySettlementAccount(
   gateway: { id: string; code: string; name: string; accountId?: string | null },
 ): Promise<{ accountId: string | null; created: boolean; mapped: boolean }> {
   const current = gateway.accountId ?? null;
-  if (!db?.account?.findUnique || !db?.paymentGateway?.update) {
+  if (!db?.account?.findFirst || !db?.paymentGateway?.update) {
     return { accountId: current, created: false, mapped: false };
   }
   const spec = gatewaySettlementAccountSpec(gateway);
