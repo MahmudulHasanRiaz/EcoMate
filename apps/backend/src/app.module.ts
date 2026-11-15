@@ -113,6 +113,7 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { BackupModule } from './backup/backup.module';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { SecurityDashboardModule } from './security-dashboard/security-dashboard.module';
+import { TenancyModule } from './tenancy/tenancy.module';
 
 @Module({
   imports: [
@@ -219,6 +220,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     BackupModule,
     AuthSettingsModule,
     PermissionsModule,
+    TenancyModule,
   ],
 
   providers: [

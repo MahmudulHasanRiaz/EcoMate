@@ -1,0 +1,67 @@
+import { Injectable } from '@nestjs/common';
+import { normaliseHost } from './tenant-host';
+
+export interface TenantRegistryRecord {
+  id: string;
+  slug: string;
+  status: string;
+  hosts: string[];
+}
+
+/**
+ * In-memory host/slug registry.
+ *
+ * The production implementation is refreshed from the platform API and Redis
+ * pub/sub. This class provides the lookup surface the middleware and the
+ * external-store resolver will share.
+ */
+@Injectable()
+export class TenantRegistryService {
+  private bySlug = new Map<string, TenantRegistryRecord>();
+  private byHost = new Map<string, TenantRegistryRecord>();
+
+  replace(records: TenantRegistryRecord[]): void {
+    this.bySlug.clear();
+    this.byHost.clear();
+    for (const record of records) this.index(record);
+  }
+
+  upsert(record: TenantRegistryRecord): void {
+    const next = this.list().filter((item) => item.slug !== record.slug);
+    next.push(record);
+    this.replace(next);
+  }
+
+  remove(slug: string): void {
+    this.replace(this.list().filter((item) => item.slug !== slug));
+  }
+
+  resolveBySlug(slug: string): TenantRegistryRecord | undefined {
+    return this.bySlug.get(slug.trim().toLowerCase());
+  }
+
+  resolveByHost(host: string): TenantRegistryRecord | undefined {
+    return this.byHost.get(normaliseHost(host));
+  }
+
+  list(): TenantRegistryRecord[] {
+    return Array.from(this.bySlug.values());
+  }
+
+  size(): number {
+    return this.bySlug.size;
+  }
+
+  private index(record: TenantRegistryRecord): void {
+    const slug = record.slug.trim().toLowerCase();
+    const normalised: TenantRegistryRecord = {
+      ...record,
+      slug,
+      hosts: record.hosts.map((host) => normaliseHost(host)).filter(Boolean),
+    };
+    this.bySlug.set(slug, normalised);
+    for (const host of normalised.hosts) {
+      this.byHost.set(host, normalised);
+    }
+  }
+}

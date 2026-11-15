@@ -134,3 +134,19 @@ The tenant-aware schema is generated and verified but **not active yet**:
 Verified on a disposable PostgreSQL 16: baseline + RLS apply cleanly, 0 coverage gaps, and the two-tenant read/write/raw-SQL smoke test passes. The active schema is intentionally not swapped until the tenancy runtime and `findUnique`/queue migrations land, so the backend build stays green.
 
 See `docs/saas/phase-2a-report.md` and `docs/saas/schema-transform-report.md`.
+
+
+## Phase 2B — tenancy runtime primitives (staged)
+
+Implemented under `apps/backend/src/tenancy/`:
+
+- ALS `TenantContext` (`runWithTenant`, `requireTenant`).
+- Host/base-domain resolver (`tenant-host.ts`) with reserved slugs and canonical hosts.
+- In-memory tenant registry (slug/host lookup).
+- Bounded per-tenant Prisma manager with `app.tenant_id` connection options, LRU eviction and idle pruning.
+- Tenant Prisma proxy (fails closed outside a tenant context).
+- `TenantMiddleware`, `TenantGuard`, `@SkipTenant()` and `TenancyModule`.
+
+`TenancyModule` is imported, but the middleware/guard are not applied globally yet; the current single-tenant routes remain unchanged. Tenancy tests: **17/17**; backend `nest build` clean.
+
+The next steps are registry sync from the platform API, the real `PrismaService` proxy/RLS coverage check, per-tenant Better Auth, the active schema/migration swap and the `findUnique`/queue codemods.
