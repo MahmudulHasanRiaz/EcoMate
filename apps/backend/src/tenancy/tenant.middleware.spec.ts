@@ -47,13 +47,27 @@ describe('TenantMiddleware host resolution', () => {
     process.env = originalEnv;
   });
 
-  const resolve = (req: any) => {
+  const resolve = (req: any, res: any = {}) => {
     let context = getTenantContext();
-    middleware.use(req, {}, () => {
+    middleware.use(req, res, () => {
       context = getTenantContext();
     });
     return context;
   };
+
+  it('marks alias hosts noindex on every response path', () => {
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd,alias.example';
+    const res = { header: jest.fn() };
+    const context = resolve(request('acme.alias.example'), res);
+
+    expect(context?.tenantId).toBe('tenant-acme');
+    expect(context?.isAlias).toBe(true);
+    expect(res.header).toHaveBeenCalledWith('X-Robots-Tag', 'noindex');
+
+    const canonicalRes = { header: jest.fn() };
+    resolve(request('acme.ecomate.bd'), canonicalRes);
+    expect(canonicalRes.header).not.toHaveBeenCalled();
+  });
 
   it('resolves the tenant from the Host header (storefront/admin/POS browsers)', () => {
     expect(resolve(request('acme.ecomate.bd'))?.tenantId).toBe('tenant-acme');

@@ -77,6 +77,14 @@ services:
     environment:
       NODE_ENV: production
       CLIENT_DOMAIN: ${CLIENT_DOMAIN}
+      # SaaS domain config: tenant subdomains on every base domain, canonical
+      # host preference and fallback. The storefront proxy uses the same values
+      # to 301 alias hosts to the primary-domain canonical host.
+      SAAS_PRIMARY_DOMAIN: ${SAAS_PRIMARY_DOMAIN:-}
+      SAAS_BASE_DOMAINS: ${SAAS_BASE_DOMAINS:-}
+      SAAS_FALLBACK_DOMAIN: ${SAAS_FALLBACK_DOMAIN:-}
+      SAAS_CUSTOM_DOMAIN_CNAME: ${SAAS_CUSTOM_DOMAIN_CNAME:-}
+      SAAS_ALLOW_EXTERNAL_FALLBACK: ${SAAS_ALLOW_EXTERNAL_FALLBACK:-false}
       DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecomate_web}}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
@@ -196,6 +204,9 @@ services:
       - "${STOREFRONT_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
+      SAAS_PRIMARY_DOMAIN: ${SAAS_PRIMARY_DOMAIN:-}
+      SAAS_BASE_DOMAINS: ${SAAS_BASE_DOMAINS:-}
+      SAAS_FALLBACK_DOMAIN: ${SAAS_FALLBACK_DOMAIN:-}
       API_URL: ${API_URL:-http://backend:4000/api}
       INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-}
       # Guards POST /api/revalidate (on-demand cache invalidation, P4).

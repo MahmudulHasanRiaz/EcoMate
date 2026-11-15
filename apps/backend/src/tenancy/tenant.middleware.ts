@@ -8,7 +8,7 @@ import { isInternalRequest } from '../common/rate-limit/internal-request';
 export class TenantMiddleware implements NestMiddleware {
   constructor(private readonly registry: TenantRegistryService) {}
 
-  use(req: any, _res: any, next: () => void): void {
+  use(req: any, res: any, next: () => void): void {
     // Browser apps resolve the tenant from the Host they were served on. The
     // x-tenant-host override exists only for server-to-server SSR calls whose
     // API origin differs from the tenant host — it is trusted only when the
@@ -30,6 +30,12 @@ export class TenantMiddleware implements NestMiddleware {
     if (resolution.kind === 'tenant') {
       const tenant = this.registry.resolveBySlug(resolution.slug);
       if (tenant) {
+        // Non-canonical base-domain hosts are aliases: never index them, even
+        // for the non-HTML surfaces the backend serves directly (uploads and
+        // API responses).
+        if (resolution.isAlias && typeof res?.header === 'function') {
+          res.header('X-Robots-Tag', 'noindex');
+        }
         runWithTenant(
           {
             tenantId: tenant.id,
