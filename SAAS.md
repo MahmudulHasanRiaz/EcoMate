@@ -7,7 +7,7 @@
 - **Initial conversion:** the current `main` codebase only. It becomes the multi-tenant SaaS product.
 - **Central commerce / multi-store:** deferred. The upstream `feat/central-commerce` branch is still in development; it will be ported later as additive migrations with `tenant_id` + RLS from its first migration.
 - **No existing client data:** the SaaS starts with a fresh baseline; there is no backfill.
-- **License server:** KeyMate/Keygen is being removed. Plans and features come from the platform control plane.
+- **Entitlements:** plans and features come from the platform control plane. The legacy license server has been removed.
 
 ## Target architecture
 
@@ -175,10 +175,10 @@ Phase 2D is merged into `feat/saas-multitenant` at `26806f22`:
 - Tenant registry sync and Host→tenant runtime are verified end to end (two tenants, separate branding, RLS 200/3).
 
 - Active schema: 203 models (200 tenant-scoped, 3 global reference); RLS baseline + guards.
-- Backend `nest build`: green; full Jest suite: 6175 passed, 0 failed, 10 skipped against a clean migrated tenant DB using a non-superuser RLS role.
+- Backend `nest build`: green; full Jest suite: 6229 passed, 0 failed, 10 skipped against a clean migrated tenant DB using a non-superuser RLS role.
 - Shared tenant job envelope + tenant-aware email/courier-settlement/media/tracking/marketing/security/import queues and per-tenant interval sweeps (blocked entries, refresh tokens, webhook attempts, outbox relay/reconciler, security retention, tracking retention, page-view buffer) are wired. The platform backup queue is intentionally global. The branch is merge-ready pending approval.
 - `PrismaService` is a request-scoped proxy over `TenantPrismaManager`; TenantMiddleware/TenantGuard, per-tenant Better Auth, RLS coverage startup gate and the transitional FeatureFlags provider are wired. Dev has a default-tenant fallback; production fails closed without a resolved tenant. Two-tenant runtime isolation is proven with a non-superuser DB role.
-- Legacy license module removed from this branch; seed/scripts excluded from `nest build` pending tenant bootstrap.
-Phase 3 entitlements are in progress: the platform registry now feeds tenant plan snapshots; `TenantEntitlementsService` + the `FeatureFlagsService` compatibility provider are wired. See `docs/saas/phase-2d-wip-report.md`.
+- Legacy license module and engine package removed from this branch; seed/scripts excluded from `nest build` pending tenant bootstrap.
+Phase 3 entitlements are complete: the platform registry feeds tenant plan snapshots, `/api/entitlements/{me,public,usage,refresh}` is live, `TenantSubscriptionGuard` enforces the access state on writes, plan limits are enforced with usage reporting, and the legacy license engine/env/UI are removed. See `docs/saas/phase-3-report.md`.
 
-Phase 3 remaining work: see `docs/saas/phase-3-handoff.md`.
+Phase 3 verification: see `docs/saas/phase-3-report.md`.

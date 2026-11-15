@@ -1,5 +1,10 @@
 # Phase 3 handoff — entitlements, subscription guard, license removal
 
+> **Status:** completed on `feat/saas-multitenant`. See
+> `docs/saas/phase-3-report.md` for the delivered contracts, limits table,
+> refresh endpoint and verification results. The sections below remain as the
+> original task brief.
+
 **Branch:** `feat/saas-multitenant` at `0020951f` (pushed)  
 **Phase 2D:** merged; backend full suite was **6180 passed, 0 failed, 10 skipped**
 against a clean migrated tenant DB using the non-superuser `ecomate_tenant_app`
