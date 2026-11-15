@@ -1,3 +1,4 @@
+import type { TenantJobData } from '../tenancy/tenant-job';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TrackingContext } from '@prisma/client';
@@ -33,7 +34,7 @@ import {
 } from './destinations';
 
 /** BullMQ `tracking` job payload produced by the outbox relay (Task 2). */
-export interface DispatchJob {
+export interface DispatchJob extends TenantJobData {
   snapshotId: string;
   outboxId: string;
   attemptCount: number;

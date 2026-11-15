@@ -31,7 +31,12 @@ describe('OutboxRelayService', () => {
     expect(trackingQueue.add).toHaveBeenNthCalledWith(
       1,
       'send',
-      { snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 },
+      expect.objectContaining({
+        snapshotId: 'snap-1',
+        outboxId: 'outbox-1',
+        attemptCount: 0,
+        tenantId: expect.any(String),
+      }),
       {
         jobId: 'outbox-1-0',
         removeOnComplete: 100,
@@ -43,7 +48,12 @@ describe('OutboxRelayService', () => {
     expect(trackingQueue.add).toHaveBeenNthCalledWith(
       2,
       'send',
-      { snapshotId: 'snap-2', outboxId: 'outbox-2', attemptCount: 0 },
+      expect.objectContaining({
+        snapshotId: 'snap-2',
+        outboxId: 'outbox-2',
+        attemptCount: 0,
+        tenantId: expect.any(String),
+      }),
       expect.objectContaining({ jobId: 'outbox-2-0' }),
     );
     // Rows were claimed via raw SQL with the instance id and batch size.

@@ -113,7 +113,10 @@ Converted end to end (producer + processor):
 - `courier-settlement-import` — background commit runs in the invoice's tenant;
 - `media` — `process` jobs carry tenantId; the global `recover` repeatable and the
   boot/backfill scans fan out with `runPerTenant`, so every derivative job is stamped
-  with the media row's tenant.
+  with the media row's tenant;
+- `tracking` — the outbox relay polls per active tenant (RLS-scoped claim), dispatcher
+  jobs run in `TenantWorkerHost`, DLQ mirrors carry the tenant, and the reconciler
+  sweeps per tenant.
 
 Converted interval sweeps (per-tenant, failure-isolated via `runPerTenant`):
 
@@ -126,14 +129,13 @@ remaining queues and interval sweeps.
 
 ## Remaining work before merge
 
-1. **Remaining queue conversions** — tracking dispatcher + DLQ, marketing sync,
-   security-events (and the missing `security-aggregate` consumer), import stub, and
-   the platform-level backup queue. Each needs a tenant payload, `TenantWorkerHost`,
-   and tenant-aware repeatable keys.
-2. **Remaining interval sweeps** — security/tracking retention, the tracking outbox
-   relay and marketing repeatables. These cross-tenant `updateMany`/`deleteMany`/raw
-   claims must iterate active tenants via `runPerTenant` (or be explicitly
-   system-scoped).
+1. **Remaining queue conversions** — marketing sync, security-events (and the missing
+   `security-aggregate` consumer), import stub, and the platform-level backup queue.
+   Each needs a tenant payload, `TenantWorkerHost`, and tenant-aware repeatable keys.
+2. **Remaining interval sweeps** — security/tracking retention, page-view buffer
+   flushes and marketing repeatables. These cross-tenant `updateMany`/`deleteMany`
+   (or buffered writes) must iterate active tenants via `runPerTenant` (or be
+   explicitly system-scoped).
 3. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
    `INTERNAL_SERVICE_SECRET`) and add custom-domain DNS/verification coverage; the
    endpoint/refresh contract itself is verified.

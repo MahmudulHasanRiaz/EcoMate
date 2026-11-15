@@ -30,12 +30,13 @@ describe('DlqService (tracking-dlq mirror + DEAD stats)', () => {
 
     expect(queueAdd).toHaveBeenCalledWith(
       'dlq',
-      {
+      expect.objectContaining({
         outboxId: 'outbox-1',
         snapshotId: 'snap-1',
         provider: 'meta',
         errorMsg: 'invalid token',
-      },
+        tenantId: expect.any(String),
+      }),
       { jobId: 'outbox-1-3-dlq', removeOnComplete: 0 },
     );
   });
@@ -45,7 +46,13 @@ describe('DlqService (tracking-dlq mirror + DEAD stats)', () => {
 
     expect(queueAdd).toHaveBeenCalledWith(
       'dlq',
-      { outboxId: 'outbox-1', snapshotId: 'snap-1', provider: null, errorMsg: null },
+      expect.objectContaining({
+        outboxId: 'outbox-1',
+        snapshotId: 'snap-1',
+        provider: null,
+        errorMsg: null,
+        tenantId: expect.any(String),
+      }),
       { jobId: 'outbox-1-0-dlq', removeOnComplete: 0 },
     );
   });

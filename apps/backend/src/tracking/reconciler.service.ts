@@ -3,9 +3,12 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { getRetryBackoffMs } from './outbox-relay.service';
+import { runPerTenant } from '../tenancy/tenant-job';
+import { TenantRegistryService } from '../tenancy/tenant-registry.service';
 
 /** Interval between reconcile sweeps when started. */
 const RECONCILE_INTERVAL_MS = 60_000;
@@ -50,10 +53,25 @@ export class ReconcilerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ReconcilerService.name);
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly tenantRegistry?: TenantRegistryService,
+  ) {}
 
-  /** Run one reconcile sweep. `now` is injectable for deterministic tests. */
+  /** Run one reconcile sweep per active tenant. `now` is injectable. */
   async reconcile(now = new Date()): Promise<ReconcileSummary> {
+    let released = 0;
+    let retried = 0;
+    await runPerTenant(this.tenantRegistry, async () => {
+      const summary = await this.reconcileForTenant(now);
+      released += summary.released;
+      retried += summary.retried;
+    });
+    return { released, retried };
+  }
+
+  private async reconcileForTenant(now: Date): Promise<ReconcileSummary> {
     const claimedCutoff = new Date(now.getTime() - STALE_CLAIM_THRESHOLD_MS);
     const sendingCutoff = new Date(now.getTime() - HUNG_SENDING_THRESHOLD_MS);
 

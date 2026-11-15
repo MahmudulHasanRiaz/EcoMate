@@ -3,12 +3,15 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingSettingsService } from './tracking-settings.service';
+import { runPerTenant, tenantJobPayload } from '../tenancy/tenant-job';
+import { TenantRegistryService } from '../tenancy/tenant-registry.service';
 
 /** A row claimed by the raw SQL UPDATE ... RETURNING. */
 export interface ClaimedOutboxRow {
@@ -69,6 +72,8 @@ export class OutboxRelayService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     @InjectQueue('tracking') private readonly trackingQueue: Queue,
     private readonly settings: TrackingSettingsService,
+    @Optional()
+    private readonly tenantRegistry?: TenantRegistryService,
   ) {}
 
   /**
@@ -81,47 +86,55 @@ export class OutboxRelayService implements OnModuleInit, OnModuleDestroy {
    * never double-claim a row, and no raw strings are interpolated into SQL.
    */
   async poll(batchSize = 50, instanceId = 'relay-1'): Promise<number> {
-    if (!(await this.isRelayEnabled())) return 0;
-
-    let claimed: ClaimedOutboxRow[];
-    try {
-      claimed = await this.prisma.$queryRaw<ClaimedOutboxRow[]>(Prisma.sql`
-        UPDATE "TrackingOutbox" SET status='CLAIMED', "lockedAt"=now(), "lockedBy"=${instanceId}
-        WHERE id IN (
-          SELECT id FROM "TrackingOutbox"
-          WHERE status='PENDING' AND "nextAttemptAt"<=now() AND "lockedAt" IS NULL
-          ORDER BY priority DESC, "nextAttemptAt" ASC
-          LIMIT ${batchSize} FOR UPDATE SKIP LOCKED
-        )
-        RETURNING id, "snapshotId", "attemptCount"
-      `);
-    } catch (err) {
-      this.logger.error(`Outbox claim failed: ${err}`);
-      return 0;
-    }
-
     let enqueued = 0;
-    for (const row of claimed ?? []) {
+
+    await runPerTenant(this.tenantRegistry, async () => {
+      if (!(await this.isRelayEnabled())) return;
+
+      let claimed: ClaimedOutboxRow[];
       try {
-        await this.trackingQueue.add(
-          'send',
-          { snapshotId: row.snapshotId, outboxId: row.id, attemptCount: row.attemptCount },
-          {
-            jobId: `${row.id}-${row.attemptCount}`,
-            removeOnComplete: 100,
-            removeOnFail: 50,
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 2000 },
-          },
-        );
-        enqueued++;
+        claimed = await this.prisma.$queryRaw<ClaimedOutboxRow[]>(Prisma.sql`
+          UPDATE "TrackingOutbox" SET status='CLAIMED', "lockedAt"=now(), "lockedBy"=${instanceId}
+          WHERE id IN (
+            SELECT id FROM "TrackingOutbox"
+            WHERE status='PENDING' AND "nextAttemptAt"<=now() AND "lockedAt" IS NULL
+            ORDER BY priority DESC, "nextAttemptAt" ASC
+            LIMIT ${batchSize} FOR UPDATE SKIP LOCKED
+          )
+          RETURNING id, "snapshotId", "attemptCount"
+        `);
       } catch (err) {
-        this.logger.error(
-          `Failed to enqueue outbox ${row.id}; releasing lock: ${err}`,
-        );
-        await this.releaseLock(row.id);
+        this.logger.error(`Outbox claim failed: ${err}`);
+        return;
       }
-    }
+
+      for (const row of claimed ?? []) {
+        try {
+          await this.trackingQueue.add(
+            'send',
+            tenantJobPayload({
+              snapshotId: row.snapshotId,
+              outboxId: row.id,
+              attemptCount: row.attemptCount,
+            }),
+            {
+              jobId: `${row.id}-${row.attemptCount}`,
+              removeOnComplete: 100,
+              removeOnFail: 50,
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 2000 },
+            },
+          );
+          enqueued++;
+        } catch (err) {
+          this.logger.error(
+            `Failed to enqueue outbox ${row.id}; releasing lock: ${err}`,
+          );
+          await this.releaseLock(row.id);
+        }
+      }
+    });
+
     return enqueued;
   }
 

@@ -1,3 +1,4 @@
+import { tenantJobPayload } from '../tenancy/tenant-job';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -53,7 +54,12 @@ export class DlqService {
     try {
       await this.dlqQueue.add(
         'dlq',
-        { outboxId, snapshotId, provider: provider ?? null, errorMsg: errorMsg ?? null },
+        tenantJobPayload({
+          outboxId,
+          snapshotId,
+          provider: provider ?? null,
+          errorMsg: errorMsg ?? null,
+        }),
         { jobId: `${outboxId}-${attemptCount}-dlq`, removeOnComplete: 0 },
       );
     } catch (err) {
