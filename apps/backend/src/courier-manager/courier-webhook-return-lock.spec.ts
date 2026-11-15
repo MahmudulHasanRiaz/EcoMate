@@ -39,7 +39,7 @@ describe('CourierWebhookService — return lock on Delivered (2026-10-23)', () =
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(shippingOrder),
-        findFirst: jest.fn().mockResolvedValue(shippingOrder),
+        findUnique: jest.fn().mockResolvedValue(shippingOrder),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
@@ -48,7 +48,7 @@ describe('CourierWebhookService — return lock on Delivered (2026-10-23)', () =
       dispatch: {
         upsert: jest.fn().mockResolvedValue({}),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       return: {

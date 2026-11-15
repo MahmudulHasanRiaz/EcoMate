@@ -64,7 +64,7 @@ describe('P0 Financial Model Corrections', () => {
     },
     account: {
       findFirst: jest.fn(),
-      findFirst: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
     },
     $transaction: jest.fn(),

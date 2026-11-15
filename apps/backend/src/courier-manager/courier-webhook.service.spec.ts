@@ -35,7 +35,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
         findMany: jest.fn().mockResolvedValue([]),
-        findFirst: jest.fn().mockResolvedValue(order),
+        findUnique: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
@@ -44,7 +44,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       dispatch: {
         upsert: jest.fn().mockResolvedValue({}),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },

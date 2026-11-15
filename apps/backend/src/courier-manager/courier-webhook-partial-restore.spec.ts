@@ -52,7 +52,7 @@ describe('CourierWebhookService — T6 partial restore-or-hold', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
-        findFirst: jest.fn().mockResolvedValue(order),
+        findUnique: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {

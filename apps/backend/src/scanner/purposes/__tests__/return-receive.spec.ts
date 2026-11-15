@@ -52,7 +52,7 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
       orderStatus: { findMany: async () => [{ id: 'st-shipping', name: 'Shipping' }] },
       order: {
         findFirst: async () => (order ? { ...order, dispatches: [] } : null),
-        findFirst: async ({ where }: any) =>
+        findUnique: async ({ where }: any) =>
           order && where.id === order.id ? order : null,
         findMany: async () => opts.exchanges ?? [],
         update: jest.fn(),

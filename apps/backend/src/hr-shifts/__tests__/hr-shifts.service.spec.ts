@@ -26,7 +26,7 @@ describe('ShiftService', () => {
       shiftPreset: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(preset()),
         update: jest.fn().mockResolvedValue(preset()),
       },

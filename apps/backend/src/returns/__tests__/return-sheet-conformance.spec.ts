@@ -149,7 +149,7 @@ describe('Return sheet conformance — courier webhook wiring', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
-        findFirst: jest.fn().mockResolvedValue(order),
+        findUnique: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {

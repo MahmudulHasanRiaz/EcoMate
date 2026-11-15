@@ -45,7 +45,7 @@ describe('Courier Task 3 — PICKUP_FAILED + ASSIGNED_TO_HUB states', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(packedOrder),
-        findFirst: jest.fn().mockResolvedValue(packedOrder),
+        findUnique: jest.fn().mockResolvedValue(packedOrder),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
@@ -316,7 +316,7 @@ describe('Courier Task 3 — manual-board transitions + sync order mapping', () 
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'd-1' }),
         update: jest.fn().mockResolvedValue({ id: 'd-1' }),
         delete: jest.fn().mockResolvedValue({}),
@@ -325,7 +325,7 @@ describe('Courier Task 3 — manual-board transitions + sync order mapping', () 
       },
       order: {
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },

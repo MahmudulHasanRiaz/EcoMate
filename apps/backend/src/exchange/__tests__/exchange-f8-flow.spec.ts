@@ -54,7 +54,7 @@ function makeFake(opts: {
         return t;
       },
       aggregate: async () => ({ _sum: { exchangedCreditAmount: 0 } }),
-      findFirst: async () => orderItems[0] ?? null,
+      findUnique: async () => orderItems[0] ?? null,
       findMany: async () => [],
     },
     orderItem: {

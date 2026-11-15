@@ -49,7 +49,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
             (prisma.return.findFirst as jest.Mock)(...args),
           ),
           // Link-first lookup inside the courier upsert transaction.
-          findFirst: jest.fn((...args: any[]) =>
+          findUnique: jest.fn((...args: any[]) =>
             (prisma.return.findFirst as jest.Mock)(...args),
           ),
           findMany: jest.fn().mockResolvedValue([]),
@@ -74,7 +74,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
-        findFirst: jest.fn().mockResolvedValue(order),
+        findUnique: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
       return: {
@@ -82,7 +82,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
           Promise.resolve({ id: 'ret-1', ...data }),
         ),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockImplementation(({ data }: any) =>
           Promise.resolve({ id: 'ret-1', ...data }),

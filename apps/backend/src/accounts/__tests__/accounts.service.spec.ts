@@ -59,7 +59,7 @@ describe('AccountsService', () => {
                   return Promise.resolve(mockParentAccount);
                 return Promise.resolve(null);
               }),
-              findFirst: jest.fn().mockResolvedValue(null),
+              findUnique: jest.fn().mockResolvedValue(null),
               create: jest.fn().mockResolvedValue(mockAccount),
               update: jest.fn().mockResolvedValue(mockAccount),
               delete: jest.fn().mockResolvedValue(mockAccount),
@@ -96,7 +96,7 @@ describe('AccountsService', () => {
     });
 
     it('should throw on duplicate code', async () => {
-      jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(mockAccount);
+      jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(mockAccount);
       const dto: CreateAccountDto = {
         code: '1-1000',
         name: 'Cash',
@@ -106,7 +106,7 @@ describe('AccountsService', () => {
     });
 
     it('should throw if parent not found', async () => {
-      jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
       const dto: CreateAccountDto = {
         code: '1-1001',
         name: 'Petty Cash',
@@ -118,14 +118,13 @@ describe('AccountsService', () => {
 
     it('should create leaf account under a group parent', async () => {
       jest
-        .spyOn(prisma.account, 'findUnique')
+        .spyOn(prisma.account, 'findFirst')
         .mockImplementation(
           ({ where }: any) =>
             Promise.resolve(
               where.id === 'acc-parent' ? (mockParentAccount as any) : null,
             ) as any,
         );
-      jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
       const dto: CreateAccountDto = {
         code: '1-1001',
         name: 'Petty Cash',
@@ -160,7 +159,7 @@ describe('AccountsService', () => {
     });
 
     it('should throw if not found', async () => {
-      jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
       await expect(service.findOne('invalid')).rejects.toThrow(
         NotFoundException,
       );
@@ -177,7 +176,7 @@ describe('AccountsService', () => {
   describe('remove', () => {
     it('should throw if account has children', async () => {
       jest
-        .spyOn(prisma.account, 'findUnique')
+        .spyOn(prisma.account, 'findFirst')
         .mockResolvedValue(mockParentAccount);
       await expect(service.remove('acc-parent')).rejects.toThrow(
         BadRequestException,
@@ -191,7 +190,7 @@ describe('AccountsService', () => {
 
     it('D6: refuses to delete a system account', async () => {
       jest
-        .spyOn(prisma.account, 'findUnique')
+        .spyOn(prisma.account, 'findFirst')
         .mockResolvedValue({ ...mockAccount, isSystem: true, children: [] });
       await expect(service.remove('acc-1')).rejects.toThrow(
         /System accounts cannot be deleted/,
@@ -213,7 +212,7 @@ describe('AccountsService', () => {
     });
 
     it('should throw if not found', async () => {
-      jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
       await expect(service.remove('invalid')).rejects.toThrow(
         NotFoundException,
       );

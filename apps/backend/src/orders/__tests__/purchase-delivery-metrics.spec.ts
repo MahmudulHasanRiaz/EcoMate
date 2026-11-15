@@ -45,7 +45,7 @@ const ORDER = {
 
 function makePrisma(over: { dispatches?: any[]; events?: any[]; deadOutbox?: number } = {}) {
   return {
-    order: { findFirst: jest.fn().mockResolvedValue(ORDER), findFirst: jest.fn().mockResolvedValue(null) },
+    order: { findFirst: jest.fn().mockResolvedValue(ORDER), findUnique: jest.fn().mockResolvedValue(null) },
     trackingSnapshot: {
       findMany: jest.fn().mockResolvedValue([SNAPSHOT]),
       findFirst: jest.fn().mockResolvedValue(SNAPSHOT),

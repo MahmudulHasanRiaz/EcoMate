@@ -145,7 +145,7 @@ describe('POST /system-settings/search_engine_indexing — indexing-ON guard', (
       value: 'true',
     });
     expect(prisma.systemSetting.upsert).toHaveBeenCalledWith({
-      where: { key: 'search_engine_indexing' },
+      where: { tenantId_key: expect.objectContaining({ key: 'search_engine_indexing' }) },
       create: { key: 'search_engine_indexing', value: 'true' },
       update: { value: 'true' },
     });

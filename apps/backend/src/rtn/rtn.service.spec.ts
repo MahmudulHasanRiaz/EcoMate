@@ -71,7 +71,7 @@ function makePrismaFake(state: {
           where.id === original.id ? original : orders.find((o) => o.id === where.id) ?? null;
         return found ? withItems(found) : null;
       },
-      findFirst: async ({ where }: any) => {
+      findUnique: async ({ where }: any) => {
         // `returnedAt: null` is the "still open" filter — honour it, otherwise
         // the fake reports a closed RTN as blocking a new split.
         const matchesOpen =

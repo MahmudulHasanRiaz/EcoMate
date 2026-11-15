@@ -30,7 +30,7 @@ function makePrisma() {
     expense: {
       create,
       findFirst: jest.fn(async ({ where }: any) => {
-        const k = where.sourceType_sourceId;
+        const k = where.sourceType_sourceId ?? where;
         return rows.get(`${k.sourceType}|${k.sourceId}`) ?? null;
       }),
     },

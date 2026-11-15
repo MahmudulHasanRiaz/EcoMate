@@ -104,7 +104,7 @@ describe('PayrollService', () => {
     payslip: {
       findMany: jest.fn().mockResolvedValue([mockPayslip]),
       findFirst: jest.fn().mockResolvedValue(mockPayslip),
-      findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(mockPayslip),
       update: jest.fn().mockResolvedValue({
         ...mockPayslip,
@@ -186,7 +186,6 @@ describe('PayrollService', () => {
     prismaMock.salaryStructure.update.mockResolvedValue(mockSalaryStructure);
     prismaMock.salaryStructure.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.payslip.findMany.mockResolvedValue([mockPayslip]);
-    prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip);
     prismaMock.payslip.findFirst.mockResolvedValue(null);
     prismaMock.payslip.create.mockResolvedValue(mockPayslip);
     prismaMock.payslip.update.mockResolvedValue({
@@ -252,7 +251,7 @@ describe('PayrollService', () => {
     });
 
     it('should throw if employee not found', async () => {
-      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.employee, 'findFirst').mockResolvedValue(null);
       await expect(service.setSalaryStructure(dto)).rejects.toThrow(
         NotFoundException,
       );
@@ -446,12 +445,13 @@ describe('PayrollService', () => {
 
   describe('approvePayslip', () => {
     it('should approve a draft payslip', async () => {
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip);
       const result = await service.approvePayslip('ps-1');
       expect(result.status).toBe('paid');
     });
 
     it('should throw if payslip not found', async () => {
-      jest.spyOn(prisma.payslip, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.payslip, 'findFirst').mockResolvedValue(null);
       await expect(service.approvePayslip('invalid')).rejects.toThrow(
         NotFoundException,
       );
@@ -460,6 +460,7 @@ describe('PayrollService', () => {
 
   describe('compensation expense posting (§8)', () => {
     it('posts salary excluding commission lines on draft → paid finalisation', async () => {
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip);
       prismaMock.payslip.update.mockResolvedValue({
         ...mockPayslip,
         status: 'paid',
@@ -486,7 +487,7 @@ describe('PayrollService', () => {
 
     it('posts the salary expense when reviewed → approved', async () => {
       jest
-        .spyOn(prisma.payslip, 'findUnique')
+        .spyOn(prisma.payslip, 'findFirst')
         .mockResolvedValue({ ...mockPayslip, status: 'reviewed' });
       prismaMock.payslip.update.mockResolvedValue({
         ...mockPayslip,
@@ -509,7 +510,7 @@ describe('PayrollService', () => {
 
     it('reverses the salary expense when a payslip is cancelled', async () => {
       jest
-        .spyOn(prisma.payslip, 'findUnique')
+        .spyOn(prisma.payslip, 'findFirst')
         .mockResolvedValue({ ...mockPayslip, status: 'reviewed' });
       prismaMock.payslip.update.mockResolvedValue({
         ...mockPayslip,
@@ -539,7 +540,7 @@ describe('PayrollService', () => {
         joiningDate: new Date('2025-06-16'),
       };
       jest
-        .spyOn(prisma.employee, 'findUnique')
+        .spyOn(prisma.employee, 'findFirst')
         .mockResolvedValue(midPeriodEmployee);
 
       const txCreate = jest.fn().mockReturnValue({ id: 'ps-new' });
@@ -745,7 +746,7 @@ describe('PayrollService', () => {
   describe('setStatus (§5.1 lifecycle)', () => {
     const setup = (status: string) =>
       jest
-        .spyOn(prisma.payslip, 'findUnique')
+        .spyOn(prisma.payslip, 'findFirst')
         .mockResolvedValue({ ...mockPayslip, status });
 
     it('allows draft → reviewed', async () => {
@@ -792,7 +793,7 @@ describe('PayrollService', () => {
     });
 
     it('throws NotFound when the payslip is missing', async () => {
-      jest.spyOn(prisma.payslip, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.payslip, 'findFirst').mockResolvedValue(null);
       await expect(service.setStatus('missing', 'reviewed')).rejects.toThrow(
         NotFoundException,
       );
@@ -912,7 +913,7 @@ describe('PayrollService', () => {
     }
 
     function mockGeneration() {
-      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue({
+      jest.spyOn(prisma.employee, 'findFirst').mockResolvedValue({
         ...mockEmployee,
         joiningDate: new Date('2026-10-22'),
       } as any);
@@ -1040,7 +1041,7 @@ describe('PayrollService', () => {
     });
 
     it('throws NotFound for a missing employee', async () => {
-      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.employee, 'findFirst').mockResolvedValue(null);
       await expect(
         service.getSalaryStructureHistory('ghost'),
       ).rejects.toThrow(NotFoundException);
@@ -1118,7 +1119,7 @@ describe('PayrollService', () => {
     });
 
     it('throws NotFound for a missing employee', async () => {
-      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.employee, 'findFirst').mockResolvedValue(null);
       await expect(service.getSummary('ghost')).rejects.toThrow(
         NotFoundException,
       );
@@ -1343,7 +1344,7 @@ describe('PayrollService', () => {
   describe('setStatus — actor recording (G-05)', () => {
     it('records reviewedById on draft → reviewed', async () => {
       jest
-        .spyOn(prisma.payslip, 'findUnique')
+        .spyOn(prisma.payslip, 'findFirst')
         .mockResolvedValue({ ...mockPayslip, status: 'draft' });
       const update = jest
         .spyOn(prisma.payslip, 'update')
@@ -1357,7 +1358,7 @@ describe('PayrollService', () => {
 
     it('records approvedById on reviewed → approved', async () => {
       jest
-        .spyOn(prisma.payslip, 'findUnique')
+        .spyOn(prisma.payslip, 'findFirst')
         .mockResolvedValue({ ...mockPayslip, status: 'reviewed' });
       const update = jest
         .spyOn(prisma.payslip, 'update')

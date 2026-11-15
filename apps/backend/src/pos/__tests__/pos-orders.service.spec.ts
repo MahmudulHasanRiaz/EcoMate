@@ -80,7 +80,7 @@ describe('PosOrdersService', () => {
             $queryRawUnsafe: jest.fn().mockResolvedValue([]),
             posSession: {
               findFirst: jest.fn(),
-              findFirst: jest.fn(),
+              findUnique: jest.fn(),
             },
             product: {
               findMany: jest.fn(),
@@ -95,7 +95,7 @@ describe('PosOrdersService', () => {
             },
             order: {
               findFirst: jest.fn(),
-              findFirst: jest.fn(),
+              findUnique: jest.fn(),
               create: jest.fn(),
               findMany: jest.fn(),
             },
@@ -113,7 +113,7 @@ describe('PosOrdersService', () => {
             },
             paymentGateway: {
               findFirst: jest.fn(),
-              findFirst: jest.fn(),
+              findUnique: jest.fn(),
             },
           },
         },

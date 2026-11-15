@@ -18,7 +18,7 @@ describe('OrderStaffPerformanceService', () => {
     prisma = {
       employee: {
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },

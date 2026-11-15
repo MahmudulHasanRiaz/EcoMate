@@ -25,7 +25,7 @@ function makePrisma(overrides: any = {}) {
   return {
     order: {
       findFirst: jest.fn().mockResolvedValue(baseOrder),
-      findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(null),
     },
     trackingSnapshot: {
       findMany: jest.fn().mockResolvedValue([]),

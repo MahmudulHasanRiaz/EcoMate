@@ -100,7 +100,7 @@ describe('OrdersService — cancel a dispatched order', () => {
           if (where?.name === 'Cancelled') return cancelledStatus;
           return null;
         }),
-        findFirst: jest.fn().mockImplementation(async ({ where }: any) =>
+        findUnique: jest.fn().mockImplementation(async ({ where }: any) =>
           where?.name === 'Cancelled' ? cancelledStatus : null,
         ),
       },

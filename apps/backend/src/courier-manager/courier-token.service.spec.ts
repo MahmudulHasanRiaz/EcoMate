@@ -121,7 +121,7 @@ describe('CourierTokenService (Pathao OAuth store)', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(prisma.courierAuthToken.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { courier: 'pathao' },
+        where: { tenantId_courier: expect.objectContaining({ courier: 'pathao' }) },
         update: expect.objectContaining({
           accessToken: 'NEW-TOKEN',
           refreshToken: 'REFRESH-2',

@@ -50,7 +50,7 @@ describe('ReturnsService — who received the return', () => {
     prisma = {
       return: {
         findFirst: jest.fn().mockResolvedValue({ ...storedRow }),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockImplementation(({ data }: any) =>
           Promise.resolve({ id: 'ret-1', ...data }),

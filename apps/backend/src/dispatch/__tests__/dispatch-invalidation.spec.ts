@@ -32,7 +32,7 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
       findFirst: jest.fn(),
-      findFirst: jest.fn(),
+      findUnique: jest.fn(),
     },
     orderStatus: { findFirst: jest.fn() },
     courierDispatchLog: { create: jest.fn() },

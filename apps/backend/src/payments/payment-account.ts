@@ -181,7 +181,7 @@ export async function findConfiguredGateway(
   db: any,
   gatewayCode: string,
 ): Promise<ConfiguredGateway | null> {
-  if (!db?.paymentGateway?.findUnique) return null;
+  if (!db?.paymentGateway?.findFirst) return null;
   return db.paymentGateway.findFirst({
     where: { code: gatewayCode },
     select: CONFIGURED_GATEWAY_SELECT,
@@ -201,7 +201,7 @@ export async function requireConfiguredGateway(
   if (!gatewayCode || !String(gatewayCode).trim()) {
     throw new BadRequestException('Payment gateway is required');
   }
-  if (!db?.paymentGateway?.findUnique) return null;
+  if (!db?.paymentGateway?.findFirst) return null;
   const gateway = await findConfiguredGateway(db, gatewayCode);
   if (!gateway) {
     throw new BadRequestException(
@@ -236,7 +236,7 @@ export async function resolveGatewayAccountId(
   db: any,
   gatewayCode: string,
 ): Promise<string | null> {
-  if (!db?.paymentGateway?.findUnique) return null;
+  if (!db?.paymentGateway?.findFirst) return null;
   const exact = await findConfiguredGateway(db, gatewayCode);
   if (exact) return exact.accountId;
   if (!gatewayCode) return null;

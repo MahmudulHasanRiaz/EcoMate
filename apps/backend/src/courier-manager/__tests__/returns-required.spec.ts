@@ -28,7 +28,7 @@ describe('CourierWebhookService — ReturnsService required (HIGH legacy restore
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
-        findFirst: jest.fn().mockResolvedValue(order),
+        findUnique: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {

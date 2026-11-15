@@ -35,7 +35,7 @@ describe('JobPostingsService', () => {
     prisma = {
       department: {
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue({ id: 'dept-1' }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'dept-1' }),
       },
       designation: {
         findFirst: jest.fn().mockResolvedValue({ id: 'des-1' }),

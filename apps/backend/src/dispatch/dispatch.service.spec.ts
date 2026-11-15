@@ -23,7 +23,7 @@ describe('DispatchService', () => {
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({
           id: 'd-1',
           courier: 'pathao',
@@ -37,7 +37,7 @@ describe('DispatchService', () => {
       },
       order: {
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },

@@ -29,8 +29,18 @@ function makePrismaFake(opts: {
   const prisma = {
     orderStatus: { findMany: async () => statuses },
     order: {
-      findFirst: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
       findFirst: async ({ where }: any) => {
+        let found = null;
+        if (where?.id) {
+          found = orders.find((o) => o.id === where.id) ?? null;
+        } else if (where?.displayId) {
+          const q = (where.displayId.equals ?? where.displayId).toLowerCase();
+          found = orders.find((o) => o.displayId.toLowerCase() === q) ?? null;
+        }
+        if (!found) return null;
+        return { ...found, dispatches: dispatches.filter((d) => d.orderId === found.id) };
+      },
+      findUnique: async ({ where }: any) => {
         const found =
           orders.find((o) => o.displayId.toLowerCase() === where.displayId.equals.toLowerCase()) ?? null;
         if (!found) return null;

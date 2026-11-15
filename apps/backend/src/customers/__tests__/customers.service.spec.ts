@@ -10,7 +10,7 @@ describe('CustomersService.findOrCreateCustomer — email identity rules (spec �
   const prisma = {
     customerProfile: {
       findFirst: jest.fn(),
-      findFirst: jest.fn(),
+      findUnique: jest.fn(),
       update: jest.fn(),
       upsert: jest.fn(),
       create: jest.fn(),
@@ -203,7 +203,7 @@ describe('CustomersService — linked phone numbers (CustomerPhone)', () => {
       findFirst: jest.fn(),
       create: jest.fn(),
     },
-    userProfile: { findFirst: jest.fn(), findFirst: jest.fn() },
+    userProfile: { findFirst: jest.fn(), findUnique: jest.fn() },
     order: {
       aggregate: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),

@@ -49,7 +49,7 @@ function makePrismaMock() {
     leaveRequest: {
       update: jest.fn().mockResolvedValue({ id: 'lr1' }),
       findFirst: jest.fn().mockResolvedValue({ id: 'lr1', status: 'pending', startDate: new Date('2025-01-01'), endDate: new Date('2025-01-03'), employeeId: 'emp1', createdById: 'u1' }),
-      findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(null),
     },
     leaveType: {
       findFirst: jest.fn().mockResolvedValue(null),

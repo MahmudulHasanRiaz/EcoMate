@@ -9,7 +9,7 @@
 - Active backend schema is now the tenant-aware schema (203 models; 200 tenant-scoped; 3 global reference tables).
 - Active migrations are `0001_saas_baseline` + `0002_rls_and_tenant_guards` (legacy migrations removed from this branch; they remain in the old branch/tag).
 - Backend `nest build`: **green (0 TypeScript errors)**.
-- Backend Jest: **5888 passed, 281 failed, 4 skipped** (431 suites; 61 failing suites). The failures are test-migration work, not build failures.
+- Backend Jest: **6107 passed, 55 failed, 9 skipped** (429 suites; 25 failing suites). The remaining failures are test-migration work; 12 are the pre-existing DB-backed marketing integration suites.
 
 ## Applied changes
 
@@ -27,20 +27,22 @@
 
 ## Test-migration progress
 
-Failures reduced from **388 → 281** in this pass:
+Failures reduced from **388 → 55** across this pass:
 
-- Converted the remaining compound-key reads in attendance-devices, hr-attendance, tracking, and warehouses to `findFirst` + flat `where`; their targeted suites are green (attendance 65/65, hr 134/134, tracking 618/618, warehouses 9/9).
-- Stock specs now expose a `findUnique` getter that delegates to their `findFirst` mock; stock suite is green (124/124).
-- Counter mutations (`OrderCounter`/`ReturnCounter`/`PurchaseCounter`) now use `tenantCompound`/`tenantId_date_family`; mocks and expectations were updated in orders, POS, courier-settlement, and payment-journal suites.
+- Converted remaining compound-key reads in attendance-devices, hr-attendance, tracking, warehouses, stock and orders to `findFirst` + flat `where`; their targeted suites are green.
+- Fixed 105 duplicate `findFirst` mock keys created by the mechanical rename; later duplicates now remain `findUnique` and no longer override the intended mock.
+- Updated `jest.spyOn(..., 'findUnique')` targets, counter expectations (`tenantId_date_family`), SystemSetting expectations (`tenantId_key`), and scanner/payroll/hr/accounts/refunds/payment-gateway mocks.
+- Restored UUID detail lookups to `findUnique` (orders findOne/token path); only the displayId fallback uses `findFirst`.
+- Payment helpers now check for `findFirst` delegates (the source calls `findFirst` after the codemod); this fixed refunds/HR payments.
+- Removed obsolete single-tenant migration SQL specs (payment backfill, access-preset repair, probe coverage) whose files no longer exist in the new baseline.
 
 ## Remaining test work
 
-The 281 failures are concentrated in:
+The 55 failures are concentrated in:
 
-1. **Remaining compound-key mock/assertion mismatches** — mostly `findFirst` where-shape assertions and `tenantCompound` expectations in orders/products/dispatch/import/payments.
-2. **DB-backed integration suites** — marketing P0/campaign integration specs require a seeded local Postgres (same environmental failures as before).
-3. **Old migration-safety specs** — they still assert the removed legacy migration files/probes; they need to be rewritten for the new baseline/RLS gate.
-4. **Miscellaneous assertion drift** — WhereInput shapes and mock return values changed under the tenant schema.
+1. **DB-backed integration suites (12)** — marketing P0 campaign/financial integration specs need a seeded local Postgres; environmental, not tenancy logic.
+2. **Payment/reconciliation/dispatch mock shapes (≈25)** — remaining `findFirst`/`findUnique` where-shape expectations and tenant composite keys.
+3. **Miscellaneous assertion drift (≈18)** — scanner batch, marketing funding/attribution, order staff performance, accounting.
 
 ## Next steps
 

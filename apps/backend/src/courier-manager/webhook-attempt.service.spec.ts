@@ -14,7 +14,7 @@ describe('WebhookAttemptService', () => {
         update: jest.fn(),
         findFirst: jest.fn(),
         findMany: jest.fn(),
-        findFirst: jest.fn(),
+        findUnique: jest.fn(),
         deleteMany: jest.fn(),
       },
     };

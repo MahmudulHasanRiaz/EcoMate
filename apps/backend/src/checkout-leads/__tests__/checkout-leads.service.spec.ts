@@ -60,7 +60,7 @@ describe('CheckoutLeadsService', () => {
             checkoutLead: {
               findFirst: jest.fn(),
               findMany: jest.fn(),
-              findFirst: jest.fn(),
+              findUnique: jest.fn(),
               create: jest.fn(),
               update: jest.fn(),
               updateMany: jest.fn(),
@@ -93,7 +93,7 @@ describe('CheckoutLeadsService', () => {
             // test passes a truthy payment method, so an empty set is inert.
             paymentGateway: {
               findFirst: jest.fn().mockResolvedValue(null),
-              findFirst: jest.fn().mockResolvedValue(null),
+              findUnique: jest.fn().mockResolvedValue(null),
               findMany: jest.fn().mockResolvedValue([]),
             },
             // resolvePaymentAccountId validates a client-supplied accountId
@@ -565,7 +565,6 @@ describe('CheckoutLeadsService', () => {
         ({ where }: any) =>
           Promise.resolve(where?.code === 'cash' ? codGateway : null),
       );
-      (prisma.paymentGateway.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.paymentGateway.findMany as jest.Mock).mockResolvedValue([
         codGateway,
       ]);
@@ -727,7 +726,7 @@ describe('CheckoutLeadsService', () => {
       const id = await (service as any).generateOrderDisplayId();
 
       expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
-        where: {  date: dhakaToday(), family: 'ORD'  },
+        where: { tenantId_date_family: expect.objectContaining({ date: dhakaToday(), family: 'ORD' }) },
         create: { date: dhakaToday(), family: 'ORD', seq: 1 },
         update: { seq: { increment: 1 } },
       });
@@ -738,9 +737,7 @@ describe('CheckoutLeadsService', () => {
       const id = await (service as any).leadDisplayId();
 
       expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
-        where: {
-           date: `LEAD-${dhakaToday()}`, family: 'ORD' ,
-        },
+        where: { tenantId_date_family: expect.objectContaining({ date: `LEAD-${dhakaToday()}`, family: 'ORD' }) },
         create: { date: `LEAD-${dhakaToday()}`, family: 'ORD', seq: 1 },
         update: { seq: { increment: 1 } },
       });

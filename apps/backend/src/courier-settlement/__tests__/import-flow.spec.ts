@@ -84,6 +84,10 @@ function makePrisma() {
     $transaction: async (fn: (t: any) => Promise<any>) => fn(tx),
     courierSettlementInvoice: {
       findFirst: async ({ where }: any) => {
+        if (where?.id) {
+          const inv = invoices.find((i) => i.id === where.id);
+          return inv ? { ...inv } : null;
+        }
         if (!where?.fileSha256) return null;
         const sha = where.fileSha256;
         if (where.state?.in) {
@@ -102,7 +106,7 @@ function makePrisma() {
           ) ?? null
         );
       },
-      findFirst: async ({ where }: any) => {
+      findUnique: async ({ where }: any) => {
         const inv = invoices.find((i) => i.id === where.id);
         // Prisma returns a fresh row — never the live array element (commitOrSchedule
         // reads state BEFORE updateMany mutates the stored invoice).

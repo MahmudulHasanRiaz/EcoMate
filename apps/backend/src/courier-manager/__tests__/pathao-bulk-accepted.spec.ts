@@ -91,14 +91,14 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
       order: {
         findMany: jest.fn().mockResolvedValue(orders),
         findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
-        findFirst: jest.fn().mockResolvedValue({ id: orders[0]?.id }),
+        findUnique: jest.fn().mockResolvedValue({ id: orders[0]?.id }),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: orders.length }),
       },
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
         upsert: jest.fn().mockResolvedValue({}),
         create: jest.fn().mockImplementation(({ data }: any) =>
@@ -241,7 +241,7 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
         findFirst: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve(db.orders.find((o) => o.id === where.id) ?? null),
         ),
-        findFirst: jest.fn().mockImplementation(({ where }: any) => {
+        findUnique: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.courierConsignmentId) {
             return Promise.resolve(
               db.orders.find((o) => o.courierConsignmentId === where.courierConsignmentId) ?? null,

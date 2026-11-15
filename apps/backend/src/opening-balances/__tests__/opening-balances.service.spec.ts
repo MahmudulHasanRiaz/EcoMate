@@ -62,7 +62,7 @@ describe('OpeningBalancesService', () => {
     });
 
     it('should throw if account not found', async () => {
-      jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
       await expect(
         service.setBalance({
           accountId: 'invalid',
@@ -97,7 +97,7 @@ describe('OpeningBalancesService', () => {
 
     it('should throw if period is closed', async () => {
       jest
-        .spyOn(prisma.financialPeriod, 'findUnique')
+        .spyOn(prisma.financialPeriod, 'findFirst')
         .mockResolvedValue({ id: 'fp-1', isClosed: true } as any);
       await expect(
         service.setBalance({

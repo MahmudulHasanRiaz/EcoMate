@@ -136,7 +136,7 @@ describe('assertGatewayUsableOnSurface', () => {
     return {
       paymentGateway: {
         findFirst: jest.fn().mockResolvedValue(gateway),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
       },
     };
   }

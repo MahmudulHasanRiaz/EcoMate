@@ -92,13 +92,13 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
       order: {
         findMany: jest.fn().mockResolvedValue([order]),
         findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
-        findFirst: jest.fn().mockResolvedValue({ id: 'order-1' }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'order-1' }),
         update: jest.fn().mockResolvedValue(order),
       },
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
         upsert: jest.fn().mockResolvedValue({}),
         update: jest.fn().mockResolvedValue({}),

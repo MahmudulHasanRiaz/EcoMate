@@ -38,7 +38,7 @@ describe('RefundsService — cancel-with-refund releases stock exactly like canc
         findFirst: jest
           .fn()
           .mockResolvedValue({ id: 'status-cancelled', name: 'Cancelled' }),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
       },
       refund: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),

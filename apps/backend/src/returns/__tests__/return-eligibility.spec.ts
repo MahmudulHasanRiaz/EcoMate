@@ -61,7 +61,7 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
         ),
         findFirst: jest.fn().mockResolvedValue(null),
         // Courier upsert link-first lookup inside its transaction.
-        findFirst: jest.fn((...args: any[]) => prisma.return.findFirst(...args)),
+        findUnique: jest.fn((...args: any[]) => prisma.return.findFirst(...args)),
         findMany: jest.fn().mockImplementation(async (args: any) => {
           if (args?.where?.createdAt) return recent;
           return active;
@@ -87,7 +87,7 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
       return: {
         create: tx.return.create,
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockImplementation(async (args: any) => {
           if (args?.where?.createdAt) return recent;
           return active;

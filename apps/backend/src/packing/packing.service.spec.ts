@@ -33,7 +33,7 @@ describe('PackingService', () => {
     order: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
-      findFirst: jest.fn(),
+      findUnique: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
       count: jest.fn(),

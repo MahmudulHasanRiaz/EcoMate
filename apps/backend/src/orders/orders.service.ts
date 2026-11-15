@@ -1294,7 +1294,7 @@ export class OrdersService {
       },
     } satisfies Prisma.OrderInclude;
 
-    let order = await this.prisma.order.findFirst({
+    let order = await this.prisma.order.findUnique({
       where: { id },
       include,
     });

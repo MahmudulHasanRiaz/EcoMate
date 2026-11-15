@@ -91,7 +91,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
             product: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
             productVariant: { findMany: jest.fn(), findFirst: jest.fn() },
             combo: { findMany: jest.fn() },
-            order: { findFirst: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
+            order: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
             orderStatus: { findFirst: jest.fn() },
             orderCounter: { upsert: jest.fn() },
             orderItem: {

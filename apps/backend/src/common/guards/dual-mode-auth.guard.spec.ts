@@ -48,7 +48,7 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
           useValue: {
             userProfile: {
               findFirst: jest.fn(),
-              findFirst: jest.fn(),
+              findUnique: jest.fn(),
               create: jest.fn(),
             },
             userSettings: { create: jest.fn() },

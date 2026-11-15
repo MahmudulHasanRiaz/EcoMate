@@ -54,7 +54,7 @@ describe('Courier Task A — mapping corrections batch', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(shippingOrder),
-        findFirst: jest.fn().mockResolvedValue(shippingOrder),
+        findUnique: jest.fn().mockResolvedValue(shippingOrder),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {

@@ -263,7 +263,7 @@ describe('AccountingService', () => {
     });
 
     it('should throw if account not found', async () => {
-      jest.spyOn(prisma.account, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.account, 'findFirst').mockResolvedValue(null);
       await expect(
         service.createEntry({
           periodId: 'fp-open',
@@ -348,7 +348,7 @@ describe('AccountingService', () => {
     });
 
     it('should throw if not found', async () => {
-      jest.spyOn(prisma.journalEntry, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.journalEntry, 'findFirst').mockResolvedValue(null);
       await expect(service.getEntry('invalid')).rejects.toThrow(
         NotFoundException,
       );
@@ -513,7 +513,7 @@ describe('AccountingService', () => {
     });
 
     it('should throw if not found', async () => {
-      jest.spyOn(prisma.journalEntry, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.journalEntry, 'findFirst').mockResolvedValue(null);
       await expect(service.deleteEntry('invalid')).rejects.toThrow(
         NotFoundException,
       );

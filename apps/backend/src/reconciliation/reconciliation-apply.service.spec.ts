@@ -134,7 +134,7 @@ function makeService(opts: any = {}) {
         status: 'RESTOCKED',
         items: opts.txItems ?? [{ productId: 'p1', variantId: 'v1', quantity: 2 }],
       })),
-      findFirst: jest.fn(async () => opts.txExistingReturn ?? null),
+      findUnique: jest.fn(async () => opts.txExistingReturn ?? null),
       create: jest.fn(async (args: any) => ({ id: 'ret-new-1', ...args.data })),
     },
     product: {
@@ -176,7 +176,7 @@ function makeService(opts: any = {}) {
     physicalReservation: { findMany: jest.fn(async () => []) },
     physicalInventory: {
       findFirst: jest.fn(async () => null),
-      findFirst: jest.fn(async () => null),
+      findUnique: jest.fn(async () => null),
       create: jest.fn(async () => ({ id: 'pi-1', quantity: 0, warehouseId: 'w1' })),
       update: jest.fn(async () => ({})),
     },

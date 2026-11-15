@@ -29,7 +29,7 @@ function makePrisma(aliases: any[] = []) {
                 a.courier === where.courier_sourceHeader.courier &&
                 a.sourceHeader === where.courier_sourceHeader.sourceHeader,
             ) ?? null,
-      findFirst: async ({ where }: any) =>
+      findUnique: async ({ where }: any) =>
         store.find(
           (a) =>
             a.courier === where.courier &&

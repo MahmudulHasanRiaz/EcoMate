@@ -62,7 +62,7 @@ describe('MarketingFundingService', () => {
       updateMany: jest.fn(),
     },
     financialPeriod: { findFirst: jest.fn() },
-    account: { findFirst: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
+    account: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
     marketingAuditLog: { create: jest.fn() },
     $transaction: jest.fn(),
   });

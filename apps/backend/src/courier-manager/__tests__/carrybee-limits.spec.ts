@@ -62,7 +62,7 @@ describe('Carrybee over-limit pre-flight rejections', () => {
       order: {
         findMany: jest.fn().mockResolvedValue([baseOrder]),
         findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
-        findFirst: jest.fn().mockResolvedValue({ id: 'order-1' }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'order-1' }),
         update: jest.fn().mockResolvedValue(baseOrder),
       },
       dispatch: {

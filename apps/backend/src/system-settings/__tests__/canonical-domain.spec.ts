@@ -121,7 +121,7 @@ describe('POST /system-settings/canonical_domain', () => {
     );
     expect(res.value).toBe('https://shop.example.com');
     expect(prisma.systemSetting.upsert).toHaveBeenCalledWith({
-      where: { key: 'canonical_domain' },
+      where: { tenantId_key: expect.objectContaining({ key: 'canonical_domain' }) },
       create: { key: 'canonical_domain', value: 'https://shop.example.com' },
       update: { value: 'https://shop.example.com' },
     });
@@ -149,7 +149,7 @@ describe('POST /system-settings/canonical_domain', () => {
     const res = await ctrl.set('canonical_domain', { value: '' }, superadmin);
     expect(res.value).toBe('');
     expect(prisma.systemSetting.upsert).toHaveBeenCalledWith({
-      where: { key: 'canonical_domain' },
+      where: { tenantId_key: expect.objectContaining({ key: 'canonical_domain' }) },
       create: { key: 'canonical_domain', value: '' },
       update: { value: '' },
     });

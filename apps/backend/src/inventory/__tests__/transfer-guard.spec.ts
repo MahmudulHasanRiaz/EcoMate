@@ -51,7 +51,7 @@ describe('InventoryService — transfer guards', () => {
         {
           provide: PrismaService,
           useValue: {
-            product: { findFirst: jest.fn(), findFirst: jest.fn() },
+            product: { findFirst: jest.fn(), findUnique: jest.fn() },
             productVariant: { findFirst: jest.fn(), update: jest.fn() },
             warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'w1', name: 'Warehouse' }) },
             physicalInventory: { findFirst: jest.fn(), updateMany: jest.fn(), create: jest.fn() },

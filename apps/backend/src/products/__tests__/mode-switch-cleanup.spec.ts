@@ -24,7 +24,7 @@ describe('ProductsService — mode-switch managed cleanup (2026-11-11)', () => {
     const prisma: any = {
       product: {
         findFirst: jest.fn().mockResolvedValue(stored),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({ ...stored, variants: [] }),
       },
       productVariant: {

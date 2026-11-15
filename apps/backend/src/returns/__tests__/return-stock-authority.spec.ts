@@ -67,7 +67,7 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
         create: tx.return.create,
         update: tx.return.update,
         findFirst: jest.fn().mockResolvedValue({ ...stored }),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
       },
       refund: { findFirst: jest.fn().mockResolvedValue({ id: 'refund-1' }) },

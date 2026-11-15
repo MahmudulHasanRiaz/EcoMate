@@ -19,7 +19,7 @@ describe('HrLeaveService', () => {
       create: jest.fn(),
       findMany: jest.fn(),
       findFirst: jest.fn(),
-      findFirst: jest.fn(),
+      findUnique: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
       aggregate: jest.fn(),
@@ -300,14 +300,15 @@ describe('HrLeaveService', () => {
     });
 
     it('blocks approving a pending request that overlaps another approved one (re-check, excluding itself)', async () => {
-      prismaMock.leaveRequest.findFirst.mockResolvedValue({
-        id: 'lr-2',
-        status: 'pending',
-        employeeId: 'emp-1',
-        startDate: new Date('2026-01-02'),
-        endDate: new Date('2026-01-04'),
-      });
-      prismaMock.leaveRequest.findFirst.mockResolvedValue({ id: 'lr-approved' });
+      prismaMock.leaveRequest.findFirst
+        .mockResolvedValueOnce({
+          id: 'lr-2',
+          status: 'pending',
+          employeeId: 'emp-1',
+          startDate: new Date('2026-01-02'),
+          endDate: new Date('2026-01-04'),
+        })
+        .mockResolvedValueOnce({ id: 'lr-approved' });
 
       await expect(service.approveRequest('lr-2', {})).rejects.toThrow(
         ConflictException,
@@ -326,14 +327,15 @@ describe('HrLeaveService', () => {
     });
 
     it('approves when no overlapping pending/approved request exists', async () => {
-      prismaMock.leaveRequest.findFirst.mockResolvedValue({
-        id: 'lr-2',
-        status: 'pending',
-        employeeId: 'emp-1',
-        startDate: new Date('2026-01-02'),
-        endDate: new Date('2026-01-04'),
-      });
-      prismaMock.leaveRequest.findFirst.mockResolvedValue(null);
+      prismaMock.leaveRequest.findFirst
+        .mockResolvedValueOnce({
+          id: 'lr-2',
+          status: 'pending',
+          employeeId: 'emp-1',
+          startDate: new Date('2026-01-02'),
+          endDate: new Date('2026-01-04'),
+        })
+        .mockResolvedValueOnce(null);
       prismaMock.leaveRequest.update.mockResolvedValue({ id: 'lr-2', status: 'approved' });
 
       const res = await service.approveRequest('lr-2', {});

@@ -121,7 +121,7 @@ describe('OrdersService', () => {
             order: {
               findMany: jest.fn(),
               findFirst: jest.fn(),
-              findFirst: jest.fn(),
+              findUnique: jest.fn(),
               create: jest.fn(),
               update: jest.fn(),
               updateMany: jest.fn(),
@@ -130,7 +130,7 @@ describe('OrdersService', () => {
             },
             orderStatus: {
               findFirst: jest.fn(),
-              findFirst: jest.fn(),
+              findUnique: jest.fn(),
             },
             orderItem: {
               deleteMany: jest.fn(),
@@ -233,7 +233,7 @@ describe('OrdersService', () => {
             },
             customerProfile: {
               findFirst: jest.fn().mockResolvedValue(null),
-              findFirst: jest.fn().mockResolvedValue(null),
+              findUnique: jest.fn().mockResolvedValue(null),
               upsert: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
               update: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
               create: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
@@ -254,7 +254,7 @@ describe('OrdersService', () => {
             // is the common test case → null.
             marketingSession: {
               findFirst: jest.fn().mockResolvedValue(null),
-              findFirst: jest.fn().mockResolvedValue(null),
+              findUnique: jest.fn().mockResolvedValue(null),
             },
             user: {
               findFirst: jest.fn().mockResolvedValue({ status: 'active' }),
@@ -271,7 +271,7 @@ describe('OrdersService', () => {
             },
             userProfile: {
               findFirst: jest.fn().mockResolvedValue({ status: 'active' }),
-              findFirst: jest.fn().mockResolvedValue({ status: 'active' }),
+              findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
             },
             trackingSnapshot: {
               findFirst: jest.fn(),
@@ -751,7 +751,7 @@ describe('OrdersService', () => {
 
   describe('findOne', () => {
     it('should return an order by id when a matching token is provided', async () => {
-      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
         ...mockOrder,
         customerFirstName: 'John',
         customerLastName: 'Doe',
@@ -763,7 +763,7 @@ describe('OrdersService', () => {
         token: 'mock-view-token',
       });
 
-      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+      expect(prisma.order.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'order-id-1' } }),
       );
       // D-A: customer is built from the snapshot (stale profile ignored).
@@ -996,7 +996,7 @@ describe('OrdersService', () => {
     });
 
     it('resolves by UUID without consulting the displayId fallback', async () => {
-      (prisma.order.findFirst as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
 
       const result = await service.findOne('order-id-1', {
         userId: 'user-a',
@@ -1004,14 +1004,14 @@ describe('OrdersService', () => {
       });
 
       expect(result.id).toBe('order-id-1');
-      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+      expect(prisma.order.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'order-id-1' } }),
       );
       expect(prisma.order.findFirst).not.toHaveBeenCalled();
     });
 
     it('resolves by displayId when no UUID row matches (staff context, 2026-11-12)', async () => {
-      (prisma.order.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.order.findFirst as jest.Mock).mockResolvedValue(mockOrder);
 
       const result = await service.findOne('ORD-250115-0001', {
@@ -1019,7 +1019,7 @@ describe('OrdersService', () => {
         role: 'admin',
       });
 
-      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+      expect(prisma.order.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'ORD-250115-0001' } }),
       );
       expect(prisma.order.findFirst).toHaveBeenCalledWith(
@@ -1152,7 +1152,7 @@ describe('OrdersService', () => {
       await expect(
         service.findByDisplayId('order-id-1'),
       ).rejects.toThrow(NotFoundException);
-      expect(prisma.order.findFirst).not.toHaveBeenCalled();
+      expect(prisma.order.findUnique).not.toHaveBeenCalled();
       expect(prisma.order.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({

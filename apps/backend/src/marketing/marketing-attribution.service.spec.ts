@@ -7,8 +7,8 @@ describe('MarketingAttributionService', () => {
   let prisma: PrismaService;
 
   const mockPrisma = () => ({
-    marketingSession: { findFirst: jest.fn(), findFirst: jest.fn(), upsert: jest.fn(), create: jest.fn(), update: jest.fn() },
-    marketingCampaign: { findFirst: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
+    marketingSession: { findFirst: jest.fn(), findUnique: jest.fn(), upsert: jest.fn(), create: jest.fn(), update: jest.fn() },
+    marketingCampaign: { findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
     marketingAd: { findFirst: jest.fn().mockResolvedValue(null) },
     marketingAdSet: { findFirst: jest.fn().mockResolvedValue(null) },
     orderAttribution: { findFirst: jest.fn(), create: jest.fn(), findMany: jest.fn() },

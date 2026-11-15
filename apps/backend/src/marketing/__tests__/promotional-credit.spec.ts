@@ -55,7 +55,7 @@ describe('Promotional Credit Accounting', () => {
     marketingAuditLog: { create: jest.fn().mockResolvedValue({}) },
     account: {
       findFirst: jest.fn().mockResolvedValue({ id: 'acct-expense', code: 'marketing-expense', name: 'Marketing Expenses' }),
-      findFirst: jest.fn().mockResolvedValue({ id: 'acct-funding', name: 'Business Visa', isGroup: false }),
+      findUnique: jest.fn().mockResolvedValue({ id: 'acct-funding', name: 'Business Visa', isGroup: false }),
       create: jest.fn(),
     },
     journalEntryLine: {

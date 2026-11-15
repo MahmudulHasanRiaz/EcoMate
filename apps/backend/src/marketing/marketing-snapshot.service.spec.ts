@@ -57,7 +57,7 @@ describe('MarketingSnapshotService', () => {
       expect(res.rebuilt).toBe(4); // 2 products x 2 days
       const calls = (prisma.marketingDailyProductCost.upsert as jest.Mock).mock.calls;
       expect(calls).toHaveLength(4);
-      const p1 = calls.filter((c) => c[0].where.productId_date.productId === 'p1');
+      const p1 = calls.filter((c) => (c[0].where.tenantId_productId_date ?? c[0].where.productId_date).productId === 'p1');
       expect(p1).toHaveLength(2);
       expect(p1[0][0].create).toMatchObject({
         productId: 'p1',
@@ -68,7 +68,7 @@ describe('MarketingSnapshotService', () => {
         orders: 1,
         quantity: 2,
       });
-      const p2 = calls.filter((c) => c[0].where.productId_date.productId === 'p2');
+      const p2 = calls.filter((c) => (c[0].where.tenantId_productId_date ?? c[0].where.productId_date).productId === 'p2');
       expect(p2[0][0].create).toMatchObject({
         productId: 'p2',
         spend: 40,
@@ -87,17 +87,22 @@ describe('MarketingSnapshotService', () => {
       );
 
       await service.rebuildProductSnapshots('2026-08-01', '2026-08-01');
-      const first = (prisma.marketingDailyProductCost.upsert as jest.Mock).mock.calls.map(
-        (c) => c[0].where.productId_date,
-      );
+      const keyOf = (c: any) =>
+        c[0].where.tenantId_productId_date ?? c[0].where.productId_date;
+      const first = (prisma.marketingDailyProductCost.upsert as jest.Mock).mock.calls.map(keyOf);
       await service.rebuildProductSnapshots('2026-08-01', '2026-08-01');
       const second = (prisma.marketingDailyProductCost.upsert as jest.Mock).mock.calls
         .slice(2)
-        .map((c) => c[0].where.productId_date);
+        .map(keyOf);
 
       expect(first).toEqual(second);
       const where = (prisma.marketingDailyProductCost.upsert as jest.Mock).mock.calls[0][0].where;
-      expect(where).toEqual({  productId: 'p1', date: expect.any(Date)  });
+      expect(where).toEqual({
+        tenantId_productId_date: expect.objectContaining({
+          productId: 'p1',
+          date: expect.any(Date),
+        }),
+      });
       const args = (prisma.marketingDailyProductCost.upsert as jest.Mock).mock.calls[0][0];
       expect(args.update).toEqual(expect.objectContaining({ spend: 60 }));
     });

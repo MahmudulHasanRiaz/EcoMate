@@ -56,7 +56,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(shippingOrder),
-        findFirst: jest.fn().mockResolvedValue(shippingOrder),
+        findUnique: jest.fn().mockResolvedValue(shippingOrder),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {

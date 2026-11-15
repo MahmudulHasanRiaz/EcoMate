@@ -65,7 +65,7 @@ describe('CourierManagerService — Task 9 approved capability batch', () => {
       order: {
         findMany: jest.fn().mockResolvedValue([order]),
         findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
-        findFirst: jest.fn().mockResolvedValue({ id: 'order-1' }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'order-1' }),
         update: jest.fn().mockResolvedValue(order),
         updateMany: jest.fn().mockResolvedValue({ count: 2 }),
       },

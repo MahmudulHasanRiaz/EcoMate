@@ -111,7 +111,7 @@ class FakeDb {
     return {
       findFirst: async ({ where }: any) =>
         this.accounts.find(this.matchAccount(where)) ?? null,
-      findFirst: async ({ where }: any) =>
+      findUnique: async ({ where }: any) =>
         this.accounts.find(this.matchAccount(where)) ?? null,
       findMany: async ({ where }: any) => {
         const ids: string[] = where?.id?.in ?? [];
@@ -139,7 +139,7 @@ class FakeDb {
     return {
       findFirst: async ({ where }: any) =>
         this.periods.find((p) => p.id === where.id) ?? null,
-      findFirst: async ({ where }: any) =>
+      findUnique: async ({ where }: any) =>
         this.periods.find((p) => {
           const afterStart = where?.startDate?.lte
             ? p.startDate <= where.startDate.lte

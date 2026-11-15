@@ -19,7 +19,7 @@ describe('AttributesService (swatch image)', () => {
       attribute: { findFirst: jest.fn(), update: jest.fn() },
       attributeValue: {
         findFirst: jest.fn(),
-        findFirst: jest.fn(),
+        findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
       },

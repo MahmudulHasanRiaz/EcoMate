@@ -66,7 +66,7 @@ describe('AuthService', () => {
             isRestoreWriteBlocked: jest.fn().mockResolvedValue(false),
             userProfile: {
               findFirst: jest.fn(),
-              findFirst: jest.fn(),
+              findUnique: jest.fn(),
               create: jest.fn(),
               update: jest.fn(),
               updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -93,7 +93,7 @@ describe('AuthService', () => {
             verificationToken: {
               create: jest.fn(),
               findFirst: jest.fn(),
-              findFirst: jest.fn(),
+              findUnique: jest.fn(),
               update: jest.fn(),
             },
           },

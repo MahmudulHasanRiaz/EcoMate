@@ -98,7 +98,7 @@ describe('Task 10 — payload truncation/strip', () => {
       order: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
       dispatch: { findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn().mockResolvedValue({}) },
@@ -234,7 +234,7 @@ describe('Task 10 — 401-no-loop + invoice uniqueness on all couriers', () => {
       order: {
         findMany: jest.fn().mockResolvedValue([order]),
         findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
-        findFirst: jest.fn().mockResolvedValue({ id: 'order-1' }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'order-1' }),
         update: jest.fn().mockResolvedValue(order),
       },
       dispatch: {

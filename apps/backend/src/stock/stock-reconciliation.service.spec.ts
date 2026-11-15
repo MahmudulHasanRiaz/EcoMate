@@ -35,7 +35,7 @@ describe('StockReconciliationService', () => {
       order: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn().mockResolvedValue({ status: { name: 'Delivered' } }),
+        findUnique: jest.fn().mockResolvedValue({ status: { name: 'Delivered' } }),
       },
       orderItem: {
         findMany: jest.fn().mockResolvedValue([]),

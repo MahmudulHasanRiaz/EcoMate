@@ -85,7 +85,7 @@ describe('ExchangeService — paidConfirmed + transfer rows (hardening 4)', () =
             .reduce((s, o) => s + Number(o.exchangedCreditAmount), 0);
           return { _sum: { exchangedCreditAmount: sum } };
         },
-        findFirst: async () => null,
+        findUnique: async () => null,
       },
       orderItem: {
         create: async ({ data }: any) => {

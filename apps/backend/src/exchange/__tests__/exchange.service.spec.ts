@@ -74,7 +74,7 @@ function makeFake(opts: {
           .reduce((s, o) => s + Number(o.exchangedCreditAmount), 0);
         return { _sum: { exchangedCreditAmount: sum } };
       },
-      findFirst: async ({ where }: any) =>
+      findUnique: async ({ where }: any) =>
         orderItems.find((i) => i.orderId === where.orderId) ?? null,
     },
     orderItem: {

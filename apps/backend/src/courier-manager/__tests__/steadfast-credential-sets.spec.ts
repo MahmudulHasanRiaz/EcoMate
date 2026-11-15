@@ -21,7 +21,7 @@ function makePrisma() {
       findFirst: jest.fn(async ({ where }: any) =>
         sets.find((s) => s.id === where.id) ?? null,
       ),
-      findFirst: jest.fn(async ({ where }: any) => {
+      findUnique: jest.fn(async ({ where }: any) => {
         if (where?.isDefault === true)
           return sets.find((s) => s.isDefault) ?? null;
         return sets[0] ?? null;
@@ -204,7 +204,7 @@ describe('Task 8: Steadfast hybrid credential sets', () => {
         findFirst: jest.fn(async ({ where }: any) => (where.id === 'a'
           ? { id: 'a', courier: 'steadfast', label: 'A', apiKeyEnc: 'enc:key-a', secretKeyEnc: 'enc:sec-a', isDefault: true }
           : null)),
-        findFirst: jest.fn(async () => ({ id: 'a', courier: 'steadfast', label: 'A', apiKeyEnc: 'enc:key-a', secretKeyEnc: 'enc:sec-a', isDefault: true })),
+        findUnique: jest.fn(async () => ({ id: 'a', courier: 'steadfast', label: 'A', apiKeyEnc: 'enc:key-a', secretKeyEnc: 'enc:sec-a', isDefault: true })),
       },
       courierCredentials: {
         findFirst: jest.fn(async () => ({ courier: 'steadfast', enabled: true, mode: 'sandbox' })),

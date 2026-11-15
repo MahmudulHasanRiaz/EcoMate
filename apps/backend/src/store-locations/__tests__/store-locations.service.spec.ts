@@ -27,7 +27,7 @@ describe('StoreLocationsService', () => {
             storeLocation: {
               findMany: jest.fn().mockResolvedValue([active]),
               findFirst: jest.fn().mockResolvedValue(active),
-              findFirst: jest.fn().mockResolvedValue(active),
+              findUnique: jest.fn().mockResolvedValue(active),
               create: jest
                 .fn()
                 .mockImplementation(({ data }) => Promise.resolve({ id: 'new', ...data })),

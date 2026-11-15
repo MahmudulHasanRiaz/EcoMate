@@ -116,7 +116,7 @@ describe('EmployeesService', () => {
       employee: {
         findMany: jest.fn().mockResolvedValue([mockEmployee]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findFirst: jest.fn(),
+        findUnique: jest.fn(),
         create: jest.fn().mockResolvedValue(mockEmployee),
         update: jest.fn().mockResolvedValue(mockEmployee),
         delete: jest.fn().mockResolvedValue(mockEmployee),
@@ -129,12 +129,11 @@ describe('EmployeesService', () => {
         findFirst: jest.fn().mockResolvedValue(mockDesignation),
       },
       accessPreset: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'preset-1',
-          name: 'Staff',
-        }),
-        // Default-preset lookup used when the hire form omits accessPresetId.
-        findFirst: jest.fn().mockResolvedValue({ id: 'system-preset-manager' }),
+        findFirst: jest.fn(async ({ where }: any) =>
+          where?.id === 'system-preset-manager'
+            ? { id: 'system-preset-manager', name: 'Manager' }
+            : { id: 'preset-1', name: 'Staff' },
+        ),
       },
       employmentHistory: {
         create: jest.fn().mockResolvedValue({}),
@@ -249,7 +248,7 @@ describe('EmployeesService', () => {
       await service.create(dto);
 
       expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
-        where: {  date: dateStr, family: 'EMP'  },
+        where: { tenantId_date_family: expect.objectContaining({ date: dateStr, family: 'EMP' }) },
         create: { date: dateStr, family: 'EMP', seq: 1 },
         update: { seq: { increment: 1 } },
       });
@@ -259,7 +258,7 @@ describe('EmployeesService', () => {
     });
 
     it('should throw if department not found', async () => {
-      jest.spyOn(prisma.department, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.department, 'findFirst').mockResolvedValue(null);
       const dto: CreateEmployeeDto = {
         betterAuthUserId: 'ba-user-test',
         joiningDate: '2025-01-15',
@@ -1580,7 +1579,7 @@ describe('EmployeesService', () => {
     });
 
     it('still rejects an unknown department with nested payloads', async () => {
-      jest.spyOn(prisma.department, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.department, 'findFirst').mockResolvedValue(null);
       await expect(
         service.create({
           betterAuthUserId: 'ba-user-test',

@@ -64,7 +64,7 @@ describe('ExchangeService — transfer leg hardening (MED)', () => {
           return t;
         },
         aggregate: async () => ({ _sum: { exchangedCreditAmount: 0 } }),
-        findFirst: async () => null,
+        findUnique: async () => null,
       },
       orderItem: {
         create: async ({ data }: any) => {

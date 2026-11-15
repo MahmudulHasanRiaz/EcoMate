@@ -174,7 +174,7 @@ describe('SystemSettingsController', () => {
         );
         expect(res).toEqual({ key: 'payments.editAllowed', value: 'true' });
         expect(prisma.systemSetting.upsert).toHaveBeenCalledWith({
-          where: { key: 'payments.editAllowed' },
+          where: { tenantId_key: expect.objectContaining({ key: 'payments.editAllowed' }) },
           create: { key: 'payments.editAllowed', value: 'true' },
           update: { value: 'true' },
         });

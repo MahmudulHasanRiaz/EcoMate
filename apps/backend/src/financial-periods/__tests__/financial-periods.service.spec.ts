@@ -26,7 +26,7 @@ describe('FinancialPeriodsService', () => {
       financialPeriod: {
         findMany: jest.fn().mockResolvedValue([mockPeriod]),
         findFirst: jest.fn().mockResolvedValue(mockPeriod),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(mockPeriod),
         update: jest.fn().mockResolvedValue({ ...mockPeriod, isClosed: true }),
       },
@@ -56,6 +56,7 @@ describe('FinancialPeriodsService', () => {
 
   describe('create', () => {
     it('should create a period', async () => {
+      jest.spyOn(prisma.financialPeriod, 'findFirst').mockResolvedValue(null);
       const result = await service.create({
         name: 'July 2026',
         startDate: new Date('2026-07-01'),
@@ -106,7 +107,7 @@ describe('FinancialPeriodsService', () => {
     });
 
     it('should throw if period not found', async () => {
-      jest.spyOn(prisma.financialPeriod, 'findUnique').mockResolvedValue(null);
+      jest.spyOn(prisma.financialPeriod, 'findFirst').mockResolvedValue(null);
       await expect(service.closePeriod('invalid')).rejects.toThrow(
         NotFoundException,
       );
@@ -114,7 +115,7 @@ describe('FinancialPeriodsService', () => {
 
     it('should throw if already closed', async () => {
       jest
-        .spyOn(prisma.financialPeriod, 'findUnique')
+        .spyOn(prisma.financialPeriod, 'findFirst')
         .mockResolvedValue({ ...mockPeriod, isClosed: true });
       await expect(service.closePeriod('fp-1')).rejects.toThrow(
         BadRequestException,
@@ -132,7 +133,7 @@ describe('FinancialPeriodsService', () => {
   describe('openPeriod', () => {
     it('should reopen a closed period', async () => {
       jest
-        .spyOn(prisma.financialPeriod, 'findUnique')
+        .spyOn(prisma.financialPeriod, 'findFirst')
         .mockResolvedValue({ ...mockPeriod, isClosed: true });
       jest
         .spyOn(prisma.financialPeriod, 'update')

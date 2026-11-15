@@ -29,7 +29,7 @@ function makeService() {
   const prisma = {
     product: {
       findFirst: jest.fn().mockResolvedValue(null),
-      findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest
         .fn()
         .mockResolvedValue({ id: 'prod-created', slug: 'created', sku: 'SKU' }),

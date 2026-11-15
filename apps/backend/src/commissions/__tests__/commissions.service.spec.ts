@@ -17,7 +17,7 @@ describe('CommissionsService', () => {
     },
     orderStatus: {
       findFirst: jest.fn(),
-      findFirst: jest.fn().mockResolvedValue({ id: confirmedId }),
+      findUnique: jest.fn().mockResolvedValue({ id: confirmedId }),
     },
     order: {
       findFirst: jest.fn(),
