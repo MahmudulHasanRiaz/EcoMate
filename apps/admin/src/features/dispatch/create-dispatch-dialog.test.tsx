@@ -14,8 +14,8 @@ vi.mock('@/features/dispatch/hooks', () => ({
   }),
 }))
 
-vi.mock('@/stores/license-store', () => ({
-  useLicenseStore: (sel: any) => sel({ hasFeature: () => true }),
+vi.mock('@/stores/entitlements-store', () => ({
+  useEntitlementsStore: (sel: any) => sel({ hasFeature: () => true }),
 }))
 
 const mockGet = vi.hoisted(() => vi.fn())

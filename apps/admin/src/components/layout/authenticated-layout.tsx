@@ -4,7 +4,7 @@ import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import { apiClient } from '@/lib/api-client'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { LayoutProvider } from '@/context/layout-provider'
 import { SearchProvider } from '@/context/search-provider'
 import { PanelProvider } from '@/context/panel-provider'
@@ -159,31 +159,11 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
 
   useEffect(() => {
     if (!accessToken) return
-    if (window.location.pathname.includes('/license/activate')) return
 
-    const applyLicenseStatus = (data: {
-      active?: boolean
-      features?: string[]
-      license?: { features?: string[] }
-    }) => {
-      const isActive = data?.active
-      if (!isActive) {
-        // License genuinely needed: send the user straight to the standalone
-        // activation page (no sidebar shell, no half-hidden menus) and return
-        // them to the page they were on once the license is active again.
-        const currentPath = window.location.pathname + window.location.search
-        navigate({
-          to: '/license/activate',
-          search: { redirect: currentPath },
-          replace: true,
-        })
-        return
-      }
-      // /license/status returns the effective feature list at the TOP level
-      // (this is where the dev-mode '*' wildcard lives). `license.features` is
-      // the raw engine payload and is absent in dev mode.
-      const newFeatures: string[] = data?.features || data?.license?.features || []
-      const { added, removed } = useLicenseStore.getState().setFeatures(newFeatures)
+    const applyEntitlements = (data: { features?: string[] }) => {
+      // /entitlements/me returns the effective feature list (`*` opens all).
+      const newFeatures: string[] = data?.features || []
+      const { added, removed } = useEntitlementsStore.getState().setFeatures(newFeatures)
 
       if (added.length > 0 && removed.length > 0) {
         toast.info(
@@ -212,54 +192,25 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
       const raw = sessionStorage.getItem('admin_prefetch')
       if (raw) {
         const parsed = JSON.parse(raw)
-        if (parsed.licenseStatus) {
-          applyLicenseStatus(parsed.licenseStatus)
+        if (parsed.entitlements) {
+          applyEntitlements(parsed.entitlements)
           return
         }
       }
     } catch { /* fall through to API call */ }
 
-    apiClient.get('/license/status').then(r => applyLicenseStatus(r.data)).catch(() => {
-      // A transient network failure must NOT look like "no license": clearing
+    apiClient.get('/entitlements/me').then(r => applyEntitlements(r.data)).catch(() => {
+      // A transient network failure must NOT look like "no plan": clearing
       // features here used to collapse the whole sidebar on a momentary blip.
-      // Only an authoritative `active: false` response redirects/clears.
     })
-  }, [accessToken, navigate])
-
-  useEffect(() => {
-    if (!accessToken) return
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await apiClient.get('/license/status')
-        if (res.data?.state === 'expired' || res.data?.state === 'invalid') {
-          useLicenseStore.getState().setFeatures([])
-          toast.error('Your license has expired. Redirecting to license page...')
-          const currentPath = window.location.pathname + window.location.search
-          setTimeout(
-            () =>
-              navigate({
-                to: '/license/activate',
-                search: { redirect: currentPath },
-                replace: true,
-              }),
-            3000
-          )
-        }
-      } catch {
-        // Silently fail — network issues shouldn't interrupt work
-      }
-    }, 5 * 60 * 1000)
-
-    return () => clearInterval(interval)
-  }, [accessToken, navigate])
+  }, [accessToken])
 
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'eco_mate_features' && e.newValue) {
         try {
           const features = JSON.parse(e.newValue)
-          useLicenseStore.getState().setFeatures(features)
+          useEntitlementsStore.getState().setFeatures(features)
         } catch { /* ignore malformed feature payload */ }
       }
     }

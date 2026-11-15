@@ -1,14 +1,14 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { CourierSettings } from '@/features/settings/courier'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 
 const COURIER_FEATURES = ['courier_steadfast', 'courier_pathao', 'courier_redx', 'courier_carrybee']
 
 function requireAnyCourier() {
-  const store = useLicenseStore.getState()
+  const store = useEntitlementsStore.getState()
   const hasAny = COURIER_FEATURES.some((f) => store.hasFeature(f))
   if (!hasAny) {
-    throw redirect({ to: '/license-denied', search: { feature: 'courier' } })
+    throw redirect({ to: '/feature-unavailable', search: { feature: 'courier' } })
   }
 }
 

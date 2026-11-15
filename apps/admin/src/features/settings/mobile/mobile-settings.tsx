@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useLicenseStore } from '@/stores/license-store';
+import { useEntitlementsStore } from '@/stores/entitlements-store';
 import {
   Smartphone,
   Loader2,
@@ -29,7 +29,7 @@ interface ReadyStatus {
   ready: boolean;
   missing: string[];
   summary: {
-    license: boolean;
+    plan: boolean;
     branding: boolean;
     domain: boolean;
     packageId: boolean;
@@ -72,7 +72,7 @@ const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'second
 
 export function MobileSettings() {
   const queryClient = useQueryClient();
-  const hasFeature = useLicenseStore((s) => s.hasFeature);
+  const hasFeature = useEntitlementsStore((s) => s.hasFeature);
   const [selectedApp, setSelectedApp] = useState<string>('storefront');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('android');
 
@@ -133,7 +133,7 @@ export function MobileSettings() {
     },
   });
 
-  const isLicensed = hasFeature('mobile_distribution');
+  const hasMobilePlan = hasFeature('mobile_distribution');
 
   // Play Store / App Store URL state
   const { data: allSettings } = useQuery({
@@ -174,7 +174,7 @@ export function MobileSettings() {
     onError: (err: any) => toast.error(`Failed to save: ${err.message}`),
   });
 
-  if (!isLicensed) {
+  if (!hasMobilePlan) {
     return (
       <div className='space-y-6 w-full'>
         <div className='flex items-center gap-1.5'>
@@ -186,7 +186,7 @@ export function MobileSettings() {
             <Smartphone className='h-12 w-12 text-muted-foreground/50 mb-4' />
             <h3 className='text-lg font-semibold mb-2'>Mobile Distribution Not Available</h3>
             <p className='text-muted-foreground max-w-md'>
-              Your current license does not include mobile distribution. Upgrade to publish Android and iOS apps.
+              Your current plan does not include mobile distribution. Upgrade to publish Android and iOS apps.
             </p>
           </CardContent>
         </Card>
@@ -218,7 +218,7 @@ export function MobileSettings() {
           ) : (
             <div className='grid gap-3 sm:grid-cols-2'>
               {[
-                { key: 'license', label: 'License', ok: ready?.summary?.license },
+                { key: 'plan', label: 'Plan', ok: ready?.summary?.plan },
                 { key: 'branding', label: 'Branding (name + logo + color)', ok: ready?.summary?.branding },
                 { key: 'domain', label: 'Domain (CLIENT_DOMAIN)', ok: ready?.summary?.domain },
                 { key: 'packageId', label: 'Package ID', ok: ready?.summary?.packageId },
@@ -253,17 +253,17 @@ export function MobileSettings() {
             <div className='flex flex-wrap gap-2'>
               {APPS.map((app) => {
                 const featureKey = app === 'all' ? 'mobile_distribution' : `mobile_distribution${app === 'storefront' ? '' : '_' + app}`;
-                const licensed = app === 'all' ? hasFeature('mobile_distribution') : hasFeature(featureKey);
+                const canPublish = app === 'all' ? hasFeature('mobile_distribution') : hasFeature(featureKey);
                 return (
                   <Button
                     key={app}
                     variant={selectedApp === app ? 'default' : 'outline'}
                     size='sm'
-                    disabled={!licensed}
+                    disabled={!canPublish}
                     onClick={() => setSelectedApp(app)}
                   >
                     {app === 'all' ? 'All Apps' : app.charAt(0).toUpperCase() + app.slice(1)}
-                    {!licensed && <XCircle className='h-3 w-3 ml-2' />}
+                    {!canPublish && <XCircle className='h-3 w-3 ml-2' />}
                   </Button>
                 );
               })}

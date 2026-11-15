@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { courierLogos } from './courier-logos'
 import { SteadfastSetsManager } from './steadfast-sets-manager'
 import { unconfiguredCouriers, webhookBannerCopy, type WebhookStatusPayload } from './webhook-status'
@@ -127,7 +127,7 @@ export function CourierSettings() {
   })
 
   const [forms, setForms] = useState<Record<string, CourierFormState>>({})
-  const hasFeature = useLicenseStore((s) => s.hasFeature)
+  const hasFeature = useEntitlementsStore((s) => s.hasFeature)
   // Steadfast may authenticate through a default credential set even when the
   // legacy single row below has no keys — the label must not warn in that case.
   const { data: steadfastSets } = useSteadfastSets()

@@ -1,10 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { FeedsPage } from '@/features/feeds';
-import { useLicenseStore } from '@/stores/license-store';
+import { useEntitlementsStore } from '@/stores/entitlements-store';
 
 function ProductFeedsPage() {
-  const loaded = useLicenseStore((s) => s.loaded);
-  const hasFeature = useLicenseStore((s) => s.hasFeature);
+  const loaded = useEntitlementsStore((s) => s.loaded);
+  const hasFeature = useEntitlementsStore((s) => s.hasFeature);
   const featureAvailable = hasFeature('admin_product_feeds');
 
   if (!loaded) return null;

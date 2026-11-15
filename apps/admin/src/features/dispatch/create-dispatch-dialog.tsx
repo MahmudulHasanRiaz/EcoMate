@@ -26,7 +26,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { SelectDropdown } from '@/components/select-dropdown'
 import { apiClient } from '@/lib/api-client'
 import { useDispatchMutations } from './hooks'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { getCourierOptions } from './data/data'
 
 type CreateDispatchDialogProps = {
@@ -68,7 +68,7 @@ export function CreateDispatchDialog({
   onOpenChange,
 }: CreateDispatchDialogProps) {
   const { create } = useDispatchMutations()
-  const hasFeature = useLicenseStore((s) => s.hasFeature)
+  const hasFeature = useEntitlementsStore((s) => s.hasFeature)
   const courierOptions = getCourierOptions(hasFeature)
 
   const [identifiersOpen, setIdentifiersOpen] = useState(false)

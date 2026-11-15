@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/command'
 import { sidebarData } from './layout/data/sidebar-data'
 import { filterNavItems } from './layout/data/sidebar-filter'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { ScrollArea } from './ui/scroll-area'
 
 function formatCurrency(n: number) {
@@ -41,7 +41,7 @@ function formatCurrency(n: number) {
 export function CommandPalette() {
   const navigate = useNavigate()
   const { setTheme } = useTheme()
-  const features = useLicenseStore((s) => s.features)
+  const features = useEntitlementsStore((s) => s.features)
   const {
     open,
     setOpen,

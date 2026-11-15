@@ -7,7 +7,7 @@ import { appHref } from '@/lib/app-href'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
 import { CustomizationEditor } from './customization-editor'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { productOverrideApi } from '@/features/gateways/api'
 import { MediaPicker } from '@/components/media-picker'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
@@ -129,7 +129,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [lowStockQty, setLowStockQty] = useState('')
   const [weightGram, setWeightGram] = useState('')
   const [customizationGroups, setCustomizationGroups] = useState<any[]>([])
-  const hasCustomizationFeature = useLicenseStore((s) => s.hasFeature)('product-customization')
+  const hasCustomizationFeature = useEntitlementsStore((s) => s.hasFeature)('product-customization')
   const [categoryIds, setCategoryIds] = useState<string[]>([])
   const [brandId, setBrandId] = useState<string>('')
   const [isActive, setIsActive] = useState(true)
@@ -845,7 +845,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       // Owner Q12: optional parcel weight; empty clears to courier fallback
       // on edit (null), and simply omits on create.
       weightGram: weightGram ? parseInt(weightGram) : (isEdit ? null : undefined),
-      // Customization definition (Q15/Q20): only sent when the license
+      // Customization definition (Q15/Q20): only sent when the plan
       // feature is on — when it's off the field is omitted entirely so an
       // unrelated edit never wipes a stored definition.
       customizations: hasCustomizationFeature

@@ -5,7 +5,7 @@ import { sidebarData } from './data/sidebar-data'
 import { NavGroup } from './nav-group'
 import { NavUser } from './nav-user'
 import { TeamSwitcher } from './team-switcher'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { filterNavItems } from './data/sidebar-filter'
 
@@ -14,7 +14,7 @@ const EMPTY_PERMISSIONS: string[] = []
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
   const { activePanel } = usePanel()
-  const features = useLicenseStore((s) => s.features)
+  const features = useEntitlementsStore((s) => s.features)
   const permissions = useAuthStore((s) => s.auth.user?.permissions) ?? EMPTY_PERMISSIONS
 
   const mainGroups = sidebarData.navGroups

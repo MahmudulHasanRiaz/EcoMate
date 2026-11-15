@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemSettingsApi } from '@/features/settings/storage-api'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,7 +10,7 @@ import { toast } from 'sonner'
 
 export function InventorySettings() {
   const queryClient = useQueryClient()
-  const hasInventory = useLicenseStore(s => s.hasFeature('admin_inventory'))
+  const hasInventory = useEntitlementsStore(s => s.hasFeature('admin_inventory'))
 
   const { data: settingsData, isLoading } = useQuery({
     queryKey: ['system-settings'],
@@ -48,10 +48,10 @@ export function InventorySettings() {
           <CardContent className='p-4 flex items-start gap-3'>
             <AlertTriangle className='h-5 w-5 text-amber-600 shrink-0 mt-0.5' />
             <div>
-              <p className='text-sm font-medium text-amber-800'>Inventory management requires a license upgrade</p>
+              <p className='text-sm font-medium text-amber-800'>Inventory management requires a plan upgrade</p>
               <p className='text-xs text-amber-700 mt-1'>
                 Your current plan does not include the <code>admin_inventory</code> feature.
-                Upgrade your license to enable inventory management.
+                Upgrade your plan to enable inventory management.
               </p>
             </div>
           </CardContent>
@@ -76,7 +76,7 @@ export function InventorySettings() {
                   ? inventoryEnabled
                     ? 'Physical inventory, stock adjustments, and warehouse tracking are active.'
                     : 'All inventory features are currently disabled.'
-                  : 'Upgrade license to access inventory features.'}
+                  : 'Upgrade plan to access inventory features.'}
               </p>
             </div>
             <Switch

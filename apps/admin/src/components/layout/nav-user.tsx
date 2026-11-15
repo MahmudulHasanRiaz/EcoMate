@@ -12,7 +12,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import useDialogState from '@/hooks/use-dialog-state'
 import { useAuthStore } from '@/stores/auth-store'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -46,10 +46,10 @@ type NavUserProps = {
  *  - the employee lines come from `GET /hr/my/profile`, so an employee sees
  *    their own employee code and department rather than a copy of the admin's
  *    identity;
- *  - the plan comes from `GET /license/status`.
+ *  - the plan comes from `GET /entitlements/me`.
  *
  * Non-employee-only links (system settings) are hidden when the viewer lacks
- * the license feature, so no entry ever leads to a dead screen.
+ * the plan feature, so no entry ever leads to a dead screen.
  */
 export function NavUser(_props: NavUserProps) {
   const { isMobile } = useSidebar()
@@ -59,7 +59,7 @@ export function NavUser(_props: NavUserProps) {
   const isMon = pathname.startsWith('/mon')
 
   const user = useAuthStore((s) => s.auth.user)
-  const hasFeature = useLicenseStore((s) => s.hasFeature)
+  const hasFeature = useEntitlementsStore((s) => s.hasFeature)
 
   const email = user?.email || 'admin@ecomate.com'
   const role = user?.role || 'admin'
@@ -255,11 +255,11 @@ export function NavUser(_props: NavUserProps) {
                 )}
                 {canSeeSystem && (
                   <DropdownMenuItem
-                    onSelect={() => navigate({ to: '/mon/settings/license' })}
+                    onSelect={() => navigate({ to: '/mon/settings/plan' })}
                     className="rounded-md focus:bg-muted py-1.5 px-2.5 text-xs gap-2 font-medium cursor-pointer"
                   >
                     <CircleUser className="size-3.5 text-muted-foreground" />
-                    License & Plan
+                    Plan &amp; Usage
                   </DropdownMenuItem>
                 )}
               </DropdownMenuGroup>

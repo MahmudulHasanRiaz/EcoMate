@@ -1,17 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { PackingWorkspace } from '@/features/packing'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 
 const FEATURE = 'admin_packing'
 
 /**
  * The packing workspace is gated by ROLE in the team switcher (superadmin /
  * admin only), but the `admin_packing` plan feature was never enforced — any
- * role that could reach this URL got the workspace regardless of license.
+ * role that could reach this URL got the workspace regardless of plan.
  */
 function PackingRoute() {
-  const loaded = useLicenseStore((s) => s.loaded)
-  const hasFeature = useLicenseStore((s) => s.hasFeature)
+  const loaded = useEntitlementsStore((s) => s.loaded)
+  const hasFeature = useEntitlementsStore((s) => s.hasFeature)
 
   if (!loaded) return null
   if (!hasFeature(FEATURE)) {

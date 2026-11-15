@@ -11,7 +11,7 @@ const FEATURE_ERROR_MESSAGES: Record<string, string> = {
   storefront_referral: 'The referral program is not currently available.',
   pwa_setup: '',
   seo_suite: '',
-  offline_conversion: 'Offline conversion tracking requires an upgraded license.',
+  offline_conversion: 'Offline conversion tracking requires a plan upgrade.',
   integration_ga4: '',
   integration_tiktok: '',
   integration_meta: 'Meta Pixel & CAPI integration is not included in your current plan.',
@@ -71,15 +71,15 @@ const FEATURE_ERROR_MESSAGES: Record<string, string> = {
   admin_help_center: 'Help center management is not included in your current plan.',
   image_resize_proxy: '',
   pos_system: 'The POS system is not included in your current plan.',
-  smtp_server: 'Custom SMTP configuration requires a license upgrade.',
+  smtp_server: 'Custom SMTP configuration requires a plan upgrade.',
   s3_storage: '',
   db_backup: 'Database backup is not included in your current plan.',
   custom_domain: 'Custom domain configuration is not included in your current plan.',
 }
 
-export function LicenseDeniedError() {
+export function FeatureUnavailableError() {
   const navigate = useNavigate()
-  const { feature } = useSearch({ from: '/(errors)/license-denied' })
+  const { feature } = useSearch({ from: '/(errors)/feature-unavailable' })
   const errorMessage = feature ? FEATURE_ERROR_MESSAGES[feature] : undefined
 
   return (
@@ -101,8 +101,8 @@ export function LicenseDeniedError() {
           <Button variant='outline' onClick={() => navigate({ to: '/' })}>
             Go to Dashboard
           </Button>
-          <Button onClick={() => navigate({ to: '/mon/settings/license' })}>
-            View License
+          <Button onClick={() => navigate({ to: '/mon/settings/plan' })}>
+            View Plan & Usage
           </Button>
         </div>
       </div>

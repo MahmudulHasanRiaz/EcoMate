@@ -1,12 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { CareersApplicationsPage } from '@/features/hr/careers'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 
 const FEATURE = 'admin_hr_careers'
 
 function CareersApplicationsRoute() {
-  const loaded = useLicenseStore((s) => s.loaded)
-  const hasFeature = useLicenseStore((s) => s.hasFeature)
+  const loaded = useEntitlementsStore((s) => s.loaded)
+  const hasFeature = useEntitlementsStore((s) => s.hasFeature)
 
   if (!loaded) return null
   if (!hasFeature(FEATURE)) {

@@ -20,9 +20,8 @@ import { Route as errors403RouteImport } from './routes/(errors)/403'
 import { Route as errors404RouteImport } from './routes/(errors)/404'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
-import { Route as errorsLicenseDeniedRouteImport } from './routes/(errors)/license-denied'
+import { Route as errorsFeatureUnavailableRouteImport } from './routes/(errors)/feature-unavailable'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as LicenseActivateRouteImport } from './routes/license/activate'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedHrAttendanceRouteImport } from './routes/_authenticated/hr/attendance'
 import { Route as AuthenticatedHrCommissionsRouteImport } from './routes/_authenticated/hr/commissions'
@@ -154,10 +153,10 @@ import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './rou
 import { Route as AuthenticatedMonSettingsGeneralIndexRouteImport } from './routes/_authenticated/mon/settings/general/index'
 import { Route as AuthenticatedMonSettingsHomepageIndexRouteImport } from './routes/_authenticated/mon/settings/homepage/index'
 import { Route as AuthenticatedMonSettingsInventoryIndexRouteImport } from './routes/_authenticated/mon/settings/inventory/index'
-import { Route as AuthenticatedMonSettingsLicenseIndexRouteImport } from './routes/_authenticated/mon/settings/license/index'
 import { Route as AuthenticatedMonSettingsMenuIndexRouteImport } from './routes/_authenticated/mon/settings/menu/index'
 import { Route as AuthenticatedMonSettingsMobileIndexRouteImport } from './routes/_authenticated/mon/settings/mobile/index'
 import { Route as AuthenticatedMonSettingsOrderStatusesIndexRouteImport } from './routes/_authenticated/mon/settings/order-statuses/index'
+import { Route as AuthenticatedMonSettingsPlanIndexRouteImport } from './routes/_authenticated/mon/settings/plan/index'
 import { Route as AuthenticatedMonSettingsPriceLabelIndexRouteImport } from './routes/_authenticated/mon/settings/price-label/index'
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
 import { Route as AuthenticatedMonSettingsSmtpIndexRouteImport } from './routes/_authenticated/mon/settings/smtp/index'
@@ -246,20 +245,16 @@ const errors503Route = errors503RouteImport.update({
   path: '/503',
   getParentRoute: () => rootRouteImport,
 } as any)
-const errorsLicenseDeniedRoute = errorsLicenseDeniedRouteImport.update({
-  id: '/(errors)/license-denied',
-  path: '/license-denied',
-  getParentRoute: () => rootRouteImport,
-} as any)
+const errorsFeatureUnavailableRoute =
+  errorsFeatureUnavailableRouteImport.update({
+    id: '/(errors)/feature-unavailable',
+    path: '/feature-unavailable',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const LicenseActivateRoute = LicenseActivateRouteImport.update({
-  id: '/license/activate',
-  path: '/license/activate',
-  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
@@ -1035,12 +1030,6 @@ const AuthenticatedMonSettingsInventoryIndexRoute =
     path: '/inventory/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
-const AuthenticatedMonSettingsLicenseIndexRoute =
-  AuthenticatedMonSettingsLicenseIndexRouteImport.update({
-    id: '/license/',
-    path: '/license/',
-    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
-  } as any)
 const AuthenticatedMonSettingsMenuIndexRoute =
   AuthenticatedMonSettingsMenuIndexRouteImport.update({
     id: '/menu/',
@@ -1057,6 +1046,12 @@ const AuthenticatedMonSettingsOrderStatusesIndexRoute =
   AuthenticatedMonSettingsOrderStatusesIndexRouteImport.update({
     id: '/order-statuses/',
     path: '/order-statuses/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsPlanIndexRoute =
+  AuthenticatedMonSettingsPlanIndexRouteImport.update({
+    id: '/plan/',
+    path: '/plan/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
 const AuthenticatedMonSettingsPriceLabelIndexRoute =
@@ -1270,8 +1265,7 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
-  '/license-denied': typeof errorsLicenseDeniedRoute
-  '/license/activate': typeof LicenseActivateRoute
+  '/feature-unavailable': typeof errorsFeatureUnavailableRoute
   '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
@@ -1411,10 +1405,10 @@ export interface FileRoutesByFullPath {
   '/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/homepage/': typeof AuthenticatedMonSettingsHomepageIndexRoute
   '/mon/settings/inventory/': typeof AuthenticatedMonSettingsInventoryIndexRoute
-  '/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/mobile/': typeof AuthenticatedMonSettingsMobileIndexRoute
   '/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/mon/settings/plan/': typeof AuthenticatedMonSettingsPlanIndexRoute
   '/mon/settings/price-label/': typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
@@ -1452,8 +1446,7 @@ export interface FileRoutesByTo {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
-  '/license-denied': typeof errorsLicenseDeniedRoute
-  '/license/activate': typeof LicenseActivateRoute
+  '/feature-unavailable': typeof errorsFeatureUnavailableRoute
   '/': typeof AuthenticatedIndexRoute
   '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
@@ -1594,10 +1587,10 @@ export interface FileRoutesByTo {
   '/mon/settings/general': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/homepage': typeof AuthenticatedMonSettingsHomepageIndexRoute
   '/mon/settings/inventory': typeof AuthenticatedMonSettingsInventoryIndexRoute
-  '/mon/settings/license': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/mon/settings/menu': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/mon/settings/mobile': typeof AuthenticatedMonSettingsMobileIndexRoute
   '/mon/settings/order-statuses': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/mon/settings/plan': typeof AuthenticatedMonSettingsPlanIndexRoute
   '/mon/settings/price-label': typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp': typeof AuthenticatedMonSettingsSmtpIndexRoute
@@ -1637,8 +1630,7 @@ export interface FileRoutesById {
   '/(errors)/404': typeof errors404Route
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
-  '/(errors)/license-denied': typeof errorsLicenseDeniedRoute
-  '/license/activate': typeof LicenseActivateRoute
+  '/(errors)/feature-unavailable': typeof errorsFeatureUnavailableRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/_authenticated/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
@@ -1779,10 +1771,10 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/_authenticated/mon/settings/homepage/': typeof AuthenticatedMonSettingsHomepageIndexRoute
   '/_authenticated/mon/settings/inventory/': typeof AuthenticatedMonSettingsInventoryIndexRoute
-  '/_authenticated/mon/settings/license/': typeof AuthenticatedMonSettingsLicenseIndexRoute
   '/_authenticated/mon/settings/menu/': typeof AuthenticatedMonSettingsMenuIndexRoute
   '/_authenticated/mon/settings/mobile/': typeof AuthenticatedMonSettingsMobileIndexRoute
   '/_authenticated/mon/settings/order-statuses/': typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  '/_authenticated/mon/settings/plan/': typeof AuthenticatedMonSettingsPlanIndexRoute
   '/_authenticated/mon/settings/price-label/': typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/_authenticated/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
@@ -1823,8 +1815,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
-    | '/license-denied'
-    | '/license/activate'
+    | '/feature-unavailable'
     | '/mon/settings'
     | '/op/print'
     | '/op/settings'
@@ -1964,10 +1955,10 @@ export interface FileRouteTypes {
     | '/mon/settings/general/'
     | '/mon/settings/homepage/'
     | '/mon/settings/inventory/'
-    | '/mon/settings/license/'
     | '/mon/settings/menu/'
     | '/mon/settings/mobile/'
     | '/mon/settings/order-statuses/'
+    | '/mon/settings/plan/'
     | '/mon/settings/price-label/'
     | '/mon/settings/shipping/'
     | '/mon/settings/smtp/'
@@ -2005,8 +1996,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
-    | '/license-denied'
-    | '/license/activate'
+    | '/feature-unavailable'
     | '/'
     | '/mon/settings'
     | '/op/print'
@@ -2147,10 +2137,10 @@ export interface FileRouteTypes {
     | '/mon/settings/general'
     | '/mon/settings/homepage'
     | '/mon/settings/inventory'
-    | '/mon/settings/license'
     | '/mon/settings/menu'
     | '/mon/settings/mobile'
     | '/mon/settings/order-statuses'
+    | '/mon/settings/plan'
     | '/mon/settings/price-label'
     | '/mon/settings/shipping'
     | '/mon/settings/smtp'
@@ -2189,8 +2179,7 @@ export interface FileRouteTypes {
     | '/(errors)/404'
     | '/(errors)/500'
     | '/(errors)/503'
-    | '/(errors)/license-denied'
-    | '/license/activate'
+    | '/(errors)/feature-unavailable'
     | '/_authenticated/'
     | '/_authenticated/mon/settings'
     | '/_authenticated/op/print'
@@ -2331,10 +2320,10 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/general/'
     | '/_authenticated/mon/settings/homepage/'
     | '/_authenticated/mon/settings/inventory/'
-    | '/_authenticated/mon/settings/license/'
     | '/_authenticated/mon/settings/menu/'
     | '/_authenticated/mon/settings/mobile/'
     | '/_authenticated/mon/settings/order-statuses/'
+    | '/_authenticated/mon/settings/plan/'
     | '/_authenticated/mon/settings/price-label/'
     | '/_authenticated/mon/settings/shipping/'
     | '/_authenticated/mon/settings/smtp/'
@@ -2374,8 +2363,7 @@ export interface RootRouteChildren {
   errors404Route: typeof errors404Route
   errors500Route: typeof errors500Route
   errors503Route: typeof errors503Route
-  errorsLicenseDeniedRoute: typeof errorsLicenseDeniedRoute
-  LicenseActivateRoute: typeof LicenseActivateRoute
+  errorsFeatureUnavailableRoute: typeof errorsFeatureUnavailableRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -2457,11 +2445,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof errors503RouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/(errors)/license-denied': {
-      id: '/(errors)/license-denied'
-      path: '/license-denied'
-      fullPath: '/license-denied'
-      preLoaderRoute: typeof errorsLicenseDeniedRouteImport
+    '/(errors)/feature-unavailable': {
+      id: '/(errors)/feature-unavailable'
+      path: '/feature-unavailable'
+      fullPath: '/feature-unavailable'
+      preLoaderRoute: typeof errorsFeatureUnavailableRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/': {
@@ -2470,13 +2458,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/license/activate': {
-      id: '/license/activate'
-      path: '/license/activate'
-      fullPath: '/license/activate'
-      preLoaderRoute: typeof LicenseActivateRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/errors/$error': {
       id: '/_authenticated/errors/$error'
@@ -3395,13 +3376,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsInventoryIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
-    '/_authenticated/mon/settings/license/': {
-      id: '/_authenticated/mon/settings/license/'
-      path: '/license'
-      fullPath: '/mon/settings/license/'
-      preLoaderRoute: typeof AuthenticatedMonSettingsLicenseIndexRouteImport
-      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
-    }
     '/_authenticated/mon/settings/menu/': {
       id: '/_authenticated/mon/settings/menu/'
       path: '/menu'
@@ -3421,6 +3395,13 @@ declare module '@tanstack/react-router' {
       path: '/order-statuses'
       fullPath: '/mon/settings/order-statuses/'
       preLoaderRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/plan/': {
+      id: '/_authenticated/mon/settings/plan/'
+      path: '/plan'
+      fullPath: '/mon/settings/plan/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsPlanIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
     '/_authenticated/mon/settings/price-label/': {
@@ -3666,10 +3647,10 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsGeneralIndexRoute: typeof AuthenticatedMonSettingsGeneralIndexRoute
   AuthenticatedMonSettingsHomepageIndexRoute: typeof AuthenticatedMonSettingsHomepageIndexRoute
   AuthenticatedMonSettingsInventoryIndexRoute: typeof AuthenticatedMonSettingsInventoryIndexRoute
-  AuthenticatedMonSettingsLicenseIndexRoute: typeof AuthenticatedMonSettingsLicenseIndexRoute
   AuthenticatedMonSettingsMenuIndexRoute: typeof AuthenticatedMonSettingsMenuIndexRoute
   AuthenticatedMonSettingsMobileIndexRoute: typeof AuthenticatedMonSettingsMobileIndexRoute
   AuthenticatedMonSettingsOrderStatusesIndexRoute: typeof AuthenticatedMonSettingsOrderStatusesIndexRoute
+  AuthenticatedMonSettingsPlanIndexRoute: typeof AuthenticatedMonSettingsPlanIndexRoute
   AuthenticatedMonSettingsPriceLabelIndexRoute: typeof AuthenticatedMonSettingsPriceLabelIndexRoute
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
   AuthenticatedMonSettingsSmtpIndexRoute: typeof AuthenticatedMonSettingsSmtpIndexRoute
@@ -3698,14 +3679,14 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsHomepageIndexRoute,
     AuthenticatedMonSettingsInventoryIndexRoute:
       AuthenticatedMonSettingsInventoryIndexRoute,
-    AuthenticatedMonSettingsLicenseIndexRoute:
-      AuthenticatedMonSettingsLicenseIndexRoute,
     AuthenticatedMonSettingsMenuIndexRoute:
       AuthenticatedMonSettingsMenuIndexRoute,
     AuthenticatedMonSettingsMobileIndexRoute:
       AuthenticatedMonSettingsMobileIndexRoute,
     AuthenticatedMonSettingsOrderStatusesIndexRoute:
       AuthenticatedMonSettingsOrderStatusesIndexRoute,
+    AuthenticatedMonSettingsPlanIndexRoute:
+      AuthenticatedMonSettingsPlanIndexRoute,
     AuthenticatedMonSettingsPriceLabelIndexRoute:
       AuthenticatedMonSettingsPriceLabelIndexRoute,
     AuthenticatedMonSettingsShippingIndexRoute:
@@ -4137,8 +4118,7 @@ const rootRouteChildren: RootRouteChildren = {
   errors404Route: errors404Route,
   errors500Route: errors500Route,
   errors503Route: errors503Route,
-  errorsLicenseDeniedRoute: errorsLicenseDeniedRoute,
-  LicenseActivateRoute: LicenseActivateRoute,
+  errorsFeatureUnavailableRoute: errorsFeatureUnavailableRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -29,7 +29,7 @@ import { plainLine } from './components/info-copy'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
 import { MarketingKpiWidget } from '../analytics/components/MarketingKpiWidget'
 import { TrafficSourcesChart } from '../analytics/components/TrafficSourcesChart'
-import { useLicenseStore } from '../../stores/license-store'
+import { useEntitlementsStore } from '../../stores/entitlements-store'
 
 const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')
 
@@ -252,7 +252,7 @@ export default function MarketingAnalytics() {
   const { data, isLoading, error, refetch } = useMarketingSummary(filters)
   const campaigns = useMarketingCampaigns(filters)
   const undated = useMarketingUndated(filters, page, pageSize)
-  const showGa4 = useLicenseStore((s) => s.hasFeature('integration_ga4'))
+  const showGa4 = useEntitlementsStore((s) => s.hasFeature('integration_ga4'))
   // GA4 web-traffic sits on a session basis — never mixed with the spend-date
   // P&L cost or the recognised-revenue attribution above.
   const ga4Range = { startDate: filters.startDate, endDate: filters.endDate }

@@ -9,7 +9,7 @@ const authState = vi.hoisted(() => ({
 const setUser = vi.hoisted(() => vi.fn())
 const reset = vi.hoisted(() => vi.fn())
 const getMe = vi.hoisted(() => vi.fn())
-const getLicenseStatus = vi.hoisted(() => vi.fn())
+const getEntitlements = vi.hoisted(() => vi.fn())
 
 vi.mock('@/stores/auth-store', () => ({
   useAuthStore: Object.assign(
@@ -22,11 +22,11 @@ vi.mock('@/stores/auth-store', () => ({
 }))
 
 vi.mock('@/lib/api-client', () => ({
-  apiClient: { get: (url: string) => (url === '/auth/me' ? getMe() : getLicenseStatus()) },
+  apiClient: { get: (url: string) => (url === '/auth/me' ? getMe() : getEntitlements()) },
 }))
 
-vi.mock('@/stores/license-store', () => ({
-  useLicenseStore: Object.assign(
+vi.mock('@/stores/entitlements-store', () => ({
+  useEntitlementsStore: Object.assign(
     (selector: (s: any) => unknown) => selector({ features: ['*'], setFeatures: vi.fn(), getState: () => ({ setFeatures: vi.fn() }) }),
     { getState: () => ({ setFeatures: vi.fn() }) }
   ),
@@ -35,7 +35,7 @@ vi.mock('@/stores/license-store', () => ({
 // Layout chrome is irrelevant to these assertions and pulls in the whole shell.
 vi.mock('@/components/layout/app-sidebar', () => ({ AppSidebar: () => null }))
 // The real widget portals into the <Header>; stub it so the layout test stays
-// focused on permission + license bootstrapping.
+// focused on permission + entitlement bootstrapping.
 vi.mock('@/features/hr-attendance/components/attendance-clock', () => ({ AttendanceClock: () => null }))
 // Same for the purge button: its mutation needs a QueryClient the layout
 // test does not provide; the button itself is covered by its own tests.
@@ -75,7 +75,7 @@ describe('AuthenticatedLayout permission bootstrap', () => {
     authState.accessToken = 'tok'
     authState.user = null
     sessionStorage.clear()
-    getLicenseStatus.mockResolvedValue({ data: { active: true, features: ['*'] } })
+    getEntitlements.mockResolvedValue({ data: { active: true, features: ['*'] } })
   })
 
   it('fetches /auth/me when no user is cached', async () => {
@@ -105,7 +105,7 @@ describe('AuthenticatedLayout permission bootstrap', () => {
   it('skips /auth/me once permissions are already present', async () => {
     authState.user = { id: 'u1', email: 'a@b.c', role: 'superadmin', permissions: ['view_hr'] }
     render(<AuthenticatedLayout />)
-    await waitFor(() => expect(getLicenseStatus).toHaveBeenCalled())
+    await waitFor(() => expect(getEntitlements).toHaveBeenCalled())
     expect(getMe).not.toHaveBeenCalled()
     expect(setUser).not.toHaveBeenCalled()
   })
@@ -120,16 +120,16 @@ describe("AuthenticatedLayout '*' wildcard handling", () => {
     getMe.mockResolvedValue({ data: { id: 'u1', email: 'a@b.c', role: 'superadmin', permissions: ['*'] } })
   })
 
-  it('reads features from the TOP level of /license/status', async () => {
-    // Backend returns the effective list at the top level — that is where the
-    // dev-mode '*' lives. Reading `license.features` alone yielded [] and hid
+  it('reads the effective feature list from /entitlements/me', async () => {
+    // The backend returns the effective list at the top level — that is where
+    // the '*' wildcard lives. Reading a nested field alone yielded [] and hid
     // every sidebar section.
-    getLicenseStatus.mockResolvedValue({ data: { active: true, features: ['*'], license: null } })
+    getEntitlements.mockResolvedValue({ data: { features: ['*'], planName: 'All Access' } })
     render(<AuthenticatedLayout />)
-    await waitFor(() => expect(getLicenseStatus).toHaveBeenCalled())
-    // No crash, and no redirect to /license/activate.
+    await waitFor(() => expect(getEntitlements).toHaveBeenCalled())
+    // No crash, and no redirect away from the requested page.
     expect(navigate).not.toHaveBeenCalledWith(
-      expect.objectContaining({ to: '/license/activate' }),
+      expect.objectContaining({ to: '/mon/settings/plan' }),
       undefined
     )
   })

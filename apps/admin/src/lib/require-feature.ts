@@ -1,11 +1,11 @@
 import { redirect } from '@tanstack/react-router'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 
 export function requireFeature(featureKey: string) {
-  const store = useLicenseStore.getState()
+  const store = useEntitlementsStore.getState()
   if (!store.loaded || !store.hasFeature(featureKey)) {
     throw redirect({
-      to: '/license-denied',
+      to: '/feature-unavailable',
       search: { feature: featureKey },
     })
   }

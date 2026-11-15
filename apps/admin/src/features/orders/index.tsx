@@ -9,7 +9,7 @@ import { SafeImage } from '@/components/safe-image'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
 import { apiClient } from '@/lib/api-client'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { useOrdersFilterStore } from '@/stores/orders-filter-store'
 import { copyToClipboard } from '@/lib/clipboard'
 import { resolveOrderItemImages } from '@/lib/product-image'
@@ -760,7 +760,7 @@ export function Orders() {
 
   const { data: courierCreds } = useQuery({ queryKey: ['courier-creds'], queryFn: () => apiClient.get('/couriers/credentials').then(r => r.data as any[]) })
   const activeCouriers = ((Array.isArray(courierCreds) ? courierCreds : []) as any[]).filter(
-    (c: any) => useLicenseStore.getState().hasFeature(`courier_${c.courier}`)
+    (c: any) => useEntitlementsStore.getState().hasFeature(`courier_${c.courier}`)
   )
   const [dispatchCourier, setDispatchCourier] = useState('')
   // MEDIUM bulk-silent: the bulk dispatch path resolves ONE Steadfast

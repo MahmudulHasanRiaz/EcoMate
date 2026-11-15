@@ -10,7 +10,7 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/c
 import { usePanel, type PanelType } from '@/context/panel-provider'
 import { usePermission } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/auth-store'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 
 type Team = {
   name: string
@@ -26,7 +26,7 @@ export function TeamSwitcher() {
   const { activePanel, setActivePanel } = usePanel()
   const role = useAuthStore(s => s.auth.user?.role || 'admin')
   const canViewHr = usePermission('view_hr')
-  const hasFeature = useLicenseStore(s => s.hasFeature)
+  const hasFeature = useEntitlementsStore(s => s.hasFeature)
   const navigate = useNavigate()
 
   // Both halves are required: the licence gates the HR panel, the permission

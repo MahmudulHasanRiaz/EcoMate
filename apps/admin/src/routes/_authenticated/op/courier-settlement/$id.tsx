@@ -1,12 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { InvoiceDetailPage } from '@/features/courier-settlement/invoice-detail'
-import { useLicenseStore } from '@/stores/license-store'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 
 const FEATURE = 'admin_courier_settlement'
 
 function InvoiceRoute() {
-  const loaded = useLicenseStore((s) => s.loaded)
-  const hasFeature = useLicenseStore((s) => s.hasFeature)
+  const loaded = useEntitlementsStore((s) => s.loaded)
+  const hasFeature = useEntitlementsStore((s) => s.hasFeature)
   const { id } = Route.useParams()
 
   if (!loaded) return null

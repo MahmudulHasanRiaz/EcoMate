@@ -25,7 +25,7 @@ export type CatalogueGroup = {
   key: string
   label: string
   group: string
-  /** License feature gating the module, or null when the module is ungated. */
+  /** Plan feature gating the module, or null when the module is ungated. */
   feature: string | null
   permissions: CataloguePermission[]
 }

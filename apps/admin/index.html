@@ -213,9 +213,9 @@
     </script>
 
     <!--
-      Critical API prefetch: fire auth/license/branding calls during bundle
-      download, cache results in sessionStorage. React reads them instantly
-      on mount instead of waiting for sequential round-trips.
+      Critical API prefetch: fire auth/entitlements/branding calls during
+      bundle download, cache results in sessionStorage. React reads them
+      instantly on mount instead of waiting for sequential round-trips.
     -->
     <script>
       (function () {
@@ -225,7 +225,7 @@
             return 'http://localhost:4000/api';
           })();
           var PREFETCH_KEY = 'admin_prefetch';
-          var urls = ['/auth/me', '/license/status', '/system-settings/branding'];
+          var urls = ['/auth/me', '/entitlements/me', '/system-settings/branding'];
           Promise.all(urls.map(function (u) {
             return fetch(apiBase + u, { credentials: 'include', cache: 'no-store' })
               .then(function (r) { return r.ok ? r.json() : null; })
@@ -234,7 +234,7 @@
             try {
               var payload = {};
               if (results[0]) payload.authMe = results[0];
-              if (results[1]) payload.licenseStatus = results[1];
+              if (results[1]) payload.entitlements = results[1];
               if (results[2]) payload.branding = results[2];
               sessionStorage.setItem(PREFETCH_KEY, JSON.stringify(payload));
             } catch (_) {}

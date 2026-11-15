@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 
 const EVERYTHING_FEATURE = '*'
-const PREV_FEATURES_KEY = 'ecomate_previous_features'
-const FEATURES_CACHE_KEY = 'eco_mate_features'
+const PREV_FEATURES_KEY = 'ecomate_previous_entitlements'
+const FEATURES_CACHE_KEY = 'ecomate_entitlements'
+const LEGACY_FEATURES_CACHE_KEY = 'eco_mate_features'
 
 function loadFromStorage(key: string): string[] {
   try {
@@ -19,7 +20,7 @@ function saveToStorage(key: string, features: string[]) {
   } catch { /* ignore */ }
 }
 
-interface LicenseStore {
+interface EntitlementsStore {
   features: string[]
   previousFeatures: string[]
   loaded: boolean
@@ -28,8 +29,11 @@ interface LicenseStore {
   clearPreviousFeatures: () => void
 }
 
-export const useLicenseStore = create<LicenseStore>((set, get) => ({
-  features: loadFromStorage(FEATURES_CACHE_KEY),
+export const useEntitlementsStore = create<EntitlementsStore>((set, get) => ({
+  features:
+    loadFromStorage(FEATURES_CACHE_KEY).length > 0
+      ? loadFromStorage(FEATURES_CACHE_KEY)
+      : loadFromStorage(LEGACY_FEATURES_CACHE_KEY),
   previousFeatures: loadFromStorage(PREV_FEATURES_KEY),
   loaded: false,
   setFeatures: (features) => {

@@ -20,8 +20,8 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }))
 
-vi.mock('@/stores/license-store', () => ({
-  useLicenseStore: (sel: (s: { hasFeature: (key: string) => boolean }) => unknown) =>
+vi.mock('@/stores/entitlements-store', () => ({
+  useEntitlementsStore: (sel: (s: { hasFeature: (key: string) => boolean }) => unknown) =>
     sel({ hasFeature: () => true }),
 }))
 
