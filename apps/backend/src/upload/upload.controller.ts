@@ -14,6 +14,7 @@ import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorato
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { validateMagicBytes } from '../common/utils/file-validation';
+import { RequiresLimit } from '../entitlements/requires-limit.decorator';
 
 const MAX_BYTES = 15 * 1024 * 1024; // 15MB per file
 const MAX_BULK = 20;
@@ -25,6 +26,7 @@ export class UploadController {
 
   @Post('image')
   @RateLimitPolicy('api')
+  @RequiresLimit('storage_mb', 0)
   @Roles('superadmin', 'admin', 'employee', 'cashier')
   async uploadImage(
     @Req() req: fastify.FastifyRequest,
@@ -66,6 +68,7 @@ export class UploadController {
   }
 
   @Post('images')
+  @RequiresLimit('storage_mb', 0)
   @RateLimitPolicy('api')
   @Roles('superadmin', 'admin', 'employee', 'cashier')
   async uploadImages(
@@ -137,6 +140,7 @@ export class UploadController {
   }
 
   @Post('from-url')
+  @RequiresLimit('storage_mb', 0)
   @RateLimitPolicy('api')
   @Roles('superadmin', 'admin', 'employee', 'cashier')
   async uploadFromUrl(

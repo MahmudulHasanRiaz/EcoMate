@@ -26,7 +26,9 @@ import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { SecurityService } from '../security/security.service';
+import { SkipSubscription } from '../tenancy/skip-subscription.decorator';
 
+@SkipSubscription()
 @Controller('auth')
 export class AuthController {
   constructor(

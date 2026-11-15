@@ -22,6 +22,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { BulkDeleteUsersDto, BulkUpdateUsersDto } from './dto/bulk-user.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { RequiresLimit } from '../entitlements/requires-limit.decorator';
 
 @Controller('users')
 @RequiresFeature('admin_staff_users')
@@ -63,6 +64,7 @@ export class UsersController {
   }
 
   @Permissions('create_users')
+  @RequiresLimit('staff_users')
   @Post()
   async create(@Body() dto: CreateUserDto, @CurrentUser() user?: any) {
     // Preset supremacy: a restricted creator may not mint an admin or

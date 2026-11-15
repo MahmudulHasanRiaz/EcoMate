@@ -112,9 +112,12 @@ import { BackupModule } from './backup/backup.module';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { SecurityDashboardModule } from './security-dashboard/security-dashboard.module';
 import { TenancyModule } from './tenancy/tenancy.module';
+import { EntitlementsModule } from './entitlements/entitlements.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { TenantMiddleware } from './tenancy/tenant.middleware';
 import { TenantGuard } from './tenancy/tenant.guard';
+import { TenantSubscriptionGuard } from './tenancy/tenant-subscription.guard';
+import { TenantLimitGuard } from './entitlements/tenant-limit.guard';
 
 @Module({
   imports: [
@@ -222,6 +225,7 @@ import { TenantGuard } from './tenancy/tenant.guard';
     AuthSettingsModule,
     PermissionsModule,
     TenancyModule,
+    EntitlementsModule,
   ],
 
   providers: [
@@ -233,6 +237,8 @@ import { TenantGuard } from './tenancy/tenant.guard';
       }),
     },
     { provide: APP_GUARD, useClass: TenantGuard },
+    { provide: APP_GUARD, useClass: TenantSubscriptionGuard },
+    { provide: APP_GUARD, useClass: TenantLimitGuard },
     { provide: APP_GUARD, useClass: DualModeAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: FeatureGuard },

@@ -38,6 +38,7 @@ import { Observable } from 'rxjs';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
+import { RequiresLimit } from '../entitlements/requires-limit.decorator';
 
 @Controller('orders')
 export class OrdersController {
@@ -110,6 +111,7 @@ export class OrdersController {
 
   @Public()
   @RateLimitPolicy('checkout')
+  @RequiresLimit('orders_per_month')
   @Post()
   create(@Body() dto: CreateOrderDto, @Req() req: any, @CurrentUser() user?: any) {
     return this.svc.create(

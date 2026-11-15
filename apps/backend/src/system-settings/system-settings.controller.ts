@@ -1,4 +1,4 @@
-import { tenantCompound } from '../tenancy/tenant-context';
+import { getTenantContext, tenantCompound } from '../tenancy/tenant-context';
 import {
   Controller,
   Get,
@@ -9,6 +9,7 @@ import {
   BadRequestException,
   ForbiddenException,
   InternalServerErrorException,
+  Optional,
 } from '@nestjs/common';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,6 +18,7 @@ import { MediaService } from '../media/media.service';
 import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { CachePurgeService } from '../cache-purge/cache-purge.service';
+import { TenantEntitlementsService } from '../tenancy/tenant-entitlements.service';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
@@ -286,7 +288,20 @@ export class SystemSettingsController {
     private readonly cache: CacheService,
     private readonly featureFlags: FeatureFlagsService,
     private readonly cachePurge: CachePurgeService,
+    @Optional()
+    private readonly entitlements?: TenantEntitlementsService,
   ) {}
+
+  /**
+   * The storefront config is tenant-specific. A global key let the first
+   * tenant to warm the cache serve its settings (and plan features) to every
+   * other tenant on the same process. Kept un-suffixed only for code paths
+   * with no tenant context (unit tests / pre-middleware boot).
+   */
+  private storefrontConfigCacheKey(): string {
+    const tenantId = getTenantContext()?.tenantId;
+    return tenantId ? `storefront:config:${tenantId}` : 'storefront:config';
+  }
 
   @Get()
   @Roles('superadmin', 'admin', 'employee')
@@ -378,7 +393,8 @@ export class SystemSettingsController {
   @Public()
   @Get('storefront')
   async getStorefrontConfig() {
-    const cached = await this.cache.get<any>('storefront:config');
+    const cacheKey = this.storefrontConfigCacheKey();
+    const cached = await this.cache.get<any>(cacheKey);
     if (cached) return cached;
 
     let result: any;
@@ -716,6 +732,10 @@ export class SystemSettingsController {
           defaultVariantSelected: map['default_variant_selected'] !== 'false',
           showReviews: map['show_reviews'] !== 'false',
         },
+        // Plan entitlements for storefront feature gates (combos, wishlist,
+        // careers, mobile distribution, …). Replaces the per-tenant feature
+        // lookup the storefront used to make.
+        planFeatures: this.entitlements?.getActiveFeatures() ?? [],
         thankYou: {
           title: map['thanks_page_title'] || '',
           subtitle: map['thanks_page_subtitle'] || '',
@@ -773,10 +793,10 @@ export class SystemSettingsController {
         (result as any)._mediaMeta = await this.mediaResolver.resolve(heroImageUrls);
       }
 
-      await this.cache.set('storefront:config', result);
+      await this.cache.set(cacheKey, result);
       return result;
     } catch {
-      const stale = await this.cache.getStale<any>('storefront:config');
+      const stale = await this.cache.getStale<any>(cacheKey);
       if (stale) return stale;
       throw new InternalServerErrorException(
         'Failed to load storefront configuration',
@@ -1094,7 +1114,7 @@ export class SystemSettingsController {
       create: { key, value },
       update: { value },
     });
-    await this.cache.delete('storefront:config');
+    await this.cache.delete(this.storefrontConfigCacheKey());
     if (key === 'canonical_domain') {
       // Best-effort on-demand invalidation of the storefront's
       // sitemap/robots caches — the same call the Purge-all button

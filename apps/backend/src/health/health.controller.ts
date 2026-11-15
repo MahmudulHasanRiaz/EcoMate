@@ -3,9 +3,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { SkipTenant } from '../tenancy/skip-tenant.decorator';
+import { SkipSubscription } from '../tenancy/skip-subscription.decorator';
 
 @RateLimitPolicy('health')
 @SkipTenant()
+@SkipSubscription()
 @Controller('health')
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);

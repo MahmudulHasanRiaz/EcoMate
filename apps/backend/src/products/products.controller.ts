@@ -19,6 +19,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
+import { RequiresLimit } from '../entitlements/requires-limit.decorator';
 
 @Controller('products')
 export class ProductsController {
@@ -194,6 +195,7 @@ export class ProductsController {
 
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
+  @RequiresLimit('products')
   @Post('draft/:id/publish')
   publishDraft(@Param('id') id: string, @Body() dto: UpdateProductDto) {
     return this.svc.publishDraft(id, dto);
@@ -201,6 +203,7 @@ export class ProductsController {
 
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
+  @RequiresLimit('products')
   @Post()
   create(@Body() dto: CreateProductDto) {
     return this.svc.create(dto);

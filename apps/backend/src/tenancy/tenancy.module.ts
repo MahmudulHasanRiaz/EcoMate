@@ -6,6 +6,7 @@ import { TenantRegistryService } from './tenant-registry.service';
 import { TenantRegistrySyncService } from './tenant-registry-sync.service';
 import { RlsCoverageService } from './rls-coverage.service';
 import { TenantEntitlementsService } from './tenant-entitlements.service';
+import { TenantSubscriptionGuard } from './tenant-subscription.guard';
 
 @Global()
 @Module({
@@ -17,6 +18,7 @@ import { TenantEntitlementsService } from './tenant-entitlements.service';
     TenantEntitlementsService,
     TenantMiddleware,
     TenantGuard,
+    TenantSubscriptionGuard,
   ],
   exports: [
     TenantRegistryService,
@@ -26,6 +28,7 @@ import { TenantEntitlementsService } from './tenant-entitlements.service';
     TenantEntitlementsService,
     TenantMiddleware,
     TenantGuard,
+    TenantSubscriptionGuard,
   ],
 })
 export class TenancyModule {}

@@ -26,6 +26,15 @@ export function endOfDhakaDay(d: Date = new Date()): Date {
   return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
 }
 
+/** Start of the Dhaka month containing `d` (or now), as an absolute UTC Date. */
+export function startOfDhakaMonth(d: Date = new Date()): Date {
+  const shifted = new Date(d.getTime() + DHAKA_OFFSET_MS);
+  return new Date(
+    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), 1) -
+      DHAKA_OFFSET_MS,
+  );
+}
+
 /** "YYYY-MM-DD" of the Dhaka day containing `d` (or now). */
 export function dhakaDateString(d: Date = new Date()): string {
   const shifted = new Date(d.getTime() + DHAKA_OFFSET_MS);
