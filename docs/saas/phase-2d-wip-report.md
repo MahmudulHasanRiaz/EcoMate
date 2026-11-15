@@ -118,7 +118,12 @@ Converted end to end (producer + processor):
   jobs run in `TenantWorkerHost`, DLQ mirrors carry the tenant, and the reconciler
   sweeps per tenant;
 - `marketing` — webhook/on-demand jobs are tenant-stamped; the system `sync-all`
-  repeatable fans out through `runPerTenant`.
+  repeatable fans out through `runPerTenant`;
+- `security-events` — the emitter stamps the request tenant, the processor runs in
+  `TenantWorkerHost`, and the aggregate dimension uses the tenant UUID; the formerly
+  consumer-less `security-aggregate` queue now has a per-tenant consumer. Security
+  retention cleanup is per tenant and the dashboard retention-policy write no longer
+  hardcodes `default`.
 
 Converted interval sweeps (per-tenant, failure-isolated via `runPerTenant`):
 
@@ -131,13 +136,12 @@ remaining queues and interval sweeps.
 
 ## Remaining work before merge
 
-1. **Remaining queue conversions** — security-events (and the missing
-   `security-aggregate` consumer), import stub, and the platform-level backup queue.
-   Each needs a tenant payload, `TenantWorkerHost`, and tenant-aware repeatable keys.
-2. **Remaining interval sweeps** — security/tracking retention and page-view buffer
-   flushes. These cross-tenant `updateMany`/`deleteMany` (or buffered writes) must
-   iterate active tenants via `runPerTenant` (or be explicitly system-scoped).
-   Per-tenant marketing sync intervals still use the default-tenant setting.
+1. **Remaining queue conversions** — the import stub and the platform-level backup
+   queue. The import stub has no Prisma work yet; backup is intentionally global.
+2. **Remaining interval sweeps** — tracking retention and page-view buffer flushes.
+   These cross-tenant `updateMany`/`deleteMany` (or buffered writes) must iterate
+   active tenants via `runPerTenant` (or be explicitly system-scoped). Per-tenant
+   marketing sync intervals still use the default-tenant setting.
 3. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
    `INTERNAL_SERVICE_SECRET`) and add custom-domain DNS/verification coverage; the
    endpoint/refresh contract itself is verified.

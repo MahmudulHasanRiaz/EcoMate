@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { getTenantContext } from '../../tenancy/tenant-context';
 import { SecurityEventSeverity, SecurityEventCategory, SecurityActorType } from '@prisma/client';
 import type {
   DashboardSummary,
@@ -425,16 +426,20 @@ export class DashboardQueryService {
       );
     }
 
+    const retentionTenant =
+      getTenantContext()?.tenantId ||
+      process.env.DEFAULT_TENANT_ID ||
+      'default';
     const policy = await this.prisma.securityRetentionPolicy.upsert({
       where: {
         tenant_category_severity: {
-          tenant: 'default',
+          tenant: retentionTenant,
           category,
           severity,
         },
       },
       create: {
-        tenant: 'default',
+        tenant: retentionTenant,
         category,
         severity,
         retentionDays,

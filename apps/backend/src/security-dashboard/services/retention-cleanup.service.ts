@@ -1,6 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventAggregatorService } from './event-aggregator.service';
+import { runPerTenant } from '../../tenancy/tenant-job';
+import { TenantRegistryService } from '../../tenancy/tenant-registry.service';
 
 /**
  * Periodic retention cleanup job.
@@ -16,6 +18,8 @@ export class RetentionCleanupService implements OnModuleInit {
   constructor(
     private readonly aggregator: EventAggregatorService,
     private readonly prisma: PrismaService,
+    @Optional()
+    private readonly tenantRegistry?: TenantRegistryService,
   ) {}
 
   onModuleInit() {
@@ -36,9 +40,13 @@ export class RetentionCleanupService implements OnModuleInit {
         return;
       }
 
-      const result = await this.aggregator.cleanExpiredEvents();
-      if (result.deleted > 0) {
-        this.logger.log(`Retention cleanup: ${result.deleted} events removed`);
+      let deleted = 0;
+      await runPerTenant(this.tenantRegistry, async () => {
+        const result = await this.aggregator.cleanExpiredEvents();
+        deleted += result.deleted;
+      });
+      if (deleted > 0) {
+        this.logger.log(`Retention cleanup: ${deleted} events removed`);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -50,6 +58,11 @@ export class RetentionCleanupService implements OnModuleInit {
    * One-shot cleanup (for manual trigger or first deployment).
    */
   async runOnce(): Promise<{ deleted: number }> {
-    return this.aggregator.cleanExpiredEvents();
+    let deleted = 0;
+    await runPerTenant(this.tenantRegistry, async () => {
+      const result = await this.aggregator.cleanExpiredEvents();
+      deleted += result.deleted;
+    });
+    return { deleted };
   }
 }

@@ -7,6 +7,7 @@ import { DashboardQueryService } from './services/dashboard-query.service';
 import { EventAggregatorService } from './services/event-aggregator.service';
 import { RetentionCleanupService } from './services/retention-cleanup.service';
 import { SecurityEventProcessor } from './processors/security-event.processor';
+import { SecurityAggregateProcessor } from './processors/security-aggregate.processor';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { SecurityEventProcessor } from './processors/security-event.processor';
     EventAggregatorService,
     RetentionCleanupService,
     SecurityEventProcessor,
+    SecurityAggregateProcessor,
   ],
   exports: [SecurityEventEmitterService, DashboardQueryService],
 })

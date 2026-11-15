@@ -6,6 +6,7 @@ import type {
   EmitSecurityEventInput,
   EmitEventResult,
 } from '../interfaces/event-emitter.interface';
+import { tenantJobPayload } from '../../tenancy/tenant-job';
 
 const SECURITY_EVENTS_QUEUE = 'security-events';
 const AGGREGATE_QUEUE = 'security-aggregate';
@@ -47,13 +48,17 @@ export class SecurityEventEmitterService {
     };
 
     try {
-      await this.eventQueue.add(SECURITY_EVENTS_QUEUE, jobData, {
+      await this.eventQueue.add(
+        SECURITY_EVENTS_QUEUE,
+        tenantJobPayload(jobData),
+        {
         jobId: dedupKey,
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
-        removeOnComplete: 500,
-        removeOnFail: 100,
-      });
+          removeOnComplete: 500,
+          removeOnFail: 100,
+        },
+      );
       return { id: eventId, dedupKey, enqueued: true };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';

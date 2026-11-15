@@ -1,11 +1,12 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SecurityEventCategory, SecurityEventSeverity } from '@prisma/client';
 import { dhakaDayKey, dhakaHourBucket } from '../../common/utils/dhaka-time';
+import { TenantJobData, TenantWorkerHost } from '../../tenancy/tenant-job';
 
-interface EventJobData {
+interface EventJobData extends TenantJobData {
   id: string;
   dedupKey: string;
   tenant?: string;
@@ -31,14 +32,14 @@ interface EventJobData {
 }
 
 @Processor('security-events')
-export class SecurityEventProcessor extends WorkerHost {
+export class SecurityEventProcessor extends TenantWorkerHost<EventJobData> {
   private readonly logger = new Logger(SecurityEventProcessor.name);
 
   constructor(private readonly prisma: PrismaService) {
     super();
   }
 
-  async process(job: Job<EventJobData>): Promise<void> {
+  protected async handle(job: Job<EventJobData>): Promise<void> {
     const data = job.data;
     // Timestamp is set by the emitter, but tolerate jobs that omit it (e.g.
     // ones enqueued before this default existed) instead of hard-failing.
@@ -46,13 +47,10 @@ export class SecurityEventProcessor extends WorkerHost {
       ? new Date(data.timestamp)
       : new Date();
 
-    // Canonical tenant for the single-deployment architecture. The schema
-    // defaults every security model to "default" and the dashboard queries
-    // (retention policy, aggregates) operate on "default". Jobs enqueued
-    // before this contract settled carry no tenant — normalize to the
-    // canonical value HERE so undefined never reaches any Prisma call
-    // (compound unique keys reject missing args).
-    const eventTenant = data.tenant || 'default';
+    // New jobs carry the tenant UUID, which is also the aggregate dimension
+    // (the security aggregate unique keys are [tenant, ...]). Legacy jobs with
+    // the literal 'default' remain readable for the single-tenant migration.
+    const eventTenant = data.tenantId || data.tenant || 'default';
 
     try {
       // Fast-path retry check: a retry after a committed run must not touch
