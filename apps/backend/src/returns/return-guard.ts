@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   BadRequestException,
   ConflictException,
@@ -441,7 +442,7 @@ export async function generateReturnDisplayId(db: any): Promise<string> {
   const dd = String(day).padStart(2, '0');
   const dateStr = `${yy}${mm}${dd}`;
   const counter = await db.returnCounter.upsert({
-    where: { date: dateStr },
+    where: { tenantId_date: tenantCompound({ date: dateStr }) },
     create: { date: dateStr, seq: 1 },
     update: { seq: { increment: 1 } },
   });
@@ -526,7 +527,7 @@ export async function resolveReceivedById(
   if (actor.includes('@')) {
     // Defensive: a transaction double without a userProfile delegate simply
     // has no receiver to record (the column is nullable).
-    const user = db?.userProfile?.findUnique
+    const user = db?.userProfile?.findFirst
       ? await db.userProfile.findFirst({
           where: { email: actor },
           select: { id: true },

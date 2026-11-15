@@ -59,8 +59,9 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
         update: jest.fn().mockImplementation(({ data }: any) =>
           Promise.resolve({ id: 'ret-new', ...data }),
         ),
-        findFirst: jest.fn().mockResolvedValue(null),
-        // Courier upsert link-first lookup inside its transaction.
+        // Courier upsert link-first lookup inside its transaction: delegate
+        // to the outer mock (same as findUnique) so tests control the row.
+        findFirst: jest.fn((...args: any[]) => prisma.return.findFirst(...args)),
         findUnique: jest.fn((...args: any[]) => prisma.return.findFirst(...args)),
         findMany: jest.fn().mockImplementation(async (args: any) => {
           if (args?.where?.createdAt) return recent;

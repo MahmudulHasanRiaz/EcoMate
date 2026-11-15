@@ -41,7 +41,7 @@ describe('GatewayConfigController — Part 1 settlement account', () => {
 
     expect(prisma.paymentGateway.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { code: 'bkash' },
+        where: { tenantId_code: expect.objectContaining({ code: 'bkash' }) },
         update: expect.objectContaining({ accountId: 'acc-cash' }),
         create: expect.objectContaining({ accountId: 'acc-cash' }),
       }),

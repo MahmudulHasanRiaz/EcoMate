@@ -312,7 +312,11 @@ describe('P0 Financial Model Corrections', () => {
         journalEntry: null,
       };
       (prisma.marketingPayment.findFirst as jest.Mock).mockResolvedValue(payment);
-      (prisma.account.findFirst as jest.Mock).mockResolvedValue({ id: 'acct-bank', name: 'Business Bank', isGroup: false });
+      (prisma.account.findFirst as jest.Mock).mockImplementation(({ where }: any) =>
+        where?.code === MARKETING_PAYABLE_ACCOUNT_CODE
+          ? Promise.resolve({ id: 'acct-payable', code: MARKETING_PAYABLE_ACCOUNT_CODE, name: 'Marketing Payable', type: 'liability', isGroup: false })
+          : Promise.resolve({ id: 'acct-bank', name: 'Business Bank', isGroup: false }),
+      );
 
       const result = await paymentService.postToAccounting('pay-test-1', 'user-1');
 

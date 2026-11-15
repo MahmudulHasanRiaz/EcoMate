@@ -128,12 +128,16 @@ function makeService(opts: any = {}) {
       update: jest.fn(async () => ({})),
     },
     return: {
-      findFirst: jest.fn(async () => ({
-        id: 'r1',
-        orderId: 'o1',
-        status: 'RESTOCKED',
-        items: opts.txItems ?? [{ productId: 'p1', variantId: 'v1', quantity: 2 }],
-      })),
+      findFirst: jest.fn(async () =>
+        opts.txReturnFindFirst !== undefined
+          ? opts.txReturnFindFirst
+          : {
+              id: 'r1',
+              orderId: 'o1',
+              status: 'RESTOCKED',
+              items: opts.txItems ?? [{ productId: 'p1', variantId: 'v1', quantity: 2 }],
+            },
+      ),
       findUnique: jest.fn(async () => opts.txExistingReturn ?? null),
       create: jest.fn(async (args: any) => ({ id: 'ret-new-1', ...args.data })),
     },
@@ -440,6 +444,7 @@ describe('ReconciliationApplyService', () => {
   it('R8 terminal: backfills a RESTOCKED Return with per-return evidence keys and NO stock movement', async () => {
     const { service, tx, stockService } = makeService({
       rows: [R8_TERMINAL_ROW],
+      txReturnFindFirst: null,
       txOrder: {
         id: 'oL1',
         displayId: 'ORD-L1',
@@ -461,7 +466,9 @@ describe('ReconciliationApplyService', () => {
     expect(result.applied).toEqual([R8_TERMINAL_ROW.id]);
     // RTN number carries the HISTORICAL transition date (2026-08-03).
     expect(tx.returnCounter.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { date: '260803' } }),
+      expect.objectContaining({
+        where: { tenantId_date: expect.objectContaining({ date: '260803' }) },
+      }),
     );
     expect(tx.return.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -504,6 +511,7 @@ describe('ReconciliationApplyService', () => {
   it('R8 pending: backfills a REQUESTED Return only — never received, no ledger writes', async () => {
     const { service, tx } = makeService({
       rows: [R8_PENDING_ROW],
+      txReturnFindFirst: null,
       txOrder: {
         id: 'oL2',
         displayId: 'ORD-L2',

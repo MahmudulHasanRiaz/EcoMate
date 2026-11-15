@@ -21,14 +21,30 @@ function makePrisma(aliases: any[] = []) {
             (where?.field === undefined || a.field === where.field) &&
             (where?.active === undefined || a.active === where.active),
         ),
-      findFirst: async ({ where }: any) =>
-        where.id
-          ? store.find((a) => a.id === where.id) ?? null
-          : store.find(
+      findFirst: async ({ where }: any) => {
+        if (where.id) {
+          return store.find((a) => a.id === where.id) ?? null;
+        }
+        if (where.courier_sourceHeader) {
+          return (
+            store.find(
               (a) =>
                 a.courier === where.courier_sourceHeader.courier &&
                 a.sourceHeader === where.courier_sourceHeader.sourceHeader,
-            ) ?? null,
+            ) ?? null
+          );
+        }
+        return (
+          store.find(
+            (a) =>
+              (where.courier === undefined || a.courier === where.courier) &&
+              (where.field === undefined || a.field === where.field) &&
+              (where.active === undefined || a.active === where.active) &&
+              (where.sourceHeader?.not === undefined ||
+                a.sourceHeader !== where.sourceHeader.not),
+          ) ?? null
+        );
+      },
       findUnique: async ({ where }: any) =>
         store.find(
           (a) =>

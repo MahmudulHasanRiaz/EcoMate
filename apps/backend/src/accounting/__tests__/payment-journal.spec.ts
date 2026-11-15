@@ -137,8 +137,16 @@ class FakeDb {
 
   get financialPeriod() {
     return {
-      findFirst: async ({ where }: any) =>
-        this.periods.find((p) => p.id === where.id) ?? null,
+      findFirst: async ({ where }: any) => {
+        if (where?.id) return this.periods.find((p) => p.id === where.id) ?? null;
+        const afterStart = where?.startDate?.lte
+          ? (p: any) => p.startDate <= where.startDate.lte
+          : () => true;
+        const beforeEnd = where?.endDate?.gte
+          ? (p: any) => p.endDate >= where.endDate.gte
+          : () => true;
+        return this.periods.find((p) => afterStart(p) && beforeEnd(p)) ?? null;
+      },
       findUnique: async ({ where }: any) =>
         this.periods.find((p) => {
           const afterStart = where?.startDate?.lte

@@ -34,6 +34,7 @@ function makeService() {
         .fn()
         .mockResolvedValue({ id: 'prod-created', slug: 'created', sku: 'SKU' }),
       update: jest.fn().mockResolvedValue({}),
+      delete: jest.fn().mockResolvedValue({}),
     },
     productVariant: {
       create: jest.fn().mockResolvedValue({ id: 'variant-created' }),
@@ -392,7 +393,7 @@ describe('ImportService MANAGED_STOCK import — no physical mirroring', () => {
     jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
     prisma.productVariant.create.mockResolvedValue({ id: 'variant-a' });
     // Non-zero stored price keeps the parent-price fallback out of the way.
-    prisma.product.findFirst.mockResolvedValue({ basePrice: 500 });
+    prisma.product.findFirst.mockResolvedValue({ basePrice: 500, orderItems: [] });
 
     await runGroup(
       svc,

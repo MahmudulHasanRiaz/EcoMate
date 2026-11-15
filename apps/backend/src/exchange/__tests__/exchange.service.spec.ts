@@ -516,7 +516,7 @@ describe('ExchangeService — displayId minting (counter split P1.4)', () => {
     const { year, month, day } = dhakaDateParts();
     const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
     expect(upsert).toHaveBeenCalledWith({
-      where: {  date: dateStr, family: 'Ex'  },
+      where: { tenantId_date_family: expect.objectContaining({ date: dateStr, family: 'Ex' }) },
       create: { date: dateStr, family: 'Ex', seq: 1 },
       update: { seq: { increment: 1 } },
     });

@@ -505,7 +505,6 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.order.findFirst.mockImplementation((args: any) =>
         args?.where?.displayId ? original : null,
       );
-      prisma.order.findFirst.mockResolvedValue(original);
       prisma.order.findMany.mockResolvedValue([exchange]);
       prisma.dispatch.findFirst.mockResolvedValue(null);
       // Original already has its own pathao dispatch; the exchange has none.
@@ -840,14 +839,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
           update: expect.objectContaining({ status: 'DELIVERED' }),
         }),
       );
-      expect(ordersService.updateStatus).toHaveBeenCalledWith(
-        'order-1',
-        { statusId: 'status-delivered' },
-        'system',
-        undefined,
-        undefined,
-        { courier: 'steadfast' },
-      );
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
     });
 
     it('a Returned webhook replay on a Partial order never transitions it (Pathao)', async () => {

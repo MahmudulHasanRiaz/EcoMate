@@ -238,9 +238,21 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
       },
       order: {
         findMany: jest.fn().mockImplementation(() => Promise.resolve([mkOrder('order-1', 'ORD-1')])),
-        findFirst: jest.fn().mockImplementation(({ where }: any) =>
-          Promise.resolve(db.orders.find((o) => o.id === where.id) ?? null),
-        ),
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
+          if (where?.courierConsignmentId) {
+            return Promise.resolve(
+              db.orders.find((o) => o.courierConsignmentId === where.courierConsignmentId) ?? null,
+            );
+          }
+          if (where?.displayId) {
+            return Promise.resolve(
+              db.orders.find(
+                (o) => o.displayId === where.displayId && o.courierService === where.courierService,
+              ) ?? null,
+            );
+          }
+          return Promise.resolve(db.orders.find((o) => o.id === where.id) ?? null);
+        }),
         findUnique: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.courierConsignmentId) {
             return Promise.resolve(
@@ -330,7 +342,8 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
         }),
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         upsert: jest.fn().mockImplementation(({ where, update, create }: any) => {
-          const key = where?.courier_consignmentId;
+          const key =
+            where?.tenantId_courier_consignmentId ?? where?.courier_consignmentId;
           const owned = db.dispatches.find(
             (d) => d.courier === key?.courier && d.consignmentId === key?.consignmentId,
           );

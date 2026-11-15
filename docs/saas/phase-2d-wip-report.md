@@ -9,7 +9,7 @@
 - Active backend schema is now the tenant-aware schema (203 models; 200 tenant-scoped; 3 global reference tables).
 - Active migrations are `0001_saas_baseline` + `0002_rls_and_tenant_guards` (legacy migrations removed from this branch; they remain in the old branch/tag).
 - Backend `nest build`: **green (0 TypeScript errors)**.
-- Backend Jest: **6121 passed, 41 failed, 9 skipped** (429 suites; 19 failing suites). 14 failures are the pre-existing DB-backed marketing integration suites; the rest are test-migration assertions.
+- Backend Jest: **6149 passed, 12 failed, 10 skipped** (429 suites; 2 failing suites). The only remaining failures are the two pre-existing DB-backed marketing integration suites (P0 Financial / Campaign Deletion), which need a migrated + seeded Postgres.
 
 ## Applied changes
 
@@ -39,11 +39,14 @@ Failures reduced from **388 → 55** across this pass:
 
 ## Remaining test work
 
-The 41 failures are concentrated in:
+The remaining 12 failures are **only** the two DB-backed marketing integration suites:
 
-1. **DB-backed integration suites (14)** — marketing P0 campaign/financial integration specs need a seeded local Postgres; environmental, not tenancy logic.
-2. **Payment journal / reconciliation / dispatch / courier-mapping mock shapes (~20)** — remaining `findFirst`/`findUnique` where-shape expectations and tenant composite keys.
-3. **Miscellaneous assertions (~7)** — ReturnsService actor attribution, marketing funding/attribution, Pathao bulk.
+1. `marketing/__tests__/p0-financial.integration.spec.ts`
+2. `marketing/__tests__/campaign-deletion-preservation.integration.spec.ts`
+
+They need a Postgres database with the tenant baseline + RLS migrations applied and the marketing fixtures seeded. All 426 other suites (6149 tests) pass, including the tenancy suites.
+
+The next verification step is to run those two suites against a dedicated migrated/seeded database; then wire the real tenant runtime (Prisma proxy, Better Auth, middleware) and merge.
 
 ## Next steps
 

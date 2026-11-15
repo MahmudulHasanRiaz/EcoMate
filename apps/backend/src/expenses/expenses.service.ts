@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   NotFoundException,
@@ -447,7 +448,7 @@ export class ExpensesService {
     const { year, month, day } = dhakaDateParts(expenseDate);
     const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
     const counter = await tx.orderCounter.upsert({
-      where: {  date: dateStr, family: 'EXP-JE'  },
+      where: { tenantId_date_family: tenantCompound({ date: dateStr, family: 'EXP-JE' }) },
       update: { seq: { increment: 1 } },
       create: { date: dateStr, family: 'EXP-JE', seq: 1 },
     });

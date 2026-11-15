@@ -36,7 +36,7 @@ describe('CourierManagerController — PATCH credentials/:courier/enabled', () =
 
     expect(prisma.courierCredentials.update).toHaveBeenCalledTimes(1);
     expect(prisma.courierCredentials.update).toHaveBeenCalledWith({
-      where: { courier: 'steadfast' },
+      where: { tenantId_courier: expect.objectContaining({ courier: 'steadfast' }) },
       data: { enabled: true },
       // Narrow select: no apiKey/secretKey/webhookSecret can leak back.
       select: { courier: true, enabled: true },

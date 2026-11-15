@@ -85,20 +85,23 @@ describe('MarketingAttributionService', () => {
       expect(created.campaignId).toBe('camp-1');
       expect(created.sessionId).toBe('session-1');
       expect(created.confidence).toBe(95);
-      expect(prisma.marketingSession.findFirst).not.toHaveBeenCalled();
+      expect(prisma.marketingSession.findFirst).toHaveBeenCalledWith({
+        where: { sessionToken: 'ctx-abc' },
+      });
     });
 
     it('falls back to click_id when the session exists but has no campaign', async () => {
       (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue(null);
-      (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue({
-        id: 'session-1',
-        campaignId: null,
-      });
-      (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue({
-        id: 'session-2',
-        campaignId: 'camp-fb',
-        clickId: 'fb.1.123.456',
-      });
+      (prisma.marketingSession.findFirst as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'session-1',
+          campaignId: null,
+        })
+        .mockResolvedValueOnce({
+          id: 'session-2',
+          campaignId: 'camp-fb',
+          clickId: 'fb.1.123.456',
+        });
       (prisma.orderAttribution.create as jest.Mock).mockResolvedValue({ id: 'attr-1' });
 
       await service.resolveFromOrder('order-1', input());

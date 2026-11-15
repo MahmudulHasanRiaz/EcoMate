@@ -197,10 +197,12 @@ describe('G-19/G-05/G-20 — HR audit trail (actor fields)', () => {
   });
 
   it('HrLeaveService.approveRequest records approvedById', async () => {
-    prisma.leaveRequest.findFirst.mockResolvedValueOnce({
-      id: 'lr1', status: 'pending', startDate: new Date('2025-01-01'),
-      endDate: new Date('2025-01-03'), employeeId: 'emp1', createdById: 'u1',
-    });
+    prisma.leaveRequest.findFirst
+      .mockResolvedValueOnce({
+        id: 'lr1', status: 'pending', startDate: new Date('2025-01-01'),
+        endDate: new Date('2025-01-03'), employeeId: 'emp1', createdById: 'u1',
+      })
+      .mockResolvedValueOnce(null);
 
     await leave.approveRequest('lr1', { decisionNote: 'OK' }, 'actor-def');
 

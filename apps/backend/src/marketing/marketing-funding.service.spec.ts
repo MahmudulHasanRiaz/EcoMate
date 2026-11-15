@@ -179,15 +179,12 @@ describe('MarketingFundingService', () => {
         id: 'period-1',
         isClosed: false,
       });
-      (prisma.account.findFirst as jest.Mock).mockResolvedValue({
-        id: 'acct-prepaid',
-        code: MARKETING_PREPAID_ACCOUNT_CODE,
-      });
-      (prisma.account.findFirst as jest.Mock).mockResolvedValue({
-        id: 'acct-funding',
-        name: 'Bank',
-        isGroup: false,
-      });
+      (prisma.account.findFirst as jest.Mock).mockImplementation(
+        ({ where }: any) =>
+          where?.id === 'acct-funding'
+            ? { id: 'acct-funding', name: 'Bank', isGroup: false }
+            : { id: 'acct-prepaid', code: MARKETING_PREPAID_ACCOUNT_CODE },
+      );
       (accounting.createEntry as jest.Mock).mockResolvedValue({
         id: 'je-1',
         entryNo: 'JE-0001',
@@ -239,12 +236,12 @@ describe('MarketingFundingService', () => {
         mockEntry({ status: 'confirmed' }),
       );
       (prisma.financialPeriod.findFirst as jest.Mock).mockResolvedValue({ id: 'period-1', isClosed: false });
-      (prisma.account.findFirst as jest.Mock).mockResolvedValue({ id: 'acct-expense' });
-      (prisma.account.findFirst as jest.Mock).mockResolvedValue({
-        id: 'acct-group',
-        name: 'Assets (group)',
-        isGroup: true,
-      });
+      (prisma.account.findFirst as jest.Mock).mockImplementation(
+        ({ where }: any) =>
+          where?.id === 'acct-group'
+            ? { id: 'acct-group', name: 'Assets (group)', isGroup: true }
+            : { id: 'acct-expense' },
+      );
       await expect(service.post('fund-1', { fundingAccountId: 'acct-group' })).rejects.toBeInstanceOf(
         BadRequestException,
       );

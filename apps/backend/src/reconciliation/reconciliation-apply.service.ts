@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   BadRequestException,
   ConflictException,
@@ -464,7 +465,7 @@ export class ReconciliationApplyService {
       `${String(day).padStart(2, '0')}`;
     for (let attempt = 0; attempt < 50; attempt++) {
       const counter = await (tx as any).returnCounter.upsert({
-        where: { date: dateStr },
+        where: { tenantId_date: tenantCompound({ date: dateStr }) },
         create: { date: dateStr, seq: 1 },
         update: { seq: { increment: 1 } },
       });

@@ -586,21 +586,18 @@ describe('DispatchService', () => {
     });
 
     it('reconciles: persists raw courier status AND updates dispatch status separately, advances order', async () => {
+      prisma.dispatch.findMany.mockResolvedValue([dispatchRow]);
       tracking.getDispatchTracking.mockResolvedValue(trackingResult());
       prisma.dispatch.findFirst.mockResolvedValue(null); // no progress for cancel resolution
       prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Packed' },
+        timeline: [],
       });
       prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-shipping',
         name: 'Shipping',
-      });
-      prisma.order.findFirst.mockResolvedValue({
-        id: 'order-1',
-        trashedAt: null,
-        timeline: [],
       });
 
       const summary = await service.syncStatusFromCourier(['d-1'], 'admin@x.com');
@@ -720,10 +717,6 @@ describe('DispatchService', () => {
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Packed' },
-      });
-      prisma.order.findFirst.mockResolvedValue({
-        id: 'order-1',
-        trashedAt: null,
         timeline: [],
       });
       prisma.orderStatus.findFirst.mockResolvedValue({
