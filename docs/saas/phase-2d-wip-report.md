@@ -9,7 +9,7 @@
 - Active backend schema is now the tenant-aware schema (203 models; 200 tenant-scoped; 3 global reference tables).
 - Active migrations are `0001_saas_baseline` + `0002_rls_and_tenant_guards` (legacy migrations removed from this branch; they remain in the old branch/tag).
 - Backend `nest build`: **green (0 TypeScript errors)**.
-- Backend Jest: **6169 passed, 0 failed, 10 skipped** (431 suites; 430 passed, 1 skipped) against a clean migrated tenant database using a non-superuser app role (RLS enforced). The 10 skips are intentionally obsolete single-tenant migration-contract specs.
+- Backend Jest: **6173 passed, 0 failed, 10 skipped** (432 suites; 431 passed, 1 skipped) against a clean migrated tenant database using a non-superuser app role (RLS enforced). The 10 skips are intentionally obsolete single-tenant migration-contract specs.
 
 ## Applied changes
 
@@ -99,12 +99,35 @@ Smoke results (real HTTP, test DB + ephemeral Redis):
 
 Full backend suite re-ran after this wiring: **6161 passed, 0 failed, 10 skipped**.
 
+## Queue tenant envelope (started)
+
+Shared tenancy job plumbing now lives in `tenancy/tenant-job.ts`:
+
+- `TenantJobData` + `tenantJobPayload()` stamp the request tenant onto queue payloads;
+- `TenantWorkerHost` validates `tenantId` and runs `handle()` inside the ALS context;
+- `runPerTenant()` provides failure-isolated per-tenant sweep execution.
+
+Converted end to end (producer + processor):
+
+- `email` — per-tenant SMTP settings now resolve under the job's tenant;
+- `courier-settlement-import` — background commit runs in the invoice's tenant.
+
+The full suite is green after these changes. The shared mechanism is ready for the
+remaining queues and interval sweeps.
+
 ## Remaining work before merge
 
-1. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
+1. **Remaining queue conversions** — media/recover, tracking dispatcher + DLQ,
+   marketing sync, security-events (and the missing `security-aggregate` consumer),
+   import stub, and the platform-level backup queue. Each needs a tenant payload,
+   `TenantWorkerHost`, and tenant-aware repeatable keys.
+2. **Interval sweeps** — blocked-entries expiry, auth refresh-token cleanup,
+   webhook-attempt cleanup, security/tracking retention, media recover/backfill and
+   the tracking outbox relay. These cross-tenant `updateMany`/`deleteMany`/raw claims
+   must iterate active tenants via `runPerTenant` (or be explicitly system-scoped).
+3. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
    `INTERNAL_SERVICE_SECRET`) and add custom-domain DNS/verification coverage; the
    endpoint/refresh contract itself is verified.
-2. Tenant fan-out for queue workers/interval jobs (currently they use the default-tenant bridge).
-3. Merge the swap branch into `feat/saas-multitenant`; then Phase 3 (entitlements/license removal).
+4. Merge the swap branch into `feat/saas-multitenant`; then Phase 3 (entitlements/license removal).
 
 > The stable `feat/saas-multitenant` branch (Phase 0–2C, green build + 26/20 unit suites) is unchanged. This branch is the working swap; it should stay separate until the test suite and runtime are green.

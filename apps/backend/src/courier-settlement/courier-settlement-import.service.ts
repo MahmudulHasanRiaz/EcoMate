@@ -1,3 +1,4 @@
+import { tenantJobPayload } from '../tenancy/tenant-job';
 import { tenantCompound } from '../tenancy/tenant-context';
 // ── Ingestion pipeline (PRD §9, §13): analyze → preview → confirm → import.
 //
@@ -375,7 +376,11 @@ export class CourierSettlementImportService {
     try {
       await this.importQueue.add(
         'commit',
-        { invoiceId, actor: actor ?? null, previousState: invoice.state },
+        tenantJobPayload({
+          invoiceId,
+          actor: actor ?? null,
+          previousState: invoice.state,
+        }),
         {
           jobId: `cs-commit-${invoiceId}`,
           removeOnComplete: { age: 60 * 60 },

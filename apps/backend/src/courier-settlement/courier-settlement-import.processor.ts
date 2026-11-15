@@ -8,22 +8,23 @@
 // replay harmless. A retry after a post-commit failure hits ConflictException
 // (already imported) and is treated as success.
 
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
 import type { CourierSettlementInvoiceState } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConflictException } from '@nestjs/common';
 import { CourierSettlementImportService } from './courier-settlement-import.service';
+import { TenantJobData, TenantWorkerHost } from '../tenancy/tenant-job';
 
-export interface CourierSettlementImportJob {
+export interface CourierSettlementImportJob extends TenantJobData {
   invoiceId: string;
   actor: string | null;
   previousState: CourierSettlementInvoiceState;
 }
 
 @Processor('courier-settlement-import')
-export class CourierSettlementImportProcessor extends WorkerHost {
+export class CourierSettlementImportProcessor extends TenantWorkerHost<CourierSettlementImportJob> {
   private readonly logger = new Logger(CourierSettlementImportProcessor.name);
 
   constructor(
@@ -33,7 +34,7 @@ export class CourierSettlementImportProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<CourierSettlementImportJob>): Promise<void> {
+  protected async handle(job: Job<CourierSettlementImportJob>): Promise<void> {
     const { invoiceId, actor, previousState } = job.data;
     this.logger.log(`Importing invoice ${invoiceId} in the background`);
     await this.stage(invoiceId, 15, 'preparing');

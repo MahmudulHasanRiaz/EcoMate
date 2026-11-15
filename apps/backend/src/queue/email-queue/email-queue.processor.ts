@@ -1,9 +1,10 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailJob } from './email-queue.service';
+import { TenantWorkerHost } from '../../tenancy/tenant-job';
 
 const SMTP_KEYS = [
   'smtp_host',
@@ -15,14 +16,14 @@ const SMTP_KEYS = [
 ] as const;
 
 @Processor('email')
-export class EmailQueueProcessor extends WorkerHost {
+export class EmailQueueProcessor extends TenantWorkerHost<EmailJob> {
   private readonly logger = new Logger(EmailQueueProcessor.name);
 
   constructor(private prisma: PrismaService) {
     super();
   }
 
-  async process(job: Job<EmailJob>): Promise<void> {
+  protected async handle(job: Job<EmailJob>): Promise<void> {
     const { to, subject, context } = job.data;
 
     const settings = await this.prisma.systemSetting.findMany({
