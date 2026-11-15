@@ -1,7 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { getTenantContext, runWithTenant } from '../tenancy/tenant-context';
 
 interface PageViewEntry {
+  tenantId: string;
   url: string;
   referrer: string | null;
   source: string | null;
@@ -40,7 +42,17 @@ export class PageViewBufferService implements OnModuleDestroy {
     }, this.FLUSH_INTERVAL);
   }
 
-  push(entry: PageViewEntry) {
+  push(entry: Omit<PageViewEntry, 'tenantId'>) {
+    const tenantId =
+      getTenantContext()?.tenantId ||
+      process.env.DEFAULT_TENANT_ID ||
+      (process.env.NODE_ENV === 'test'
+        ? '00000000-0000-4000-8000-000000000000'
+        : undefined);
+    if (!tenantId) {
+      throw new Error('Tenant context is required to buffer a page view');
+    }
+    const tagged: PageViewEntry = { ...entry, tenantId };
     if (this.buffer.length >= this.MAX_BUFFER) {
       this.buffer.shift();
       this.droppedCount++;
@@ -50,7 +62,7 @@ export class PageViewBufferService implements OnModuleDestroy {
         );
       }
     }
-    this.buffer.push(entry);
+    this.buffer.push(tagged);
     if (this.buffer.length >= this.FLUSH_THRESHOLD) {
       this.flush().catch((err) => {
         this.logger.error(`Threshold flush failed: ${(err as Error).message}`);
@@ -82,18 +94,40 @@ export class PageViewBufferService implements OnModuleDestroy {
     if (this.buffer.length === 0) return;
 
     const batch = this.buffer.splice(0);
+    const groups = new Map<string, PageViewEntry[]>();
+    for (const entry of batch) {
+      const group = groups.get(entry.tenantId) ?? [];
+      group.push(entry);
+      groups.set(entry.tenantId, group);
+    }
+    const groupList = [...groups.entries()];
     try {
-      await this.prisma.pageView.createMany({
-        data: batch,
-        skipDuplicates: true,
-      });
+      for (let i = 0; i < groupList.length; i++) {
+        const [tenantId, entries] = groupList[i];
+        await runWithTenant(
+          { tenantId, slug: 'page-view', status: 'active' },
+          () =>
+            this.prisma.pageView.createMany({
+              data: entries.map(({ tenantId: _tenantId, ...rest }) => rest),
+              skipDuplicates: true,
+            }),
+        );
+      }
       this.logger.debug(`Flushed ${batch.length} page views`);
     } catch (err: unknown) {
+      const failedIndex = groupList.findIndex(([, entries]) =>
+        entries.some((entry) => batch.includes(entry)),
+      );
+      const requeueSource =
+        failedIndex >= 0
+          ? groupList.slice(failedIndex).flatMap(([, entries]) => entries)
+          : batch;
       // Requeue failed batch at front, preserving original order — but
       // still capped: a batch requeued while new views arrived must not
       // push the buffer past MAX_BUFFER.
-      const overflow = this.buffer.length + batch.length - this.MAX_BUFFER;
-      const requeued = [...batch, ...this.buffer].slice(0, this.MAX_BUFFER);
+      const overflow =
+        this.buffer.length + requeueSource.length - this.MAX_BUFFER;
+      const requeued = [...requeueSource, ...this.buffer].slice(0, this.MAX_BUFFER);
       if (overflow > 0) {
         this.droppedCount += overflow;
         this.logger.warn(
@@ -102,7 +136,7 @@ export class PageViewBufferService implements OnModuleDestroy {
       }
       this.buffer = requeued;
       this.logger.error(
-        `Batch insert failed (${batch.length} entries requeued): ${(err as Error).message}`,
+        `Batch insert failed (${requeueSource.length} entries requeued): ${(err as Error).message}`,
       );
       throw err;
     }

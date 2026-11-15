@@ -3,6 +3,7 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
@@ -10,6 +11,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TrackingNormalizer } from './tracking.normalizer';
 import { SCHEMA_VERSION } from './tracking.constants';
 import { TrackingSnapshotPayload } from './tracking-snapshot.types';
+import { runPerTenant } from '../tenancy/tenant-job';
+import { TenantRegistryService } from '../tenancy/tenant-registry.service';
 
 /** Rows touched per loop iteration — keeps each write short and lock-scalable. */
 const BATCH_SIZE = 1000;
@@ -84,6 +87,8 @@ export class RetentionCleanupService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     config: ConfigService,
+    @Optional()
+    private readonly tenantRegistry?: TenantRegistryService,
   ) {
     // Env vars are strings; treat only an explicit 'false' as disabled.
     this.enabled =
@@ -91,24 +96,40 @@ export class RetentionCleanupService implements OnModuleInit, OnModuleDestroy {
       'false';
   }
 
-  /** Run every job in sequence, in PK-batched loops. `now` is injectable for tests. */
+  /** Run every job once per active tenant. `now` is injectable for tests. */
   async runCleanup(now = new Date()): Promise<RetentionCleanupSummary> {
     if (!this.enabled) {
       this.logger.warn('Retention cleanup skipped: RETENTION_ENABLED=false');
       return { ...EMPTY_SUMMARY };
     }
     const started = Date.now();
-    const summary: RetentionCleanupSummary = {
+    const summary = { ...EMPTY_SUMMARY };
+
+    await runPerTenant(this.tenantRegistry, async () => {
+      const tenantSummary = await this.runCleanupForTenant(now);
+      for (const key of Object.keys(summary) as Array<
+        keyof RetentionCleanupSummary
+      >) {
+        summary[key] += tenantSummary[key];
+      }
+    });
+
+    this.logger.log(
+      `Retention cleanup finished in ${Date.now() - started}ms: ${JSON.stringify(summary)}`,
+    );
+    return summary;
+  }
+
+  private async runCleanupForTenant(
+    now: Date,
+  ): Promise<RetentionCleanupSummary> {
+    return {
       contextsAnonymized: await this.anonymizeContexts(now),
       payloadsNulled: await this.nullSnapshotPayloads(now),
       terminalOutboxesPurged: await this.purgeTerminalOutboxes(now),
       ...(await this.purgeOldDispatches(now)),
       ...(await this.archiveAndPurgeSnapshots(now)),
     };
-    this.logger.log(
-      `Retention cleanup finished in ${Date.now() - started}ms: ${JSON.stringify(summary)}`,
-    );
-    return summary;
   }
 
   /**

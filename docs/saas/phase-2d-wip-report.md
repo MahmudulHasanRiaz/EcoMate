@@ -129,7 +129,9 @@ Converted interval sweeps (per-tenant, failure-isolated via `runPerTenant`):
 
 - `blocked-entries.lazyExpire` (60 s);
 - `auth` expired refresh-token cleanup (1 h + boot);
-- `webhook-attempt` retention cleanup (24 h + boot).
+- `webhook-attempt` retention cleanup (24 h + boot);
+- tracking retention (anonymize/purge/archive) and the page-view buffer
+  (tenant-tagged entries, grouped ALS flushes).
 
 The full suite is green after these changes. The shared mechanism is ready for the
 remaining queues and interval sweeps.
@@ -138,10 +140,8 @@ remaining queues and interval sweeps.
 
 1. **Remaining queue conversions** — the import stub and the platform-level backup
    queue. The import stub has no Prisma work yet; backup is intentionally global.
-2. **Remaining interval sweeps** — tracking retention and page-view buffer flushes.
-   These cross-tenant `updateMany`/`deleteMany` (or buffered writes) must iterate
-   active tenants via `runPerTenant` (or be explicitly system-scoped). Per-tenant
-   marketing sync intervals still use the default-tenant setting.
+2. **Per-tenant marketing sync interval** — the repeatable job now fans out per
+   tenant, but its cadence is still read from the default tenant's setting.
 3. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
    `INTERNAL_SERVICE_SECRET`) and add custom-domain DNS/verification coverage; the
    endpoint/refresh contract itself is verified.
