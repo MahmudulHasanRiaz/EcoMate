@@ -10,7 +10,7 @@ import { CachePurgeController } from '../cache-purge.controller';
  * RolesGuard via @Roles('superadmin')); the version endpoint is public
  * so every device — including the storefront and not-yet-updated admin
  * bundles — can read the current cache version without a session.
- * No @RequiresFeature: this is a superadmin ops tool, not a licensed
+ * No @RequiresFeature: this is a superadmin ops tool, not a plan-gated
  * feature, so it must never 403 on a tenant whose plan lacks a key.
  */
 describe('CachePurgeController', () => {
@@ -36,7 +36,7 @@ describe('CachePurgeController', () => {
     expect(isPublic).toBe(true);
   });
 
-  it('does not gate purgeAll behind a licensed feature', () => {
+  it('does not gate purgeAll behind a plan feature', () => {
     const meta = Reflect.getMetadata(
       REQUIRES_FEATURE_KEY,
       CachePurgeController.prototype.purgeAll,

@@ -182,20 +182,26 @@ Refund Completed (refund status → completed)
    AND InventoryLog (dual legacy write).
 ```
 
-## 9. License Activated
+## 9. Tenant Entitlements Refreshed
 
 ```
-License Key Entered
+Platform registry response
   │
-  ├─▶ KeyMate API validation
-  │     ├─▶ Success → 7-day cache created
-  │     │           └─▶ Feature flags unlocked per license plan
-  │     └─▶ Failure → error returned, no cache
+  ├─▶ TenantRegistrySyncService (60s poll or on-demand refresh)
+  │     └─▶ TenantRegistryService.replace(records)
+  │           ├─▶ plan features + limits
+  │           └─▶ subscription status / grace window
   │
-  ├─▶ LicenseGuard → global license check passes
+  ├─▶ TenantEntitlementsService
+  │     ├─▶ canUse(key) → FeatureGuard per-route decision
+  │     └─▶ getAccessState() → TenantSubscriptionGuard (writes) + admin banner
   │
-  └─▶ FeatureGuard → per-route feature check passes (or blocks)
+  └─▶ GET /api/entitlements/me (admin) and /public (storefront)
 ```
+
+Every mutation runs through `TenantSubscriptionGuard`: `full`/`grace` allow the
+request, `read_only`/`suspended` allow reads and return 403 for writes. Auth,
+health and entitlement endpoints opt out with `@SkipSubscription`.
 
 ## 10. Stock Transfer (between warehouses/bins)
 
@@ -213,7 +219,7 @@ Stock Transfer
 
 ```
                     ┌─────────────────────────────┐
-                    │       License Activation     │
+                    │   Platform Entitlements     │
                     └──────────┬──────────────────┘
                                │
                                ▼

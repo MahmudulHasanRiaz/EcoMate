@@ -102,7 +102,7 @@ export class CreateProductDto {
   // fallbacks at dispatch when set.
   @IsOptional() @IsInt() @Min(1) weightGram?: number;
   // Customization definition (owner Q15/Q20); stored normalized after
-  // CustomizationService.parseDefinition. License-gated at save time.
+  // CustomizationService.parseDefinition. Plan-gated at save time.
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -166,7 +166,7 @@ export class UpdateProductDto {
   weightGram?: number | null;
   // Customization definition (owner Q15/Q20); null or [] clears it.
   // Clearing is always allowed; setting a non-empty definition requires
-  // the 'product-customization' license feature.
+  // the 'product-customization' plan feature.
   @IsOptional()
   @ValidateIf((o) => o.customizations !== null)
   @IsArray()

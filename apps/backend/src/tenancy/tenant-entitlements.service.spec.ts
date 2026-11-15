@@ -10,7 +10,7 @@ describe('TenantEntitlementsService', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env.SKIP_LICENSE_CHECK;
+    delete process.env.NODE_ENV;
     registry.replace([]);
   });
 

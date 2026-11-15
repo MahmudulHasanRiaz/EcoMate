@@ -199,12 +199,12 @@ Products and Inventory are separate domains. Neither owns the other.
 **Definition:** Named financial account in the chart of accounts (e.g., "Cash", "Inventory Asset", "Accounts Receivable").  
 **Domain:** Finance & HR
 
-### 22. License
-**Definition:** Per-client license managed via KeyMate/Keygen integration. Each deployment has a unique license key that gates feature availability. 7-day local cache.  
+### 22. Tenant Entitlement
+**Definition:** The plan snapshot for a tenant (plan name, feature keys, limits, subscription status, access state) refreshed from the platform control plane. It replaces the per-deployment license server.  
 **Domain:** System
 
 ### 23. Feature Flag
-**Definition:** Runtime toggle for a licensed feature. Checked via `@RequiresFeature()` decorator on controllers. Guarded by `FeatureGuard`.  
+**Definition:** Runtime toggle for a plan feature. Checked via `@RequiresFeature()` decorator on controllers. Guarded by `FeatureGuard`.  
 **Prisma Model:** FeatureFlag  
 **Domain:** System
 
@@ -248,7 +248,7 @@ Products and Inventory are separate domains. Neither owns the other.
 **Domain:** POS
 
 ### 32. Inventory Management Feature
-**Definition:** Licensed feature toggle. When **enabled** → Physical Inventory is the primary stock system, Managed Stock is secondary (per-product `syncManagedStock`). When **disabled** → Managed Stock is the sole stock system. Controlled via license + system settings.
+**Definition:** Plan feature toggle. When **enabled** → Physical Inventory is the primary stock system, Managed Stock is secondary (per-product `syncManagedStock`). When **disabled** → Managed Stock is the sole stock system. Controlled via the plan feature + system settings.
 **Domain:** System
 
 ### 33. ManagedStockSync (Per-Product Setting)
@@ -336,8 +336,8 @@ When Inventory Management is ENABLED, each Product has a `syncManagedStock` togg
 ### Inventory Control Rule
 When a Product has `availabilityMode: INVENTORY_CONTROLLED`, its storefront availability is determined by physical inventory levels (PhysicalInventory.quantity - PhysicalInventory.reservedQuantity > 0). If Inventory Management is DISABLED, this mode falls back to MANAGED_STOCK behavior.
 
-### License Enforcement Rule
-Every licensed feature must have `@RequiresFeature()` on its controller. The feature must be registered in FEATURE_REGISTRY.md. The 68-feature system from `final-feature-plan.md` must be verified against actual `@RequiresFeature()` usage.
+### Feature Enforcement Rule
+Every plan-gated feature must have `@RequiresFeature()` on its controller. The feature must be registered in FEATURE_REGISTRY.md. The feature catalogue in `packages/shared-types/src/feature-catalogue.ts` must be verified against actual `@RequiresFeature()` usage.
 
 ### Purchase-to-Stock Rule
 Purchase owns GRN. Receiving goods triggers StockService.add() (+ addPhysical() if Inventory Management enabled) for managed stock and physical inventory receipt. Inventory never creates purchase orders.

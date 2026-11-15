@@ -29,7 +29,6 @@
     "@aws-sdk/lib-storage": "^3.1047.0",
     "@better-auth/prisma-adapter": "1.7.13",
     "@ecomate/feature-flags": "*",
-    "@ecomate/license-engine": "*",
     "@ecomate/shared-types": "*",
     "@fastify/compress": "^9.0.0",
     "@fastify/cookie": "^11.0.2",

@@ -19,7 +19,7 @@ import {
 } from './dto/discount.dto';
 
 // Same feature flag as coupons: the admin menu is one "Coupons &
-// Discounts" entry, and discounts ride the coupons license surface.
+// Discounts" entry, and discounts ride the coupons plan-feature surface.
 @Controller('discounts')
 @RequiresFeature('admin_coupons')
 export class DiscountsController {

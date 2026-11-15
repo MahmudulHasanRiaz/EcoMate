@@ -92,10 +92,7 @@ export class TenantEntitlementsService {
   }
 
   private devWildcard(): boolean {
-    return (
-      process.env.NODE_ENV !== 'production' ||
-      process.env.SKIP_LICENSE_CHECK === 'true'
-    );
+    return process.env.NODE_ENV !== 'production';
   }
 
   private parseDate(value?: string | null): Date | null {

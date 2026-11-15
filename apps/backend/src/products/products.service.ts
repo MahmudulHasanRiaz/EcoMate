@@ -75,7 +75,7 @@ export class ProductsService {
    * Customization definition gate + normalization (owner Q15/Q20):
    * malformed definitions are rejected; the NORMALIZED parse (defaults
    * materialized) is what's stored. Setting a non-empty definition
-   * requires the 'product-customization' license feature; clearing
+   * requires the 'product-customization' plan feature; clearing
    * (null/[]) is always allowed.
    */
   private normalizeCustomizations(raw: unknown): any {

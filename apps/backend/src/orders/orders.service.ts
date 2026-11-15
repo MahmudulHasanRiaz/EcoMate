@@ -5680,7 +5680,7 @@ export class OrdersService {
     }
 
     // A newly added CUSTOMIZED line is a customization change (Q19):
-    // same Packed lock + license gate + server-side resolution as create.
+    // same Packed lock + plan feature gate + server-side resolution as create.
     let addedCustomization: {
       snapshot: CustomizationSnapshot | null;
       addonAmount: number;

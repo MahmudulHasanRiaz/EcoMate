@@ -52,7 +52,7 @@ describe('FeatureGuard', () => {
   it('denies when feature is not in active set', () => {
     const reflector = createMockReflector({ feature: 'premium_feature', dependencies: [] });
     const flags = new FeatureFlagsService();
-    flags.setLicense(['admin_products']);
+    flags.setFeatures(['admin_products']);
     const guard = new FeatureGuard(reflector as any, createMockModuleRef(flags) as any);
     expect(() => guard.canActivate(createMockContext())).toThrow(ForbiddenException);
   });
@@ -60,7 +60,7 @@ describe('FeatureGuard', () => {
   it('allows when feature is in active set', () => {
     const reflector = createMockReflector({ feature: 'admin_products', dependencies: [] });
     const flags = new FeatureFlagsService();
-    flags.setLicense(['admin_products']);
+    flags.setFeatures(['admin_products']);
     const guard = new FeatureGuard(reflector as any, createMockModuleRef(flags) as any);
     expect(guard.canActivate(createMockContext())).toBe(true);
   });

@@ -16,9 +16,9 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 
 /**
- * Support enquiries (D9). No licence feature key exists for this inbox,
+ * Support enquiries (D9). No plan feature key exists for this inbox,
  * so the admin side is guarded by role only — inventing a
- * `@RequiresFeature` key would 403 every tenant until KeyMate adds it.
+ * `@RequiresFeature` key would 403 every tenant until a plan includes it.
  */
 @Controller('support-enquiries')
 export class SupportEnquiriesController {

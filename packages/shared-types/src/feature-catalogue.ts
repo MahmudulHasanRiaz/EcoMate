@@ -1,40 +1,7 @@
-export interface LicenseInfoResponse {
-  features: string[];
-  clientId?: string;
-  domains?: string[];
-  exp?: number;
-  iat?: number;
-}
-
-export class LicenseInfo {
-  features: string[];
-  raw: any;
-
-  constructor(data: { features: string[]; raw?: any }) {
-    this.features = data.features;
-    this.raw = data.raw;
-  }
-
-  hasFeature(key: string): boolean {
-    return this.features.includes(key);
-  }
-}
-
-export type ResourceLimits = Record<string, number>;
-
 export interface FeatureFlag {
   key: string;
   enabled: boolean;
   dependencies?: string[];
-}
-
-export interface LicenseToken {
-  clientId: string;
-  features: string[];
-  limits: ResourceLimits;
-  domains: string[];
-  exp: number;
-  iat: number;
 }
 
 export const FEATURES: Record<string, FeatureFlag> = {

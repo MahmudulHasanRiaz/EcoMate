@@ -26,17 +26,17 @@ else
   echo "[Startup] Custom backup directories must be writable by UID 1001"
 fi
 
-# The encryption key for the license, attendance device credentials and
-# marketing OAuth tokens is generated on first boot when it is not supplied by
-# the environment, and then lives here. Without these permissions the
-# provisioner cannot write it and startup fails.
-echo "[Startup] Ensuring license data directory permissions..."
-LICENSE_DIR="${LICENSE_DATA_DIR:-/app/license-data}"
-mkdir -p "$LICENSE_DIR"
-chown -R 1001:1001 "$LICENSE_DIR"
-chmod 700 "$LICENSE_DIR"
-if [ -f "$LICENSE_DIR/encryption.key" ]; then
-  chmod 600 "$LICENSE_DIR/encryption.key"
+# The encryption key for attendance device credentials and marketing OAuth
+# tokens is generated on first boot when it is not supplied by the environment,
+# and then lives here. Without these permissions the provisioner cannot write it
+# and startup fails.
+echo "[Startup] Ensuring app data directory permissions..."
+APP_KEYS_DIR="${APP_DATA_DIR:-${LICENSE_DATA_DIR:-/app/app-data}}"
+mkdir -p "$APP_KEYS_DIR"
+chown -R 1001:1001 "$APP_KEYS_DIR"
+chmod 700 "$APP_KEYS_DIR"
+if [ -f "$APP_KEYS_DIR/encryption.key" ]; then
+  chmod 600 "$APP_KEYS_DIR/encryption.key"
 fi
 
 echo "[Startup] Resolving failed migrations (self-heal before migrate deploy)..."

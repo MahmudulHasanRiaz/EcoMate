@@ -69,7 +69,7 @@ describe('FeedService', () => {
   });
 
   describe('validateToken', () => {
-    it('should return config when valid token + active config + licensed', async () => {
+    it('should return config when valid token + active config + plan-enabled', async () => {
       mockPrisma.productFeedConfig.findFirst.mockResolvedValue(mockConfig);
       mockFeatureFlags.canUse.mockReturnValue(true);
 
@@ -102,7 +102,7 @@ describe('FeedService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw ForbiddenException when feature not licensed', async () => {
+    it('should throw ForbiddenException when feature not included in the current plan', async () => {
       mockPrisma.productFeedConfig.findFirst.mockResolvedValue(mockConfig);
       mockFeatureFlags.canUse.mockReturnValue(false);
 
@@ -111,7 +111,7 @@ describe('FeedService', () => {
       ).rejects.toThrow(ForbiddenException);
       await expect(
         service.validateToken('valid-token', 'meta'),
-      ).rejects.toThrow('Feature is not licensed');
+      ).rejects.toThrow('Feature is not included in the current plan');
     });
   });
 

@@ -5,7 +5,7 @@ import { TenantFeatureFlagsService } from './tenant-feature-flags.service';
 /**
  * Phase 3 bridge: existing services/controllers still inject the package
  * FeatureFlagsService token, but the implementation is now backed by the
- * tenant's platform entitlement snapshot rather than a license server.
+ * tenant's platform entitlement snapshot.
  */
 @Global()
 @Module({

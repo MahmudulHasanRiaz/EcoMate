@@ -76,7 +76,7 @@ APP_URL: "https://admin.client-domain.com"
 STOREFRONT_URL: "https://www.client-domain.com"
 NODE_ENV: "production"
 
-# Mobile Build (optional — skip if client doesn't have mobile license)
+# Mobile Build (optional — skip if the plan doesn't include mobile distribution)
 MOBILE_BUILDER_GITHUB_TOKEN: "<ghp_xxx>"
 MOBILE_BUILDER_CALLBACK_TOKEN: "<shared-secret>"
 
@@ -109,17 +109,16 @@ Duration: ~15 min (client)
 
 10. **Client receives:**
     - Admin URL: `https://admin.{domain}`
-    - License key (from KeyMate or sales)
+    - Plan + enabled features (provisioned on the platform)
     - Admin email/password
 
 11. **Client does:**
     - Visit admin URL → sign in
-    - Auto-redirected to license activation
-    - Enter license key → features unlocked
     - Go to Settings → Branding → set name, logo, colors
-    - (If mobile licensed) Go to Settings → Mobile App → Publish
+    - Review Settings → Plan & Usage (plan, features, limits)
+    - (If the plan includes mobile distribution) Go to Settings → Mobile App → Publish
 
-## Phase 5: Mobile Builder Setup (If Licensed)
+## Phase 5: Mobile Builder Setup (If Plan Includes It)
 
 ```
 Duration: ~15 min (operator, one-time)
@@ -147,9 +146,9 @@ Duration: ~15 min (operator, one-time)
 ## Verification Checklist
 
 - [ ] Admin login works
-- [ ] License activation → features load
+- [ ] Plan & Usage shows the provisioned plan + features
 - [ ] Branding visible on storefront
-- [ ] Mobile App settings page accessible (if licensed)
+- [ ] Mobile App settings page accessible (if the plan includes it)
 - [ ] Publish triggers GitHub Action in Builder repo
 - [ ] APK builds and uploads back
 - [ ] Storefront footer shows download links
@@ -162,7 +161,7 @@ Duration: ~15 min (operator, one-time)
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
 | Stack deploy fails | Missing ENV in Portainer | Fill all required ENV vars |
-| License activation fails | License key not registered | Check KeyMate dashboard |
+| Plan features missing | Entitlement snapshot stale or plan missing the feature | Trigger an entitlement refresh on the platform |
 | Mobile build stuck on "running" | GitHub token missing/expired | Update `MOBILE_BUILDER_GITHUB_TOKEN` |
 | APK download returns 404 | No build completed yet | Run publish first |
-| Footer download buttons missing | License feature not enabled | Check `mobile_distribution` in license |
+| Footer download buttons missing | Plan feature not enabled | Check `mobile_distribution` in the tenant plan |

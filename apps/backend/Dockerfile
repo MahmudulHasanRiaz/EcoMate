@@ -13,10 +13,9 @@ RUN --mount=type=cache,target=/root/.npm npm install
 RUN npm install --package-lock=false --no-save --os=linux --libc=musl --cpu=x64 \
     @img/sharp-linuxmusl-x64@0.35.5 @img/sharp-libvips-linuxmusl-x64@1.3.4 2>/dev/null || true
 RUN npx tsc -p packages/shared-types/tsconfig.json && \
-    npx tsc -p packages/license-engine/tsconfig.json && \
     npx tsc -p packages/feature-flags/tsconfig.json
 # Dereference workspace symlinks so Docker COPY produces real directories
-RUN for pkg in license-engine feature-flags shared-types; do \
+RUN for pkg in feature-flags shared-types; do \
       target="node_modules/@ecomate/$pkg"; \
       [ -L "$target" ] && rm -rf "$target" && mkdir -p "$target" && \
       cp "packages/$pkg/package.json" "$target/" && \

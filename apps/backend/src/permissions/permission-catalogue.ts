@@ -29,7 +29,7 @@ export interface CatalogueModule {
   label: string;
   /** Grouping bucket used by the preset editor's sections. */
   group: string;
-  /** License feature that gates this module, when one applies. */
+  /** Plan feature that gates this module, when one applies. */
   feature?: string;
   /** Emit `view_/create_/edit_/delete_<key>`. False for action-only modules. */
   crud?: boolean;
@@ -170,7 +170,7 @@ export const CATALOGUE_MODULES: CatalogueModule[] = [
   // ── Marketing & content ────────────────────────────────────────────────
   { key: 'campaigns', label: 'Campaigns', group: 'MARKETING', crud: true },
   { key: 'coupons', label: 'Coupons', group: 'MARKETING', crud: true },
-  // Same license surface as coupons: the admin menu is one "Coupons &
+  // Same plan feature surface as coupons: the admin menu is one "Coupons &
   // Discounts" entry (discounts.controller.ts @RequiresFeature admin_coupons).
   { key: 'discounts', label: 'Discounts', group: 'MARKETING', feature: 'admin_coupons', crud: true },
   { key: 'landing_pages', label: 'Landing Pages', group: 'MARKETING', crud: true },
@@ -206,8 +206,6 @@ export const CATALOGUE_MODULES: CatalogueModule[] = [
   { key: 'security', label: 'Security', group: 'SETTINGS', crud: false,
     extras: [{ verb: 'view_security_dashboard', label: 'View Security Dashboard' }] },
   { key: 'mobile_builder', label: 'Mobile Builder', group: 'SETTINGS', crud: true },
-  { key: 'license', label: 'License', group: 'SETTINGS', crud: false,
-    extras: [{ verb: 'manage', label: 'Manage License Activation' }] },
 ];
 
 export interface CatalogueEntry {

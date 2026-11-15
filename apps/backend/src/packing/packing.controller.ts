@@ -13,7 +13,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { HoldOrderDto, PackingQueueQueryDto } from './dto/packing.dto';
 
-// The `admin_packing` plan feature was declared in the license system but
+// The `admin_packing` plan feature was declared in the plan feature catalogue but
 // never enforced — the workspace was reachable by role alone.
 @RequiresFeature('admin_packing')
 @Controller('packing')

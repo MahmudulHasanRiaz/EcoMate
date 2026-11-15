@@ -66,8 +66,9 @@ ci.yml ──► Build Images ──► GHCR              Deploy Client ──�
 5. **Volumes are per stack** (`postgres-data`, `uploads-data`, `backup-data`,
    `license-data`, …). Deleting a stack keeps volumes unless explicitly
    removed — same-name recreates reattach data. **Never delete
-   `license-data`**: keys for licenses/attendance/marketing tokens become
-   permanently unreadable.
+   `license-data`** (historic name; now mounted at `/app/app-data`): the app
+   encryption key for attendance and marketing tokens becomes permanently
+   unreadable without it.
 
 ## 4. Deploy order (production)
 

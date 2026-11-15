@@ -66,10 +66,10 @@ export class MobileDownloadController {
       throw new NotFoundException(`Unknown app: ${app}`);
     }
 
-    // License check
+    // Plan check
     if (!this.featureFlags.canUse(feature)) {
       throw new ForbiddenException(
-        `Mobile distribution not available for ${APP_NAMES[app]}. Upgrade your license plan.`,
+        `Mobile distribution not available for ${APP_NAMES[app]}. Upgrade your plan.`,
       );
     }
 

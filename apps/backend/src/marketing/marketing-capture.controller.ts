@@ -6,7 +6,7 @@ import { CaptureSessionDto } from './dto/marketing.dto';
 
 /**
  * Storefront landing/journey capture. Kept public + rate-limited: the
- * storefront records every landing regardless of license state (data is
+ * storefront records every landing regardless of plan state (data is
  * cheap and the module only surfaces it when the feature is enabled).
  */
 @Controller('marketing')

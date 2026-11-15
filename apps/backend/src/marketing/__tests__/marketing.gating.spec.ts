@@ -6,7 +6,7 @@ import { MarketingAnalysisController } from '../marketing-analysis.controller';
 import { MarketingCaptureController } from '../marketing-capture.controller';
 import { MarketingWebhooksController } from '../marketing-webhooks.controller';
 
-describe('MarketingController — license gating', () => {
+describe('MarketingController — plan gating', () => {
   it('main controller is gated with RequiresFeature(marketing_attribution)', () => {
     expect(Reflect.getMetadata(REQUIRES_FEATURE_KEY, MarketingController)).toBe('marketing_attribution');
   });
@@ -38,7 +38,7 @@ describe('MarketingController — license gating', () => {
 });
 
 describe('MarketingCaptureController — public storefront capture', () => {
-  it('has NO RequiresFeature metadata (landing capture must never be license-gated)', () => {
+  it('has NO RequiresFeature metadata (landing capture must never be plan-gated)', () => {
     expect(Reflect.getMetadata(REQUIRES_FEATURE_KEY, MarketingCaptureController)).toBeUndefined();
     expect(
       Reflect.getMetadata(REQUIRES_FEATURE_KEY, MarketingCaptureController.prototype.capture),

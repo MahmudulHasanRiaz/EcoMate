@@ -3,8 +3,7 @@ import { TenantEntitlementsService } from '../tenancy/tenant-entitlements.servic
 
 /**
  * Compatibility surface for the existing @RequiresFeature decorators/services.
- * The old LicenseEngine-backed FeatureFlagsService is replaced at runtime by
- * this provider while the license package is removed in Phase 3.
+ * Feature checks resolve against the tenant's platform entitlement snapshot.
  */
 @Injectable()
 export class TenantFeatureFlagsService {

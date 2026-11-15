@@ -115,7 +115,6 @@ jobs:
           # (npm ci --ignore-scripts skips their builds); the Dockerfiles build
           # them the same way before compiling the app.
           npx tsc -p ../../packages/shared-types/tsconfig.json
-          npx tsc -p ../../packages/license-engine/tsconfig.json
           npx tsc -p ../../packages/feature-flags/tsconfig.json
           npx nest build
           npx jest --no-coverage --testPathIgnorePatterns "integration"

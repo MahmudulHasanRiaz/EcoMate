@@ -22,7 +22,7 @@ export class PermissionsGuard implements CanActivate {
      * Without this short-circuit, adding a class-level `@Permissions(...)` to a
      * controller that also exposes a public handler (e.g. `GET /products`)
      * would 403 anonymous requests — the handler metadata would no longer be
-     * able to opt out on its own. Mirrors `LicenseGuard`.
+     * able to opt out on its own. Uses the same metadata lookup shape as the feature guard.
      */
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),

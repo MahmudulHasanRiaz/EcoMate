@@ -73,7 +73,7 @@ services:
       - uploads-data:/app/uploads
       - backup-data:/app/backup-storage
       - mobile-builds-data:/app/mobile-builds
-      - license-data:/app/license-data
+      - license-data:/app/app-data
     environment:
       NODE_ENV: production
       CLIENT_DOMAIN: ${CLIENT_DOMAIN}
@@ -83,7 +83,7 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
-      LICENSE_ENCRYPTION_KEY: ${LICENSE_ENCRYPTION_KEY:-}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
       INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-}
       # Shared secret for storefront on-demand revalidation (P4). The backend
       # will present it to POST /api/revalidate after product/config mutations
@@ -142,8 +142,10 @@ services:
       # process before Node reaches its own ceiling.
       NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-1280}
       # Where the generated encryption key is persisted when
-      # LICENSE_ENCRYPTION_KEY is not supplied by the environment.
-      LICENSE_DATA_DIR: /app/license-data
+      # APP_ENCRYPTION_KEY is not supplied by the environment. The volume keeps
+      # its historic `license-data` name so an already-provisioned key survives
+      # the rename; the mount point is the new app-data path.
+      APP_DATA_DIR: /app/app-data
       # Tracking-store retention sweep (90d PII anonymisation / 30d terminal
       # outbox purge / 2y archive). Only the literal 'false' disables it.
       RETENTION_ENABLED: ${RETENTION_ENABLED:-true}

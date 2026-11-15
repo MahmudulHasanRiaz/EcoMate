@@ -11,7 +11,7 @@ import {
   CustomizationSnapshotGroup,
 } from './customization.types';
 
-/** License feature key for the whole customization add-on feature (Q20). */
+/** Plan feature key for the whole customization add-on feature (Q20). */
 export const PRODUCT_CUSTOMIZATION_FEATURE = 'product-customization';
 
 const GROUP_TYPES = ['single', 'multi', 'text'] as const;
@@ -36,7 +36,7 @@ function deltaOrThrow(v: unknown, what: string): number {
 
 /**
  * Validates and prices product customization (see customization.types.ts).
- * Stateless: the license flag comes from the global FeatureFlagsService.
+ * Stateless: the plan flag comes from the global FeatureFlagsService.
  * Every client-supplied price is ignored — only keys/text are accepted and
  * all amounts are resolved here, against the product's CURRENT definition
  * at order time (the frozen snapshot then governs the order forever).
@@ -52,7 +52,7 @@ export class CustomizationService {
   assertEnabled(): void {
     if (!this.isEnabled()) {
       throw new ForbiddenException(
-        `Feature "${PRODUCT_CUSTOMIZATION_FEATURE}" is not licensed`,
+        `Feature "${PRODUCT_CUSTOMIZATION_FEATURE}" is not included in the current plan`,
       );
     }
   }

@@ -132,7 +132,7 @@ async function main() {
   console.log('Starting NestJS server...');
   const server = spawn('node', ['dist/src/main.js'], {
     cwd: '/Users/riaz/Custom Development Projects/EcoMate Web/apps/backend',
-    env: { ...process.env, PORT: '45678', SKIP_LICENSE_CHECK: 'true' },
+    env: { ...process.env, PORT: '45678', NODE_ENV: 'development' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout?.on('data', (d: Buffer) => {

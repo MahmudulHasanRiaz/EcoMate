@@ -164,7 +164,7 @@ describe('MarketingSnapshotService', () => {
   });
 });
 
-describe('MarketingSnapshotController — license gating', () => {
+describe('MarketingSnapshotController — plan gating', () => {
   it('is gated with RequiresFeature(marketing_attribution)', () => {
     expect(Reflect.getMetadata(REQUIRES_FEATURE_KEY, MarketingSnapshotController)).toBe(
       'marketing_attribution',

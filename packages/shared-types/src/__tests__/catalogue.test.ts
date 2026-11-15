@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { FEATURES, type FeatureFlag, type LicenseToken } from '../license-types';
+import { FEATURES, type FeatureFlag } from '../feature-catalogue';
 import { ClientConfig } from '../client-config';
 
 describe('shared-types', () => {
   describe('FEATURES', () => {
-    it('has 80 features', () => {
-      expect(Object.keys(FEATURES).length).toBe(80);
+    it('has 82 features', () => {
+      expect(Object.keys(FEATURES).length).toBe(82);
     });
 
     it('has storefront and admin features', () => {
@@ -46,23 +46,6 @@ describe('shared-types', () => {
     it('pos_system depends only on admin_products', () => {
       const f = FEATURES['pos_system'];
       expect(f.dependencies).toEqual(['admin_products']);
-    });
-  });
-
-  describe('LicenseToken interface', () => {
-    it('creates a valid license token shape', () => {
-      const token: LicenseToken = {
-        clientId: 'test-client',
-        features: ['storefront', 'admin_products', 'admin_accounting'],
-        limits: { orders_per_month: 5000, staff_users: 10 },
-        domains: ['example.com'],
-        exp: 9999999999,
-        iat: 1000000000,
-      };
-      expect(token.clientId).toBe('test-client');
-      expect(token.features).toContain('storefront');
-      expect(token.limits.orders_per_month).toBe(5000);
-      expect(token.domains).toContain('example.com');
     });
   });
 

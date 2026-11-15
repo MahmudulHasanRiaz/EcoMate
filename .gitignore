@@ -48,7 +48,9 @@ query_*.js
 # Local E2E scratch: throwaway probe scripts, screenshots (never committed)
 .tmp-e2e/
 
-# Generated license encryption key (never committed — see EncryptionKeyProvisioner)
+# Generated app encryption key (never committed — see EncryptionKeyProvisioner)
+.app-data/
+# Legacy directory name, still read when it already exists
 .license-data/
 apps/platform-api/src/generated/
 apps/platform-api/dist/

@@ -6,7 +6,7 @@ Production-grade SaaS e-commerce platform with admin panel, storefront, and API 
 
 - **Initial scope:** convert the current `main` codebase to shared-schema multi-tenancy (`tenant_id` + PostgreSQL RLS).
 - **Platform control plane:** `apps/platform-api` + `apps/platform-admin` + `apps/landing` are being added.
-- **Plans/entitlements:** dynamic plans replace the KeyMate/Keygen license server.
+- **Plans/entitlements:** dynamic plans and tenant entitlements drive every feature gate.
 - **Domain:** primary `ecomate.bd`; configurable base-domain aliases + fallback domain.
 - **Central commerce:** deferred until the upstream `feat/central-commerce` branch is finished; it will be ported later with tenantId/RLS from its first migration.
 - **Docs:** `SAAS.md`, `docs/2-ARCHITECTURE/ADR/007-shared-schema-multi-tenancy.md`, and `docs/Commandcode/EcoMate SaaS — Multi-Tenant Conversion Plan`.
@@ -28,11 +28,11 @@ EcoMate Web/
 │   ├── platform-admin/ React SPA — SaaS admin (planned, Phase 1)
 │   └── landing/        Next.js — SaaS marketing/signup (planned, Phase 1)
 ├── packages/
-│   ├── feature-flags/  NestJS module — runtime feature gating via license entitlements
-│   ├── license-engine/ License validation client — KeyMate API + 7-day local cache
+│   ├── feature-flags/  NestJS module — runtime feature gating via tenant entitlements
+
 │   └── shared-types/   Shared TypeScript definitions across workspaces
 ├── docker-compose.yml  6 services (postgres, redis, backend, storefront, admin, pos)
-├── portainer/          Portainer stack config + self-hosted Keygen CE license server
+├── portainer/          Portainer stack config
 ├── scripts/            Utility scripts — dev wait-for-backend, DB backup, deploy helper
 ├── docs/               Feature specs, deployment guides, superpowers design docs
 └── .github/workflows/  CI (lint/test/build) + CD (Docker build/push + Portainer deploy)
@@ -58,7 +58,7 @@ EcoMate Web/
 | **Reverse Proxy** | Traefik (VPS) or Nginx (admin Docker image) |
 | **Email** | Nodemailer |
 | **File Storage** | AWS S3 + local uploads via sharp |
-| **Licensing** | SaaS entitlements from the platform control plane (KeyMate/Keygen being removed) |
+| **Entitlements** | SaaS plan features from the platform control plane |
 | **Security** | Helmet (Fastify), rate limiting, JS obfuscation, CSP headers, account lockout |
 
 ## Applications
@@ -81,7 +81,7 @@ Fastify-based API at port 4000. Key modules:
 - **CMS** — Pages, landing pages (template + custom HTML), media gallery
 - **Tracking** — Server-side event tracking: Meta Conversions API (CAPI), TikTok Events API, GA4 Measurement Protocol, Google Ads offline conversions. BullMQ queue-backed with page view buffering
 - **Operations** — Warehouses, suppliers, delivery areas, coupons, tasks
-- **License (legacy)** — KeyMate activation to be removed in the SaaS conversion; encryption utilities retained as `APP_ENCRYPTION_KEY`
+- **Entitlements** — plan features from the platform registry; encryption utilities use `APP_ENCRYPTION_KEY`
 - **Security** — IP/phone blocking system, throttling, Helmet CSP
 - **Platform** — Search, import/export, product feed (Google/Meta), queue management, cache, image processing, uploads, system settings
 
@@ -100,7 +100,7 @@ Served at `/admin/` base path. Features:
 - Accounting module (double-entry bookkeeping)
 - Settings: store config, shipping zones, tax rates, email templates, tracking pixels
 - RBAC-based access control
-- License activation page (first-run setup)
+- Plan & Usage page (subscription, features, limits)
 
 ### `apps/pos` — React 19 SPA Point of Sale
 
@@ -133,8 +133,7 @@ PWA with offline support via service worker + IndexedDB. Features:
 
 | Package | Description |
 |---------|-------------|
-| `@ecomate/license-engine` | **Legacy** — KeyMate license validation; removed when SaaS entitlements land. |
-| `@ecomate/feature-flags` | NestJS module for runtime feature gating; being re-pointed at SaaS entitlements. |
+| `@ecomate/feature-flags` | NestJS module for runtime feature gating, backed by tenant entitlements. |
 | `@ecomate/shared-types` | Shared TypeScript interfaces and types used across apps. |
 
 ## Quick Start (Development)
@@ -165,13 +164,13 @@ npm run storefront:dev # http://localhost:3000
 npm run pos:dev        # http://localhost:5174
 ```
 
-### Dev Bypass (No License Required)
+### Dev Entitlements (No Platform Registry)
 
-```bash
-# Set in apps/backend/.env:
-DEV_LICENSE_BYPASS=true
-```
-Only works when `NODE_ENV !== production`. Bypasses all license checks for local dev.
+Local development and the test suite run without a platform control plane. When
+no entitlement snapshot exists for the request's tenant, feature checks open the
+`*` wildcard and the access state is `full` **only** when
+`NODE_ENV !== production`. In production a missing snapshot fails closed
+(`read_only`, no features).
 
 ## Testing
 
@@ -223,7 +222,7 @@ Push to `main` or `develop` (and PRs to `main`) triggers automated build + push 
 
 ```bash
 # Legacy single-tenant workflow; the SaaS repo uses .github/workflows/deploy-saas.yml
-# Select client + license plan → builds client-tagged images → triggers Portainer webhook
+# Select client + plan → builds client-tagged images → triggers Portainer webhook
 ```
 
 ### Environment Variables
@@ -236,8 +235,8 @@ Key variables for production (set in Portainer stack):
 | `JWT_SECRET` | `openssl rand -hex 64` |
 | `JWT_REFRESH_SECRET` | Different from JWT_SECRET |
 | `POSTGRES_PASSWORD` | DB password |
-| `LICENSE_ENCRYPTION_KEY` | `openssl rand -hex 32` (AES-256-GCM) |
-| `KEYMATE_API_URL` | KeyMate license server URL |
+| `APP_ENCRYPTION_KEY` | `openssl rand -hex 32` (AES-256-GCM) |
+
 | `REDIS_PASSWORD` | Redis password |
 | `CORS_ORIGIN` | Comma-separated allowed origins |
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32` (better-auth) |
@@ -268,16 +267,17 @@ npx prisma migrate deploy
 npx prisma generate
 ```
 
-## License Activation
+## Plans & Entitlements
 
-- License credentials stored encrypted in DB (AES-256-GCM), not env vars
-- Activation via UI at `/license/activate` after sign-in
-- Domain auto-detected from `Host` header
-- 7-day offline cache after initial activation
-- Requires KeyMate reachable for first activation (no grace period)
-- Production Docker images set `NODE_ENV=production` — license is mandatory
-
-API reference: `POST /api/license/activate` — `{ licenseKey, apiKey? }`
+- The platform control plane owns plans, subscriptions and entitlements.
+- `GET /api/entitlements/me` returns the tenant snapshot (plan, features,
+  limits, access state, validity) to the admin.
+- `GET /api/entitlements/public` exposes plan name, features and access state to
+  the storefront.
+- `TenantSubscriptionGuard` keeps reads available but blocks writes with a 403
+  when the access state is `read_only` or `suspended`.
+- Secrets at rest (attendance device credentials, marketing OAuth tokens) use
+  AES-256-GCM with `APP_ENCRYPTION_KEY`.
 
 ## Obfuscation
 
@@ -287,15 +287,15 @@ Backend Docker build applies `javascript-obfuscator` (control flow flattening, s
 
 | File | Contents |
 |------|----------|
-| `docs/keygen-setup.md` | Self-hosted Keygen CE license server deployment |
+
 | `docs/landing-page-builder.md` | Landing/sales page builder technical spec |
 | `docs/portainer-deployment.md` | VPS + Portainer deployment guide |
 | `docs/Marketing Attribution.md` | Marketing attribution platform spec (Meta Ads integration, profit intelligence) |
 | `docs/1-BUSINESS/` | Business domain contract, architecture invariants, feature registry |
-| `docs/superpowers/` | Feature plans and design specs (accounting, HR, catalog, license activation UI, etc.) |
+| `docs/superpowers/` | Feature plans and design specs (accounting, HR, catalog, entitlements, etc.) |
 | `AGENT.md` | AI agent behavior rules and project conventions |
 | `apps/backend/.env.example` | Backend environment variables |
-| `portainer/keygen/.env.example` | Keygen license server environment |
+
 | `scripts/backup-db.sh` | Database backup script |
 | `scripts/deploy.sh` | Deployment helper |
 | `scripts/wait-for-backend.js` | Dev-server readiness waiter |
@@ -317,6 +317,6 @@ The SaaS product uses **shared-schema multi-tenancy**: one PostgreSQL database, 
 
 1. One shared tenant database, isolated by `tenant_id` + RLS.
 2. One platform control plane (`ecomate_platform`) for tenants, plans, billing and domains.
-3. Feature entitlements come from the plan, not from a KeyMate license.
+3. Feature entitlements come from the plan, not from a per-deployment key.
 4. Tenant hosts are `{slug}.ecomate.bd` plus optional base-domain aliases and custom domains.
 5. SaaS images are tagged `ecomate-saas-*`; the legacy per-client images remain in the archived product.

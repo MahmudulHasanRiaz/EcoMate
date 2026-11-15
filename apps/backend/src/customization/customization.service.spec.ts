@@ -39,7 +39,7 @@ function makeService(enabled = true) {
 }
 
 describe('CustomizationService', () => {
-  it('license gate: assertEnabled throws when the feature is off', () => {
+  it('plan gate: assertEnabled throws when the feature is off', () => {
     expect(() => makeService(false).assertEnabled()).toThrow(ForbiddenException);
     expect(() => makeService(true).assertEnabled()).not.toThrow();
   });

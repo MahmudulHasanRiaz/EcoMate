@@ -7,7 +7,7 @@ import { CachePurgeService } from './cache-purge.service';
  * "Purge all cache" endpoints (P0 stale-bundle round, 2026-11-12).
  *
  * POST /cache-purge is superadmin-only (global RolesGuard). No
- * @RequiresFeature: this is a superadmin ops tool, not a licensed
+ * @RequiresFeature: this is a superadmin ops tool, not a plan-gated
  * feature — it must never 403 on a tenant whose plan lacks a key.
  *
  * GET /cache-purge/version is public so every client (admin bundles,

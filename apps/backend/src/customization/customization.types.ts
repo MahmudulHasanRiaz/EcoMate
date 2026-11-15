@@ -1,6 +1,6 @@
 /**
  * Product customization — shared types (owner decisions 2026-10-23,
- * Q14–Q20; license feature key 'product-customization').
+ * Q14–Q20; plan feature key 'product-customization').
  *
  * Two layers (design: ~/workspace/your_files/
  * ecomate-web-product-customization-design.md):

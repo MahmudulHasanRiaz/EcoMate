@@ -52,7 +52,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { Public } from '../common/decorators/public.decorator';
-import { SkipLicenseCheck } from '../common/decorators/skip-license-check.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { execSync } from 'child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs';
@@ -100,7 +99,6 @@ export class MobileBuilderController {
 
   // ── Minimal compile-time metadata, by buildId (public for builder) ──
   @Public()
-  @SkipLicenseCheck()
   @Get('metadata/:buildId')
   async getMetadataForBuild(@Param('buildId') buildId: string) {
     const build = await this.prisma.mobileBuild.findFirst({ where: { id: buildId } });
@@ -132,7 +130,9 @@ export class MobileBuilderController {
     const missing: string[] = [];
 
     if (!process.env.CLIENT_DOMAIN) missing.push('CLIENT_DOMAIN');
-    if (!this.featureFlags.canUse('mobile_distribution')) missing.push('License: mobile_distribution');
+    if (!this.featureFlags.canUse('mobile_distribution')) {
+      missing.push('Plan feature: mobile_distribution');
+    }
 
     const settings = await this.prisma.systemSetting.findMany({
       where: { key: { in: COMPILE_KEYS as unknown as string[] } },
@@ -148,7 +148,7 @@ export class MobileBuilderController {
       ready: missing.length === 0,
       missing,
       summary: {
-        license: this.featureFlags.canUse('mobile_distribution'),
+        plan: this.featureFlags.canUse('mobile_distribution'),
         branding: !!(map['store_name'] && map['storefront_favicon'] && map['brand_primary']),
         domain: !!process.env.CLIENT_DOMAIN,
         packageId: true,
@@ -214,7 +214,7 @@ export class MobileBuilderController {
       ? ['storefront', 'admin', 'pos'].filter(a => this.featureFlags.canUse(a === 'storefront' ? 'mobile_distribution' : `mobile_distribution_${a}`))
       : [appInput];
 
-    if (apps.length === 0) throw new BadRequestException('No licensed apps to publish');
+    if (apps.length === 0) throw new BadRequestException('No plan-enabled apps to publish');
     for (const a of apps) {
       if (!['storefront', 'admin', 'pos'].includes(a)) throw new BadRequestException(`Invalid app: ${a}`);
     }

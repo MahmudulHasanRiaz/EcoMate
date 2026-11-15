@@ -85,8 +85,8 @@ export class FeedService {
     });
     if (!config) throw new NotFoundException('Feed not found');
 
-    const licensed = await this.featureFlags.canUse('admin_product_feeds');
-    if (!licensed) throw new ForbiddenException('Feature is not licensed');
+    const planEnabled = await this.featureFlags.canUse('admin_product_feeds');
+    if (!planEnabled) throw new ForbiddenException('Feature is not included in the current plan');
 
     return { config, tenantId: config.tenantId };
   }

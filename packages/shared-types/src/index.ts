@@ -1,2 +1,2 @@
-export * from './license-types';
+export * from './feature-catalogue';
 export * from './client-config';
