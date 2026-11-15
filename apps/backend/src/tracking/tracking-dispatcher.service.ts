@@ -670,13 +670,11 @@ export class TrackingDispatcherService {
       this.logger.error(`Dispatch to ${provider} failed: ${message}`);
       // Best-effort: record the unexpected failure on the row so a retry/replay can see it.
       try {
-        const row = await this.prisma.trackingDispatch.findUnique({
+        const row = await this.prisma.trackingDispatch.findFirst({
           where: {
-            snapshotId_provider_destinationId: {
-              snapshotId: source.snapshotId,
-              provider,
-              destinationId,
-            },
+            snapshotId: source.snapshotId,
+            provider,
+            destinationId,
           },
         });
         if (row) {

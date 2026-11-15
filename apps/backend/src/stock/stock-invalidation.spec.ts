@@ -26,7 +26,7 @@ describe('Product cache invalidation on direct stock writes', () => {
 
     beforeEach(async () => {
       const prismaMock: any = {
-        physicalReservation: {
+        physicalReservation: { get findUnique() { return (this as any).findFirst; },
           findFirst: jest.fn().mockResolvedValue({
             id: 'res-1',
             productId: 'p1',
@@ -145,7 +145,7 @@ describe('Product cache invalidation on direct stock writes', () => {
             ],
           }),
         },
-        physicalReservation: {
+        physicalReservation: { get findUnique() { return (this as any).findFirst; },
           findFirst: jest.fn().mockResolvedValue({
             status: 'CONSUMED',
             productId: 'p1',

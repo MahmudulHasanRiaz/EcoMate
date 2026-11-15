@@ -24,8 +24,8 @@ describe('StockService — listReservations', () => {
   it('managed rows carry the order displayId and the orderItem createdAt', async () => {
     const prisma: any = {
       physicalInventory: { findMany: jest.fn().mockResolvedValue([]) },
-      physicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
-      comboComponentPhysicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
+      physicalReservation: { get findUnique() { return (this as any).findFirst; }, findMany: jest.fn().mockResolvedValue([]) },
+      comboComponentPhysicalReservation: { get findUnique() { return (this as any).findFirst; }, findMany: jest.fn().mockResolvedValue([]) },
       order: { findMany: jest.fn().mockResolvedValue([]) },
       orderItem: {
         findMany: jest.fn().mockResolvedValue([
@@ -78,7 +78,7 @@ describe('StockService — listReservations', () => {
           },
         ]),
       },
-      physicalReservation: {
+      physicalReservation: { get findUnique() { return (this as any).findFirst; },
         findMany: jest.fn().mockResolvedValue([
           {
             id: 'res-1',
@@ -92,7 +92,7 @@ describe('StockService — listReservations', () => {
           },
         ]),
       },
-      comboComponentPhysicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
+      comboComponentPhysicalReservation: { get findUnique() { return (this as any).findFirst; }, findMany: jest.fn().mockResolvedValue([]) },
       order: {
         findMany: jest.fn().mockResolvedValue([{ id: 'o-1', displayId: 'ORD-260105-0007' }]),
       },
@@ -136,13 +136,13 @@ describe('StockService — listReservations', () => {
           },
         ]),
       },
-      physicalReservation: {
+      physicalReservation: { get findUnique() { return (this as any).findFirst; },
         findMany: jest.fn().mockResolvedValue([
           { id: 'res-1', orderId: 'o-1', productId: 'p1', variantId: null, warehouseId: 'w1', quantity: 2, status: 'ACTIVE', createdAt: reservationCreatedAt },
           { id: 'res-2', orderId: 'o-2', productId: 'p1', variantId: null, warehouseId: 'w1', quantity: 3, status: 'ACTIVE', createdAt: new Date('2026-01-06T10:00:00Z') },
         ]),
       },
-      comboComponentPhysicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
+      comboComponentPhysicalReservation: { get findUnique() { return (this as any).findFirst; }, findMany: jest.fn().mockResolvedValue([]) },
       order: {
         findMany: jest.fn().mockResolvedValue([
           { id: 'o-1', displayId: 'ORD-260105-0007' },
@@ -176,8 +176,8 @@ describe('StockService — listReservations', () => {
   it('managed order items exclude already-deducted lines from the query', async () => {
     const prisma: any = {
       physicalInventory: { findMany: jest.fn().mockResolvedValue([]) },
-      physicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
-      comboComponentPhysicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
+      physicalReservation: { get findUnique() { return (this as any).findFirst; }, findMany: jest.fn().mockResolvedValue([]) },
+      comboComponentPhysicalReservation: { get findUnique() { return (this as any).findFirst; }, findMany: jest.fn().mockResolvedValue([]) },
       order: { findMany: jest.fn().mockResolvedValue([]) },
       orderItem: {
         findMany: jest.fn().mockResolvedValue([
@@ -218,8 +218,8 @@ describe('StockService — listReservations', () => {
   it('managed combo components exclude already-deducted lines from the query', async () => {
     const prisma: any = {
       physicalInventory: { findMany: jest.fn().mockResolvedValue([]) },
-      physicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
-      comboComponentPhysicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
+      physicalReservation: { get findUnique() { return (this as any).findFirst; }, findMany: jest.fn().mockResolvedValue([]) },
+      comboComponentPhysicalReservation: { get findUnique() { return (this as any).findFirst; }, findMany: jest.fn().mockResolvedValue([]) },
       order: { findMany: jest.fn().mockResolvedValue([]) },
       orderItem: { findMany: jest.fn().mockResolvedValue([]) },
       orderItemComboComponent: { findMany: jest.fn().mockResolvedValue([]) },

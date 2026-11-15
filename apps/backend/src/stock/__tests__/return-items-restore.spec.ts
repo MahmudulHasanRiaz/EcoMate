@@ -72,7 +72,7 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
       },
       orderItem: { update: jest.fn().mockResolvedValue({}) },
       orderItemComboComponent: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
-      physicalReservation: {
+      physicalReservation: { get findUnique() { return (this as any).findFirst; },
         findFirst: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.orderItemId_cycleId?.orderItemId === 'item-a') {
             return Promise.resolve({
@@ -95,7 +95,7 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
         }),
         update: jest.fn().mockResolvedValue({}),
       },
-      comboComponentPhysicalReservation: {
+      comboComponentPhysicalReservation: { get findUnique() { return (this as any).findFirst; },
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },

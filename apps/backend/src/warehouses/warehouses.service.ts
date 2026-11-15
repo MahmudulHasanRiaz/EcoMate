@@ -158,8 +158,8 @@ export class WarehousesService {
   }
 
   async createBinLocation(warehouseId: string, dto: CreateBinLocationDto) {
-    const existing = await this.prisma.binLocation.findUnique({
-      where: { warehouseId_code: { warehouseId, code: dto.code } },
+    const existing = await this.prisma.binLocation.findFirst({
+      where: {  warehouseId, code: dto.code  },
     });
     if (existing) {
       throw new ConflictException('Bin code already exists in this warehouse');
@@ -209,9 +209,9 @@ export class WarehousesService {
     // collide in the target warehouse.
     const nextCode = dto.code ?? bin.code;
     if ((dto.code && dto.code !== bin.code) || moving) {
-      const dup = await this.prisma.binLocation.findUnique({
+      const dup = await this.prisma.binLocation.findFirst({
         where: {
-          warehouseId_code: { warehouseId: targetWarehouseId, code: nextCode },
+           warehouseId: targetWarehouseId, code: nextCode ,
         },
       });
       if (dup && dup.id !== binId) {
@@ -344,8 +344,8 @@ export class WarehousesService {
   }
 
   async createZone(warehouseId: string, dto: CreateZoneDto) {
-    const existing = await this.prisma.zone.findUnique({
-      where: { warehouseId_name: { warehouseId, name: dto.name } },
+    const existing = await this.prisma.zone.findFirst({
+      where: {  warehouseId, name: dto.name  },
     });
     if (existing) throw new ConflictException('Zone name already exists in this warehouse');
     return this.prisma.zone.create({
@@ -357,8 +357,8 @@ export class WarehousesService {
     const zone = await this.prisma.zone.findFirst({ where: { id: zoneId } });
     if (!zone) throw new NotFoundException('Zone not found');
     if (dto.name && dto.name !== zone.name) {
-      const dup = await this.prisma.zone.findUnique({
-        where: { warehouseId_name: { warehouseId: zone.warehouseId, name: dto.name } },
+      const dup = await this.prisma.zone.findFirst({
+        where: {  warehouseId: zone.warehouseId, name: dto.name  },
       });
       if (dup) throw new ConflictException('Zone name already in use');
     }
@@ -396,8 +396,8 @@ export class WarehousesService {
   async createRack(dto: CreateRackDto) {
     const zone = await this.prisma.zone.findFirst({ where: { id: dto.zoneId! } });
     if (!zone) throw new NotFoundException('Zone not found');
-    const existing = await this.prisma.rack.findUnique({
-      where: { zoneId_name: { zoneId: dto.zoneId!, name: dto.name } },
+    const existing = await this.prisma.rack.findFirst({
+      where: {  zoneId: dto.zoneId!, name: dto.name  },
     });
     if (existing) throw new ConflictException('Rack name already exists in this zone');
     return this.prisma.rack.create({
@@ -409,8 +409,8 @@ export class WarehousesService {
     const rack = await this.prisma.rack.findFirst({ where: { id: rackId } });
     if (!rack) throw new NotFoundException('Rack not found');
     if (dto.name && dto.name !== rack.name) {
-      const dup = await this.prisma.rack.findUnique({
-        where: { zoneId_name: { zoneId: rack.zoneId, name: dto.name } },
+      const dup = await this.prisma.rack.findFirst({
+        where: {  zoneId: rack.zoneId, name: dto.name  },
       });
       if (dup) throw new ConflictException('Rack name already in use');
     }
@@ -452,8 +452,8 @@ export class WarehousesService {
   async createShelf(dto: CreateShelfDto) {
     const rack = await this.prisma.rack.findFirst({ where: { id: dto.rackId! } });
     if (!rack) throw new NotFoundException('Rack not found');
-    const existing = await this.prisma.shelf.findUnique({
-      where: { rackId_name: { rackId: dto.rackId!, name: dto.name } },
+    const existing = await this.prisma.shelf.findFirst({
+      where: {  rackId: dto.rackId!, name: dto.name  },
     });
     if (existing) throw new ConflictException('Shelf name already exists in this rack');
     return this.prisma.shelf.create({
@@ -465,8 +465,8 @@ export class WarehousesService {
     const shelf = await this.prisma.shelf.findFirst({ where: { id: shelfId } });
     if (!shelf) throw new NotFoundException('Shelf not found');
     if (dto.name && dto.name !== shelf.name) {
-      const dup = await this.prisma.shelf.findUnique({
-        where: { rackId_name: { rackId: shelf.rackId, name: dto.name } },
+      const dup = await this.prisma.shelf.findFirst({
+        where: {  rackId: shelf.rackId, name: dto.name  },
       });
       if (dup) throw new ConflictException('Shelf name already in use');
     }

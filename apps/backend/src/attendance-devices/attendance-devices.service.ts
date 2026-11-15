@@ -230,12 +230,10 @@ export class AttendanceDevicesService {
         'NONE method employees cannot be mapped to devices.',
       );
     }
-    const byDeviceEmployee = await this.prisma.deviceEmployeeMapping.findUnique({
+    const byDeviceEmployee = await this.prisma.deviceEmployeeMapping.findFirst({
       where: {
-        deviceId_deviceEmployeeId: {
-          deviceId,
-          deviceEmployeeId: dto.deviceEmployeeId,
-        },
+        deviceId,
+        deviceEmployeeId: dto.deviceEmployeeId,
       },
     });
     if (byDeviceEmployee) {
@@ -243,10 +241,8 @@ export class AttendanceDevicesService {
         'This device employee ID is already mapped to an employee.',
       );
     }
-    const byEmployee = await this.prisma.deviceEmployeeMapping.findUnique({
-      where: {
-        deviceId_employeeId: { deviceId, employeeId: dto.employeeId },
-      },
+    const byEmployee = await this.prisma.deviceEmployeeMapping.findFirst({
+      where: { deviceId, employeeId: dto.employeeId },
     });
     if (byEmployee) {
       throw new ConflictException(
@@ -302,10 +298,8 @@ export class AttendanceDevicesService {
         counters.duplicates += 1;
         continue;
       }
-      const mapping = await this.prisma.deviceEmployeeMapping.findUnique({
-        where: {
-          deviceId_deviceEmployeeId: { deviceId, deviceEmployeeId: event.deviceEmployeeId },
-        },
+      const mapping = await this.prisma.deviceEmployeeMapping.findFirst({
+        where: { deviceId, deviceEmployeeId: event.deviceEmployeeId },
         select: { employeeId: true, employee: { select: { attendanceMethod: true } } },
       });
       if (!mapping) {

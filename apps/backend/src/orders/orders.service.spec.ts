@@ -1484,9 +1484,7 @@ describe('OrdersService', () => {
         // the mint, which burned a number on every later failure).
         expect(prisma.$transaction).toHaveBeenCalledTimes(1);
         expect(txUpsert).toHaveBeenCalledWith({
-          where: {
-             date: dhakaToday(), family: 'ORD' ,
-          },
+          where: { tenantId_date_family: expect.objectContaining({ date: dhakaToday(), family: 'ORD' }) },
           create: { date: dhakaToday(), family: 'ORD', seq: 1 },
           update: { seq: { increment: 1 } },
         });
@@ -1545,7 +1543,7 @@ describe('OrdersService', () => {
         const tx: any = {
           orderCounter: {
             upsert: jest.fn(async ({ where, create }: any) => {
-              const key = `${where.date_family.date}|${where.date_family.family}`;
+              const key = `${(where.tenantId_date_family ?? where.date_family).date}|${(where.tenantId_date_family ?? where.date_family).family}`;
               const seq = (store.get(key) ?? 0) + 1;
               store.set(key, seq);
               return { date: create.date, seq };
@@ -1560,9 +1558,7 @@ describe('OrdersService', () => {
         expect(second).toBe(`ORD-${dhakaToday()}-0002`);
         expect(tx.orderCounter.upsert).toHaveBeenCalledWith(
           expect.objectContaining({
-            where: {
-               date: dhakaToday(), family: 'ORD' ,
-            },
+            where: { tenantId_date_family: expect.objectContaining({ date: dhakaToday(), family: 'ORD' }) },
           }),
         );
       });

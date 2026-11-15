@@ -70,7 +70,7 @@ describe('CancelReturnStockService.releaseForCancellation', () => {
           return {};
         }),
       },
-      physicalReservation: {
+      physicalReservation: { get findUnique() { return (this as any).findFirst; },
         findFirst: jest.fn(async () => ({
           id: 'res-1',
           status: physicalStatus,
@@ -92,7 +92,7 @@ describe('CancelReturnStockService.releaseForCancellation', () => {
         findFirst: jest.fn(async () => ({ quantity: 10, reservedQuantity: 2 })),
       },
       orderItemComboComponent: { findMany: jest.fn(), update: jest.fn() },
-      comboComponentPhysicalReservation: { findFirst: jest.fn(), update: jest.fn() },
+      comboComponentPhysicalReservation: { get findUnique() { return (this as any).findFirst; }, findFirst: jest.fn(), update: jest.fn() },
       physicalInventoryLedger: { create: jest.fn() },
       costingLotConsumption: { findFirst: jest.fn() },
       costingLotRestoration: { create: jest.fn() },

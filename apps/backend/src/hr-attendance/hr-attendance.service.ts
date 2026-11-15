@@ -485,8 +485,8 @@ export class HrAttendanceService {
         `Invalid status '${status}'. Allowed: ABSENT, ON_LEAVE, WEEKLY_OFF`,
       );
     }
-    const existing = await this.prisma.attendanceDay.findUnique({
-      where: { employeeId_date: { employeeId: employee.id, date } },
+    const existing = await this.prisma.attendanceDay.findFirst({
+      where: { employeeId: employee.id, date },
       select: { id: true },
     });
     if (existing) {
@@ -584,8 +584,8 @@ export class HrAttendanceService {
       appMethod: access.method,
       ...(access.blockedReason ? { appBlockedReason: access.blockedReason } : {}),
     };
-    const day = await this.prisma.attendanceDay.findUnique({
-      where: { employeeId_date: { employeeId, date: d } },
+    const day = await this.prisma.attendanceDay.findFirst({
+      where: { employeeId, date: d },
       include: DAY_INCLUDE,
     });
     const nowDate = new Date();

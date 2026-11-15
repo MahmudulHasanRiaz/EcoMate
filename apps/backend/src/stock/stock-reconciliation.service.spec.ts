@@ -47,10 +47,10 @@ describe('StockReconciliationService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
-      comboComponentPhysicalReservation: {
+      comboComponentPhysicalReservation: { get findUnique() { return (this as any).findFirst; },
         findMany: jest.fn().mockResolvedValue([]),
       },
-      physicalReservation: {
+      physicalReservation: { get findUnique() { return (this as any).findFirst; },
         findMany: jest.fn().mockResolvedValue([]),
       },
       physicalInventory: {

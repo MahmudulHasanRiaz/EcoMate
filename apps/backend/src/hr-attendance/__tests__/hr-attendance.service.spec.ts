@@ -620,10 +620,8 @@ describe('HrAttendanceService', () => {
       });
       expect(prismaMock.attendanceDay.findFirst).toHaveBeenCalledWith({
         where: {
-          employeeId_date: {
-            employeeId: 'emp-1',
-            date: new Date('2026-08-28T00:00:00.000Z'),
-          },
+          employeeId: 'emp-1',
+          date: new Date('2026-08-28T00:00:00.000Z'),
         },
         include: {
           sessions: { include: { breaks: true }, orderBy: { checkInAt: 'asc' } },
@@ -1288,10 +1286,8 @@ describe('HrAttendanceService', () => {
       );
       expect(prismaMock.attendanceDay.findFirst).toHaveBeenCalledWith({
         where: {
-          employeeId_date: {
-            employeeId: 'emp-1',
-            date: new Date('2026-08-25T00:00:00.000Z'),
-          },
+          employeeId: 'emp-1',
+          date: new Date('2026-08-25T00:00:00.000Z'),
         },
         include: expect.anything(),
       });

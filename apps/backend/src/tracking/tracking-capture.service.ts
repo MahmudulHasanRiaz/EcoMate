@@ -193,13 +193,11 @@ export class TrackingCaptureService {
         : [{ destinationId: LEGACY_DESTINATION_ID, pixelId: undefined }];
 
       for (const target of targets) {
-        const row = await this.prisma.trackingDispatch.findUnique({
+        const row = await this.prisma.trackingDispatch.findFirst({
           where: {
-            snapshotId_provider_destinationId: {
-              snapshotId: snapshot.id,
-              provider,
-              destinationId: target.destinationId,
-            },
+            snapshotId: snapshot.id,
+            provider,
+            destinationId: target.destinationId,
           },
         });
         // Only deferred (SKIPPED) rows are revived — SENT/RETRY/FAILED rows keep

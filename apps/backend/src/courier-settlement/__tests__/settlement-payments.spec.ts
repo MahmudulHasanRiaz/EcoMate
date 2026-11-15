@@ -61,7 +61,7 @@ function makePrisma(opts?: { existingSettlementTxns?: string[] }) {
   const tx: any = {
     orderCounter: {
       upsert: async ({ where }: any) => ({
-        date: where.date_family.date,
+        date: (where.tenantId_date_family ?? where.date_family).date,
         seq: 1,
       }),
     },

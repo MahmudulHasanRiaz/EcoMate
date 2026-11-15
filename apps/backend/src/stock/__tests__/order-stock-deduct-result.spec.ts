@@ -43,8 +43,8 @@ describe('OrderStockDeductService — movement result', () => {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({}),
       },
-      physicalReservation: { findFirst: jest.fn() },
-      comboComponentPhysicalReservation: { findFirst: jest.fn() },
+      physicalReservation: { get findUnique() { return (this as any).findFirst; }, findFirst: jest.fn() },
+      comboComponentPhysicalReservation: { get findUnique() { return (this as any).findFirst; }, findFirst: jest.fn() },
       physicalInventory: { findFirst: jest.fn() },
       costingLotConsumption: { findMany: jest.fn().mockResolvedValue([]) },
     };

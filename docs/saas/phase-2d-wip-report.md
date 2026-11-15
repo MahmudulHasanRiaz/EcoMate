@@ -9,7 +9,7 @@
 - Active backend schema is now the tenant-aware schema (203 models; 200 tenant-scoped; 3 global reference tables).
 - Active migrations are `0001_saas_baseline` + `0002_rls_and_tenant_guards` (legacy migrations removed from this branch; they remain in the old branch/tag).
 - Backend `nest build`: **green (0 TypeScript errors)**.
-- Backend Jest: **5781 passed, 388 failed, 4 skipped** (431 suites). The failures are test-migration work, not build failures.
+- Backend Jest: **5888 passed, 281 failed, 4 skipped** (431 suites; 61 failing suites). The failures are test-migration work, not build failures.
 
 ## Applied changes
 
@@ -25,14 +25,22 @@
 - Legacy `src/license` module and `LicenseGuard` removed; the old license models are not in the active schema.
 - Prisma seed/scripts excluded from `nest build` (`tsconfig.build.json`) because they still target the old single-tenant data model and will be replaced by tenant bootstrap/provisioning.
 
+## Test-migration progress
+
+Failures reduced from **388 → 281** in this pass:
+
+- Converted the remaining compound-key reads in attendance-devices, hr-attendance, tracking, and warehouses to `findFirst` + flat `where`; their targeted suites are green (attendance 65/65, hr 134/134, tracking 618/618, warehouses 9/9).
+- Stock specs now expose a `findUnique` getter that delegates to their `findFirst` mock; stock suite is green (124/124).
+- Counter mutations (`OrderCounter`/`ReturnCounter`/`PurchaseCounter`) now use `tenantCompound`/`tenantId_date_family`; mocks and expectations were updated in orders, POS, courier-settlement, and payment-journal suites.
+
 ## Remaining test work
 
-The 388 failures are concentrated in:
+The 281 failures are concentrated in:
 
-1. **Mock alignment for compound-key reads** — tests define `findFirst` mocks while the source still calls `findUnique` for still-valid compound keys (`tx.physicalReservation`, `attendanceDay`, `deviceEmployeeMapping`, `trackingDispatch`, `binLocation`). A shared dual-method mock helper or source-level flatten is required.
-2. **Changed `where` shapes** — assertions/mocks for reads that moved to `findFirst` and writes that now use `tenantCompound`.
-3. **DB-backed integration suites** — marketing P0/campaign integration specs require a seeded local Postgres (same environmental failures as before).
-4. **Old migration-safety specs** — they still assert the removed legacy migration files/probes; they need to be rewritten for the new baseline/RLS gate.
+1. **Remaining compound-key mock/assertion mismatches** — mostly `findFirst` where-shape assertions and `tenantCompound` expectations in orders/products/dispatch/import/payments.
+2. **DB-backed integration suites** — marketing P0/campaign integration specs require a seeded local Postgres (same environmental failures as before).
+3. **Old migration-safety specs** — they still assert the removed legacy migration files/probes; they need to be rewritten for the new baseline/RLS gate.
+4. **Miscellaneous assertion drift** — WhereInput shapes and mock return values changed under the tenant schema.
 
 ## Next steps
 

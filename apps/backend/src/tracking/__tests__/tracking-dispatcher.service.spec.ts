@@ -983,7 +983,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
       setupMulti();
       // Simulate a second attempt: primary already SENT, secondary still RETRY.
       dispatchFindUnique.mockImplementation(({ where }: any) => {
-        const key = where?.snapshotId_provider_destinationId;
+        const key = where;
         if (key?.destinationId === 'primary') {
           return Promise.resolve({
             id: 'd-meta-primary',
@@ -1104,10 +1104,8 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
       expect(dispatchFindUnique).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            snapshotId_provider_destinationId: expect.objectContaining({
-              snapshotId: 'snap-1',
-              provider: 'meta',
-            }),
+            snapshotId: 'snap-1',
+            provider: 'meta',
           }),
         }),
       );

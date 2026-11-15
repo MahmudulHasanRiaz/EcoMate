@@ -3,12 +3,11 @@ import { TrackingSettingsService } from '../tracking-settings.service';
 import { TrackingNormalizer } from '../tracking.normalizer';
 
 describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidate B)', () => {
-  const findUnique = jest.fn();
   const findFirst = jest.fn();
   const update = jest.fn();
   const accountFindFirst = jest.fn();
   const prisma = {
-    customerProfile: { findUnique, findFirst, update },
+    customerProfile: { findFirst, update },
     betterAuthAccount: { findFirst: accountFindFirst },
   } as any;
   const settings = { isEnabledOrDefault: jest.fn() } as unknown as TrackingSettingsService;
@@ -21,13 +20,13 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
 
   describe('ensureForCustomer', () => {
     it('returns the existing external_id when already assigned', async () => {
-      findUnique.mockResolvedValue({ externalId: 'ext-1' });
+      findFirst.mockResolvedValue({ externalId: 'ext-1' });
       await expect(service.ensureForCustomer('cust-1')).resolves.toBe('ext-1');
       expect(update).not.toHaveBeenCalled();
     });
 
     it('lazily assigns a uuid when none exists', async () => {
-      findUnique.mockResolvedValue({ externalId: null });
+      findFirst.mockResolvedValue({ externalId: null });
       update.mockResolvedValue({ externalId: 'new-uuid' });
       await expect(service.ensureForCustomer('cust-1')).resolves.toBe('new-uuid');
       const data = update.mock.calls[0][0].data;
@@ -36,12 +35,12 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
     });
 
     it('returns null for an unknown customer', async () => {
-      findUnique.mockResolvedValue(null);
+      findFirst.mockResolvedValue(null);
       await expect(service.ensureForCustomer('ghost')).resolves.toBeNull();
     });
 
     it('absorbs a concurrent P2002 by re-reading the winner', async () => {
-      findUnique
+      findFirst
         .mockResolvedValueOnce({ externalId: null }) // initial
         .mockResolvedValueOnce({ externalId: 'winner' }); // re-read after P2002
       update.mockRejectedValue({ code: 'P2002' });
@@ -57,9 +56,9 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
 
     it('returns the customer external_id when the flag is on and a customer is bound', async () => {
       (settings.isEnabledOrDefault as jest.Mock).mockResolvedValue(true);
-      findUnique.mockResolvedValue({ externalId: 'cust-ext' });
+      findFirst.mockResolvedValue({ externalId: 'cust-ext' });
       await expect(service.resolveForOrder('cust-1', 'journey')).resolves.toBe('cust-ext');
-      expect(findUnique).toHaveBeenCalledWith({
+      expect(findFirst).toHaveBeenCalledWith({
         where: { id: 'cust-1' },
         select: { externalId: true },
       });
@@ -72,7 +71,7 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
 
     it('never resolves to a customer external_id while the flag is off (guest unchanged)', async () => {
       await expect(service.resolveForOrder('cust-1', 'journey')).resolves.toBe('journey');
-      expect(findUnique).not.toHaveBeenCalled();
+      expect(findFirst).not.toHaveBeenCalled();
     });
   });
 
@@ -91,7 +90,7 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
     it('returns the customer external_id for a linked shopper', async () => {
       (settings.isEnabledOrDefault as jest.Mock).mockResolvedValue(true);
       findFirst.mockResolvedValue({ id: 'cust-9' });
-      findUnique.mockResolvedValue({ externalId: 'cust-ext' });
+      findFirst.mockResolvedValue({ externalId: 'cust-ext' });
       await expect(service.resolveForShopper('ba-1')).resolves.toBe('cust-ext');
       expect(findFirst).toHaveBeenCalledWith({
         where: { betterAuthUserId: 'ba-1' },
@@ -199,22 +198,22 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
   describe('resolveFbLoginIdForCustomer (order-bound identity at dispatch)', () => {
     it('returns undefined when there is no customerId (guest order)', async () => {
       await expect(service.resolveFbLoginIdForCustomer(undefined)).resolves.toBeUndefined();
-      expect(findUnique).not.toHaveBeenCalled();
+      expect(findFirst).not.toHaveBeenCalled();
     });
 
     it('returns undefined when the customer has no Better Auth link', async () => {
-      findUnique.mockResolvedValue({ betterAuthUserId: null });
+      findFirst.mockResolvedValue({ betterAuthUserId: null });
       await expect(service.resolveFbLoginIdForCustomer('cust-1')).resolves.toBeUndefined();
       expect(accountFindFirst).not.toHaveBeenCalled();
     });
 
     it('resolves the facebook accountId via the profile → Better Auth link', async () => {
-      findUnique.mockResolvedValue({ betterAuthUserId: 'ba-7' });
+      findFirst.mockResolvedValue({ betterAuthUserId: 'ba-7' });
       accountFindFirst.mockResolvedValue({ accountId: 'fb-4242' });
       await expect(service.resolveFbLoginIdForCustomer('cust-1')).resolves.toBe(
         'fb-4242',
       );
-      expect(findUnique).toHaveBeenCalledWith({
+      expect(findFirst).toHaveBeenCalledWith({
         where: { id: 'cust-1' },
         select: { betterAuthUserId: true },
       });

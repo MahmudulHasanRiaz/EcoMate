@@ -228,20 +228,16 @@ describe('TrackingCaptureService', () => {
       // One revive per destination, keyed by the destination-aware composite.
       expect(dispatchFind).toHaveBeenCalledWith({
         where: {
-          snapshotId_provider_destinationId: {
-            snapshotId: 'snap-multi',
-            provider: 'meta',
-            destinationId: 'primary',
-          },
+          snapshotId: 'snap-multi',
+          provider: 'meta',
+          destinationId: 'primary',
         },
       });
       expect(dispatchFind).toHaveBeenCalledWith({
         where: {
-          snapshotId_provider_destinationId: {
-            snapshotId: 'snap-multi',
-            provider: 'meta',
-            destinationId: 'secondary',
-          },
+          snapshotId: 'snap-multi',
+          provider: 'meta',
+          destinationId: 'secondary',
         },
       });
     });
@@ -271,7 +267,7 @@ describe('TrackingCaptureService', () => {
       expect(result.destinations).toEqual(['meta:primary']);
       // Only the meta destination was looked up.
       const lookedUp = dispatchFind.mock.calls.map(
-        (c) => c[0].where.snapshotId_provider_destinationId.destinationId,
+        (c) => c[0].where.destinationId,
       );
       expect(lookedUp).toEqual(['primary']);
     });

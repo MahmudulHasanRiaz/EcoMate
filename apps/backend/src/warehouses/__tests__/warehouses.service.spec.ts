@@ -28,11 +28,11 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
     isActive: true,
   };
 
-  /** binLocation.findFirst serves both the bin load (by id) and the dup check (by warehouseId_code). */
+  /** binLocation.findFirst serves both the bin load (by id) and the dup check (by warehouseId + code). */
   const mockBinLoad = (dup: any = null) => {
     prisma.binLocation.findFirst.mockImplementation((args: any) => {
       if (args.where.id) return Promise.resolve(bin);
-      if (args.where.warehouseId_code) return Promise.resolve(dup);
+      if (args.where.warehouseId && args.where.code) return Promise.resolve(dup);
       return Promise.resolve(null);
     });
   };

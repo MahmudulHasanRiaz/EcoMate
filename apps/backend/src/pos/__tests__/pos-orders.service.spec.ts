@@ -1035,7 +1035,7 @@ describe('PosOrdersService', () => {
       const id = await (service as any).generateDisplayId();
 
       expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
-        where: {  date: dateStr, family: 'POS'  },
+        where: { tenantId_date_family: expect.objectContaining({ date: dateStr, family: 'POS' }) },
         create: { date: dateStr, family: 'POS', seq: 1 },
         update: { seq: { increment: 1 } },
       });
