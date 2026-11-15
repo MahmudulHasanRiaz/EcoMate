@@ -9,7 +9,7 @@
 - Active backend schema is now the tenant-aware schema (203 models; 200 tenant-scoped; 3 global reference tables).
 - Active migrations are `0001_saas_baseline` + `0002_rls_and_tenant_guards` (legacy migrations removed from this branch; they remain in the old branch/tag).
 - Backend `nest build`: **green (0 TypeScript errors)**.
-- Backend Jest: **6149 passed, 12 failed, 10 skipped** (429 suites; 2 failing suites). The only remaining failures are the two pre-existing DB-backed marketing integration suites (P0 Financial / Campaign Deletion), which need a migrated + seeded Postgres.
+- Backend Jest: **6161 passed, 0 failed, 10 skipped** (429 suites; 428 passed, 1 skipped) against a clean migrated tenant database. The 10 skips are intentionally obsolete single-tenant migration-contract specs.
 
 ## Applied changes
 
@@ -37,16 +37,27 @@ Failures reduced from **388 → 55** across this pass:
 - Removed obsolete single-tenant migration SQL specs (payment backfill, access-preset repair, probe coverage) whose files no longer exist in the new baseline.
 - Fixed RTN order lookup fake, scanner displayId lookup, accounting/employee/POS counter expectations, payroll/HR-leave sequences, and order-staff email fallback.
 
-## Remaining test work
+## Full-suite verification (clean tenant DB)
 
-The remaining 12 failures are **only** the two DB-backed marketing integration suites:
+The two DB-backed marketing integration suites were migrated to the tenant schema and verified against a **clean, freshly migrated PostgreSQL 16 database**:
 
-1. `marketing/__tests__/p0-financial.integration.spec.ts`
-2. `marketing/__tests__/campaign-deletion-preservation.integration.spec.ts`
+- `prisma migrate deploy` applied `0001_saas_baseline` + `0002_rls_and_tenant_guards` (205 tables, RLS policies/triggers).
+- Test pools set `app.tenant_id` (the same GUC the runtime proxy will set), so RLS is exercised, not bypassed.
+- `p0-financial.integration.spec.ts` now uses the tenant-composite `tenantId_code` key for its account upserts.
+- `campaign-deletion-preservation.integration.spec.ts` self-seeds an `OrderStatus` when the fresh tenant DB has none.
 
-They need a Postgres database with the tenant baseline + RLS migrations applied and the marketing fixtures seeded. All 426 other suites (6149 tests) pass, including the tenancy suites.
+**Result: 6161 passed, 0 failed, 10 skipped.** The 10 skipped specs are obsolete single-tenant migration contracts whose migration files no longer exist in the tenant baseline.
 
-The next verification step is to run those two suites against a dedicated migrated/seeded database; then wire the real tenant runtime (Prisma proxy, Better Auth, middleware) and merge.
+Runbook: see `docs/saas/tenant-test-db.md`.
+
+## Remaining work before merge
+
+1. Wire the real tenant runtime:
+   - `PrismaService` proxy over `TenantPrismaManager`;
+   - `TenantMiddleware` + `TenantGuard` with `@SkipTenant` exemptions;
+   - per-tenant Better Auth factory + `baPrisma` proxy.
+2. Re-run the full suite + the Phase 2A RLS smoke against that runtime.
+3. Merge the swap branch into `feat/saas-multitenant`; then Phase 3 (entitlements/license removal).
 
 ## Next steps
 

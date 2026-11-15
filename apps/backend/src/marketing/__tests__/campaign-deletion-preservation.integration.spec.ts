@@ -10,7 +10,13 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
 const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ecomate_web';
-const pool = new Pool({ connectionString, max: 5 });
+const tenantId =
+  process.env.DEFAULT_TENANT_ID || '00000000-0000-4000-8000-000000000000';
+const pool = new Pool({
+  connectionString,
+  max: 5,
+  options: `-c app.tenant_id=${tenantId}`,
+});
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -23,9 +29,14 @@ describe('Campaign Deletion Preservation (Integration)', () => {
   let statusId: string;
 
   beforeAll(async () => {
-    // Get a valid order status
-    const anyStatus = await prisma.orderStatus.findFirst();
-    statusId = anyStatus?.id ?? '';
+    // Get a valid order status; a freshly migrated tenant DB has no rows yet.
+    let anyStatus = await prisma.orderStatus.findFirst();
+    if (!anyStatus) {
+      anyStatus = await prisma.orderStatus.create({
+        data: { id: `seed-status-${Date.now()}`, name: 'Delivered' },
+      });
+    }
+    statusId = anyStatus.id;
 
     // Create test platform + connection + ad account (using unique suffixes)
     const ts = Date.now();

@@ -12,7 +12,13 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
 const connectionString = process.env.DATABASE_URL || 'postgresql://postgres@localhost:5432/ecomate_web';
-const pool = new Pool({ connectionString, max: 5 });
+const tenantId =
+  process.env.DEFAULT_TENANT_ID || '00000000-0000-4000-8000-000000000000';
+const pool = new Pool({
+  connectionString,
+  max: 5,
+  options: `-c app.tenant_id=${tenantId}`,
+});
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -61,13 +67,13 @@ describe('P0 Financial Architecture Integration', () => {
 
     // Create test payment accounts
     testBusinessVisaId = (await prisma.account.upsert({
-      where: { code: 'TEST-BUSINESS-VISA-P0' },
+      where: { tenantId_code: { tenantId, code: 'TEST-BUSINESS-VISA-P0' } },
       update: {},
       create: { code: 'TEST-BUSINESS-VISA-P0', name: 'Test Business Visa (P0)', type: 'asset' as AccountType, isGroup: false },
     })).id;
 
     testBankAccountId = (await prisma.account.upsert({
-      where: { code: 'TEST-BANK-ACCT-P0' },
+      where: { tenantId_code: { tenantId, code: 'TEST-BANK-ACCT-P0' } },
       update: {},
       create: { code: 'TEST-BANK-ACCT-P0', name: 'Test Bank Account (P0)', type: 'asset' as AccountType, isGroup: false },
     })).id;
