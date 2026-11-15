@@ -150,3 +150,19 @@ Implemented under `apps/backend/src/tenancy/`:
 `TenancyModule` is imported, but the middleware/guard are not applied globally yet; the current single-tenant routes remain unchanged. Tenancy tests: **17/17**; backend `nest build` clean.
 
 The next steps are registry sync from the platform API, the real `PrismaService` proxy/RLS coverage check, per-tenant Better Auth, the active schema/migration swap and the `findUnique`/queue codemods.
+
+
+## Phase 2C — platform registry sync
+
+- Platform API internal endpoints (service-token guarded):
+  - `GET /api/internal/tenants/registry`
+  - `GET /api/internal/tenants/:id/entitlements`
+- Tenant runtime `TenantRegistrySyncService` fetches the registry, replaces the
+  in-memory tenant map, refreshes every 60s and keeps last-known-good on failure.
+- It stays disabled when `PLATFORM_API_URL` / `INTERNAL_SERVICE_SECRET` are not
+  set, so the current single-tenant runtime is unaffected.
+- Environment: `PLATFORM_API_URL`, `INTERNAL_SERVICE_SECRET`,
+  `TENANT_REGISTRY_REFRESH_MS`.
+
+Verification: platform API **26/26** tests and backend tenancy **20/20** tests
+pass; both builds are clean. See `docs/saas/phase-2c-report.md`.
