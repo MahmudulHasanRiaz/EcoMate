@@ -127,4 +127,13 @@ describe('storefront base-domain alias resolution', () => {
     // Canonical primary hosts are not rewritten by the storefront proxy.
     expect(aliasRedirectTarget('acme.ecomate.bd', '/products', '', outage)).toBeNull();
   });
+
+  it('keeps the request protocol and port for dev/E2E redirects', () => {
+    expect(
+      aliasRedirectTarget('acme.alias.example', '/about', '?x=1', config, {
+        protocol: 'http:',
+        port: '3100',
+      }),
+    ).toBe('http://acme.ecomate.bd:3100/about?x=1');
+  });
 });

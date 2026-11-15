@@ -50,6 +50,21 @@ describe('serverFetch tenant-scoped Data Cache tags', () => {
     expect(fetchMock.mock.calls[1][1].next.tags).toEqual([
       't:tenant-1111:config',
     ]);
+    // The tenant is also part of the URL: Next's Data Cache key is the URL,
+    // not the request headers.
+    expect(fetchMock.mock.calls[0][0]).toContain('__tenant=tenant-1111');
+    expect(fetchMock.mock.calls[1][0]).toContain('__tenant=tenant-1111');
+  });
+
+  it('keeps the tenant in the URL for paths that already have a query', async () => {
+    headersMock.mockResolvedValue(
+      new Headers({ 'x-tenant-id': 'tenant-1111' }) as never,
+    );
+
+    await serverFetch('/products?isActive=true&perPage=20', { tags: ['products'] });
+    expect(fetchMock.mock.calls[0][0]).toContain(
+      '/products?isActive=true&perPage=20&__tenant=tenant-1111',
+    );
   });
 
   it('falls back to the tenant slug when the id is unavailable', async () => {

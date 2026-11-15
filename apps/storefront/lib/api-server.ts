@@ -74,6 +74,11 @@ export async function serverFetch<T = unknown>(
   // "unresolved" namespace keeps cross-tenant entries apart.
   const tenantScope =
     tenantContext.tenantId || tenantContext.slug || "unresolved";
+  // Next's Data Cache key is the URL (headers are NOT part of it). The tenant
+  // must therefore be in the URL itself, or the first tenant to warm
+  // /system-settings/storefront would serve its config to every host. The
+  // backend ignores the extra param; scoped tags below handle invalidation.
+  const scopedPath = `${path}${path.includes("?") ? "&" : "?"}__tenant=${encodeURIComponent(tenantScope)}`;
   const requestedTags = tags ?? callerNext?.tags;
   const scopedTags = requestedTags?.map((tag) =>
     tag.startsWith("t:") ? tag : `t:${tenantScope}:${tag}`,
@@ -107,7 +112,7 @@ export async function serverFetch<T = unknown>(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT);
     try {
-      const res = await fetch(`${API}${path}`, {
+      const res = await fetch(`${API}${scopedPath}`, {
         headers: mergedHeaders,
         ...(hasNextOptions ? { next: nextOptions } : {}),
         signal: controller.signal,

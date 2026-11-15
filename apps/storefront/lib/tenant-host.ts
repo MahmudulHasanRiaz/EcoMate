@@ -138,6 +138,13 @@ export function resolveBaseDomainAlias(
   return null;
 }
 
+export interface AliasRedirectOptions {
+  /** Request protocol (`http:` / `https:`); defaults to https. */
+  protocol?: string;
+  /** Non-standard request port to keep (dev/E2E); production is empty. */
+  port?: string;
+}
+
 /**
  * Absolute 301 target for an alias host (path + query preserved), or null when
  * the request is already on the effective base / is not a tenant subdomain.
@@ -151,6 +158,7 @@ export function aliasRedirectTarget(
   pathname: string,
   search: string,
   config: TenantDomainConfig = readDomainConfig(),
+  options: AliasRedirectOptions = {},
 ): string | null {
   const resolution = resolveBaseDomainAlias(rawHost, config);
   if (!resolution?.isAlias) return null;
@@ -162,6 +170,8 @@ export function aliasRedirectTarget(
   const targetHost = `${resolution.slug}.${effectiveBase}`;
   if (normaliseHost(rawHost) === targetHost) return null;
 
+  const protocol = options.protocol || 'https:';
+  const origin = `${protocol}//${targetHost}${options.port ? `:${options.port}` : ''}`;
   const target = `${pathname}${search}`;
-  return `https://${targetHost}${target.startsWith('/') ? target : `/${target}`}`;
+  return `${origin}${target.startsWith('/') ? target : `/${target}`}`;
 }

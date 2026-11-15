@@ -9,7 +9,7 @@ push; the checkbox is ticked in the same commit.
 - [x] 3. Custom-domain add/verify + DNS polling + Caddy on-demand TLS ask endpoint
 - [x] 4. Fallback-domain behavior + absolute URLs/health; unknown host must never route to a tenant
 - [x] 5. Tenant-scoped cache tags/revalidation + no cross-host leakage
-- [ ] 6. Two-tenant browser E2E + custom-domain mock E2E
+- [x] 6. Two-tenant browser E2E + custom-domain mock E2E
 
 ## Unit log
 
@@ -148,3 +148,29 @@ push; the checkbox is ticked in the same commit.
 - Acceptance: backend 6250 passed / 10 skipped / 0 failed, `nest build` clean;
   storefront 697/697 passed, `tsc` clean, `next build` exit 0 with all routes
   dynamic. Platform-api unchanged (60/60 from unit 4).
+
+### 6. Two-tenant browser E2E + custom-domain mock E2E — DONE
+
+- New committed harness `scripts/saas/phase4-host-e2e.mjs`
+  (`npm run test:e2e:phase4`): a mock backend serves the tenant registry and
+  per-tenant storefront config, the script builds the storefront in standalone
+  mode, starts it on a free port, and drives Chromium with
+  `--host-resolver-rules=MAP * 127.0.0.1`. Test hosts use `*.localhost`
+  (`acme.ecomate.localhost`, `beta.ecomate.localhost`,
+  `acme.alias.localhost`, `shop.localhost`, `unknown.localhost`) because
+  browsers treat them as secure contexts and loop them back — no fake DNS or
+  TLS needed.
+- **18/18 checks pass**: acme and beta each render only their own branding
+  (no cross-tenant text); the custom domain `shop.localhost` is served from the
+  mocked registry; `unknown.localhost` and `www.ecomate.localhost` are 404 and
+  never render a tenant shell; `acme.alias.localhost` 301s to
+  `acme.ecomate.localhost` with the path preserved; the mock records
+  `x-tenant-host` + `__tenant=<tenant id>` on each SSR config request, proving
+  the proxy header injection and tenant-scoped cache key.
+- The E2E exposed and fixed a real cache-keying gap: Next's Data Cache key is
+  the URL (headers are not part of it), so `serverFetch` now appends
+  `__tenant=<tenantId>` to every backend URL in addition to scoped tags.
+  Alias redirects also preserve the request protocol/port (http + non-standard
+  port for dev/E2E; https/no-port in production).
+- Acceptance: E2E 18/18; storefront 699/699 (2 new tests), `tsc` clean,
+  `next build` exit 0. No backend/platform changes in this unit.

@@ -143,7 +143,10 @@ export async function proxy(request: NextRequest) {
   const exempt = isAliasExempt(pathname);
 
   if (baseResolution?.isAlias && !exempt) {
-    const redirect = aliasRedirectTarget(host, pathname, search, config);
+    const redirect = aliasRedirectTarget(host, pathname, search, config, {
+      protocol: request.nextUrl.protocol,
+      port: request.nextUrl.port,
+    });
     if (redirect) {
       const response = NextResponse.redirect(redirect, 301);
       // Belt-and-braces with the 301: an alias must never be indexed, even
