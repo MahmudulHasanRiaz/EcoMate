@@ -1,8 +1,8 @@
-# Phase 2D — Tenant schema swap (WIP checkpoint)
+# Phase 2D — Tenant schema swap and runtime
 
 **Date:** 2026-11-15
-**Branch:** `feat/saas-tenancy-swap` (do **not** merge yet)
-**Stable branch:** `feat/saas-multitenant` remains the verified-green checkpoint.
+**Branch:** `feat/saas-multitenant` (Phase 2D merged fast-forward at `26806f22`)
+**Previous checkpoint:** Phase 0–2C at `38562dea`.
 
 ## Status
 
@@ -137,7 +137,7 @@ Converted interval sweeps (per-tenant, failure-isolated via `runPerTenant`):
 The full suite is green after these changes. The shared mechanism is ready for the
 remaining queues and interval sweeps.
 
-## Remaining work before merge
+## Remaining hardening after merge
 
 1. **Platform backup queue** — intentionally global (no tenant envelope); every
    tenant-facing queue is now tenant-aware.
@@ -156,7 +156,7 @@ remaining queues and interval sweeps.
   remains intentionally global. The only open configuration item is the per-tenant
   marketing cadence + production deployment env/DNS.
 
-Ready to merge into `feat/saas-multitenant` on approval.
+**Merged** into `feat/saas-multitenant` via fast-forward (`38562dea..26806f22`).
 3. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
    `INTERNAL_SERVICE_SECRET`) and add custom-domain DNS/verification coverage; the
    endpoint/refresh contract itself is verified.

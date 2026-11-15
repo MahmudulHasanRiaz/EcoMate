@@ -168,9 +168,9 @@ Verification: platform API **26/26** tests and backend tenancy **20/20** tests
 pass; both builds are clean. See `docs/saas/phase-2c-report.md`.
 
 
-## Phase 2D — tenant schema swap (WIP branch)
+## Phase 2D — tenant schema swap and runtime (merged)
 
-The active tenant schema/migration swap is on `feat/saas-tenancy-swap`:
+Phase 2D is merged into `feat/saas-multitenant` at `26806f22`:
 
 - Tenant registry sync and Host→tenant runtime are verified end to end (two tenants, separate branding, RLS 200/3).
 
@@ -179,6 +179,4 @@ The active tenant schema/migration swap is on `feat/saas-tenancy-swap`:
 - Shared tenant job envelope + tenant-aware email/courier-settlement/media/tracking/marketing/security/import queues and per-tenant interval sweeps (blocked entries, refresh tokens, webhook attempts, outbox relay/reconciler, security retention, tracking retention, page-view buffer) are wired. The platform backup queue is intentionally global. The branch is merge-ready pending approval.
 - `PrismaService` is a request-scoped proxy over `TenantPrismaManager`; TenantMiddleware/TenantGuard, per-tenant Better Auth, RLS coverage startup gate and the transitional FeatureFlags provider are wired. Dev has a default-tenant fallback; production fails closed without a resolved tenant. Two-tenant runtime isolation is proven with a non-superuser DB role.
 - Legacy license module removed from this branch; seed/scripts excluded from `nest build` pending tenant bootstrap.
-- **Do not merge this branch yet.** The verified Phase 0–2C branch is `feat/saas-multitenant`.
-
-See `docs/saas/phase-2d-wip-report.md`.
+See `docs/saas/phase-2d-wip-report.md` for the final verification report.
