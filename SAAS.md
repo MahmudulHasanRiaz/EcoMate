@@ -175,8 +175,8 @@ The active tenant schema/migration swap is on `feat/saas-tenancy-swap`:
 - Tenant registry sync and Host→tenant runtime are verified end to end (two tenants, separate branding, RLS 200/3).
 
 - Active schema: 203 models (200 tenant-scoped, 3 global reference); RLS baseline + guards.
-- Backend `nest build`: green; full Jest suite: 6173 passed, 0 failed, 10 skipped against a clean migrated tenant DB using a non-superuser RLS role.
-- Shared tenant job envelope + tenant-aware email/courier-settlement/media/tracking queues and per-tenant interval sweeps (blocked entries, refresh tokens, webhook attempts, outbox relay/reconciler) are wired; remaining queues/interval sweeps are tracked in the Phase 2D report.
+- Backend `nest build`: green; full Jest suite: 6175 passed, 0 failed, 10 skipped against a clean migrated tenant DB using a non-superuser RLS role.
+- Shared tenant job envelope + tenant-aware email/courier-settlement/media/tracking/marketing queues and per-tenant interval sweeps (blocked entries, refresh tokens, webhook attempts, outbox relay/reconciler) are wired; remaining queues/interval sweeps are tracked in the Phase 2D report.
 - `PrismaService` is a request-scoped proxy over `TenantPrismaManager`; TenantMiddleware/TenantGuard, per-tenant Better Auth, RLS coverage startup gate and the transitional FeatureFlags provider are wired. Dev has a default-tenant fallback; production fails closed without a resolved tenant. Two-tenant runtime isolation is proven with a non-superuser DB role.
 - Legacy license module removed from this branch; seed/scripts excluded from `nest build` pending tenant bootstrap.
 - **Do not merge this branch yet.** The verified Phase 0–2C branch is `feat/saas-multitenant`.

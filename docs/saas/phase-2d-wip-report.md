@@ -9,7 +9,7 @@
 - Active backend schema is now the tenant-aware schema (203 models; 200 tenant-scoped; 3 global reference tables).
 - Active migrations are `0001_saas_baseline` + `0002_rls_and_tenant_guards` (legacy migrations removed from this branch; they remain in the old branch/tag).
 - Backend `nest build`: **green (0 TypeScript errors)**.
-- Backend Jest: **6173 passed, 0 failed, 10 skipped** (432 suites; 431 passed, 1 skipped) against a clean migrated tenant database using a non-superuser app role (RLS enforced). The 10 skips are intentionally obsolete single-tenant migration-contract specs.
+- Backend Jest: **6175 passed, 0 failed, 10 skipped** (433 suites; 432 passed, 1 skipped) against a clean migrated tenant database using a non-superuser app role (RLS enforced). The 10 skips are intentionally obsolete single-tenant migration-contract specs.
 
 ## Applied changes
 
@@ -116,7 +116,9 @@ Converted end to end (producer + processor):
   with the media row's tenant;
 - `tracking` — the outbox relay polls per active tenant (RLS-scoped claim), dispatcher
   jobs run in `TenantWorkerHost`, DLQ mirrors carry the tenant, and the reconciler
-  sweeps per tenant.
+  sweeps per tenant;
+- `marketing` — webhook/on-demand jobs are tenant-stamped; the system `sync-all`
+  repeatable fans out through `runPerTenant`.
 
 Converted interval sweeps (per-tenant, failure-isolated via `runPerTenant`):
 
@@ -129,13 +131,13 @@ remaining queues and interval sweeps.
 
 ## Remaining work before merge
 
-1. **Remaining queue conversions** — marketing sync, security-events (and the missing
+1. **Remaining queue conversions** — security-events (and the missing
    `security-aggregate` consumer), import stub, and the platform-level backup queue.
    Each needs a tenant payload, `TenantWorkerHost`, and tenant-aware repeatable keys.
-2. **Remaining interval sweeps** — security/tracking retention, page-view buffer
-   flushes and marketing repeatables. These cross-tenant `updateMany`/`deleteMany`
-   (or buffered writes) must iterate active tenants via `runPerTenant` (or be
-   explicitly system-scoped).
+2. **Remaining interval sweeps** — security/tracking retention and page-view buffer
+   flushes. These cross-tenant `updateMany`/`deleteMany` (or buffered writes) must
+   iterate active tenants via `runPerTenant` (or be explicitly system-scoped).
+   Per-tenant marketing sync intervals still use the default-tenant setting.
 3. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
    `INTERNAL_SERVICE_SECRET`) and add custom-domain DNS/verification coverage; the
    endpoint/refresh contract itself is verified.

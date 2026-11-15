@@ -16,7 +16,7 @@ import { MetaGraphService } from './meta-graph.service';
 import { MetaProviderAdapter } from './meta-provider.adapter';
 import { ProviderAdapterFactory } from './provider-factory';
 import { AdProviderAdapter, AD_PROVIDER_ADAPTER } from './ad-provider.adapter';
-import { MarketingSyncProcessor, enqueueMarketingSync } from './marketing-sync.processor';
+import { MarketingSyncProcessor } from './marketing-sync.processor';
 import { MarketingController } from './marketing.controller';
 import { MarketingFundingController } from './marketing-funding.controller';
 import { MarketingAnalysisController } from './marketing-analysis.controller';
@@ -91,10 +91,14 @@ export class MarketingModule implements OnApplicationBootstrap {
       const hours = setting?.value ? parseInt(setting.value, 10) : DEFAULT_SYNC_INTERVAL_HOURS;
       const intervalMs = Math.max(1, isNaN(hours) ? DEFAULT_SYNC_INTERVAL_HOURS : hours) * 3600 * 1000;
 
-      await enqueueMarketingSync(
-        this.marketingQueue as any,
-        { type: 'sync-all' },
-        'marketing-sync-repeat',
+      await this.marketingQueue.add(
+        'sync-all',
+        { type: 'sync-all' } as any,
+        {
+          jobId: 'marketing-sync-immediate',
+          removeOnComplete: 1,
+          removeOnFail: 200,
+        },
       );
       await this.marketingQueue.add(
         'sync-all',

@@ -1,21 +1,45 @@
-import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
+import { Optional } from '@nestjs/common';
 import { MarketingSyncService } from './marketing-sync.service';
 import { MARKETING_QUEUE } from './marketing.constants';
+import {
+  runPerTenant,
+  tenantJobPayload,
+  TenantJobData,
+  TenantWorkerHost,
+} from '../tenancy/tenant-job';
+import { TenantRegistryService } from '../tenancy/tenant-registry.service';
 
-export interface MarketingJob {
+export interface MarketingJob extends TenantJobData {
   type: 'sync-all' | 'sync-account';
   adAccountId?: string;
   forceInsights?: boolean;
 }
 
 @Processor(MARKETING_QUEUE)
-export class MarketingSyncProcessor extends WorkerHost {
-  constructor(private readonly sync: MarketingSyncService) {
+export class MarketingSyncProcessor extends TenantWorkerHost<MarketingJob> {
+  constructor(
+    private readonly sync: MarketingSyncService,
+    @Optional()
+    private readonly tenantRegistry?: TenantRegistryService,
+  ) {
     super();
   }
 
   async process(job: Job<MarketingJob>): Promise<any> {
+    // The repeatable system job has no tenant; run the sweep once per tenant.
+    if (job.data.type === 'sync-all' && !job.data.tenantId) {
+      const results: any[] = [];
+      await runPerTenant(this.tenantRegistry, async () => {
+        results.push(...(await this.sync.syncAll(job.data.forceInsights)));
+      });
+      return results;
+    }
+    await super.process(job);
+  }
+
+  protected async handle(job: Job<MarketingJob>): Promise<any> {
     if (job.data.type === 'sync-account' && job.data.adAccountId) {
       return this.sync.syncAdAccount(job.data.adAccountId, job.data.forceInsights);
     }
@@ -25,10 +49,10 @@ export class MarketingSyncProcessor extends WorkerHost {
 
 export async function enqueueMarketingSync(
   queue: Queue<MarketingJob, any, string>,
-  payload: MarketingJob,
+  payload: Omit<MarketingJob, 'tenantId' | 'tenantSlug'>,
   jobId?: string,
 ) {
-  return queue.add(payload.type, payload, {
+  return queue.add(payload.type, tenantJobPayload(payload), {
     ...(jobId ? { jobId } : {}),
     attempts: 2,
     backoff: { type: 'exponential', delay: 60_000 },
