@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { CacheService } from '../../cache/cache.service';
@@ -8,10 +8,16 @@ import {
   manifestHasUsableDerivative,
   manifestMissingAvif,
 } from './derivatives';
+import {
+  runPerTenant,
+  tenantJobPayload,
+  TenantJobData,
+} from '../../tenancy/tenant-job';
+import { TenantRegistryService } from '../../tenancy/tenant-registry.service';
 
 const BACKUP_MAINTENANCE_CACHE_KEY = 'system:backup-maintenance';
 
-export interface MediaJob {
+export interface MediaJob extends TenantJobData {
   mediaId: string;
 }
 
@@ -24,6 +30,8 @@ export class MediaQueueService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly cache: CacheService,
+    @Optional()
+    private readonly tenantRegistry?: TenantRegistryService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -106,10 +114,20 @@ export class MediaQueueService implements OnModuleInit {
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const missing = await this.backfillMissingDerivatives();
-          const avif = await this.backfillAvif();
+          let missingQueued = 0;
+          let missingTotal = 0;
+          let avifQueued = 0;
+          let avifTotal = 0;
+          await runPerTenant(this.tenantRegistry, async () => {
+            const missing = await this.backfillMissingDerivatives();
+            const avif = await this.backfillAvif();
+            missingQueued += missing.queued;
+            missingTotal += missing.missing;
+            avifQueued += avif.queued;
+            avifTotal += avif.missing;
+          });
           this.logger.log(
-            `Boot media backfill: missingDerivatives queued=${missing.queued}/${missing.missing}, avif queued=${avif.queued}/${avif.missing}`,
+            `Boot media backfill: missingDerivatives queued=${missingQueued}/${missingTotal}, avif queued=${avifQueued}/${avifTotal}`,
           );
         } catch (err) {
           this.logger.warn(
@@ -142,14 +160,18 @@ export class MediaQueueService implements OnModuleInit {
     mediaId: string,
     options: { priority?: number } = {},
   ): Promise<void> {
-    await this.mediaQueue.add('process', { mediaId } satisfies MediaJob, {
-      jobId: `media-${mediaId}`,
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5000 },
-      removeOnComplete: true,
-      removeOnFail: true,
-      ...options,
-    });
+    await this.mediaQueue.add(
+      'process',
+      tenantJobPayload({ mediaId }) satisfies MediaJob,
+      {
+        jobId: `media-${mediaId}`,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
+        removeOnFail: true,
+        ...options,
+      },
+    );
   }
 
   async deleteDerivatives(
