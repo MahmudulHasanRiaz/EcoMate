@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import sitemap, { revalidate } from '@/app/sitemap';
+import sitemap, { dynamic } from '@/app/sitemap';
 import { serverFetch } from '@/lib/api-server';
 
 vi.mock('@/lib/api-server', () => ({ serverFetch: vi.fn() }));
@@ -40,8 +40,8 @@ describe('sitemap (P0-5)', () => {
     delete process.env.NEXT_PHASE;
   });
 
-  it('caches for an hour, follows cursor pagination, and emits clean category URLs + product images', async () => {
-    expect(revalidate).toBe(3600);
+  it('renders dynamically, follows cursor pagination, and emits clean category URLs + product images', async () => {
+    expect(dynamic).toBe('force-dynamic');
 
     const fetchMock = mockServerFetchRouter({
       '/system-settings/storefront': configOn,

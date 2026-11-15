@@ -1,4 +1,4 @@
-import { tenantCompound } from '../tenancy/tenant-context';
+import { getTenantContext, tenantCompound } from '../tenancy/tenant-context';
 import { Injectable, Logger } from '@nestjs/common';
 import { CacheService } from '../cache/cache.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -240,8 +240,19 @@ export class CachePurgeService {
           'storefront). The storefront page cache was NOT revalidated.',
       };
     }
+    const tenantId = this.currentTenantId();
+    if (!tenantId) {
+      return {
+        status: 'failed',
+        detail:
+          'No tenant context is available, so the storefront cache was NOT ' +
+          'revalidated (tenant-scoped tags cannot be built).',
+      };
+    }
     try {
-      const revalidateUrl = `${url.replace(/\/$/, '')}/api/revalidate?tags=products,config`;
+      const revalidateUrl =
+        `${url.replace(/\/$/, '')}/api/revalidate` +
+        `?tags=products,config&tenantId=${encodeURIComponent(tenantId)}`;
       const res = await fetch(revalidateUrl, {
         method: 'POST',
         headers: { 'x-revalidation-secret': secret },
@@ -256,7 +267,9 @@ export class CachePurgeService {
             (text ? `: ${text.slice(0, 200)}` : '.'),
         };
       }
-      this.logger.log('Storefront revalidated (tags products,config).');
+      this.logger.log(
+        `Storefront revalidated (tenant ${tenantId}, tags products,config).`,
+      );
       return {
         status: 'purged',
         detail:
@@ -316,6 +329,21 @@ export class CachePurgeService {
         },
       };
     }
+  }
+
+  /**
+   * Tenant for cache invalidation. Production must have a request tenant
+   * context; the default-tenant bridge is dev/test only (same rule as the
+   * tenant middleware), so a background/global call cannot purge a guessed
+   * tenant's cache in production.
+   */
+  private currentTenantId(): string | undefined {
+    const context = getTenantContext()?.tenantId;
+    if (context) return context;
+    if (process.env.NODE_ENV !== 'production') {
+      return process.env.DEFAULT_TENANT_ID;
+    }
+    return undefined;
   }
 
   /**

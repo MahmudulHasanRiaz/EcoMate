@@ -16,9 +16,23 @@ const ALIAS_EXEMPT_PREFIXES = ["/api", "/_next", "/uploads", "/assets"];
 // (verify/remove) are rare; the platform registry itself refreshes at 60s.
 const HOST_CACHE_TTL_MS = 60_000;
 const HOST_CACHE_MAX = 1_000;
-const hostCache = new Map<string, { expiresAt: number; allowed: boolean }>();
 
-/** Test/ops hook: forget cached custom/unknown lookups. */
+interface TenantResolvePayload {
+  tenantId: string;
+  slug: string;
+  canonicalHost?: string;
+  isAlias?: boolean;
+}
+
+interface HostCacheEntry {
+  expiresAt: number;
+  /** null = the registry explicitly said this host has no tenant. */
+  result: TenantResolvePayload | null;
+}
+
+const hostCache = new Map<string, HostCacheEntry>();
+
+/** Test/ops hook: forget cached custom/unknown/base lookups. */
 export function clearHostResolutionCache(): void {
   hostCache.clear();
 }
@@ -41,16 +55,27 @@ function notFoundHost(): NextResponse {
 }
 
 /**
- * True/false when the backend registry answered; null when it could not be
- * reached. A 404 must 404 the page; an outage falls open so a healthy
- * storefront keeps serving (SSR itself will fail closed without a tenant).
+ * Ask the backend registry for the tenant behind a host. The result is cached
+ * for 60s because the storefront reads it on every SSR request only to stamp
+ * tenant-scoped cache tags.
+ *
+ * `answered` distinguishes "the registry said no" (404 → deny) from "the
+ * registry could not be reached" (fail open; SSR itself fails closed without a
+ * tenant context).
  */
-async function registryAllowsHost(host: string): Promise<boolean | null> {
-  // Local/dev has no platform registry; keep the historic single-tenant flow.
-  if (process.env.NODE_ENV !== "production") return true;
+async function lookupTenantHost(
+  host: string,
+): Promise<{ answered: boolean; result: TenantResolvePayload | null }> {
+  // Local/dev has no platform registry; SSR falls back to the host-scoped tag
+  // namespace and the historic single-tenant flow.
+  if (process.env.NODE_ENV !== "production") {
+    return { answered: false, result: null };
+  }
 
   const cached = hostCache.get(host);
-  if (cached && cached.expiresAt > Date.now()) return cached.allowed;
+  if (cached && cached.expiresAt > Date.now()) {
+    return { answered: true, result: cached.result };
+  }
 
   const api = (
     process.env.API_URL ||
@@ -68,18 +93,39 @@ async function registryAllowsHost(host: string): Promise<boolean | null> {
         signal: AbortSignal.timeout(3_000),
       },
     );
-    const allowed = response.ok;
-    if (response.ok || response.status === 404) {
+
+    if (response.status === 404) {
       if (hostCache.size >= HOST_CACHE_MAX) hostCache.clear();
       hostCache.set(host, {
         expiresAt: Date.now() + HOST_CACHE_TTL_MS,
-        allowed,
+        result: null,
       });
-      return allowed;
+      return { answered: true, result: null };
     }
-    return null;
+
+    if (!response.ok) return { answered: false, result: null };
+
+    const body = (await response.json().catch(() => null)) as
+      | TenantResolvePayload
+      | null;
+    if (!body || typeof body.tenantId !== "string" || !body.tenantId) {
+      return { answered: false, result: null };
+    }
+
+    const result: TenantResolvePayload = {
+      tenantId: body.tenantId,
+      slug: typeof body.slug === "string" ? body.slug : "",
+      canonicalHost: body.canonicalHost,
+      isAlias: body.isAlias,
+    };
+    if (hostCache.size >= HOST_CACHE_MAX) hostCache.clear();
+    hostCache.set(host, {
+      expiresAt: Date.now() + HOST_CACHE_TTL_MS,
+      result,
+    });
+    return { answered: true, result };
   } catch {
-    return null;
+    return { answered: false, result: null };
   }
 }
 
@@ -91,6 +137,7 @@ export async function proxy(request: NextRequest) {
   // overwrites it, and a spoofed value could bounce a visitor to another
   // tenant's canonical host.
   const host = request.headers.get("host") ?? "";
+  const normalisedHost = normaliseHost(host);
   const config = readDomainConfig();
   const baseResolution = resolveBaseDomainAlias(host, config);
   const exempt = isAliasExempt(pathname);
@@ -106,22 +153,36 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  const aliasNoindex = baseResolution?.isAlias === true;
+  let resolved: TenantResolvePayload | null = null;
 
-  if (!baseResolution && !exempt) {
-    // Platform/base hosts are not storefronts. Serving them here would render
-    // an empty tenant shell on www/api/cname and hide a routing mistake.
-    if (isBaseOrPlatformHost(host, config)) return notFoundHost();
+  if (!exempt) {
+    if (!baseResolution) {
+      // Platform/base hosts are not storefronts. Serving them here would render
+      // an empty tenant shell on www/api/cname and hide a routing mistake.
+      if (isBaseOrPlatformHost(host, config)) return notFoundHost();
 
-    const allowed = await registryAllowsHost(normaliseHost(host));
-    if (allowed === false) return notFoundHost();
-    // null = backend unreachable → serve; SSR fails closed without a tenant.
+      const lookup = await lookupTenantHost(normalisedHost);
+      resolved = lookup.result;
+      if (lookup.answered && !resolved) return notFoundHost();
+    } else if (process.env.NODE_ENV === "production") {
+      // Base-domain hosts resolve locally; the registry lookup only supplies
+      // the tenant id for cache tags. A stale registry must not 404 a valid
+      // base host, so a 404 here is ignored.
+      resolved = (await lookupTenantHost(normalisedHost)).result;
+    }
   }
 
-  // Alias-host responses that are intentionally not redirected (API/proxied
-  // assets) still carry noindex so a search engine cannot associate alias
-  // content with this tenant.
-  const noindex = aliasNoindex;
+  const aliasNoindex = baseResolution?.isAlias === true;
+
+  // Inject the resolved tenant identity for SSR. serverFetch uses it to
+  // namespace Next cache tags (t:<tenantId>:products/config) and forwards
+  // x-tenant-host to the backend, which trusts the override only with the
+  // internal secret.
+  const requestHeaders = new Headers(request.headers);
+  if (normalisedHost) requestHeaders.set("x-tenant-host", normalisedHost);
+  if (resolved?.tenantId) requestHeaders.set("x-tenant-id", resolved.tenantId);
+  const slug = resolved?.slug || baseResolution?.slug;
+  if (slug) requestHeaders.set("x-tenant-slug", slug);
 
   // Apply strict CSP only to landing pages.
   // NOTE — CSP is defense-in-depth here, DOMPurify is the control: the
@@ -147,20 +208,19 @@ export async function proxy(request: NextRequest) {
       "form-action 'self'",
     ].join("; ");
 
-    const requestHeaders = new Headers(request.headers);
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.headers.set("Content-Security-Policy", csp);
     response.headers.set("X-Content-Type-Options", "nosniff");
     response.headers.set("X-Frame-Options", "DENY");
     response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
     response.headers.set("x-is-landing", "true");
-    if (noindex) response.headers.set("X-Robots-Tag", "noindex");
+    if (aliasNoindex) response.headers.set("X-Robots-Tag", "noindex");
 
     return response;
   }
 
-  const response = NextResponse.next();
-  if (noindex) response.headers.set("X-Robots-Tag", "noindex");
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  if (aliasNoindex) response.headers.set("X-Robots-Tag", "noindex");
   return response;
 }
 

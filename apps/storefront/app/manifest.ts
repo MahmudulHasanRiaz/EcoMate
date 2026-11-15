@@ -2,6 +2,9 @@ import type { MetadataRoute } from 'next'
 import { getStorefrontConfigServer } from '@/lib/api/storefront-config-server'
 import { hasPlanFeature } from '@/lib/api/storefront-config'
 
+// Per-host manifest: the same path returns a different tenant's branding.
+export const dynamic = 'force-dynamic'
+
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   try {
     const config = await getStorefrontConfigServer()

@@ -2,38 +2,35 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { timingSafeEqual } from "node:crypto";
 
-// On-demand cache invalidation (Speed Plan P4).
+// On-demand, TENANT-SCOPED cache invalidation (Speed Plan P4 + Phase 4.5).
 //
-// The backend (or an operator with curl) calls this after a product or
-// storefront-config mutation so the change is reflected immediately
-// instead of waiting out the fetch revalidate windows / edge TTLs:
+// Next's Data Cache is keyed by URL only, so a shared storefront would leak
+// one tenant's cached page/data to another host. Every serverFetch therefore
+// tags entries as `t:<tenantId>:<tag>`, and this endpoint invalidates only the
+// tags belonging to the tenant in the request:
 //
-//   curl -X POST https://<store>/api/revalidate \
+//   curl -X POST https://<tenant-host>/api/revalidate \
 //     -H "x-revalidation-secret: $REVALIDATION_SECRET" \
 //     -H "Content-Type: application/json" \
-//     -d '{"tags":["products"]}'
+//     -d '{"tenantId":"<uuid>","tags":["products","config"]}'
 //
-// Tags may also be given as ?tag=products (repeatable) or
-// ?tags=products,config. Only the allowlisted tags below exist — the
-// endpoint is not a generic revalidation oracle.
+// `tenantId` is REQUIRED and must be a UUID. Tags may be base names
+// (products/config) or already-scoped `t:<uuid>:<name>` values; a scoped tag
+// for a different tenant is ignored, so this endpoint cannot purge another
+// host's cache even with a leaked secret.
 //
-// Guard: the shared secret comes from the REVALIDATION_SECRET env var
-// (server-only, never NEXT_PUBLIC_). When it is unset the endpoint is
-// DISABLED — every call gets 401 — so a deployment that never opted in
-// has no open invalidation endpoint. The CDN edge cache is NOT purged by
-// this call (Next cannot purge Cloudflare); edge copies expire within
-// the short s-maxage/SWR windows set in next.config.ts.
+// The shared secret comes from REVALIDATION_SECRET (server-only). When unset
+// the endpoint is DISABLED (401). The CDN edge cache is not purged here.
 export const dynamic = "force-dynamic";
 
 const ALLOWED_TAGS = ["products", "config"] as const;
-type AllowedTag = (typeof ALLOWED_TAGS)[number];
+const TENANT_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function secretMatches(provided: string | null, expected: string): boolean {
   if (!provided) return false;
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
-  // timingSafeEqual throws on length mismatch; the early length check
-  // leaks only the secret's length, never its content.
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
 }
@@ -48,15 +45,32 @@ function providedSecret(request: Request): string | null {
   return null;
 }
 
-async function requestedTags(request: Request): Promise<string[]> {
+async function parseRequest(
+  request: Request,
+): Promise<{ tags: string[]; tenantId: string | null }> {
   const tags = new Set<string>();
   const url = new URL(request.url);
+  let tenantId =
+    url.searchParams.get("tenantId") ?? url.searchParams.get("tenant");
   for (const tag of url.searchParams.getAll("tag")) tags.add(tag);
   for (const tag of url.searchParams.get("tags")?.split(",") ?? []) {
     if (tag.trim()) tags.add(tag.trim());
   }
   try {
-    const body = (await request.json()) as { tags?: unknown; tag?: unknown };
+    const body = (await request.json()) as {
+      tags?: unknown;
+      tag?: unknown;
+      tenantId?: unknown;
+      tenant?: unknown;
+    };
+    if (
+      typeof body?.tenantId === "string" &&
+      body.tenantId.trim()
+    ) {
+      tenantId = body.tenantId;
+    } else if (typeof body?.tenant === "string" && body.tenant.trim()) {
+      tenantId = body.tenant;
+    }
     const bodyTags = [
       ...(Array.isArray(body?.tags) ? body.tags : []),
       ...(typeof body?.tag === "string" ? [body.tag] : []),
@@ -67,7 +81,27 @@ async function requestedTags(request: Request): Promise<string[]> {
   } catch {
     // No/invalid JSON body — query params alone are a valid call shape.
   }
-  return [...tags];
+  return {
+    tags: [...tags],
+    tenantId: tenantId?.trim() || null,
+  };
+}
+
+/**
+ * Map an input tag to its tenant-scoped form. A tag already scoped to another
+ * tenant is rejected (null) instead of being re-scoped.
+ */
+function scopeTag(tag: string, tenantId: string): string | null {
+  const scoped = /^t:([^:]+):(.+)$/.exec(tag);
+  if (scoped) {
+    if (scoped[1].toLowerCase() !== tenantId.toLowerCase()) return null;
+    return (ALLOWED_TAGS as readonly string[]).includes(scoped[2])
+      ? `t:${tenantId}:${scoped[2]}`
+      : null;
+  }
+  return (ALLOWED_TAGS as readonly string[]).includes(tag)
+    ? `t:${tenantId}:${tag}`
+    : null;
 }
 
 export async function POST(request: Request) {
@@ -85,11 +119,25 @@ export async function POST(request: Request) {
     );
   }
 
-  const requested = await requestedTags(request);
-  const valid = requested.filter((t): t is AllowedTag =>
-    (ALLOWED_TAGS as readonly string[]).includes(t),
-  );
-  if (valid.length === 0) {
+  const { tags, tenantId } = await parseRequest(request);
+  if (!tenantId || !TENANT_ID_RE.test(tenantId)) {
+    return NextResponse.json(
+      {
+        revalidated: false,
+        message: "A valid tenantId (UUID) is required",
+      },
+      { status: 400, headers: { "Cache-Control": "private, no-store" } },
+    );
+  }
+
+  const scoped = [
+    ...new Set(
+      tags
+        .map((tag) => scopeTag(tag, tenantId))
+        .filter((tag): tag is string => tag !== null),
+    ),
+  ];
+  if (scoped.length === 0) {
     return NextResponse.json(
       {
         revalidated: false,
@@ -99,15 +147,15 @@ export async function POST(request: Request) {
     );
   }
 
-  for (const tag of valid) {
+  for (const tag of scoped) {
     // External caller (webhook pattern): expire immediately instead of
-    // serving stale-while-revalidate, so a product edit is visible on the
-    // next request, not eventually.
+    // serving stale-while-revalidate, so an edit is visible on the next
+    // request.
     revalidateTag(tag, { expire: 0 });
   }
 
   return NextResponse.json(
-    { revalidated: true, tags: valid, now: Date.now() },
+    { revalidated: true, tenantId, tags: scoped, now: Date.now() },
     { headers: { "Cache-Control": "private, no-store" } },
   );
 }

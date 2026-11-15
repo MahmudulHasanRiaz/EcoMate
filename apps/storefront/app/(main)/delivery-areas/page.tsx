@@ -4,7 +4,6 @@ import { templateHasRealContent, preFormattedPages } from "@/lib/templates/regis
 import { hasRealShippingConfig } from "@/lib/template-content";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 
-export const revalidate = 300;
 
 export async function generateMetadata() {
   const meta = await preFormattedPageMetadata("delivery-areas");

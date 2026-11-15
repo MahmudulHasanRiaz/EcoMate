@@ -2,7 +2,6 @@ import { getStoreLocations } from "@/lib/api/store-locations";
 import { pageMetadata } from "@/lib/metadata";
 import StoresTemplate from "@/lib/templates/pages/stores";
 
-export const revalidate = 300;
 
 export async function generateMetadata() {
   return pageMetadata(

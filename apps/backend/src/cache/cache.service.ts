@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
+import { getTenantContext } from '../tenancy/tenant-context';
 
 interface CacheEntry<T> {
   data: T;
@@ -104,39 +105,58 @@ export class CacheService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * Every app-side cache entry is namespaced by the current tenant:
+   * `t:<tenantId>:<key>`. CacheService is shared by all tenants in one
+   * process/Redis, and services use plain keys (`categories:tree`,
+   * `product:<id>`, analytics ranges); without this prefix the first tenant to
+   * warm a key would serve its data to every other host.
+   *
+   * Calls without a tenant context (boot, global infra keys such as
+   * `system:backup-maintenance`, protected ops) keep the raw key — production
+   * API routes cannot reach them without a resolved tenant (TenantGuard).
+   */
+  private scopedKey(key: string): string {
+    const tenantId = getTenantContext()?.tenantId;
+    return tenantId ? `t:${tenantId}:${key}` : key;
+  }
+
   async get<T>(key: string): Promise<T | undefined> {
+    const scoped = this.scopedKey(key);
     if (this.redis) {
       try {
-        const raw = await this.redis.get(key);
+        const raw = await this.redis.get(scoped);
         if (raw) return JSON.parse(raw) as T;
       } catch {
         /* fall through to memory */
       }
     }
-    const entry = this.store.get(key);
+    const entry = this.store.get(scoped);
     if (!entry) return undefined;
     if (Date.now() > entry.expiresAt) {
-      this.store.delete(key);
+      this.store.delete(scoped);
       return undefined;
     }
     return entry.data as T;
   }
 
   async getStale<T>(key: string): Promise<T | undefined> {
+    const scoped = this.scopedKey(key);
     if (this.redis) {
       try {
-        const raw = await this.redis.get(key);
+        const raw = await this.redis.get(scoped);
         if (raw) return JSON.parse(raw) as T;
       } catch {
         /* fall through to memory */
       }
     }
-    const entry = this.store.get(key);
+    const entry = this.store.get(scoped);
     if (!entry) return undefined;
     return entry.data as T;
   }
 
   async set<T>(key: string, data: T, ttlMs?: number): Promise<void> {
+    const scoped = this.scopedKey(key);
     const effectiveTtl = ttlMs ?? this.defaultTtl;
     // Always keep a local mirror. If Redis disappears while a destructive
     // restore is running, the owning API process must not fail open.
@@ -147,7 +167,7 @@ export class CacheService implements OnModuleDestroy {
         if (eldest) this.store.delete(eldest);
       }
     }
-    this.store.set(key, {
+    this.store.set(scoped, {
       data,
       expiresAt: Date.now() + effectiveTtl,
     });
@@ -157,7 +177,7 @@ export class CacheService implements OnModuleDestroy {
       : Math.ceil(this.defaultTtl / 1000);
     if (this.redis) {
       try {
-        await this.redis.setex(key, ttlSeconds, JSON.stringify(data));
+        await this.redis.setex(scoped, ttlSeconds, JSON.stringify(data));
         return;
       } catch {
         /* fall through to memory */
@@ -170,17 +190,19 @@ export class CacheService implements OnModuleDestroy {
   }
 
   async delete(key: string): Promise<void> {
+    const scoped = this.scopedKey(key);
     if (this.redis) {
       try {
-        await this.redis.del(key);
+        await this.redis.del(scoped);
       } catch {
         /* ignore */
       }
     }
-    this.store.delete(key);
+    this.store.delete(scoped);
   }
 
   async invalidateByPrefix(prefix: string): Promise<void> {
+    const scoped = this.scopedKey(prefix);
     if (this.redis) {
       try {
         let cursor = '0';
@@ -188,7 +210,7 @@ export class CacheService implements OnModuleDestroy {
           const [nextCursor, keys] = await this.redis.scan(
             cursor,
             'MATCH',
-            `${prefix}*`,
+            `${scoped}*`,
             'COUNT',
             100,
           );
@@ -200,7 +222,7 @@ export class CacheService implements OnModuleDestroy {
       }
     }
     for (const key of this.store.keys()) {
-      if (key.startsWith(prefix)) this.store.delete(key);
+      if (key.startsWith(scoped)) this.store.delete(key);
     }
   }
 
@@ -208,9 +230,10 @@ export class CacheService implements OnModuleDestroy {
     prefix: string,
     options: { requireShared?: boolean } = {},
   ): Promise<number> {
+    const scoped = this.scopedKey(prefix);
     this.evictExpired();
     const keys = new Set(
-      [...this.store.keys()].filter((key) => key.startsWith(prefix)),
+      [...this.store.keys()].filter((key) => key.startsWith(scoped)),
     );
 
     if (this.redis?.status === 'ready') {
@@ -220,7 +243,7 @@ export class CacheService implements OnModuleDestroy {
           const [nextCursor, page] = await this.redis.scan(
             cursor,
             'MATCH',
-            `${prefix}*`,
+            `${scoped}*`,
             'COUNT',
             100,
           );
@@ -255,8 +278,21 @@ export class CacheService implements OnModuleDestroy {
    * reports `redisAvailable: false` so the caller can say so honestly.
    */
   async clearAll(): Promise<ClearAllResult> {
-    const memoryCleared = this.store.size;
-    this.store.clear();
+    const tenantId = getTenantContext()?.tenantId;
+    const tenantPrefix = tenantId ? `t:${tenantId}:` : null;
+
+    let memoryCleared = 0;
+    if (tenantPrefix) {
+      for (const key of [...this.store.keys()]) {
+        if (key.startsWith(tenantPrefix)) {
+          this.store.delete(key);
+          memoryCleared++;
+        }
+      }
+    } else {
+      memoryCleared = this.store.size;
+      this.store.clear();
+    }
 
     let redisDeleted = 0;
     let redisSkipped = 0;
@@ -268,7 +304,7 @@ export class CacheService implements OnModuleDestroy {
           const [nextCursor, keys] = await this.redis.scan(
             cursor,
             'MATCH',
-            '*',
+            tenantPrefix ? `${tenantPrefix}*` : '*',
             'COUNT',
             100,
           );

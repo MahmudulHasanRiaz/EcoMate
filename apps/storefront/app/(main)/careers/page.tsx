@@ -6,7 +6,6 @@ import { hasPlanFeature } from "@/lib/api/storefront-config";
 import CareersTemplate from "@/lib/templates/pages/careers";
 import { preFormattedPageMetadata } from "@/lib/templates/render-page";
 
-export const revalidate = 300;
 
 export async function generateMetadata() {
   return preFormattedPageMetadata("careers");

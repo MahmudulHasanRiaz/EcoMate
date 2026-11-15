@@ -8,7 +8,6 @@ import { hasPlanFeature } from "@/lib/api/storefront-config";
 import { pageMetadata } from "@/lib/metadata";
 import ApplyForm from "./apply-form";
 
-export const revalidate = 300;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

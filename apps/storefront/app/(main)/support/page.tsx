@@ -2,7 +2,6 @@ import { renderPreFormattedPage, preFormattedPageMetadata } from "@/lib/template
 import { getCmsPageBySlug } from "@/lib/api/cms-pages";
 import { templateHasRealContent, preFormattedPages } from "@/lib/templates/registry";
 
-export const revalidate = 300;
 
 export async function generateMetadata() {
   const meta = await preFormattedPageMetadata("contact");

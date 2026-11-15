@@ -10,9 +10,10 @@ import {
   hasRealShippingConfig,
 } from '@/lib/template-content';
 
-// Crawler hits must not regenerate on every request: cache for an hour.
-// Product/stock freshness lives on the PDP (short TTL), not here.
-export const revalidate = 3600;
+// Tenant-scoped: the same /sitemap.xml path exists on every host, so a
+// route-level cache would leak one tenant's URLs to another. The per-fetch
+// Data Cache inside serverFetch remains tenant-tagged.
+export const dynamic = 'force-dynamic';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = await canonicalSiteUrl();

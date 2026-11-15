@@ -1,14 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { Product } from "@/lib/types";
-import {
-  getBackendStatusServer,
-  getProductBySlugServer,
-  getRelatedProductsServer,
-  getReviewsServer,
-  getSizeChartPresenceServer,
-  getTopProductSlugsServer,
-} from "@/lib/api/products-server";
+import { getBackendStatusServer, getProductBySlugServer, getRelatedProductsServer, getReviewsServer, getSizeChartPresenceServer } from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { hasPlanFeature } from "@/lib/api/storefront-config";
 import { toMetaDescription } from "@/lib/strip-html";
@@ -17,22 +10,9 @@ import { stringifyForScript } from "@/lib/safe-json";
 import { publicMediaUrl, canonicalSiteUrl } from "@/lib/site-url";
 import ProductDetailClient from "@/components/ProductDetailClient";
 
-// Surge-ready caching: the PDP shell (product core, related, reviews,
-// sanitized HTML) is served from the render cache for 60s, so a traffic
-// spike costs ~1 backend product read per slug per minute instead of one per
-// view. Stock/price staleness is bounded by this same 60s window (plus the
-// backend's own 10s product-cache TTL); checkout re-validates stock
-// server-side, so an oversell can never slip through a stale shell.
-export const revalidate = 60;
-export const dynamicParams = true;
-
-// Prerender the best sellers at build time; everything else renders on
-// demand and joins the 60s cache. Build-safe: an unreachable backend yields
-// [] instead of failing `next build`.
-export async function generateStaticParams() {
-  const slugs = await getTopProductSlugsServer(200);
-  return slugs.map((slug) => ({ slug }));
-}
+// Tenant-scoped render: the root layout forces dynamic so one host's PDP can
+// never be served to another. Per-fetch Data Cache entries stay warm and are
+// namespaced as t:<tenantId>:products by serverFetch.
 
 // Absolute, crawler-safe product image URL shared by OG/Twitter meta and
 // JSON-LD. Internal backend origins (http://backend:4000, localhost) are

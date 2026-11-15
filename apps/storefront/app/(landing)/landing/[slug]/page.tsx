@@ -6,7 +6,6 @@ import LandingCustomRenderer from "@/components/landing/CustomRenderer";
 import LandingPrimaryProductView from "@/components/landing/LandingPrimaryProductView";
 import type { Metadata } from "next";
 
-export const revalidate = 300;
 
 interface LandingData {
   id: string;

@@ -2,6 +2,7 @@ import {
   CacheService,
   isProtectedRedisKey,
 } from '../cache.service';
+import { runWithTenant } from '../../tenancy/tenant-context';
 
 /**
  * CacheService.clearAll tests (P0 stale-bundle round, 2026-11-12).
@@ -69,6 +70,106 @@ describe('CacheService.clearAll', () => {
       await service.set('analytics:x', { a: 1 });
       service.clear();
       expect(await service.get('analytics:x')).toBeUndefined();
+    } finally {
+      service.onModuleDestroy();
+    }
+  });
+});
+
+describe('CacheService tenant scoping', () => {
+  const tenantA = { tenantId: 'tenant-a', slug: 'alpha' };
+  const tenantB = { tenantId: 'tenant-b', slug: 'beta' };
+
+  it('namespaces set/get/delete per tenant', async () => {
+    const service = new CacheService();
+    try {
+      await runWithTenant(tenantA, async () => {
+        await service.set('categories:tree', { a: 1 });
+        expect((service as any).store.has('t:tenant-a:categories:tree')).toBe(
+          true,
+        );
+        expect(await service.get('categories:tree')).toEqual({ a: 1 });
+      });
+
+      await runWithTenant(tenantB, async () => {
+        // The first tenant's entry is invisible here.
+        expect(await service.get('categories:tree')).toBeUndefined();
+        await service.set('categories:tree', { b: 2 });
+      });
+
+      await runWithTenant(tenantA, async () => {
+        await service.delete('categories:tree');
+        expect(await service.get('categories:tree')).toBeUndefined();
+      });
+
+      await runWithTenant(tenantB, async () => {
+        expect(await service.get('categories:tree')).toEqual({ b: 2 });
+      });
+    } finally {
+      service.onModuleDestroy();
+    }
+  });
+
+  it('scopes prefix invalidation and counts per tenant', async () => {
+    const service = new CacheService();
+    try {
+      await runWithTenant(tenantA, async () => {
+        await service.set('product:1', { a: 1 });
+        await service.set('product:2', { a: 2 });
+      });
+      await runWithTenant(tenantB, async () => {
+        await service.set('product:1', { b: 1 });
+      });
+
+      await runWithTenant(tenantA, async () => {
+        await service.invalidateByPrefix('product:');
+        expect(await service.countByPrefix('product:')).toBe(0);
+      });
+
+      await runWithTenant(tenantB, async () => {
+        expect(await service.countByPrefix('product:')).toBe(1);
+        expect(await service.get('product:1')).toEqual({ b: 1 });
+      });
+    } finally {
+      service.onModuleDestroy();
+    }
+  });
+
+  it('keeps the raw key outside a tenant context (global infra)', async () => {
+    const service = new CacheService();
+    try {
+      await service.set('system:backup-maintenance', { mode: 'restore' });
+      expect(
+        (service as any).store.has('system:backup-maintenance'),
+      ).toBe(true);
+      expect(await service.get('system:backup-maintenance')).toEqual({
+        mode: 'restore',
+      });
+    } finally {
+      service.onModuleDestroy();
+    }
+  });
+
+  it('clearAll purges only the current tenant cache', async () => {
+    const service = new CacheService();
+    try {
+      await runWithTenant(tenantA, async () => {
+        await service.set('categories:tree', { a: 1 });
+        await service.set('product:1', { a: 1 });
+      });
+      await runWithTenant(tenantB, async () => {
+        await service.set('categories:tree', { b: 2 });
+      });
+
+      const result = await runWithTenant(tenantA, () => service.clearAll());
+
+      expect(result.memoryCleared).toBe(2);
+      await runWithTenant(tenantA, async () => {
+        expect(await service.get('categories:tree')).toBeUndefined();
+      });
+      await runWithTenant(tenantB, async () => {
+        expect(await service.get('categories:tree')).toEqual({ b: 2 });
+      });
     } finally {
       service.onModuleDestroy();
     }

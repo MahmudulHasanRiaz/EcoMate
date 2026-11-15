@@ -10,19 +10,10 @@ import Testimonials from "@/components/Testimonials";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { getFeaturedProductsServer, getNewArrivalsServer, getPopularItemsServer, getBrandsServer, fetchProductCardsServer, getCategoriesServer } from "@/lib/api/products-server";
 
-// P2 (speed plan §5): this page used to be `force-dynamic` because
-// "sections render stock indicators via revalidate:0 fetches". That
-// premise is stale: every fetcher below goes through products-server,
-// whose serverFetch calls carry `revalidate: 60` (a revalidate:0 fetch
-// on a prerendered page is what actually threw DYNAMIC_SERVER_USAGE).
-// Stock badges therefore read the same 60s data cache the PDP relies
-// on, and checkout re-validates stock server-side — so the page is
-// classic ISR: prerendered shell, regenerated at most every 60s.
-// Cache Components / PPR was NOT adopted for this (Next 16.4 bundled
-// docs: enabling `cacheComponents` replaces route-segment `revalidate`
-// app-wide and errors on routes still exporting it — a whole-app
-// migration, not a per-page switch).
-export const revalidate = 60;
+// Tenant-scoped render: the root layout forces dynamic (one pooled storefront
+// process serves every host, and Next's Full Route Cache is keyed by path
+// only). The section fetches below still use the Data Cache via serverFetch,
+// tagged t:<tenantId>:products so revalidation stays per-tenant.
 
 type SectionData = { title: string; products: ProductCardData[]; href: string } | null;
 

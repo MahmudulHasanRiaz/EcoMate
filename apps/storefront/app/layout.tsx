@@ -18,6 +18,12 @@ import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
 import { stringifyForScript } from "@/lib/safe-json";
 
+// Tenant hosts share one storefront process. The Full Route Cache is keyed by
+// path only and would serve one host's HTML to another, so every route renders
+// per request. Per-fetch Data Cache entries remain (and are tenant-tagged), and
+// checkout/stock are re-validated server-side.
+export const dynamic = "force-dynamic";
+
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

@@ -9,15 +9,23 @@ const API = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://lo
  * together with the internal shared secret from a private peer — never from a
  * browser.
  *
- * Outside a request scope (build-time static generation, scripts) `headers()`
- * throws; there is no tenant to forward, so the header is omitted.
+ * The proxy also injects x-tenant-id / x-tenant-slug for Next cache-tag
+ * namespacing (t:<tenantId>:products). Outside a request scope (build-time
+ * static generation, scripts) `headers()` throws; there is no tenant, so the
+ * tags fall back to the unresolved namespace.
  */
-async function tenantHostHeader(): Promise<Record<string, string>> {
+async function requestTenantContext(): Promise<{
+  host?: string;
+  tenantId?: string;
+  slug?: string;
+}> {
   try {
     const requestHeaders = await headers();
-    const host =
-      requestHeaders.get("x-tenant-host") || requestHeaders.get("host");
-    return host ? { "x-tenant-host": host } : {};
+    return {
+      host: requestHeaders.get("x-tenant-host") || requestHeaders.get("host") || undefined,
+      tenantId: requestHeaders.get("x-tenant-id") || undefined,
+      slug: requestHeaders.get("x-tenant-slug") || undefined,
+    };
   } catch {
     return {};
   }
@@ -59,10 +67,22 @@ export async function serverFetch<T = unknown>(
   const { next: callerNext, headers: callerHeaders, ...restFetchOptions } = fetchOptions as RequestInit & {
     next?: { revalidate?: number | false; tags?: string[] };
   };
+
+  const tenantContext = await requestTenantContext();
+  // Every Data Cache entry is namespaced by tenant. Without a resolved id
+  // (build-time render, registry outage) the host/slug or a stable
+  // "unresolved" namespace keeps cross-tenant entries apart.
+  const tenantScope =
+    tenantContext.tenantId || tenantContext.slug || "unresolved";
+  const requestedTags = tags ?? callerNext?.tags;
+  const scopedTags = requestedTags?.map((tag) =>
+    tag.startsWith("t:") ? tag : `t:${tenantScope}:${tag}`,
+  );
+
   const nextOptions = {
     ...callerNext,
     ...(revalidate !== undefined ? { revalidate } : {}),
-    ...(tags ? { tags } : {}),
+    ...(scopedTags ? { tags: scopedTags } : {}),
   };
   const hasNextOptions = Object.keys(nextOptions).length > 0;
 
@@ -75,7 +95,7 @@ export async function serverFetch<T = unknown>(
   const requestHeaders: Record<string, string> = {
     "Content-Type": "application/json",
     ...(internalSecret ? { "x-internal-secret": internalSecret } : {}),
-    ...(await tenantHostHeader()),
+    ...(tenantContext.host ? { "x-tenant-host": tenantContext.host } : {}),
   };
   const mergedHeaders = {
     ...requestHeaders,

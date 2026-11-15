@@ -119,12 +119,28 @@ describe('storefront proxy unknown/custom hosts (production)', () => {
   });
 
   it('serves a verified custom domain returned by the registry', async () => {
-    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          kind: 'custom',
+          tenantId: 'tenant-1',
+          slug: 'acme',
+          canonicalHost: 'shop.example.com',
+          isAlias: false,
+        }),
+        { status: 200 },
+      ),
+    );
 
     const res = await proxy(request('shop.example.com', '/products'));
 
     expect(res.status).toBe(200);
     expect(res.headers.get('x-robots-tag')).toBeNull();
+    // Tenant identity is injected for SSR cache-tag namespacing.
+    expect(res.headers.get('x-middleware-request-x-tenant-id')).toBe(
+      'tenant-1',
+    );
+    expect(res.headers.get('x-middleware-request-x-tenant-slug')).toBe('acme');
   });
 
   it('never serves platform/base hosts from the storefront', async () => {
@@ -153,9 +169,35 @@ describe('storefront proxy unknown/custom hosts (production)', () => {
     expect(res.status).toBe(200);
   });
 
-  it('skips registry lookup for canonical base-domain hosts', async () => {
+  it('looks up base-domain hosts only to stamp the tenant id, and never 404s them', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
+
     const res = await proxy(request('acme.ecomate.bd', '/products'));
     expect(res.status).toBe(200);
-    expect(fetchMock).not.toHaveBeenCalled();
+    // The slug is known locally even when the registry has no id yet.
+    expect(res.headers.get('x-middleware-request-x-tenant-slug')).toBe('acme');
+    expect(res.headers.get('x-middleware-request-x-tenant-id')).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('injects the tenant id for a base-domain host when the registry knows it', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          kind: 'tenant',
+          tenantId: 'tenant-1',
+          slug: 'acme',
+          canonicalHost: 'acme.ecomate.bd',
+          isAlias: false,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const res = await proxy(request('acme.ecomate.bd', '/products'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-middleware-request-x-tenant-id')).toBe(
+      'tenant-1',
+    );
   });
 });

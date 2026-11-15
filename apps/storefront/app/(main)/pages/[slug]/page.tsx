@@ -40,7 +40,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return meta;
 }
 
-export const revalidate = 3600;
 
 // True when the stored HTML carries visible text — tags, whitespace and
 // &nbsp; alone do not count. A template row seeded with content: '' (and

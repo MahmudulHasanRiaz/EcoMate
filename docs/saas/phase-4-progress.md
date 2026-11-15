@@ -8,7 +8,7 @@ push; the checkbox is ticked in the same commit.
 - [x] 2. Base-domain aliases + canonical 301 + alias noindex
 - [x] 3. Custom-domain add/verify + DNS polling + Caddy on-demand TLS ask endpoint
 - [x] 4. Fallback-domain behavior + absolute URLs/health; unknown host must never route to a tenant
-- [ ] 5. Tenant-scoped cache tags/revalidation + no cross-host leakage
+- [x] 5. Tenant-scoped cache tags/revalidation + no cross-host leakage
 - [ ] 6. Two-tenant browser E2E + custom-domain mock E2E
 
 ## Unit log
@@ -120,3 +120,31 @@ push; the checkbox is ticked in the same commit.
 - Acceptance: backend 6245 passed / 10 skipped / 0 failed, `nest build` clean;
   platform-api 60/60, build clean; storefront 689/689, `tsc` clean, `next build`
   exit 0; `docker compose config` valid.
+
+### 5. Tenant-scoped cache tags/revalidation + no cross-host leakage — DONE
+
+- The storefront proxy now injects `x-tenant-id` / `x-tenant-slug` into the SSR
+  request (registry lookup cached 60s; base hosts resolve locally and never 404
+  on a stale registry). `serverFetch` turns every requested cache tag into
+  `t:<tenantId>:<tag>` (fallback `t:<slug>:<tag>` / `t:unresolved:<tag>`), so
+  Next Data Cache entries cannot be shared across hosts.
+- `POST /api/revalidate` is tenant-scoped: a UUID `tenantId` is required, base
+  tags are scoped before revalidation, already-scoped tags must match that
+  tenant, and another tenant's tag is refused. The backend cache purge sends
+  `tenantId`; in production it refuses to guess a tenant (no request context =
+  storefront layer `failed`, no call).
+- Full Route Cache disabled for the pooled storefront: root layout is
+  `force-dynamic`; `generateStaticParams` removed from the PDP and every
+  page-level `revalidate` export removed. `sitemap.xml` and the web manifest are
+  explicitly dynamic, so `/sitemap.xml`, `/manifest.webmanifest` and every page
+  render per host. Build output now lists all routes as dynamic (ƒ).
+- Backend `CacheService` namespaces every app-cache key with
+  `t:<tenantId>:` (get/getStale/set/delete/invalidateByPrefix/countByPrefix),
+  closing cross-tenant leaks in global keys such as `categories:tree`,
+  `product:<id>` and analytics ranges. Global infra keys outside a request
+  context (`system:backup-maintenance`, active-write markers) keep raw keys.
+  `clearAll()` now purges only the current tenant's entries (ops/global calls
+  without context keep the old all-cache behaviour).
+- Acceptance: backend 6250 passed / 10 skipped / 0 failed, `nest build` clean;
+  storefront 697/697 passed, `tsc` clean, `next build` exit 0 with all routes
+  dynamic. Platform-api unchanged (60/60 from unit 4).

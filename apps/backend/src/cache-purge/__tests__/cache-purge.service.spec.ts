@@ -16,6 +16,7 @@ import { CacheService } from '../../cache/cache.service';
  */
 
 const ORIGINAL_ENV = { ...process.env };
+const TENANT_ID = '00000000-0000-4000-8000-000000000001';
 
 function mockFetchOnce(responses: Array<{ ok: boolean; status: number; body: any }>) {
   const calls: Array<{ url: string; init: any }> = [];
@@ -47,6 +48,7 @@ describe('CachePurgeService', () => {
     delete process.env['REVALIDATION_SECRET'];
     delete process.env['STOREFRONT_URL'];
     delete process.env['CLIENT_DOMAIN'];
+    process.env['DEFAULT_TENANT_ID'] = TENANT_ID;
     versionCounter = 1000;
 
     prisma = {
@@ -109,12 +111,26 @@ describe('CachePurgeService', () => {
     // The token must never appear in the reported detail.
     expect(result.layers.cloudflare.detail).not.toContain('cf-token');
 
-    // Storefront: revalidate products + config with the shared secret.
+    // Storefront: revalidate products + config for THIS tenant.
     expect(calls[1].url).toBe(
-      'https://shop.example.com/api/revalidate?tags=products,config',
+      `https://shop.example.com/api/revalidate?tags=products,config&tenantId=${TENANT_ID}`,
     );
     expect(calls[1].init.headers['x-revalidation-secret']).toBe('reval-secret');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails the storefront layer in production without a tenant context', async () => {
+    process.env['NODE_ENV'] = 'production';
+    delete process.env['DEFAULT_TENANT_ID'];
+    process.env['REVALIDATION_SECRET'] = 'reval-secret';
+    process.env['STOREFRONT_URL'] = 'https://shop.example.com';
+    const { fetchMock } = mockFetchOnce([]);
+
+    const result = await service.purgeAll();
+
+    expect(result.layers.storefront.status).toBe('failed');
+    expect(result.layers.storefront.detail).toContain('No tenant context');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('reports Cloudflare as not_configured (never silent) when no token is set', async () => {

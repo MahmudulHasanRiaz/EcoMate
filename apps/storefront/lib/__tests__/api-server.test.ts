@@ -39,7 +39,7 @@ describe('serverFetch cache tags (P4)', () => {
     await serverFetch('/products', { revalidate: 60, tags: ['products'] });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
-      next: { revalidate: 60, tags: ['products'] },
+      next: { revalidate: 60, tags: ['t:unresolved:products'] },
     });
   });
 
@@ -50,7 +50,7 @@ describe('serverFetch cache tags (P4)', () => {
       timeout: 30000,
     } as any);
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
-      next: { revalidate: 60, tags: ['config'] },
+      next: { revalidate: 60, tags: ['t:unresolved:config'] },
     });
   });
 
