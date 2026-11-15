@@ -73,6 +73,20 @@ Implemented and smoke-tested on the migrated test DB:
 - Per-tenant Better Auth adapter (`baPrisma` resolver + Host→ALS context in the Fastify hook).
 - Transitional global `FeatureFlagsModule` substitutes the removed LicenseModule provider.
 
+### Registry feed + two-tenant host resolution (live proof)
+
+A mock platform registry exposed two tenants (`alpha` → `alpha.ecomate.bd`,
+`beta` → `beta.ecomate.bd`) on the real `/internal/tenants/registry` contract:
+
+- backend log: `Tenant registry refreshed (2 tenants)`;
+- `RlsCoverageService`: `200 tenant table(s), 3 global table(s)`;
+- `GET /api/system-settings/branding` with `Host: alpha.ecomate.bd` → `Alpha Store`;
+- same path with `Host: beta.ecomate.bd` → `Beta Store`;
+- `Host: localhost:4010` → the default tenant's empty branding.
+
+This exercises Host → registry → ALS → Prisma proxy → RLS end to end. Custom-domain
+lookup (`kind: 'custom'` → `resolveByHost`) is covered by the tenant-host unit tests.
+
 Smoke results (real HTTP, test DB + ephemeral Redis):
 
 | Request | Development (`NODE_ENV=development`) | Production (`NODE_ENV=production`) |
@@ -87,7 +101,9 @@ Full backend suite re-ran after this wiring: **6161 passed, 0 failed, 10 skipped
 
 ## Remaining work before merge
 
-1. Feed the production tenant registry (`PLATFORM_API_URL` + `INTERNAL_SERVICE_SECRET` / Redis pub-sub).
+1. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
+   `INTERNAL_SERVICE_SECRET`) and add custom-domain DNS/verification coverage; the
+   endpoint/refresh contract itself is verified.
 2. Tenant fan-out for queue workers/interval jobs (currently they use the default-tenant bridge).
 3. Merge the swap branch into `feat/saas-multitenant`; then Phase 3 (entitlements/license removal).
 

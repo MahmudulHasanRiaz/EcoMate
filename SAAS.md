@@ -172,6 +172,8 @@ pass; both builds are clean. See `docs/saas/phase-2c-report.md`.
 
 The active tenant schema/migration swap is on `feat/saas-tenancy-swap`:
 
+- Tenant registry sync and Host→tenant runtime are verified end to end (two tenants, separate branding, RLS 200/3).
+
 - Active schema: 203 models (200 tenant-scoped, 3 global reference); RLS baseline + guards.
 - Backend `nest build`: green; full Jest suite: 6169 passed, 0 failed, 10 skipped against a clean migrated tenant DB using a non-superuser RLS role.
 - `PrismaService` is a request-scoped proxy over `TenantPrismaManager`; TenantMiddleware/TenantGuard, per-tenant Better Auth, RLS coverage startup gate and the transitional FeatureFlags provider are wired. Dev has a default-tenant fallback; production fails closed without a resolved tenant. Two-tenant runtime isolation is proven with a non-superuser DB role.
