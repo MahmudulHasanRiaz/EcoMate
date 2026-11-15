@@ -21,6 +21,11 @@ import { auth } from './better-auth/auth.config';
 import { baPrisma } from './better-auth/prisma';
 import { CacheService } from './cache/cache.service';
 import { PrismaService } from './prisma/prisma.service';
+import { TenantPrismaManager } from './tenancy/tenant-prisma.manager';
+import { TenantRegistryService } from './tenancy/tenant-registry.service';
+import { resolveTenantHost } from './tenancy/tenant-host';
+import { tenantStorage } from './tenancy/tenant-context';
+import { setBaPrismaResolver } from './better-auth/prisma';
 import { randomUUID } from 'crypto';
 
 // BA brute-force attempt log (F5): key `${ip}:${endpoint}` → attempt
@@ -59,6 +64,16 @@ async function bootstrap() {
   app.enableShutdownHooks();
   const cacheService = app.get(CacheService);
   const prismaService = app.get(PrismaService);
+  const tenantManager = app.get(TenantPrismaManager);
+  const tenantRegistry = app.get(TenantRegistryService);
+  const defaultTenantId =
+    process.env.DEFAULT_TENANT_ID ||
+    '00000000-0000-4000-8000-000000000000';
+  setBaPrismaResolver(() =>
+    tenantManager.getClient(
+      tenantStorage.getStore()?.tenantId || defaultTenantId,
+    ),
+  );
   let durableMaintenanceMemo: {
     expiresAt: number;
     value?: { mode: 'full_backup' | 'restore' };
@@ -380,6 +395,63 @@ async function bootstrap() {
     }
     try {
       reply.hijack();
+      // Resolve the tenant from the Host (or the dev default) before any
+      // Better Auth adapter query runs. baPrisma reads this ALS context.
+      const baHost = String(request.headers.host ?? '');
+      const baResolution = resolveTenantHost(baHost);
+      let baTenant:
+        | {
+            tenantId: string;
+            slug: string;
+            status?: string;
+            canonicalHost?: string;
+            baseDomain?: string;
+            isAlias?: boolean;
+          }
+        | undefined;
+      if (baResolution.kind === 'tenant') {
+        const tenant = tenantRegistry.resolveBySlug(baResolution.slug);
+        if (tenant) {
+          baTenant = {
+            tenantId: tenant.id,
+            slug: tenant.slug,
+            status: tenant.status,
+            canonicalHost: baResolution.canonicalHost,
+            baseDomain: baResolution.baseDomain,
+            isAlias: baResolution.isAlias,
+          };
+        }
+      } else if (baResolution.kind === 'custom') {
+        const tenant = tenantRegistry.resolveByHost(baHost);
+        if (tenant) {
+          baTenant = {
+            tenantId: tenant.id,
+            slug: tenant.slug,
+            status: tenant.status,
+            canonicalHost: baHost,
+          };
+        }
+      }
+      if (
+        !baTenant &&
+        process.env.NODE_ENV !== 'production' &&
+        process.env.DEFAULT_TENANT_ID
+      ) {
+        baTenant = {
+          tenantId: process.env.DEFAULT_TENANT_ID,
+          slug: process.env.DEFAULT_TENANT_SLUG || 'default',
+          status: 'active',
+        };
+      }
+      if (!baTenant) {
+        reply.raw.statusCode = 403;
+        reply.raw.setHeader('content-type', 'application/json');
+        reply.raw.end(
+          JSON.stringify({ message: 'Tenant context is required' }),
+        );
+        return;
+      }
+      tenantStorage.enterWith(baTenant);
       const rawBody = await new Promise<string>((resolve) => {
         if (['GET', 'HEAD', 'DELETE'].includes(request.method))
           return resolve('');

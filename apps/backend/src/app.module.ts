@@ -112,6 +112,9 @@ import { BackupModule } from './backup/backup.module';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { SecurityDashboardModule } from './security-dashboard/security-dashboard.module';
 import { TenancyModule } from './tenancy/tenancy.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
+import { TenantMiddleware } from './tenancy/tenant.middleware';
+import { TenantGuard } from './tenancy/tenant.guard';
 
 @Module({
   imports: [
@@ -119,6 +122,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
     RateLimitModule,
     SecurityDashboardModule,
     PrismaModule,
+    FeatureFlagsModule,
     JwtModule.register({}),
     AuthModule,
     UsersModule,
@@ -228,6 +232,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
         transform: true,
       }),
     },
+    { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: DualModeAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: FeatureGuard },
@@ -236,6 +241,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
+    consumer.apply(TenantMiddleware).forRoutes('*');
     consumer.apply(NoStoreMiddleware).forRoutes('*');
     consumer.apply(CorrelationIdMiddleware).forRoutes('*');
     consumer

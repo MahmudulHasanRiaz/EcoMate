@@ -3,62 +3,61 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
-import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
+import { getTenantContext } from '../tenancy/tenant-context';
+import { TenantPrismaManager } from '../tenancy/tenant-prisma.manager';
+import { createTenantPrismaProxy } from '../tenancy/tenant-prisma.proxy';
+
+const FALLBACK_TENANT_ID = '00000000-0000-4000-8000-000000000000';
 
 /**
- * Transitional tenant-database client.
+ * Request-scoped tenant database facade.
  *
- * The SaaS target uses TenantPrismaManager + the request-scoped proxy. This
- * class keeps the current app bootable during the schema/runtime migration:
- * every connection carries a default tenant GUC so RLS is already active.
- * Once the TenantMiddleware is applied, the proxy replaces this client.
+ * The object returned from the constructor is a Proxy over this instance:
+ * model delegates and $transaction are resolved from TenantPrismaManager for
+ * the current request's tenant. Every pooled connection carries
+ * `app.tenant_id`, so PostgreSQL RLS is the final isolation boundary.
+ *
+ * DEFAULT_TENANT_ID is a development/maintenance bridge for requests that
+ * intentionally have no tenant context (health, backup control, queued jobs
+ * until the tenant fan-out lands). Production request paths must resolve a
+ * tenant in TenantMiddleware.
  */
 @Injectable()
-export class PrismaService
-  extends PrismaClient
-  implements OnModuleInit, OnModuleDestroy
-{
+export class PrismaService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
+  private readonly manager: TenantPrismaManager;
 
-  constructor() {
-    const connectionString =
-      process.env.TENANT_DATABASE_URL || process.env.DATABASE_URL;
-    if (!connectionString) {
-      throw new Error(
-        'TENANT_DATABASE_URL (or DATABASE_URL) environment variable is not set',
-      );
-    }
+  constructor(@Optional() manager?: TenantPrismaManager) {
+    this.manager = manager ?? new TenantPrismaManager();
+    return createTenantPrismaProxy(this, this.manager, () =>
+      this.effectiveTenantId(),
+    ) as unknown as PrismaService;
+  }
 
-    const tenantId =
+  private effectiveTenantId(): string {
+    return (
+      getTenantContext()?.tenantId ||
       process.env.DEFAULT_TENANT_ID ||
-      '00000000-0000-4000-8000-000000000000';
-
-    const pool = new Pool({
-      connectionString,
-      max: 20,
-      idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 10_000,
-      options: `-c app.tenant_id=${tenantId}`,
-    });
-
-    super({ adapter: new PrismaPg(pool) });
+      FALLBACK_TENANT_ID
+    );
   }
 
-  async onModuleInit() {
-    await this.$connect();
-    this.logger.log('Tenant database connected (transitional default tenant)');
+  onModuleInit(): void {
+    // Tenant clients are created lazily; the manager owns their lifecycle.
   }
 
-  async onModuleDestroy() {
-    await this.$disconnect();
+  onModuleDestroy(): void {
+    // The manager (when Nest-injected) disconnects its clients.
   }
 
   /** Raw SQL escape hatch used by maintenance/health checks. */
   async rawQuery<T = any>(sql: string): Promise<T> {
-    return this.$queryRawUnsafe<T>(sql);
+    return this.manager
+      .getClient(this.effectiveTenantId())
+      .$queryRawUnsafe<T>(sql);
   }
 
   /** Restore is a platform-level operation; the tenant runtime never blocks on it. */
@@ -66,3 +65,6 @@ export class PrismaService
     return false;
   }
 }
+
+// Declaration merge: services keep using PrismaClient's delegate types.
+export interface PrismaService extends PrismaClient {}

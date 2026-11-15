@@ -2,8 +2,10 @@ import { Controller, Get, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
+import { SkipTenant } from '../tenancy/skip-tenant.decorator';
 
 @RateLimitPolicy('health')
+@SkipTenant()
 @Controller('health')
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);

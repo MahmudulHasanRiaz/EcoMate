@@ -51,8 +51,22 @@ export class TenantMiddleware implements NestMiddleware {
       }
     }
 
-    // Unknown tenant hosts are handled by the route-level not-found response
-    // once the middleware is enabled; until then, public routes must pass.
+    // Local development and maintenance routes have no tenant host. Keep a
+    // single-tenant bridge, but never allow an unmatched host in production.
+    const defaultTenantId = process.env.DEFAULT_TENANT_ID;
+    if (defaultTenantId && process.env.NODE_ENV !== 'production') {
+      runWithTenant(
+        {
+          tenantId: defaultTenantId,
+          slug: process.env.DEFAULT_TENANT_SLUG || 'default',
+          status: 'active',
+        },
+        next,
+      );
+      return;
+    }
+
+    // Unknown tenant hosts are handled by the route-level not-found response.
     next();
   }
 }

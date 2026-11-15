@@ -1,6 +1,6 @@
 # Phase 2D — Tenant schema swap (WIP checkpoint)
 
-**Date:** 2026-11-14
+**Date:** 2026-11-15
 **Branch:** `feat/saas-tenancy-swap` (do **not** merge yet)
 **Stable branch:** `feat/saas-multitenant` remains the verified-green checkpoint.
 
@@ -17,11 +17,17 @@
 - `Order.idempotencyKey`, counters, settings and other converted unique keys are tenant-composite.
 - Reads converted from `findUnique` to `findFirst` (RLS scopes the tenant); writes whose unique keys are tenant-composite use `tenantCompound({ ... })`.
 - Calls that still use a valid compound unique key (e.g. `warehouseId_code`, `orderItemId_cycleId`) were reverted to `findUnique` where needed.
-- `PrismaService` is a transitional default-tenant client:
-  - connection uses `TENANT_DATABASE_URL` (or `DATABASE_URL`) with `-c app.tenant_id=${DEFAULT_TENANT_ID}`;
-  - schema healing/boot seeding removed;
-  - `isRestoreWriteBlocked` is a platform-only no-op;
-  - `rawQuery` retained for maintenance/health callers.
+- `PrismaService` is now a request-scoped **proxy** over `TenantPrismaManager`:
+  - delegates and `$transaction` resolve the tenant client from the ALS context;
+  - every pooled connection carries `-c app.tenant_id=<tenant>`;
+  - `DEFAULT_TENANT_ID` is a dev/maintenance fallback only;
+  - schema healing/boot seeding removed; `isRestoreWriteBlocked` is a platform-only no-op.
+- Tenant runtime:
+  - global `TenantMiddleware` resolves tenant/custom/platform hosts before other middleware;
+  - global `TenantGuard` fails closed when no tenant context exists (`@SkipTenant` on health);
+  - development-only default-tenant fallback keeps localhost/dev tooling usable; production has no fallback;
+  - Better Auth's `baPrisma` proxy follows the same ALS context, and the `/api/better-auth/*` Fastify hook resolves the Host before handing the request to `auth.handler`.
+- Transitional `FeatureFlagsModule` provides the `FeatureFlagsService` globally (the old LicenseModule provided it); dev/test opens `*`, production stays closed until entitlements replace it.
 - Legacy `src/license` module and `LicenseGuard` removed; the old license models are not in the active schema.
 - Prisma seed/scripts excluded from `nest build` (`tsconfig.build.json`) because they still target the old single-tenant data model and will be replaced by tenant bootstrap/provisioning.
 
@@ -50,24 +56,32 @@ The two DB-backed marketing integration suites were migrated to the tenant schem
 
 Runbook: see `docs/saas/tenant-test-db.md`.
 
+## Runtime wiring (Phase 2D)
+
+Implemented and smoke-tested on the migrated test DB:
+
+- `PrismaService` proxy over `TenantPrismaManager`; tenant clients carry the RLS GUC.
+- `TenantMiddleware` + global `TenantGuard`; health is `@SkipTenant`; dev fallback is non-production only.
+- Per-tenant Better Auth adapter (`baPrisma` resolver + Host→ALS context in the Fastify hook).
+- Transitional global `FeatureFlagsModule` substitutes the removed LicenseModule provider.
+
+Smoke results (real HTTP, test DB + ephemeral Redis):
+
+| Request | Development (`NODE_ENV=development`) | Production (`NODE_ENV=production`) |
+| --- | --- | --- |
+| `GET /api/health` (unknown host) | 200 healthy | 200 healthy (`@SkipTenant`) |
+| `GET /api/products` (unknown host) | 200 `[]` | **403 Tenant context required** |
+| `GET /api/system-settings/branding` | 200 | (tenant-guarded) |
+| `GET /api/better-auth/get-session` | 200 `null` | **403 Tenant context required** |
+| `GET /api/products` (`acme.ecomate.bd`, empty registry) | 200 dev fallback | **403** |
+
+Full backend suite re-ran after this wiring: **6161 passed, 0 failed, 10 skipped**.
+
 ## Remaining work before merge
 
-1. Wire the real tenant runtime:
-   - `PrismaService` proxy over `TenantPrismaManager`;
-   - `TenantMiddleware` + `TenantGuard` with `@SkipTenant` exemptions;
-   - per-tenant Better Auth factory + `baPrisma` proxy.
-2. Re-run the full suite + the Phase 2A RLS smoke against that runtime.
-3. Merge the swap branch into `feat/saas-multitenant`; then Phase 3 (entitlements/license removal).
-
-## Next steps
-
-1. Finish mock alignment (prefer a shared `findFirst`/`findUnique` mock alias helper) and re-run the backend suite.
-2. Add the tenant Jest context harness (`DEFAULT_TENANT_ID` + ALS) and the two-tenant isolation suite.
-3. Wire the real tenant runtime:
-   - `PrismaService` proxy over `TenantPrismaManager`;
-   - `TenantMiddleware` + `TenantGuard` with `@SkipTenant` exemptions;
-   - per-tenant Better Auth factory and `baPrisma` proxy.
-4. Re-run the Phase 2A RLS smoke test against the active migration set.
-5. Only then merge the swap branch into `feat/saas-multitenant` and proceed to Phase 3 (entitlements/license removal).
+1. Feed the production tenant registry (`PLATFORM_API_URL` + `INTERNAL_SERVICE_SECRET` / Redis pub-sub) and add a two-tenant runtime isolation test.
+2. Tenant fan-out for queue workers/interval jobs (currently they use the default-tenant bridge).
+3. Add the RLS coverage startup gate (`rls_coverage` view) and carry it into the deployment check.
+4. Merge the swap branch into `feat/saas-multitenant`; then Phase 3 (entitlements/license removal).
 
 > The stable `feat/saas-multitenant` branch (Phase 0–2C, green build + 26/20 unit suites) is unchanged. This branch is the working swap; it should stay separate until the test suite and runtime are green.
