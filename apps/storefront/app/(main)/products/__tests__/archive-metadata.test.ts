@@ -9,7 +9,7 @@ function mockBackend() {
     const body = (obj: any) =>
       ({ ok: true, text: async () => JSON.stringify(obj), json: async () => obj }) as any;
     if (url.includes('/system-settings/storefront')) return body({ store: { name: 'EcoMate' } });
-    if (url.includes('/license/status')) return body({ active: true, features: [], message: '' });
+    if (url.includes('/entitlements/public')) return body({ planName: 'Test', features: [], accessState: 'full' });
     if (url.includes('/categories')) return body([{ id: 'c1', name: 'Panjabi', slug: 'panjabi' }]);
     if (url.includes('/brands')) return body([{ id: 'b1', name: 'Aarong', slug: 'aarong' }]);
     throw new Error(`unexpected fetch: ${url}`);

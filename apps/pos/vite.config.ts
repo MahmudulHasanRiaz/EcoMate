@@ -51,10 +51,10 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       VitePWA({
         registerType: "autoUpdate",
-        // Registration is performed in main.tsx only after the public license
+        // Registration is performed in main.tsx only after the public plan
         // status has explicitly granted mobile distribution.
         injectRegister: false,
-        // Branding/license-aware manifest is served by the backend through the
+        // Branding/plan-aware manifest is served by the backend through the
         // same-origin /api proxy. Do not inject a second static manifest.
         manifest: false,
         workbox: {

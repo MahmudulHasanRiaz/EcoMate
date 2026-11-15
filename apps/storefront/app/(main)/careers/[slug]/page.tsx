@@ -4,7 +4,7 @@ import { ArrowLeft, MapPin, Clock, DollarSign, CalendarDays, Briefcase } from "l
 import { getCmsPageBySlug } from "@/lib/api/cms-pages";
 import { formatJobSalary, getJobBySlug } from "@/lib/api/jobs";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
-import { hasLicenseFeature } from "@/lib/api/storefront-config";
+import { hasPlanFeature } from "@/lib/api/storefront-config";
 import { pageMetadata } from "@/lib/metadata";
 import ApplyForm from "./apply-form";
 
@@ -24,8 +24,8 @@ export default async function CareerDetailPage({ params }: { params: Promise<{ s
 
   const cms = await getCmsPageBySlug("careers").catch(() => null);
   const applyEmail = ((cms?.config as Record<string, any> | null)?.application?.email || "").trim();
-  const storefrontConfig = await getStorefrontConfigServer().catch(() => ({ licenseFeatures: [] as string[] }));
-  const canApply = hasLicenseFeature(storefrontConfig, 'admin_hr_careers');
+  const storefrontConfig = await getStorefrontConfigServer().catch(() => ({ planFeatures: [] as string[] }));
+  const canApply = hasPlanFeature(storefrontConfig, 'admin_hr_careers');
   const salary = formatJobSalary(job);
 
   return (

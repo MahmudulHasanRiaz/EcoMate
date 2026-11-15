@@ -10,7 +10,7 @@ import {
   getTopProductSlugsServer,
 } from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
-import { hasLicenseFeature } from "@/lib/api/storefront-config";
+import { hasPlanFeature } from "@/lib/api/storefront-config";
 import { toMetaDescription } from "@/lib/strip-html";
 import { sanitizeProductHTML } from "@/lib/sanitize-product";
 import { stringifyForScript } from "@/lib/safe-json";
@@ -186,7 +186,7 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
     let customizationEnabled = false;
     try {
       const cfg = await getStorefrontConfigServer();
-      customizationEnabled = hasLicenseFeature(cfg as any, 'product-customization');
+      customizationEnabled = hasPlanFeature(cfg as any, 'product-customization');
     } catch {}
     const ratingValue = product.averageRating || product.rating || 0;
     const reviewCount = product.reviewCount || 0;

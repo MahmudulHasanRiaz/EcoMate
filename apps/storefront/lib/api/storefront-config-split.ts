@@ -18,13 +18,11 @@ import type { StorefrontConfig } from "./storefront-config";
  *  - menu (header/mobile/footer trees) — header + footer render them
  *  - hero — homepage hero is above the fold
  *  - meta / tiktok — TrackingScripts injects pixels on mount
- *  - features / licenseFeatures / delivery / systems /
+ *  - features / planFeatures / delivery / systems /
  *    catalogImageRatio — gates + announcement bar + card aspect ratio
  *    are all first-paint decisions
  *  - footer / hours / company — footer renders them
  *  - _mediaMeta — hero/category imagery derivatives for first paint
- *  - _licenseActive / _licenseMessage — layout gate (server-only
- *    extras riding on the config object)
  *
  * DEFERRED (NOT inlined; the provider fetches the full config once on
  * mount through the existing cached `getStorefrontConfig()` client

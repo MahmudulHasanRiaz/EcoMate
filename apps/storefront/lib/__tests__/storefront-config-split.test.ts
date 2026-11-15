@@ -45,7 +45,7 @@ function fullConfig(): StorefrontConfig {
     shippingZones: [{ id: 'z1', type: 'custom_amount', amount: 120, districts: Object.keys(districts), label: null }],
     features: { sizeChart: false, hideOosFromArchive: false, maintenanceMode: false, defaultVariantSelected: true, showReviews: true },
     thankYou: { title: 'Thanks', subtitle: '', description: '' },
-    licenseFeatures: ['*'],
+    planFeatures: ['*'],
     playStoreUrl: 'https://play.example',
     appStoreUrl: '',
     homepageSections: [{ id: '1', title: 'Featured', type: 'featured', limit: 4, enabled: true }],
@@ -63,7 +63,7 @@ describe('P2 storefront config split', () => {
     expect(critical.meta).toEqual(full.meta);
     expect(critical.hero).toEqual(full.hero);
     expect(critical.currency).toEqual(full.currency);
-    expect(critical.licenseFeatures).toEqual(full.licenseFeatures);
+    expect(critical.planFeatures).toEqual(full.planFeatures);
   });
 
   it('critical subset empties every deferred field (never undefined)', () => {

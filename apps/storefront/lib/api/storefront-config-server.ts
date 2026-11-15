@@ -3,8 +3,6 @@ import { serverFetch } from "../api-server";
 import type { StorefrontConfig } from "./storefront-config";
 import { getCategoriesServer } from "./products-server";
 
-const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-
 export class StorefrontConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -42,7 +40,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   thankYou: { title: '', subtitle: '', description: '' },
   playStoreUrl: '',
   appStoreUrl: '',
-  licenseFeatures: [],
+  planFeatures: [],
   homepageSections: [],
   // Fetch failure → fail-closed (noindex): the tenant is unknown, and
   // indexing wrong content is worse than a transient noindex.
@@ -82,19 +80,20 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
   config.searchIndexingEnabled =
     typeof rawIndexingFlag === 'boolean' ? rawIndexingFlag : true;
 
-  // Categories and license can be fetched in parallel — both independent of each other
-  const [categories, licenseStatus] = await Promise.all([
+  // Plan entitlements are the source of truth for storefront feature gates.
+  // The config payload already carries planFeatures; this call keeps the
+  // gates correct when the config response was served from an older cache.
+  const [categories, entitlements] = await Promise.all([
     getCategoriesServer(),
-    fetch(`${API_URL}/license/status`, {
-      next: { revalidate: 300, tags: ["config"] },
-      // F2 internal identity (server-only env; see lib/api-server.ts).
-      ...(process.env.INTERNAL_SHARED_SECRET
-        ? { headers: { 'x-internal-secret': process.env.INTERNAL_SHARED_SECRET } }
-        : {}),
-    })
-      .then(r => r.json())
-      .catch(() => ({ active: true, features: [], message: '' })),
+    serverFetch<{ features?: string[]; accessState?: string }>(
+      "/entitlements/public",
+      { next: { revalidate: 300, tags: ["config"] }, timeout: 5000 },
+    ).catch(() => null),
   ]);
+
+  if (entitlements?.features) {
+    config.planFeatures = entitlements.features;
+  }
 
   const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
 
@@ -230,12 +229,6 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
       if (mobileShowAll) config.menu.mobile = injectCategories(config.menu.mobile);
     }
   }
-
-  config.licenseFeatures = licenseStatus.features || [];
-
-  // Expose license status on config for root layout (avoids duplicate fetch)
-  (config as any)._licenseActive = licenseStatus?.active ?? true;
-  (config as any)._licenseMessage = licenseStatus?.message || '';
 
   return config;
 });

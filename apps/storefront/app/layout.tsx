@@ -13,7 +13,7 @@ import { Toaster } from "sonner";
 import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
 import { pickCriticalConfig } from "@/lib/api/storefront-config-split";
 import { BUILD_ORIGIN_PLACEHOLDER, canonicalDomainFromConfig, envSiteUrl } from "@/lib/site-url";
-import { hasLicenseFeature } from "@/lib/api/storefront-config";
+import { hasPlanFeature } from "@/lib/api/storefront-config";
 import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
 import { stringifyForScript } from "@/lib/safe-json";
@@ -114,11 +114,8 @@ export default async function RootLayout({
     }
   }
 
-  // License status comes from getStorefrontConfigServer() — no duplicate fetch needed
-  const licenseActive = (initialConfig as any)?._licenseActive ?? true;
-  const licenseMessage = (initialConfig as any)?._licenseMessage ?? '';
-  const licenseFeatures: string[] = (initialConfig as any)?.licenseFeatures ?? [];
-  const hasMobileDistro = hasLicenseFeature({ licenseFeatures }, 'mobile_distribution');
+  const planFeatures: string[] = (initialConfig as any)?.planFeatures ?? [];
+  const hasMobileDistro = hasPlanFeature({ planFeatures }, 'mobile_distribution');
 
   const BASE_URL =
     canonicalDomainFromConfig(initialConfig) ||
@@ -252,21 +249,6 @@ export default async function RootLayout({
                   >
                     Refresh Page
                   </a>
-                </div>
-              </div>
-            ) : !licenseActive ? (
-              <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">
-                <div className="max-w-md bg-white rounded-[32px] p-10 border border-gray-100/80 shadow-[0_8px_30px_rgb(0,0,0,0.03)]">
-                  <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                  </div>
-                  <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-3">License Required</h1>
-                  <p className="text-gray-600 text-sm mb-6 leading-relaxed">
-                    {licenseMessage || 'This EcoMate installation requires a valid license. Please contact your administrator or service provider to activate your license.'}
-                  </p>
                 </div>
               </div>
             ) : initialConfig?.features?.maintenanceMode ? (

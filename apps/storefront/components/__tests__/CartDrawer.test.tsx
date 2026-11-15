@@ -26,7 +26,7 @@ const CONFIG = {
   delivery: { freeDeliveryMin: 0 },
   features: {},
   menu: { header: { items: [] }, mobile: { items: [] }, footer: { columns: [] } },
-  licenseFeatures: [],
+  planFeatures: [],
 } as unknown as StorefrontConfig;
 
 const ITEM: CartItem = { id: 'p1', name: 'Test Product', price: 100, quantity: 1 };

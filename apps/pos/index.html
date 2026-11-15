@@ -48,7 +48,7 @@
     </script>
 
     <!--
-      Resolve the license gate before main.tsx can register the POS service
+      Resolve the plan gate before main.tsx can register the POS service
       worker. A failed/unknown check leaves existing offline support alone but
       never creates a new registration. An explicit denial removes only the
       POS-scoped worker and manifest.
@@ -102,7 +102,7 @@
             if (controller) controller.abort();
           }, 8000);
 
-          window.__POS_PWA_LICENSE__ = fetch(apiBase + "/license/status", {
+          window.__POS_PWA_PLAN__ = fetch(apiBase + "/entitlements/public", {
             credentials: "include",
             cache: "no-store",
             signal: controller ? controller.signal : undefined,
@@ -114,8 +114,12 @@
               window.clearTimeout(timeout);
               if (!data) return false;
               var features = data.features || [];
+              var writable =
+                data.accessState == null ||
+                data.accessState === "full" ||
+                data.accessState === "grace";
               var allowed =
-                data.active === true &&
+                writable &&
                 (features.indexOf("*") !== -1 ||
                   features.indexOf("mobile_distribution") !== -1);
               if (!allowed) {
@@ -130,7 +134,7 @@
               return false;
             });
         } catch (_) {
-          window.__POS_PWA_LICENSE__ = Promise.resolve(false);
+          window.__POS_PWA_PLAN__ = Promise.resolve(false);
         }
       })();
     </script>

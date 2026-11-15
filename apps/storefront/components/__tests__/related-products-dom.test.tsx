@@ -22,7 +22,7 @@ const CONFIG = {
   order: { whatsapp: '', callNumber: '' },
   social: { whatsapp: '' },
   store: { phone: '' },
-  licenseFeatures: [],
+  planFeatures: [],
 } as unknown as StorefrontConfig;
 
 const card = (id: string, name: string): ProductCardData => ({

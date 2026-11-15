@@ -58,9 +58,9 @@ describe('products-server request memoization (P0-2)', () => {
   });
 
   it('getRelatedProductsServer mirrors the client logic on the server (excludes self, tag-first, max 8)', async () => {
-    // license/status uses raw global fetch inside getStorefrontConfigServer — stub it.
+    // /entitlements/public uses raw global fetch inside getStorefrontConfigServer — stub it.
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
-      json: async () => ({ active: true, features: [], message: '' }),
+      json: async () => ({ planName: 'Test', features: [], accessState: 'full' }),
     }) as any);
     mocked.mockImplementation(async (url: string) => {
       if (String(url).startsWith('/products?') || String(url) === '/products') {

@@ -162,7 +162,7 @@ export interface StorefrontConfig {
     defaultVariantSelected: boolean;
     showReviews: boolean;
   };
-  licenseFeatures: string[];
+  planFeatures: string[];
   playStoreUrl: string;
   appStoreUrl: string;
   /**
@@ -186,8 +186,8 @@ export interface StorefrontConfig {
   canonicalDomain?: string;
 }
 
-export function hasLicenseFeature(config: { licenseFeatures?: string[] } | null | undefined, key: string): boolean {
-  const features = config?.licenseFeatures;
+export function hasPlanFeature(config: { planFeatures?: string[] } | null | undefined, key: string): boolean {
+  const features = config?.planFeatures;
   if (!features) return false;
   // '*' opens every feature (Special Custom Plan) — every consumer must go
   // through this helper instead of a bare .includes(key).

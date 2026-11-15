@@ -8,7 +8,7 @@ import "./index.css";
 
 declare global {
   interface Window {
-    __POS_PWA_LICENSE__?: Promise<boolean>;
+    __POS_PWA_PLAN__?: Promise<boolean>;
   }
 }
 
@@ -55,7 +55,7 @@ const queryClient = new QueryClient({
   },
 });
 
-void (window.__POS_PWA_LICENSE__ ?? Promise.resolve(false)).then((allowed) => {
+void (window.__POS_PWA_PLAN__ ?? Promise.resolve(false)).then((allowed) => {
   if (!allowed) return;
   registerSW({ immediate: true });
 });

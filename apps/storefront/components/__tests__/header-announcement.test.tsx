@@ -23,7 +23,7 @@ const CONFIG = {
   order: { whatsapp: '', callNumber: '' },
   social: { whatsapp: '' },
   store: { name: 'EcoMate', phone: '' },
-  licenseFeatures: [],
+  planFeatures: [],
 } as unknown as StorefrontConfig;
 
 function renderHeader(config: any = CONFIG) {

@@ -21,7 +21,7 @@ const CONFIG = {
   order: { whatsapp: '', callNumber: '' },
   social: { whatsapp: '' },
   store: { phone: '' },
-  licenseFeatures: [],
+  planFeatures: [],
 } as unknown as StorefrontConfig;
 
 const saleProduct = {

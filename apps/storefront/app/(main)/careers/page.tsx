@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { getCmsPageBySlug } from "@/lib/api/cms-pages";
 import { getJobs } from "@/lib/api/jobs";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
-import { hasLicenseFeature } from "@/lib/api/storefront-config";
+import { hasPlanFeature } from "@/lib/api/storefront-config";
 import CareersTemplate from "@/lib/templates/pages/careers";
 import { preFormattedPageMetadata } from "@/lib/templates/render-page";
 
@@ -23,8 +23,8 @@ export default async function CareersPage() {
 
   // Licence-fetch failure yields features: [] — the safe default is the
   // mailto CTA, so a KeyMate outage never blanks the page.
-  const storefrontConfig = await getStorefrontConfigServer().catch(() => ({ licenseFeatures: [] as string[] }));
-  const canApply = hasLicenseFeature(storefrontConfig, 'admin_hr_careers');
+  const storefrontConfig = await getStorefrontConfigServer().catch(() => ({ planFeatures: [] as string[] }));
+  const canApply = hasPlanFeature(storefrontConfig, 'admin_hr_careers');
 
   return <CareersTemplate config={config} jobs={jobs} canApply={canApply} />;
 }

@@ -23,7 +23,7 @@ describe('WishlistPage — hook ordering', () => {
     const body = text.slice(start)
 
     const guardAt = body.indexOf(
-      "if (!hasLicenseFeature(config, 'storefront_wishlist')) {",
+      "if (!hasPlanFeature(config, 'storefront_wishlist')) {",
     )
     expect(guardAt).toBeGreaterThan(-1)
 
