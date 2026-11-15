@@ -48,6 +48,13 @@ enum TenantDomainStatus {
   DISABLED
 }
 
+enum SignupStatus {
+  PENDING_EMAIL
+  VERIFIED
+  EXPIRED
+  CANCELLED
+}
+
 enum BillingInterval {
   MONTHLY
   YEARLY
@@ -193,6 +200,30 @@ model TenantDomain {
 
   @@index([tenantId, isPrimary])
   @@index([status])
+}
+
+/// Public signup request, before the tenant/provisioning rows exist.
+/// Email verification proves ownership of the owner address; the raw token is
+/// only ever sent by email, and only its SHA-256 hash is stored here.
+model SignupRequest {
+  id                    String       @id @default(uuid())
+  tenantName            String
+  slug                  String
+  ownerEmail            String
+  ownerPhone            String?
+  passwordHash          String
+  status                SignupStatus @default(PENDING_EMAIL)
+  verificationTokenHash String?      @unique
+  verificationExpiresAt DateTime?
+  verifiedAt            DateTime?
+  ipAddress             String?
+  userAgent             String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@index([slug, status])
+  @@index([ownerEmail, status])
+  @@index([status, createdAt])
 }
 
 model Feature {

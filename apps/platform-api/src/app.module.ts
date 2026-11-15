@@ -8,6 +8,7 @@ import { HealthModule } from './health/health.module';
 import { InternalModule } from './internal/internal.module';
 import { PlansModule } from './plans/plans.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SignupModule } from './signup/signup.module';
 import { TenantsModule } from './tenants/tenants.module';
 
 @Module({
@@ -21,6 +22,7 @@ import { TenantsModule } from './tenants/tenants.module';
     HealthModule,
     InternalModule,
     PlansModule,
+    SignupModule,
     TenantsModule,
   ],
 })

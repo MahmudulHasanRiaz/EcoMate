@@ -37,6 +37,7 @@
     "rxjs": "^7.8.1",
     "uuid": "^14.0.0",
     "dotenv": "^17.4.1",
+    "nodemailer": "10.1.4",
     "bcryptjs": "^3.0.3",
     "@ecomate/shared-types": "*"
   },
@@ -52,6 +53,7 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
     "@types/bcryptjs": "^2.4.6",
+    "@types/nodemailer": "^8.0.2",
     "tsx": "^4.22.1"
   },
   "jest": {

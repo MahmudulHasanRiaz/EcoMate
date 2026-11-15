@@ -11,6 +11,8 @@
   ],
   "scripts": {
     "admin:dev": "npm run dev --workspace=admin",
+    "landing:dev": "npm run dev --workspace=landing",
+    "landing:build": "npm run build --workspace=landing",
     "storefront:dev": "npm run dev --workspace=storefront",
     "backend:dev": "npm run start:dev --workspace=backend",
     "pos:dev": "npm run dev --workspace=pos",
