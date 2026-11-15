@@ -1,4 +1,6 @@
 import { tenantCompound } from '../tenancy/tenant-context';
+import { runPerTenant } from '../tenancy/tenant-job';
+import { TenantRegistryService } from '../tenancy/tenant-registry.service';
 import {
   Injectable,
   OnModuleInit,
@@ -6,6 +8,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePhone } from '../common/utils/phone-utils';
@@ -15,7 +18,11 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BlockedEntriesService.name);
   private expireInterval: ReturnType<typeof setInterval>;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly tenantRegistry?: TenantRegistryService,
+  ) {}
 
   onModuleInit() {
     this.expireInterval = setInterval(() => {
@@ -335,19 +342,21 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async lazyExpire() {
-    if (await this.prisma.isRestoreWriteBlocked()) return;
+    await runPerTenant(this.tenantRegistry, async () => {
+      if (await this.prisma.isRestoreWriteBlocked()) return;
 
-    const now = new Date();
-    await this.prisma.blockedIp.updateMany({
-      where: { isActive: true, expiresAt: { lte: now } },
-      data: { isActive: false },
-    });
+      const now = new Date();
+      await this.prisma.blockedIp.updateMany({
+        where: { isActive: true, expiresAt: { lte: now } },
+        data: { isActive: false },
+      });
 
-    if (await this.prisma.isRestoreWriteBlocked()) return;
+      if (await this.prisma.isRestoreWriteBlocked()) return;
 
-    await this.prisma.blockedPhone.updateMany({
-      where: { isActive: true, expiresAt: { lte: now } },
-      data: { isActive: false },
+      await this.prisma.blockedPhone.updateMany({
+        where: { isActive: true, expiresAt: { lte: now } },
+        data: { isActive: false },
+      });
     });
   }
 }

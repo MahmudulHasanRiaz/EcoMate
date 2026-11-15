@@ -112,6 +112,12 @@ Converted end to end (producer + processor):
 - `email` — per-tenant SMTP settings now resolve under the job's tenant;
 - `courier-settlement-import` — background commit runs in the invoice's tenant.
 
+Converted interval sweeps (per-tenant, failure-isolated via `runPerTenant`):
+
+- `blocked-entries.lazyExpire` (60 s);
+- `auth` expired refresh-token cleanup (1 h + boot);
+- `webhook-attempt` retention cleanup (24 h + boot).
+
 The full suite is green after these changes. The shared mechanism is ready for the
 remaining queues and interval sweeps.
 
@@ -121,10 +127,10 @@ remaining queues and interval sweeps.
    marketing sync, security-events (and the missing `security-aggregate` consumer),
    import stub, and the platform-level backup queue. Each needs a tenant payload,
    `TenantWorkerHost`, and tenant-aware repeatable keys.
-2. **Interval sweeps** — blocked-entries expiry, auth refresh-token cleanup,
-   webhook-attempt cleanup, security/tracking retention, media recover/backfill and
-   the tracking outbox relay. These cross-tenant `updateMany`/`deleteMany`/raw claims
-   must iterate active tenants via `runPerTenant` (or be explicitly system-scoped).
+2. **Remaining interval sweeps** — security/tracking retention, media recover/backfill,
+   the tracking outbox relay and marketing repeatables. These cross-tenant
+   `updateMany`/`deleteMany`/raw claims must iterate active tenants via `runPerTenant`
+   (or be explicitly system-scoped).
 3. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
    `INTERNAL_SERVICE_SECRET`) and add custom-domain DNS/verification coverage; the
    endpoint/refresh contract itself is verified.

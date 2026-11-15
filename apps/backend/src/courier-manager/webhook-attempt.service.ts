@@ -1,4 +1,6 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { runPerTenant } from '../tenancy/tenant-job';
+import { TenantRegistryService } from '../tenancy/tenant-registry.service';
+import { Injectable, Optional, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebhookAttemptOutcome, WebhookAttemptStage } from '@prisma/client';
 
@@ -39,7 +41,11 @@ export class WebhookAttemptService implements OnModuleInit, OnModuleDestroy {
   private readonly CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // every 24 hours
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly tenantRegistry?: TenantRegistryService,
+  ) {}
 
   onModuleInit() {
     // First cleanup after 1 hour (gives system time to start)
@@ -245,14 +251,18 @@ export class WebhookAttemptService implements OnModuleInit, OnModuleDestroy {
   async cleanupOldAttempts(): Promise<number> {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
+    let total = 0;
 
-    const result = await this.prisma.webhookAttempt.deleteMany({
-      where: { receivedAt: { lt: cutoff } },
+    await runPerTenant(this.tenantRegistry, async () => {
+      const result = await this.prisma.webhookAttempt.deleteMany({
+        where: { receivedAt: { lt: cutoff } },
+      });
+      total += result.count;
     });
 
-    if (result.count > 0) {
-      this.logger.log(`Cleaned up ${result.count} webhook attempts older than ${RETENTION_DAYS} days`);
+    if (total > 0) {
+      this.logger.log(`Cleaned up ${total} webhook attempts older than ${RETENTION_DAYS} days`);
     }
-    return result.count;
+    return total;
   }
 }

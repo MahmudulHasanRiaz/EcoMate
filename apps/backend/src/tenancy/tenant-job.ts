@@ -77,12 +77,12 @@ export abstract class TenantWorkerHost<
  * Dev fallback keeps local single-tenant intervals useful.
  */
 export async function runPerTenant(
-  registry: TenantRegistryService,
+  registry: TenantRegistryService | null | undefined,
   fn: (tenant: { id: string; slug: string; status: string }) => Promise<void>,
   onError?: (tenantId: string, error: unknown) => void,
 ): Promise<{ succeeded: number; failed: number }> {
-  const tenants = registry
-    .list()
+  const tenants = (registry?.list() ?? [])
+
     .filter((tenant) => tenant.status === 'active')
     .map((tenant) => ({
       id: tenant.id,
@@ -90,16 +90,17 @@ export async function runPerTenant(
       status: tenant.status,
     }));
 
-  if (
-    tenants.length === 0 &&
-    process.env.NODE_ENV !== 'production' &&
-    process.env.DEFAULT_TENANT_ID
-  ) {
-    tenants.push({
-      id: process.env.DEFAULT_TENANT_ID,
-      slug: process.env.DEFAULT_TENANT_SLUG || 'default',
-      status: 'active',
-    });
+  if (tenants.length === 0 && process.env.NODE_ENV !== 'production') {
+    const defaultId =
+      process.env.DEFAULT_TENANT_ID ||
+      (process.env.NODE_ENV === 'test' ? FALLBACK_TENANT_ID : undefined);
+    if (defaultId) {
+      tenants.push({
+        id: defaultId,
+        slug: process.env.DEFAULT_TENANT_SLUG || 'default',
+        status: 'active',
+      });
+    }
   }
 
   let succeeded = 0;

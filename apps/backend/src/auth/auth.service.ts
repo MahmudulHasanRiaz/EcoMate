@@ -1,6 +1,7 @@
 import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
+  Optional,
   UnauthorizedException,
   ConflictException,
   BadRequestException,
@@ -12,6 +13,8 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { randomInt, randomUUID, createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { runPerTenant } from '../tenancy/tenant-job';
+import { TenantRegistryService } from '../tenancy/tenant-registry.service';
 import { EmailService } from '../email/email.service';
 import { baPrisma } from '../better-auth/prisma';
 import { hashPassword } from 'better-auth/crypto';
@@ -38,6 +41,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
+    @Optional()
+    private readonly tenantRegistry?: TenantRegistryService,
   ) {}
 
   async onModuleInit() {
@@ -59,14 +64,16 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async cleanupExpiredTokens() {
-    if (await this.prisma.isRestoreWriteBlocked()) return;
+    await runPerTenant(this.tenantRegistry, async () => {
+      if (await this.prisma.isRestoreWriteBlocked()) return;
 
-    const { count } = await this.prisma.refreshToken.deleteMany({
-      where: { expiresAt: { lt: new Date() } },
+      const { count } = await this.prisma.refreshToken.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      });
+      if (count > 0) {
+        this.logger.log(`Cleaned up ${count} expired refresh token(s)`);
+      }
     });
-    if (count > 0) {
-      this.logger.log(`Cleaned up ${count} expired refresh token(s)`);
-    }
   }
 
   async register(dto: RegisterDto) {
