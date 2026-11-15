@@ -22,6 +22,7 @@ describe('DomainConfigService', () => {
     delete process.env.SAAS_FALLBACK_DOMAIN;
     delete process.env.SAAS_CUSTOM_DOMAIN_CNAME;
     delete process.env.SAAS_ALLOW_EXTERNAL_FALLBACK;
+    delete process.env.SAAS_PRIMARY_UNHEALTHY;
   });
 
   afterAll(() => {
@@ -145,5 +146,60 @@ describe('DomainConfigService', () => {
     expect(service.absoluteUrl('acme', '/admin/')).toBe(
       'https://acme.ecomate.bd/admin/',
     );
+  });
+
+  it('uses the fallback base for new absolute URLs when the primary is unhealthy', async () => {
+    process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd,alias.example';
+    process.env.SAAS_FALLBACK_DOMAIN = 'alias.example';
+    process.env.SAAS_PRIMARY_UNHEALTHY = 'true';
+
+    const service = buildService();
+    await service.onModuleInit();
+
+    expect(service.isPrimaryHealthy()).toBe(false);
+    expect(service.effectiveBaseDomain()).toBe('alias.example');
+    expect(service.absoluteUrl('acme', '/invoice/1')).toBe(
+      'https://acme.alias.example/invoice/1',
+    );
+    // The canonical host does not move: only new links use the fallback.
+    expect(service.canonicalHost('acme')).toBe('acme.ecomate.bd');
+    // A verified custom domain still wins over the fallback.
+    expect(service.absoluteUrl('acme', '/', 'shop.example.com')).toBe(
+      'https://shop.example.com/',
+    );
+  });
+
+  it('keeps the primary base when it is healthy', async () => {
+    process.env.SAAS_FALLBACK_DOMAIN = 'alias.example';
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd,alias.example';
+
+    const service = buildService();
+    await service.onModuleInit();
+
+    expect(service.effectiveBaseDomain()).toBe('ecomate.bd');
+    expect(service.absoluteUrl('acme', '/')).toBe('https://acme.ecomate.bd/');
+  });
+
+  it('treats an explicitly allowed external fallback as a tenant alias base', async () => {
+    process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+    process.env.SAAS_FALLBACK_DOMAIN = 'fallback.example';
+    process.env.SAAS_ALLOW_EXTERNAL_FALLBACK = 'true';
+
+    const service = buildService();
+    await service.onModuleInit();
+
+    expect(service.getConfig().baseDomains).toEqual([
+      'ecomate.bd',
+      'fallback.example',
+    ]);
+    expect(service.resolveHost('acme.fallback.example')).toMatchObject({
+      kind: 'tenant',
+      slug: 'acme',
+      baseDomain: 'fallback.example',
+      canonicalHost: 'acme.ecomate.bd',
+      isAlias: true,
+    });
   });
 });

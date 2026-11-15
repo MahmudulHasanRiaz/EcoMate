@@ -7,7 +7,7 @@ push; the checkbox is ticked in the same commit.
 - [x] 1. Storefront/admin/POS host→tenant resolution + SSR tenant header
 - [x] 2. Base-domain aliases + canonical 301 + alias noindex
 - [x] 3. Custom-domain add/verify + DNS polling + Caddy on-demand TLS ask endpoint
-- [ ] 4. Fallback-domain behavior + absolute URLs/health; unknown host must never route to a tenant
+- [x] 4. Fallback-domain behavior + absolute URLs/health; unknown host must never route to a tenant
 - [ ] 5. Tenant-scoped cache tags/revalidation + no cross-host leakage
 - [ ] 6. Two-tenant browser E2E + custom-domain mock E2E
 
@@ -93,3 +93,30 @@ push; the checkbox is ticked in the same commit.
   already exist in the platform baseline).
 - Caveat: the platform UI for adding/managing custom domains is API-only until
   the platform-admin app lands; domain verification ships without it.
+
+### 4. Fallback domain + absolute URLs/health + unknown-host isolation — DONE
+
+- Fallback is now a real alias base everywhere: the platform config, tenant
+  backend resolver and storefront resolver all append an explicitly allowed
+  external `SAAS_FALLBACK_DOMAIN` to the base-domain loop, so `{slug}.<fallback>`
+  resolves to the same tenant.
+- Primary outage mode (`SAAS_PRIMARY_UNHEALTHY=true`): platform
+  `absoluteUrl`/`tenantHost` use `{slug}.<fallback>` for NEW links (emails,
+  invoices, resets) while `canonicalHost` stays canonical; a verified custom
+  domain still wins. Storefront redirects use the fallback host and the fallback
+  host itself is served instead of redirected, so visitors are never bounced to
+  an unreachable primary.
+- Health: `GET /api/health` now reports the domain block (primary/base/fallback,
+  custom CNAME, platform hosts, `primaryHealthy`, `effectiveBaseDomain`) and
+  returns `degraded` when the primary is unhealthy and no fallback exists.
+- Unknown hosts: new registry-only `GET /api/tenants/resolve?host=` (public,
+  `@SkipTenant`) resolves tenant subdomains, alias bases and verified custom
+  domains; everything else is 404, and platform/base hosts are never a tenant.
+  In production the storefront proxy 404s unknown hosts (60s cache), 404s
+  platform/base hosts without a lookup, serves verified custom domains, and
+  falls open only when the backend registry is unreachable (availability; SSR
+  still fails closed without a tenant context). Dev behaviour is unchanged.
+- Env: `SAAS_PRIMARY_UNHEALTHY` wired through compose/portainer/env examples.
+- Acceptance: backend 6245 passed / 10 skipped / 0 failed, `nest build` clean;
+  platform-api 60/60, build clean; storefront 689/689, `tsc` clean, `next build`
+  exit 0; `docker compose config` valid.

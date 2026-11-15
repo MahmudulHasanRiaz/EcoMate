@@ -69,4 +69,25 @@ describe('tenant host resolution', () => {
       'shop.example.com',
     );
   });
+
+  it('treats an explicitly allowed external fallback as an alias base', () => {
+    const externalFallback = readTenantDomainConfig({
+      SAAS_PRIMARY_DOMAIN: 'ecomate.bd',
+      SAAS_BASE_DOMAINS: 'ecomate.bd',
+      SAAS_FALLBACK_DOMAIN: 'fallback.example',
+      SAAS_ALLOW_EXTERNAL_FALLBACK: 'true',
+    } as NodeJS.ProcessEnv);
+
+    expect(externalFallback.baseDomains).toEqual([
+      'ecomate.bd',
+      'fallback.example',
+    ]);
+    expect(resolveTenantHost('acme.fallback.example', externalFallback)).toMatchObject({
+      kind: 'tenant',
+      slug: 'acme',
+      baseDomain: 'fallback.example',
+      canonicalHost: 'acme.ecomate.bd',
+      isAlias: true,
+    });
+  });
 });

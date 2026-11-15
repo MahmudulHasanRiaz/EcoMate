@@ -49,10 +49,19 @@ export function readTenantDomainConfig(
     .split(',')
     .map((domain) => normaliseDomain(domain))
     .filter(Boolean);
-  const baseDomains =
-    configuredBases.length > 0 ? configuredBases : [primaryDomain];
   const fallbackDomain =
     normaliseDomain(env.SAAS_FALLBACK_DOMAIN ?? '') || undefined;
+  const allowExternalFallback = env.SAAS_ALLOW_EXTERNAL_FALLBACK === 'true';
+  const baseDomains =
+    configuredBases.length > 0 ? configuredBases : [primaryDomain];
+  // An explicitly allowed external fallback is also a valid alias base.
+  if (
+    fallbackDomain &&
+    allowExternalFallback &&
+    !baseDomains.includes(fallbackDomain)
+  ) {
+    baseDomains.push(fallbackDomain);
+  }
 
   return {
     primaryDomain,
@@ -61,7 +70,7 @@ export function readTenantDomainConfig(
     customDomainCname:
       normaliseHost(env.SAAS_CUSTOM_DOMAIN_CNAME ?? '') ||
       `cname.${primaryDomain}`,
-    allowExternalFallback: env.SAAS_ALLOW_EXTERNAL_FALLBACK === 'true',
+    allowExternalFallback,
     platformHosts: {
       landing: `www.${primaryDomain}`,
       platformAdmin: `saas.${primaryDomain}`,

@@ -13,6 +13,7 @@
     { "name": "SAAS_PRIMARY_DOMAIN", "label": "Primary SaaS domain (tenant canonical host: {slug}.<this>)", "default": "ecomate.bd" },
     { "name": "SAAS_BASE_DOMAINS", "label": "Ordered base domains for tenant subdomains (comma-separated; first must equal the primary)", "default": "ecomate.bd" },
     { "name": "SAAS_FALLBACK_DOMAIN", "label": "Fallback domain for absolute URLs when the primary is unavailable (optional)", "default": "" },
+    { "name": "SAAS_PRIMARY_UNHEALTHY", "label": "Primary domain/TLS outage mode (true = new links + redirects use the fallback; canonical URLs unchanged)", "default": "false" },
 
     { "name": "JWT_SECRET", "label": "⭐ JWT Secret (strong random string)", "default": "" },
     { "name": "JWT_REFRESH_SECRET", "label": "⭐ JWT Refresh Secret (different from JWT_SECRET)", "default": "" },

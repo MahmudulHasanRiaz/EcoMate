@@ -14,6 +14,12 @@ export interface DomainConfig {
   fallbackDomain?: string;
   customDomainCname: string;
   allowExternalFallback: boolean;
+  /**
+   * Whether the primary domain is currently usable. Set to false during a
+   * primary-domain/TLS outage: absolute URLs (emails, invoices, redirects)
+   * then use the fallback domain, while canonical URLs stay canonical.
+   */
+  primaryHealthy: boolean;
   platformHosts: PlatformHosts;
 }
 
@@ -102,7 +108,7 @@ export class DomainConfigService implements OnModuleInit {
         }`,
       );
     }
-    return envConfig;
+    return this.normalise(envConfig);
   }
 
   private fromEnv(): DomainConfig {
@@ -128,6 +134,7 @@ export class DomainConfigService implements OnModuleInit {
       fallbackDomain,
       customDomainCname,
       allowExternalFallback,
+      primaryHealthy: process.env.SAAS_PRIMARY_UNHEALTHY !== 'true',
       platformHosts: {
         landing: `www.${primaryDomain}`,
         platformAdmin: `saas.${primaryDomain}`,
@@ -149,11 +156,22 @@ export class DomainConfigService implements OnModuleInit {
     const fallbackDomain = config.fallbackDomain
       ? normaliseDomain(config.fallbackDomain)
       : undefined;
+    // A fallback domain is a valid alias base for every tenant. When it is
+    // external (allowExternalFallback), keep it in the base-domain loop so
+    // {slug}.<fallback> resolves to the same tenant.
+    if (
+      fallbackDomain &&
+      !baseDomains.includes(fallbackDomain) &&
+      config.allowExternalFallback
+    ) {
+      baseDomains.push(fallbackDomain);
+    }
     return {
       ...config,
       primaryDomain,
       baseDomains,
       fallbackDomain,
+      primaryHealthy: config.primaryHealthy !== false,
       customDomainCname: normaliseHost(config.customDomainCname),
       platformHosts: {
         landing: normaliseHost(config.platformHosts.landing),
@@ -239,11 +257,29 @@ export class DomainConfigService implements OnModuleInit {
       : `${slug}.${this.config.primaryDomain}`;
   }
 
+  isPrimaryHealthy(): boolean {
+    return this.config.primaryHealthy !== false;
+  }
+
+  /**
+   * Base domain for NEW absolute URLs (emails, invoices, password resets):
+   * primary while healthy, fallback during a primary-domain/TLS outage.
+   */
+  effectiveBaseDomain(): string {
+    if (!this.isPrimaryHealthy() && this.config.fallbackDomain) {
+      return this.config.fallbackDomain;
+    }
+    return this.config.primaryDomain;
+  }
+
+  /** Host for new tenant links: verified custom domain wins, then fallback-aware base. */
+  tenantHost(slug: string, customHost?: string | null): string {
+    if (customHost) return normaliseHost(customHost);
+    return `${slug}.${this.effectiveBaseDomain()}`;
+  }
+
   absoluteUrl(slug: string, path = '/', customHost?: string | null): string {
-    const host =
-      this.canonicalHost(slug, customHost) ||
-      this.config.fallbackDomain ||
-      this.config.primaryDomain;
+    const host = this.tenantHost(slug, customHost);
     return `https://${host}${path.startsWith('/') ? path : `/${path}`}`;
   }
 }
