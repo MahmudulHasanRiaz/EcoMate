@@ -1,7 +1,7 @@
 jest.mock('../../better-auth/prisma', () => ({
   baPrisma: {
     betterAuthUser: {
-      findUnique: jest
+      findFirst: jest
         .fn()
         .mockResolvedValue({ id: 'ba-user-test', name: 'John Doe' }),
       update: jest.fn().mockResolvedValue({}),
@@ -115,7 +115,7 @@ describe('EmployeesService', () => {
     const prismaMock = {
       employee: {
         findMany: jest.fn().mockResolvedValue([mockEmployee]),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn(),
         create: jest.fn().mockResolvedValue(mockEmployee),
         update: jest.fn().mockResolvedValue(mockEmployee),
@@ -123,13 +123,13 @@ describe('EmployeesService', () => {
         count: jest.fn().mockResolvedValue(1),
       },
       department: {
-        findUnique: jest.fn().mockResolvedValue(mockDepartment),
+        findFirst: jest.fn().mockResolvedValue(mockDepartment),
       },
       designation: {
-        findUnique: jest.fn().mockResolvedValue(mockDesignation),
+        findFirst: jest.fn().mockResolvedValue(mockDesignation),
       },
       accessPreset: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'preset-1',
           name: 'Staff',
         }),
@@ -142,7 +142,7 @@ describe('EmployeesService', () => {
         count: jest.fn().mockResolvedValue(0),
       },
       userProfile: {
-        findUnique: jest
+        findFirst: jest
           .fn()
           .mockResolvedValue({ id: 'profile-1', role: 'customer' }),
         update: jest.fn().mockResolvedValue({}),
@@ -151,14 +151,14 @@ describe('EmployeesService', () => {
         upsert: jest.fn().mockResolvedValue({ date: '250624', seq: 1 }),
       },
       attendanceSettings: {
-        findUnique: jest
+        findFirst: jest
           .fn()
           .mockResolvedValue({ id: 'global', mode: 'BOTH' }),
       },
       employeeBankAccount: {
         count: jest.fn().mockResolvedValue(2),
         findMany: jest.fn().mockResolvedValue([mockBankAccount]),
-        findUnique: jest.fn().mockResolvedValue(mockBankAccount),
+        findFirst: jest.fn().mockResolvedValue(mockBankAccount),
         create: jest.fn().mockResolvedValue(mockBankAccount),
         update: jest.fn().mockResolvedValue(mockBankAccount),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -179,7 +179,7 @@ describe('EmployeesService', () => {
       attendanceDay: { count: jest.fn().mockResolvedValue(0) },
       weeklyOff: { count: jest.fn().mockResolvedValue(0) },
       shiftPreset: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'sp-1',
           name: 'General',
           isActive: true,
@@ -249,7 +249,7 @@ describe('EmployeesService', () => {
       await service.create(dto);
 
       expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
-        where: { date_family: { date: dateStr, family: 'EMP' } },
+        where: {  date: dateStr, family: 'EMP'  },
         create: { date: dateStr, family: 'EMP', seq: 1 },
         update: { seq: { increment: 1 } },
       });
@@ -269,7 +269,7 @@ describe('EmployeesService', () => {
     });
 
     it('should throw if user is already an employee', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       const dto: CreateEmployeeDto = {
         betterAuthUserId: 'ba-user-test',
         joiningDate: '2025-01-15',
@@ -304,7 +304,7 @@ describe('EmployeesService', () => {
     });
 
     it('should promote customer profile to employee role on create', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'customer',
       });
@@ -320,7 +320,7 @@ describe('EmployeesService', () => {
     });
 
     it('should not change admin profile on create — admin rights come from the role, not the preset', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'admin',
       });
@@ -333,7 +333,7 @@ describe('EmployeesService', () => {
     });
 
     it('should not promote already-employee profile on create', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'employee',
       });
@@ -348,7 +348,7 @@ describe('EmployeesService', () => {
     it.each(['cashier', 'packing_assistant'])(
       'should demote a %s hired through HR to employee so the access preset governs them',
       async (role) => {
-        (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
           id: 'profile-1',
           role,
         });
@@ -420,7 +420,7 @@ describe('EmployeesService', () => {
         joiningDate: '2025-01-15',
         reportingToId: 'emp-9',
       };
-      (prisma.employee.findUnique as jest.Mock)
+      (prisma.employee.findFirst as jest.Mock)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ id: 'emp-9', employeeId: 'EMP-250624-0009' });
       await service.create(dto);
@@ -437,7 +437,7 @@ describe('EmployeesService', () => {
         joiningDate: '2025-01-15',
         reportingToId: 'ghost',
       };
-      (prisma.employee.findUnique as jest.Mock)
+      (prisma.employee.findFirst as jest.Mock)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
@@ -452,11 +452,11 @@ describe('EmployeesService', () => {
         joiningDate: '2025-01-15',
         employmentType: 'full_time',
       };
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'customer',
       });
-      (prisma.shiftPreset.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.shiftPreset.findFirst as jest.Mock).mockResolvedValue({
         id: 'sp-1',
         name: 'Old',
         isActive: false,
@@ -472,11 +472,11 @@ describe('EmployeesService', () => {
         joiningDate: '2025-01-15',
         employmentType: 'full_time',
       };
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'customer',
       });
-      (prisma.shiftPreset.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.shiftPreset.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
         service.create({ ...base, shiftPresetId: 'ghost' }),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -488,7 +488,7 @@ describe('EmployeesService', () => {
         joiningDate: '2025-01-15',
         employmentType: 'full_time',
       };
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'customer',
       });
@@ -502,7 +502,7 @@ describe('EmployeesService', () => {
         joiningDate: '2025-01-15',
         employmentType: 'full_time',
       };
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'customer',
       });
@@ -530,7 +530,7 @@ describe('EmployeesService', () => {
 
   describe('findOne', () => {
     it('should return an employee', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       const result = await service.findOne('emp-1');
       expect(result).toEqual(mockEmployee);
     });
@@ -544,7 +544,7 @@ describe('EmployeesService', () => {
 
   describe('update', () => {
     it('should update an employee', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       const result = await service.update('emp-1', { departmentId: 'dept-2' });
       expect(result).toEqual(mockEmployee);
       expect(prisma.employee.update).toHaveBeenCalledWith(
@@ -556,7 +556,7 @@ describe('EmployeesService', () => {
       // Employee.joiningDate is NOT NULL. A client that sends null (an edit
       // dialog with the date picker blank) used to reach Prisma and throw,
       // failing the entire save.
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { joiningDate: null as any, notes: 'x' });
       const data = (prisma.employee.update as jest.Mock).mock.calls[0][0].data;
       expect(data).not.toHaveProperty('joiningDate');
@@ -566,7 +566,7 @@ describe('EmployeesService', () => {
     it('never rewrites the identity link from an update payload', async () => {
       // PartialType used to inherit betterAuthUserId, so a PUT could silently
       // re-point an employee at a different login with no audit row.
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', {
         betterAuthUserId: 'someone-else',
       } as any);
@@ -575,7 +575,7 @@ describe('EmployeesService', () => {
     });
 
     it('writes HR-only custom access to the login row and never to the employee row', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update(
         'emp-1',
         {
@@ -598,7 +598,7 @@ describe('EmployeesService', () => {
     });
 
     it('clearing custom access with empty arrays writes empty lists to the login row', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update(
         'emp-1',
         { customAccessAdds: [], customAccessRemoves: [] },
@@ -612,14 +612,14 @@ describe('EmployeesService', () => {
     });
 
     it('leaves custom access untouched when neither list is provided', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { notes: 'x' });
       expect(baPrisma.betterAuthUser.update).not.toHaveBeenCalled();
     });
 
     it('forbids assigning a preset broader than the actor holds', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.accessPreset.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.accessPreset.findFirst as jest.Mock).mockResolvedValue({
         id: 'preset-1',
         name: 'Staff',
         permissions: ['view_orders', 'manage_presets'],
@@ -633,7 +633,7 @@ describe('EmployeesService', () => {
     });
 
     it('forbids custom additions broader than the actor holds', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await expect(
         service.update(
           'emp-1',
@@ -645,7 +645,7 @@ describe('EmployeesService', () => {
     });
 
     it('never writes nested shift payloads as scalar columns', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', {
         shiftPresetId: 'sp-1',
         shiftDays: [1, 2],
@@ -658,8 +658,8 @@ describe('EmployeesService', () => {
     it('rejects assigning a retired shift preset instead of silently skipping it', async () => {
       // `if (preset && preset.isActive)` fell through with no error: the employee
       // saved, the shift was never assigned, and the admin saw success.
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.shiftPreset.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.shiftPreset.findFirst as jest.Mock).mockResolvedValue({
         id: 'sp-1',
         name: 'Old',
         isActive: false,
@@ -671,28 +671,28 @@ describe('EmployeesService', () => {
     });
 
     it('rejects a shift preset that does not exist', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.shiftPreset.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.shiftPreset.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
         service.update('emp-1', { shiftPresetId: 'ghost' }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('honours an explicitly empty shiftDays as "no days chosen"', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { shiftPresetId: 'sp-1', shiftDays: [] });
       expect(prisma.shiftAssignment.create).not.toHaveBeenCalled();
     });
 
     it('should throw if employee not found', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
         service.update('nonexistent', { bankName: 'Test Bank' }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('should persist status on update', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { status: 'inactive' });
       expect(prisma.employee.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -702,7 +702,7 @@ describe('EmployeesService', () => {
     });
 
     it('should persist exitDate on update', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { exitDate: '2025-06-01' });
       expect(prisma.employee.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -712,13 +712,13 @@ describe('EmployeesService', () => {
     });
 
     it('should allow active→inactive transition', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { status: 'inactive' });
       expect(prisma.employee.update).toHaveBeenCalled();
     });
 
     it('should allow inactive→active transition', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.inactive,
       });
@@ -727,13 +727,13 @@ describe('EmployeesService', () => {
     });
 
     it('should allow active→on_leave transition', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { status: 'on_leave' });
       expect(prisma.employee.update).toHaveBeenCalled();
     });
 
     it('should allow on_leave→suspended transition', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.on_leave,
       });
@@ -742,7 +742,7 @@ describe('EmployeesService', () => {
     });
 
     it('should allow suspended→active transition', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.suspended,
       });
@@ -751,7 +751,7 @@ describe('EmployeesService', () => {
     });
 
     it('should block inactive→on_leave→terminated chain from suspended', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.suspended,
       });
@@ -761,7 +761,7 @@ describe('EmployeesService', () => {
     });
 
     it('should allow active→terminated when exitDate is provided', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', {
         status: 'terminated',
         exitDate: '2025-06-01',
@@ -770,7 +770,7 @@ describe('EmployeesService', () => {
     });
 
     it('should allow active→resigned when exitDate is provided', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', {
         status: 'resigned',
         exitDate: '2025-06-01',
@@ -779,13 +779,13 @@ describe('EmployeesService', () => {
     });
 
     it('should skip transition check when status is unchanged', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { status: 'active' });
       expect(prisma.employee.update).toHaveBeenCalled();
     });
 
     it('should throw on invalid transition from terminated', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.terminated,
       });
@@ -795,7 +795,7 @@ describe('EmployeesService', () => {
     });
 
     it('should throw on invalid transition from resigned', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.resigned,
       });
@@ -805,45 +805,45 @@ describe('EmployeesService', () => {
     });
 
     it('should throw when terminated without exitDate', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await expect(
         service.update('emp-1', { status: 'terminated' }),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw when resigned without exitDate', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await expect(
         service.update('emp-1', { status: 'resigned' }),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw when department is not found', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.department.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.department.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
         service.update('emp-1', { departmentId: 'unknown-dept' }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw when designation is not found', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.designation.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.designation.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
         service.update('emp-1', { designationId: 'unknown-desig' }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw when access preset is not found', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.accessPreset.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.accessPreset.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
         service.update('emp-1', { accessPresetId: 'unknown-preset' }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('should write employment history when status changes', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { status: 'inactive' });
       expect(prisma.employmentHistory.createMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -860,7 +860,7 @@ describe('EmployeesService', () => {
     });
 
     it('should record actor as changedById on history rows', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { status: 'inactive' }, 'actor-42');
       expect(prisma.employmentHistory.createMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -872,20 +872,20 @@ describe('EmployeesService', () => {
     });
 
     it('should not write employment history when nothing relevant changes', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { bankName: 'Test Bank' });
       expect(prisma.employmentHistory.createMany).not.toHaveBeenCalled();
     });
 
     it('should not write employment history on same-status update', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { status: 'active' });
       expect(prisma.employmentHistory.createMany).not.toHaveBeenCalled();
     });
 
     it('should write department history with resolved names', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.department.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.department.findFirst as jest.Mock).mockResolvedValue({
         id: 'dept-2',
         name: 'Support',
         slug: 'support',
@@ -905,8 +905,8 @@ describe('EmployeesService', () => {
     });
 
     it('should write designation history with resolved names', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.designation.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.designation.findFirst as jest.Mock).mockResolvedValue({
         id: 'desig-2',
         name: 'Lead',
         slug: 'lead',
@@ -927,7 +927,7 @@ describe('EmployeesService', () => {
     });
 
     it('should write employment_type history with raw values', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { employmentType: 'contract' });
       expect(prisma.employmentHistory.createMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -943,7 +943,7 @@ describe('EmployeesService', () => {
     });
 
     it('should write reporting_manager history as employeeId and name', async () => {
-      (prisma.employee.findUnique as jest.Mock)
+      (prisma.employee.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockEmployee)
         .mockResolvedValueOnce({
           id: 'emp-9',
@@ -965,14 +965,14 @@ describe('EmployeesService', () => {
     });
 
     it('should throw BadRequest when reporting to themselves', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await expect(
         service.update('emp-1', { reportingToId: 'emp-1' }),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw NotFound when reporting manager does not exist', async () => {
-      (prisma.employee.findUnique as jest.Mock)
+      (prisma.employee.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockEmployee)
         .mockResolvedValueOnce(null);
       await expect(
@@ -981,7 +981,7 @@ describe('EmployeesService', () => {
     });
 
     it('should persist reportingToId on update', async () => {
-      (prisma.employee.findUnique as jest.Mock)
+      (prisma.employee.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockEmployee)
         .mockResolvedValueOnce({
           id: 'emp-9',
@@ -1003,7 +1003,7 @@ describe('EmployeesService', () => {
     });
 
     it('should delete an employee', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       const result = await service.remove('emp-1');
       expect(result).toEqual(mockEmployee);
       expect(prisma.employee.delete).toHaveBeenCalledWith(
@@ -1012,8 +1012,8 @@ describe('EmployeesService', () => {
     });
 
     it('should reset BA role and UserProfile role back to customer on remove', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'employee',
       });
@@ -1033,8 +1033,8 @@ describe('EmployeesService', () => {
     });
 
     it('should reset BA role to customer when no profile exists', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
       await service.remove('emp-1');
       expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
         where: { id: 'ba-user-test' },
@@ -1100,7 +1100,7 @@ describe('EmployeesService', () => {
       method: 'APP' | 'MACHINE' | 'NONE',
       mode: 'APP' | 'MACHINE' | 'BOTH',
     ) {
-      (prisma.attendanceSettings.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.attendanceSettings.findFirst as jest.Mock).mockResolvedValue({
         id: 'global',
         mode,
       });
@@ -1149,7 +1149,7 @@ describe('EmployeesService', () => {
     });
 
     it('skips validation on create when attendanceMethod is not sent', async () => {
-      (prisma.attendanceSettings.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.attendanceSettings.findFirst as jest.Mock).mockResolvedValue({
         id: 'global',
         mode: 'APP',
       });
@@ -1161,8 +1161,8 @@ describe('EmployeesService', () => {
     });
 
     it('rejects MACHINE on update when system mode is APP', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.attendanceSettings.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.attendanceSettings.findFirst as jest.Mock).mockResolvedValue({
         id: 'global',
         mode: 'APP',
       });
@@ -1173,8 +1173,8 @@ describe('EmployeesService', () => {
     });
 
     it('accepts compatible method on update under mode APP', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
-      (prisma.attendanceSettings.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.attendanceSettings.findFirst as jest.Mock).mockResolvedValue({
         id: 'global',
         mode: 'APP',
       });
@@ -1187,7 +1187,7 @@ describe('EmployeesService', () => {
     });
 
     it('persists personal fields via update', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', {
         dateOfBirth: '1991-02-03',
         nationality: 'Indian',
@@ -1205,9 +1205,9 @@ describe('EmployeesService', () => {
     });
 
     it('finds the employee with bankAccounts included', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.findOne('emp-1');
-      expect(prisma.employee.findUnique).toHaveBeenCalledWith(
+      expect(prisma.employee.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           include: expect.objectContaining({
             bankAccounts: expect.any(Object),
@@ -1219,7 +1219,7 @@ describe('EmployeesService', () => {
 
   describe('bank accounts', () => {
     const employeeExists = () =>
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         id: 'emp-1',
       });
 
@@ -1236,7 +1236,7 @@ describe('EmployeesService', () => {
     });
 
     it('throws 404 listing bank accounts for a missing employee', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(service.listBankAccounts('ghost')).rejects.toThrow(
         NotFoundException,
       );
@@ -1297,7 +1297,7 @@ describe('EmployeesService', () => {
     });
 
     it('throws 404 creating an account for a missing employee', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
         service.createBankAccount('ghost', {
           bankName: 'DBBL',
@@ -1340,7 +1340,7 @@ describe('EmployeesService', () => {
     });
 
     it('throws 404 when the account to update is missing', async () => {
-      (prisma.employeeBankAccount.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.employeeBankAccount.findFirst as jest.Mock).mockResolvedValue(
         null,
       );
       await expect(
@@ -1366,7 +1366,7 @@ describe('EmployeesService', () => {
     });
 
     it('throws 404 when the account to promote is missing', async () => {
-      (prisma.employeeBankAccount.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.employeeBankAccount.findFirst as jest.Mock).mockResolvedValue(
         null,
       );
       await expect(
@@ -1382,7 +1382,7 @@ describe('EmployeesService', () => {
     });
 
     it('throws 404 when the account to delete is missing', async () => {
-      (prisma.employeeBankAccount.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.employeeBankAccount.findFirst as jest.Mock).mockResolvedValue(
         null,
       );
       await expect(service.deleteBankAccount('ghost')).rejects.toThrow(
@@ -1613,7 +1613,7 @@ describe('EmployeesService', () => {
     };
 
     it('rehires a terminated employee when joiningDate is provided', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(
         terminalEmployee,
       );
       await service.update(
@@ -1634,7 +1634,7 @@ describe('EmployeesService', () => {
     });
 
     it('writes rehire history: status terminated→active + employment window', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(
         terminalEmployee,
       );
       await service.update(
@@ -1659,7 +1659,7 @@ describe('EmployeesService', () => {
     });
 
     it('requires joiningDate to rehire from terminated', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(
         terminalEmployee,
       );
       await expect(
@@ -1668,7 +1668,7 @@ describe('EmployeesService', () => {
     });
 
     it('requires joiningDate to rehire from resigned', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.resigned,
         exitDate: new Date('2025-01-01'),
@@ -1679,7 +1679,7 @@ describe('EmployeesService', () => {
     });
 
     it('allows rehire from resigned with joiningDate', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.resigned,
         exitDate: new Date('2025-01-01'),
@@ -1693,7 +1693,7 @@ describe('EmployeesService', () => {
     });
 
     it('allows on_leave → terminated with exitDate', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.on_leave,
       });
@@ -1705,7 +1705,7 @@ describe('EmployeesService', () => {
     });
 
     it('allows on_leave → resigned with exitDate', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.on_leave,
       });
@@ -1717,7 +1717,7 @@ describe('EmployeesService', () => {
     });
 
     it('still rejects on_leave → terminated without exitDate', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         status: EmployeeStatus.on_leave,
       });
@@ -1733,7 +1733,7 @@ describe('EmployeesService', () => {
     });
 
     it('deletes a clean employee (no records)', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       const result = await service.remove('emp-1');
       expect(result).toEqual(mockEmployee);
       expect(prisma.employee.delete).toHaveBeenCalledWith(
@@ -1756,7 +1756,7 @@ describe('EmployeesService', () => {
     ])(
       'refuses to delete when a %s exists',
       async       (_label, model) => {
-        (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+        (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
         (prisma[model as keyof PrismaService].count as jest.Mock).mockResolvedValue(1);
         await expect(service.remove('emp-1')).rejects.toThrow(ConflictException);
         await expect(service.remove('emp-1')).rejects.toThrow(
@@ -1768,7 +1768,7 @@ describe('EmployeesService', () => {
     );
 
     it('surfaces a FK violation as the archive 409', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       (prisma.employee.delete as jest.Mock).mockRejectedValue({
         code: 'P2003',
       });
@@ -1811,7 +1811,7 @@ describe('EmployeesService', () => {
 
   describe('update — personal/employment audit rows (G-19)', () => {
     it('writes a personalInformation row with changed-field JSON', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update(
         'emp-1',
         { dateOfBirth: '1990-04-12', nationality: 'Bangladeshi' },
@@ -1834,7 +1834,7 @@ describe('EmployeesService', () => {
     });
 
     it('writes an employmentInformation row when exitDate is cleared', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         ...mockEmployee,
         exitDate: new Date('2025-06-01'),
       });
@@ -1849,7 +1849,7 @@ describe('EmployeesService', () => {
     });
 
     it('does not write personal rows when nothing personal changed', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(mockEmployee);
       await service.update('emp-1', { departmentId: 'dept-2' } as any);
       const rows = (
         prisma.employmentHistory.createMany as jest.Mock
@@ -1866,7 +1866,7 @@ describe('EmployeesService', () => {
 
   describe('bank accounts — audit rows (G-19)', () => {
     beforeEach(() => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
         id: 'emp-1',
       });
     });

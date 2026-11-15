@@ -405,7 +405,7 @@ export class DispatchCancelService {
    * The marker is cleared ONLY here — one click, recorded with actor + time.
    */
   async confirmManualPanelCancel(dispatchId: string, actor?: string) {
-    const dispatch = await this.prisma.dispatch.findUnique({
+    const dispatch = await this.prisma.dispatch.findFirst({
       where: { id: dispatchId },
       select: {
         id: true,
@@ -484,7 +484,7 @@ export class DispatchCancelService {
         },
       ]);
 
-      return tx.dispatch.findUnique({ where: { id: dispatchId } });
+      return tx.dispatch.findFirst({ where: { id: dispatchId } });
     });
   }
 }

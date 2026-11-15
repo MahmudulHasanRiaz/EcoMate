@@ -462,13 +462,13 @@ export class StockReconciliationService implements OnApplicationBootstrap {
     tx: Prisma.TransactionClient,
   ): Promise<boolean> {
     if (variantId) {
-      const v = await tx.productVariant.findUnique({
+      const v = await tx.productVariant.findFirst({
         where: { id: variantId },
         select: { managedStockQuantity: true, productId: true },
       });
       if (!v) return false;
       if ((v.managedStockQuantity ?? 0) < quantity) return false;
-      const p = await tx.product.findUnique({
+      const p = await tx.product.findFirst({
         where: { id: v.productId },
         select: { manageStock: true, type: true, managedStockQuantity: true },
       });
@@ -477,7 +477,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
       }
       return true;
     }
-    const p = await tx.product.findUnique({
+    const p = await tx.product.findFirst({
       where: { id: productId },
       select: { manageStock: true, managedStockQuantity: true },
     });
@@ -518,7 +518,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
     };
 
     for (const id of orphans.itemIds) {
-      const item = await tx.orderItem.findUnique({
+      const item = await tx.orderItem.findFirst({
         where: { id },
         select: { id: true, productId: true, variantId: true, quantity: true, managedStockReserved: true },
       });
@@ -534,7 +534,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
     }
 
     for (const id of orphans.componentIds) {
-      const comp = await tx.orderItemComboComponent.findUnique({
+      const comp = await tx.orderItemComboComponent.findFirst({
         where: { id },
         select: { id: true, productId: true, variantId: true, totalQuantity: true, managedStockReserved: true },
       });
@@ -661,7 +661,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
   }
 
   private async getOrderStatusName(orderId: string): Promise<string | null> {
-    const o = await this.prisma.order.findUnique({
+    const o = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: { status: { select: { name: true } } },
     });

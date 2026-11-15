@@ -16,7 +16,7 @@ async function makeService(over: {
 } = {}) {
   const prisma: any = {
     courierSettlementInvoice: {
-      findUnique: jest.fn().mockResolvedValue(
+      findFirst: jest.fn().mockResolvedValue(
         over.state === undefined ? { state: 'ISSUE_FOUND' } : over.state === null ? null : { state: over.state },
       ),
       update: jest.fn().mockResolvedValue({}),

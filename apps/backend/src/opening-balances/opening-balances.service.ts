@@ -24,8 +24,8 @@ export class OpeningBalancesService {
     }
 
     const [account, period] = await Promise.all([
-      this.prisma.account.findUnique({ where: { id: dto.accountId } }),
-      this.prisma.financialPeriod.findUnique({ where: { id: dto.periodId } }),
+      this.prisma.account.findFirst({ where: { id: dto.accountId } }),
+      this.prisma.financialPeriod.findFirst({ where: { id: dto.periodId } }),
     ]);
 
     if (!account) {

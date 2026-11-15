@@ -7,10 +7,10 @@ import { InventoryService } from '../inventory.service';
  */
 describe('InventoryService — managed-stock destructive guard', () => {
   const prisma: any = {
-    product: { findUnique: jest.fn(), update: jest.fn() },
-    productVariant: { findUnique: jest.fn() },
+    product: { findFirst: jest.fn(), update: jest.fn() },
+    productVariant: { findFirst: jest.fn() },
     physicalInventory: { findFirst: jest.fn() },
-    combo: { findUnique: jest.fn() },
+    combo: { findFirst: jest.fn() },
     $transaction: jest.fn(async (cb: any) => cb(prisma)),
   };
   const stockService: any = {
@@ -45,7 +45,7 @@ describe('InventoryService — managed-stock destructive guard', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    prisma.product.findUnique.mockResolvedValue(product());
+    prisma.product.findFirst.mockResolvedValue(product());
     prisma.product.update.mockResolvedValue(product());
     prisma.physicalInventory.findFirst.mockResolvedValue(null);
     stockService.scrap.mockResolvedValue([]);
@@ -74,7 +74,7 @@ describe('InventoryService — managed-stock destructive guard', () => {
   });
 
   it('carries the code on the no-available-stock branch too', async () => {
-    prisma.product.findUnique.mockResolvedValue(
+    prisma.product.findFirst.mockResolvedValue(
       product({ managedStockQuantity: 5, reservedStock: 5 }),
     );
     const err = await service
@@ -99,7 +99,7 @@ describe('InventoryService — managed-stock destructive guard', () => {
   });
 
   it('blocks any deduction when reserved >= on hand (nothing available)', async () => {
-    prisma.product.findUnique.mockResolvedValue(
+    prisma.product.findFirst.mockResolvedValue(
       product({ managedStockQuantity: 5, reservedStock: 5 }),
     );
     await expect(service.adjust('prod-1', -1, 'recount')).rejects.toThrow(
@@ -114,7 +114,7 @@ describe('InventoryService — managed-stock destructive guard', () => {
   });
 
   it('ignores reserved stock when adding stock (no false positive)', async () => {
-    prisma.product.findUnique.mockResolvedValue(
+    prisma.product.findFirst.mockResolvedValue(
       product({ managedStockQuantity: 0, reservedStock: 0 }),
     );
     await expect(service.adjust('prod-1', 5, 'restock')).resolves.toBeDefined();
@@ -122,8 +122,8 @@ describe('InventoryService — managed-stock destructive guard', () => {
   });
 
   it('applies the same guard to the variant path', async () => {
-    prisma.product.findUnique.mockResolvedValue(null);
-    prisma.productVariant.findUnique.mockResolvedValue({
+    prisma.product.findFirst.mockResolvedValue(null);
+    prisma.productVariant.findFirst.mockResolvedValue({
       id: 'var-1',
       sku: 'TP-1-RED',
       managedStockQuantity: 8,
@@ -151,7 +151,7 @@ describe('InventoryService — managed-stock destructive guard', () => {
   describe('NO physical mirror (owner decision 2026-11-11 — layers independent)', () => {
     it('does NOT touch the physical layer even when IM is ON and a warehouse is set', async () => {
       stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
-      prisma.product.findUnique.mockResolvedValue(
+      prisma.product.findFirst.mockResolvedValue(
         product({ warehouseId: 'wh-1' }),
       );
 
@@ -164,7 +164,7 @@ describe('InventoryService — managed-stock destructive guard', () => {
 
     it('managed adjust SUCCEEDS when no warehouse exists anywhere (zero-warehouse case)', async () => {
       stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
-      prisma.product.findUnique.mockResolvedValue(
+      prisma.product.findFirst.mockResolvedValue(
         product({ warehouseId: null }),
       );
       prisma.physicalInventory.findFirst.mockResolvedValue(null);
@@ -176,8 +176,8 @@ describe('InventoryService — managed-stock destructive guard', () => {
 
     it('variant path also succeeds with no warehouse anywhere and writes no physical row', async () => {
       stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
-      prisma.product.findUnique.mockResolvedValue(null);
-      prisma.productVariant.findUnique.mockResolvedValue({
+      prisma.product.findFirst.mockResolvedValue(null);
+      prisma.productVariant.findFirst.mockResolvedValue({
         id: 'var-1',
         sku: 'TP-1-RED',
         managedStockQuantity: 8,
@@ -202,8 +202,8 @@ describe('InventoryService — managed-stock destructive guard', () => {
     });
 
     it('combo path writes managed only — no physical row for any component', async () => {
-      prisma.product.findUnique.mockResolvedValue(null);
-      prisma.combo.findUnique.mockResolvedValue({
+      prisma.product.findFirst.mockResolvedValue(null);
+      prisma.combo.findFirst.mockResolvedValue({
         id: 'combo-1',
         name: 'Bundle',
         items: [
@@ -225,7 +225,7 @@ describe('InventoryService — managed-stock destructive guard', () => {
     });
 
     it('refuses a MANAGED_STOCK product whose manageStock flag is false (the guard gates on the flag, not the mode)', async () => {
-      prisma.product.findUnique.mockResolvedValue(
+      prisma.product.findFirst.mockResolvedValue(
         product({ manageStock: false, availabilityMode: 'MANAGED_STOCK' }),
       );
 

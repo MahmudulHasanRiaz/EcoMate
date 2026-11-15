@@ -44,7 +44,7 @@ describe('InventoryService — POS transfer requests', () => {
   beforeEach(async () => {
     prismaMock = {
       stockTransfer: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn().mockResolvedValue(0),
         updateMany: jest.fn(),
@@ -141,13 +141,13 @@ describe('InventoryService — POS transfer requests', () => {
 
   describe('approveTransferRequest', () => {
     beforeEach(() => {
-      (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue(baseRequest);
+      (prisma.stockTransfer.findFirst as jest.Mock).mockResolvedValue(baseRequest);
       (prisma.stockTransfer.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
       (prisma.stockTransfer.update as jest.Mock).mockResolvedValue(baseRequest);
     });
 
     it('claims the request, runs the transfer pipeline, then marks it FULFILLED', async () => {
-      (prisma.stockTransfer.findUnique as jest.Mock)
+      (prisma.stockTransfer.findFirst as jest.Mock)
         .mockResolvedValueOnce(baseRequest)
         .mockResolvedValueOnce({ ...baseRequest, status: 'FULFILLED' });
 
@@ -188,7 +188,7 @@ describe('InventoryService — POS transfer requests', () => {
           { ...baseRequest.items[0], id: 'item-2', quantity: 3 },
         ],
       };
-      (prisma.stockTransfer.findUnique as jest.Mock)
+      (prisma.stockTransfer.findFirst as jest.Mock)
         .mockResolvedValueOnce(twoItems)
         .mockResolvedValueOnce({ ...twoItems, status: 'FULFILLED' });
 
@@ -213,7 +213,7 @@ describe('InventoryService — POS transfer requests', () => {
     });
 
     it('refuses a request that is no longer pending', async () => {
-      (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.stockTransfer.findFirst as jest.Mock).mockResolvedValue({
         ...baseRequest,
         status: 'FULFILLED',
       });
@@ -225,7 +225,7 @@ describe('InventoryService — POS transfer requests', () => {
     });
 
     it('refuses a request with no items', async () => {
-      (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.stockTransfer.findFirst as jest.Mock).mockResolvedValue({
         ...baseRequest,
         items: [],
       });
@@ -237,7 +237,7 @@ describe('InventoryService — POS transfer requests', () => {
     });
 
     it('404s for an unknown request', async () => {
-      (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.stockTransfer.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.approveTransferRequest('nope', 'admin@x.com')).rejects.toThrow(
         NotFoundException,
@@ -270,7 +270,7 @@ describe('InventoryService — POS transfer requests', () => {
 
   describe('rejectTransferRequest', () => {
     it('rejects a pending request with the supplied reason', async () => {
-      (prisma.stockTransfer.findUnique as jest.Mock)
+      (prisma.stockTransfer.findFirst as jest.Mock)
         .mockResolvedValueOnce({ id: 'req-1', status: 'REQUESTED', notes: 'original' })
         .mockResolvedValueOnce({ ...baseRequest, status: 'REJECTED' });
       (prisma.stockTransfer.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
@@ -292,7 +292,7 @@ describe('InventoryService — POS transfer requests', () => {
     });
 
     it('refuses to reject an already handled request', async () => {
-      (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.stockTransfer.findFirst as jest.Mock).mockResolvedValue({
         id: 'req-1',
         status: 'FULFILLED',
         notes: null,
@@ -305,7 +305,7 @@ describe('InventoryService — POS transfer requests', () => {
     });
 
     it('404s for an unknown request', async () => {
-      (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.stockTransfer.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.rejectTransferRequest('nope', 'admin@x.com')).rejects.toThrow(
         NotFoundException,

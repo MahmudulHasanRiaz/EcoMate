@@ -57,7 +57,7 @@ describe('ensureGatewaySettlementAccount', () => {
     const created = accountRow();
     const db = {
       account: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(created),
       },
       paymentGateway: { update: jest.fn().mockResolvedValue({}) },
@@ -82,7 +82,7 @@ describe('ensureGatewaySettlementAccount', () => {
   it('never re-maps when the account already existed (deliberate clear sticks)', async () => {
     const db = {
       account: {
-        findUnique: jest.fn().mockResolvedValue(accountRow()),
+        findFirst: jest.fn().mockResolvedValue(accountRow()),
         create: jest.fn(),
       },
       paymentGateway: { update: jest.fn() },
@@ -96,7 +96,7 @@ describe('ensureGatewaySettlementAccount', () => {
   it('never overrides an existing gateway mapping', async () => {
     const db = {
       account: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(accountRow()),
       },
       paymentGateway: { update: jest.fn() },
@@ -113,7 +113,7 @@ describe('ensureGatewaySettlementAccount', () => {
   it('creates the cash account under cash-in-hand', async () => {
     const db = {
       account: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest
           .fn()
           .mockResolvedValue(accountRow({ id: 'acc-cash', code: 'cash-in-hand', name: 'Cash in Hand' })),
@@ -135,7 +135,7 @@ describe('assertGatewayUsableOnSurface', () => {
   function dbWith(gateway: any) {
     return {
       paymentGateway: {
-        findUnique: jest.fn().mockResolvedValue(gateway),
+        findFirst: jest.fn().mockResolvedValue(gateway),
         findFirst: jest.fn().mockResolvedValue(null),
       },
     };

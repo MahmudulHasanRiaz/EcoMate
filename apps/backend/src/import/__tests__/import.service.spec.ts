@@ -28,7 +28,7 @@ function makeSummary(): ImportSummary {
 function makeService() {
   const prisma = {
     product: {
-      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest
         .fn()
@@ -38,13 +38,13 @@ function makeService() {
     productVariant: {
       create: jest.fn().mockResolvedValue({ id: 'variant-created' }),
       update: jest.fn().mockResolvedValue({}),
-      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     physicalInventory: {
       findFirst: jest.fn().mockResolvedValue(null),
     },
     systemSetting: {
-      findUnique: jest.fn().mockResolvedValue({ value: 'true' }),
+      findFirst: jest.fn().mockResolvedValue({ value: 'true' }),
     },
     warehouse: {
       findFirst: jest.fn().mockResolvedValue({ id: 'wh-1' }),
@@ -149,7 +149,7 @@ describe('ImportService parent price fallback for variable products', () => {
     const { svc, prisma } = makeService();
     jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
     jest.spyOn(svc, 'processVariationCached').mockResolvedValue(undefined);
-    prisma.product.findUnique.mockResolvedValue({ basePrice: 0 });
+    prisma.product.findFirst.mockResolvedValue({ basePrice: 0 });
 
     await runGroup(svc, [
       row(1, { SKU: 'VAR-1', Type: 'variable', Name: 'Var Parent', 'Regular price': '', 'Price': '' }),
@@ -158,7 +158,7 @@ describe('ImportService parent price fallback for variable products', () => {
     ]);
 
     expect(svc.createProductCached).toHaveBeenCalled();
-    expect(prisma.product.findUnique).toHaveBeenCalledWith({
+    expect(prisma.product.findFirst).toHaveBeenCalledWith({
       where: { id: 'prod-1' },
       select: { basePrice: true },
     });
@@ -172,7 +172,7 @@ describe('ImportService parent price fallback for variable products', () => {
     const { svc, prisma } = makeService();
     jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
     jest.spyOn(svc, 'processVariationCached').mockResolvedValue(undefined);
-    prisma.product.findUnique.mockResolvedValue({ basePrice: 4999 });
+    prisma.product.findFirst.mockResolvedValue({ basePrice: 4999 });
 
     await runGroup(svc, [
       row(1, { SKU: 'VAR-1', Type: 'variable', 'Regular price': '' }),
@@ -192,7 +192,7 @@ describe('ImportService parent price fallback for variable products', () => {
       row(2, { SKU: 'VAR-1-RED', Type: 'variation', 'Regular price': '300' }),
     ]);
 
-    expect(prisma.product.findUnique).not.toHaveBeenCalled();
+    expect(prisma.product.findFirst).not.toHaveBeenCalled();
     expect(prisma.product.update).not.toHaveBeenCalled();
   });
 
@@ -226,7 +226,7 @@ describe('ImportService parent price fallback for variable products', () => {
     const { svc, prisma } = makeService();
     jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
     jest.spyOn(svc, 'processVariationCached').mockResolvedValue(undefined);
-    prisma.product.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue(null);
 
     await runGroup(svc, [
       row(1, { SKU: 'VAR-1', Type: 'variable', 'Regular price': '' }),
@@ -309,7 +309,7 @@ describe('ImportService.updateProductCached parent price handling', () => {
 
   it('repairs manageStock=true for a MANAGED_STOCK variable on re-import (CSV-import state)', async () => {
     const { svc, prisma } = makeService();
-    (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.product.findFirst as jest.Mock).mockResolvedValue({
       availabilityMode: 'MANAGED_STOCK',
     });
     await runUpdate(svc, prisma, {
@@ -324,7 +324,7 @@ describe('ImportService.updateProductCached parent price handling', () => {
 
   it('does not flip manageStock for an INVENTORY_CONTROLLED product on re-import', async () => {
     const { svc, prisma } = makeService();
-    (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.product.findFirst as jest.Mock).mockResolvedValue({
       availabilityMode: 'INVENTORY_CONTROLLED',
     });
     await runUpdate(svc, prisma, {
@@ -392,7 +392,7 @@ describe('ImportService MANAGED_STOCK import — no physical mirroring', () => {
     jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
     prisma.productVariant.create.mockResolvedValue({ id: 'variant-a' });
     // Non-zero stored price keeps the parent-price fallback out of the way.
-    prisma.product.findUnique.mockResolvedValue({ basePrice: 500 });
+    prisma.product.findFirst.mockResolvedValue({ basePrice: 500 });
 
     await runGroup(
       svc,
@@ -579,7 +579,7 @@ describe('ImportService.resolveImportWarehouse (IC-only)', () => {
         new Map([['SIM-1', 'MANAGED_STOCK']]),
       ),
     ).resolves.toBeNull();
-    expect(prisma.systemSetting.findUnique).not.toHaveBeenCalled();
+    expect(prisma.systemSetting.findFirst).not.toHaveBeenCalled();
     expect(prisma.warehouse.findFirst).not.toHaveBeenCalled();
   });
 
@@ -613,7 +613,7 @@ describe('ImportService.resolveImportWarehouse (IC-only)', () => {
 
   it('returns null for an IC group when Inventory Management is off', async () => {
     const { svc, prisma } = makeService();
-    prisma.systemSetting.findUnique.mockResolvedValue({ value: 'false' });
+    prisma.systemSetting.findFirst.mockResolvedValue({ value: 'false' });
 
     await expect(
       svc.resolveImportWarehouse(

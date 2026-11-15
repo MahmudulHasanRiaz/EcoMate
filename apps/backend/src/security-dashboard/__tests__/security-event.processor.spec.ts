@@ -1,7 +1,7 @@
 import { SecurityEventProcessor } from '../processors/security-event.processor';
 
 describe('SecurityEventProcessor', () => {
-  const securityEvent = { create: jest.fn(), findUnique: jest.fn() };
+  const securityEvent = { create: jest.fn(), findFirst: jest.fn() };
   const securityEventHourly = { upsert: jest.fn() };
   const securityEventDaily = { upsert: jest.fn() };
   const securityBlockDaily = { upsert: jest.fn() };
@@ -21,7 +21,7 @@ describe('SecurityEventProcessor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     securityEvent.create.mockResolvedValue({});
-    securityEvent.findUnique.mockResolvedValue(null);
+    securityEvent.findFirst.mockResolvedValue(null);
     securityEventHourly.upsert.mockResolvedValue({});
     securityEventDaily.upsert.mockResolvedValue({});
     securityBlockDaily.upsert.mockResolvedValue({});
@@ -161,7 +161,7 @@ describe('SecurityEventProcessor', () => {
     });
 
     it('a retry of an already-processed event never touches the aggregates', async () => {
-      securityEvent.findUnique.mockResolvedValueOnce({ id: 'evt-1' });
+      securityEvent.findFirst.mockResolvedValueOnce({ id: 'evt-1' });
 
       await processor.process(baseJob);
 

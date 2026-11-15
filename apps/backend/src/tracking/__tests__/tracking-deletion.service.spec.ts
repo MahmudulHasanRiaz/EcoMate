@@ -18,7 +18,7 @@ describe('DeletionService (GDPR-style admin deletion workflow)', () => {
       updateMany: snapshotUpdateMany,
     },
     order: { findMany: orderFindMany },
-    customerProfile: { findUnique: customerFindUnique },
+    customerProfile: { findFirst: customerFindUnique },
   } as any;
 
   const service = new DeletionService(prisma);

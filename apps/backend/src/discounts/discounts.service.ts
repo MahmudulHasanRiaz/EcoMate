@@ -74,7 +74,7 @@ export class DiscountsService {
   }
 
   async findOne(id: string) {
-    const discount = await this.prisma.discount.findUnique({
+    const discount = await this.prisma.discount.findFirst({
       where: { id },
       include: { _count: { select: { applications: true } } },
     });
@@ -136,7 +136,7 @@ export class DiscountsService {
 
   async update(id: string, dto: UpdateDiscountDto) {
     await this.findOne(id);
-    const current = await this.prisma.discount.findUnique({ where: { id } });
+    const current = await this.prisma.discount.findFirst({ where: { id } });
     const merged = {
       scope: dto.scope ?? current!.scope,
       categoryIds: dto.categoryIds ?? current!.categoryIds,

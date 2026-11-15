@@ -159,7 +159,7 @@ export class SteadfastCredentialSetsService {
     const delegate = (this.prisma as any)?.courierCredentialSet;
     const row =
       typeof delegate?.findUnique === 'function'
-        ? await delegate.findUnique({ where: { id } })
+        ? await delegate.findFirst({ where: { id } })
         : null;
     if (!row) throw new NotFoundException(`Credential set ${id} not found`);
     return {
@@ -219,7 +219,7 @@ export class SteadfastCredentialSetsService {
       webhookSecret?: string | null;
     },
   ): Promise<SteadfastSetMeta> {
-    const row = await this.sets.findUnique({ where: { id } });
+    const row = await this.sets.findFirst({ where: { id } });
     if (!row) throw new NotFoundException('Credential set not found');
     const data: Record<string, unknown> = {};
     if (input.label !== undefined) {
@@ -247,7 +247,7 @@ export class SteadfastCredentialSetsService {
     // and the default-promotion share one $transaction scope.
     return this.inTx(async (tx) => {
       const sets = this.txSets(tx);
-      const row = await sets.findUnique({ where: { id } });
+      const row = await sets.findFirst({ where: { id } });
       if (!row) throw new NotFoundException('Credential set not found');
       // LOW delete-guard: never orphan booking history — the FK is
       // ON DELETE SET NULL, so deleting a referenced set would silently
@@ -277,7 +277,7 @@ export class SteadfastCredentialSetsService {
     // isDefault=true (single-default enforcement is tx-scoped).
     return this.inTx(async (tx) => {
       const sets = this.txSets(tx);
-      const row = await sets.findUnique({ where: { id } });
+      const row = await sets.findFirst({ where: { id } });
       if (!row) throw new NotFoundException('Credential set not found');
       await this.clearOtherDefaults(sets, id);
       const updated = await sets.update({ where: { id }, data: { isDefault: true } });
@@ -314,7 +314,7 @@ export class SteadfastCredentialSetsService {
       };
     }
     // Zero friction for single-business: no sets → legacy single row.
-    const creds = await (this.prisma as any).courierCredentials.findUnique({
+    const creds = await (this.prisma as any).courierCredentials.findFirst({
       where: { courier: STEADFAST },
     });
     if (!creds?.enabled)
@@ -327,7 +327,7 @@ export class SteadfastCredentialSetsService {
   }
 
   private async resolveOne(setId: string, kind: string): Promise<SteadfastResolvedAuth> {
-    const row = await this.sets.findUnique({ where: { id: setId } });
+    const row = await this.sets.findFirst({ where: { id: setId } });
     if (!row)
       throw new BadRequestException(
         `Steadfast credential set not found (${kind}) — wrong profile? Pick the set from settings.`,
@@ -394,7 +394,7 @@ export class SteadfastCredentialSetsService {
       }
     }
     const legacy = await (this.prisma as any).courierCredentials
-      .findUnique({ where: { courier: STEADFAST } })
+      .findFirst({ where: { courier: STEADFAST } })
       .catch(() => null);
     const legacySecret = (legacy as any)?.webhookSecret?.trim?.();
     if (legacySecret) candidates.push({ setId: null, secret: legacySecret });

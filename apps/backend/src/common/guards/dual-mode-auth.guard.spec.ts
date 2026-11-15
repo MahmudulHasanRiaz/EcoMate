@@ -47,12 +47,12 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
           provide: PrismaService,
           useValue: {
             userProfile: {
-              findUnique: jest.fn(),
+              findFirst: jest.fn(),
               findFirst: jest.fn(),
               create: jest.fn(),
             },
             userSettings: { create: jest.fn() },
-            betterAuthUser: { findUnique: jest.fn() },
+            betterAuthUser: { findFirst: jest.fn() },
           },
         },
       ],
@@ -63,13 +63,13 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
   });
 
   it('admin JWT user with NO linked preset gets ALL registered permissions (BA query now runs to check for one)', async () => {
-    (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
       id: 'user-1',
       role: 'admin',
       status: 'active',
       betterAuthUserId: 'ba-1',
     });
-    (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: [],
       denied_permissions: [],
       employee: null,
@@ -82,7 +82,7 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     expect(context.switchToHttp().getRequest().user.permissions).toEqual(
       getAllPermissions(),
     );
-    expect(prisma.betterAuthUser.findUnique).toHaveBeenCalledWith({
+    expect(prisma.betterAuthUser.findFirst).toHaveBeenCalledWith({
       where: { id: 'ba-1' },
       select: {
         override_permissions: true,
@@ -93,13 +93,13 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
   });
 
   it('admin JWT user WITH a linked preset gets exactly the preset (preset supremacy)', async () => {
-    (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
       id: 'user-1',
       role: 'admin',
       status: 'active',
       betterAuthUserId: 'ba-1',
     });
-    (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: [],
       denied_permissions: [],
       employee: {
@@ -117,13 +117,13 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
   });
 
   it('employee JWT user with employee link gets preset ∪ override permissions', async () => {
-    (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
       id: 'user-1',
       role: 'employee',
       status: 'active',
       betterAuthUserId: 'ba-1',
     });
-    (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: ['view_orders', 'ghost_key'],
       denied_permissions: [],
       employee: {
@@ -135,7 +135,7 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     const context = makeContext('Bearer token-1');
     await guard.canActivate(context);
 
-    expect(prisma.betterAuthUser.findUnique).toHaveBeenCalledWith({
+    expect(prisma.betterAuthUser.findFirst).toHaveBeenCalledWith({
       where: { id: 'ba-1' },
       select: {
         override_permissions: true,
@@ -149,7 +149,7 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
   });
 
   it('employee JWT user without betterAuthUserId gets employee role defaults and no BA query (no throw)', async () => {
-    (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
       id: 'user-1',
       role: 'employee',
       status: 'active',
@@ -169,17 +169,17 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
       'approve_customer_reviews',
       'view_cod_mismatch',
     ]);
-    expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
+    expect(prisma.betterAuthUser.findFirst).not.toHaveBeenCalled();
   });
 
   it('customer JWT user gets [] even if BA row exists', async () => {
-    (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
       id: 'user-1',
       role: 'customer',
       status: 'active',
       betterAuthUserId: 'ba-1',
     });
-    (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: [],
       employee: null,
     });

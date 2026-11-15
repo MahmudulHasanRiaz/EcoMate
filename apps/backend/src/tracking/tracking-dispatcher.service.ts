@@ -156,7 +156,7 @@ export class TrackingDispatcherService {
 
   /** The actual dispatch pipeline (see class docstring); process() wraps it with crash-safety. */
   private async run(job: DispatchJob, queueJobId?: string): Promise<void> {
-    const snapshot = await this.prisma.trackingSnapshot.findUnique({
+    const snapshot = await this.prisma.trackingSnapshot.findFirst({
       where: { id: job.snapshotId },
     });
 
@@ -185,7 +185,7 @@ export class TrackingDispatcherService {
       actionSource = snapshot.actionSource ?? undefined;
       basePayload = (snapshot.payload ?? {}) as unknown as TrackingSnapshotPayload;
     } else {
-      const archive = await this.prisma.trackingReplayArchive.findUnique({
+      const archive = await this.prisma.trackingReplayArchive.findFirst({
         where: { snapshotId: job.snapshotId },
       });
       if (!archive) {
@@ -206,7 +206,7 @@ export class TrackingDispatcherService {
       basePayload = (archive.archivedPayload ?? {}) as unknown as TrackingSnapshotPayload;
     }
 
-    const outbox = await this.prisma.trackingOutbox.findUnique({
+    const outbox = await this.prisma.trackingOutbox.findFirst({
       where: { id: job.outboxId },
     });
     if (!outbox) throw new Error(`Tracking outbox ${job.outboxId} not found`);
@@ -494,7 +494,7 @@ export class TrackingDispatcherService {
    */
   private async releaseStuckOutbox(job: DispatchJob): Promise<void> {
     try {
-      const outbox = await this.prisma.trackingOutbox.findUnique({
+      const outbox = await this.prisma.trackingOutbox.findFirst({
         where: { id: job.outboxId },
       });
       if (!outbox || outbox.status !== 'CLAIMED') return;
@@ -718,13 +718,11 @@ export class TrackingDispatcherService {
     },
   ): Promise<{ row: any; created: boolean }> {
     const where = {
-      snapshotId_provider_destinationId: {
-        snapshotId: source.snapshotId,
-        provider,
-        destinationId,
-      },
+      snapshotId: source.snapshotId,
+      provider,
+      destinationId,
     };
-    const existing = await this.prisma.trackingDispatch.findUnique({ where });
+    const existing = await this.prisma.trackingDispatch.findFirst({ where });
     if (existing) return { row: existing, created: false };
 
     try {
@@ -757,7 +755,7 @@ export class TrackingDispatcherService {
       return { row, created: true };
     } catch (err) {
       if ((err as { code?: string })?.code === 'P2002') {
-        const winner = await this.prisma.trackingDispatch.findUnique({ where });
+        const winner = await this.prisma.trackingDispatch.findFirst({ where });
         if (winner) return { row: winner, created: false };
       }
       throw err;

@@ -63,7 +63,7 @@ describe('Bank (manual) gateway accounts', () => {
 
   it('lists accounts mapped to the public shape', async () => {
     const prisma = {
-      paymentGateway: { findUnique: jest.fn().mockResolvedValue(bankGateway) },
+      paymentGateway: { findFirst: jest.fn().mockResolvedValue(bankGateway) },
       bankAccount: { findMany: jest.fn().mockResolvedValue([accountRow]) },
     };
     const ctrl = makeController(prisma);
@@ -89,7 +89,7 @@ describe('Bank (manual) gateway accounts', () => {
 
   it('creates an account under the bank gateway with DTO defaults', async () => {
     const prisma = {
-      paymentGateway: { findUnique: jest.fn().mockResolvedValue(bankGateway) },
+      paymentGateway: { findFirst: jest.fn().mockResolvedValue(bankGateway) },
       bankAccount: { create: jest.fn().mockResolvedValue(accountRow) },
     };
     const ctrl = makeController(prisma);
@@ -116,7 +116,7 @@ describe('Bank (manual) gateway accounts', () => {
 
   it('404s when updating an account that belongs to another gateway', async () => {
     const prisma = {
-      paymentGateway: { findUnique: jest.fn().mockResolvedValue(bankGateway) },
+      paymentGateway: { findFirst: jest.fn().mockResolvedValue(bankGateway) },
       bankAccount: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const ctrl = makeController(prisma);
@@ -132,7 +132,7 @@ describe('Bank (manual) gateway accounts', () => {
 
   it('deletes an account scoped to the bank gateway', async () => {
     const prisma = {
-      paymentGateway: { findUnique: jest.fn().mockResolvedValue(bankGateway) },
+      paymentGateway: { findFirst: jest.fn().mockResolvedValue(bankGateway) },
       bankAccount: {
         findFirst: jest.fn().mockResolvedValue(accountRow),
         delete: jest.fn().mockResolvedValue(accountRow),

@@ -148,10 +148,10 @@ describe('PaymentsService.verify self-approve block', () => {
   const mockPrisma: any = {
     $transaction: jest.fn(),
     $queryRawUnsafe: jest.fn(),
-    order: { findUnique: jest.fn(), update: jest.fn() },
+    order: { findFirst: jest.fn(), update: jest.fn() },
     payment: {
       create: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       aggregate: jest.fn(),
     },
@@ -160,7 +160,7 @@ describe('PaymentsService.verify self-approve block', () => {
   function mockTx(paymentRow: any) {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-      mockPrisma.payment.findUnique.mockResolvedValue(paymentRow);
+      mockPrisma.payment.findFirst.mockResolvedValue(paymentRow);
       mockPrisma.payment.update.mockImplementation(async (args: any) => ({
         ...paymentRow,
         ...args.data,
@@ -168,7 +168,7 @@ describe('PaymentsService.verify self-approve block', () => {
       mockPrisma.payment.aggregate.mockResolvedValue({
         _sum: { amount: 500 },
       });
-      mockPrisma.order.findUnique.mockResolvedValue({ total: 1000 });
+      mockPrisma.order.findFirst.mockResolvedValue({ total: 1000 });
       mockPrisma.order.update.mockImplementation(async (args: any) => ({
         id: 'order-1',
         ...args.data,
@@ -259,13 +259,13 @@ const orderStub = (overrides: Record<string, any> = {}) => ({
 describe('OrdersService.verifyPayment self-approve block', () => {
   let service: OrdersService;
   const txMocks: any = {
-    order: { findUnique: jest.fn(), update: jest.fn() },
-    orderStatus: { findUnique: jest.fn() },
+    order: { findFirst: jest.fn(), update: jest.fn() },
+    orderStatus: { findFirst: jest.fn() },
     payment: { findMany: jest.fn(), update: jest.fn() },
   };
   const mockPrisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(txMocks)),
-    order: { findUnique: jest.fn() },
+    order: { findFirst: jest.fn() },
   };
 
   const verifyingOrder: any = {
@@ -276,9 +276,9 @@ describe('OrdersService.verifyPayment self-approve block', () => {
   };
 
   function mockVerifyTx(pendingRows: any[]) {
-    txMocks.order.findUnique.mockResolvedValue(verifyingOrder);
+    txMocks.order.findFirst.mockResolvedValue(verifyingOrder);
     txMocks.payment.findMany.mockResolvedValue(pendingRows);
-    txMocks.orderStatus.findUnique.mockResolvedValue({
+    txMocks.orderStatus.findFirst.mockResolvedValue({
       id: 'st-pp',
       name: 'Payment Pending',
     });

@@ -119,7 +119,7 @@ export class CommissionRulesService {
   }
 
   async get(id: string) {
-    const rule = await this.prisma.commissionRuleV2.findUnique({
+    const rule = await this.prisma.commissionRuleV2.findFirst({
       where: { id },
       include: {
         employee: {
@@ -136,7 +136,7 @@ export class CommissionRulesService {
   }
 
   async update(id: string, dto: Partial<RuleInput>) {
-    const existing = await this.prisma.commissionRuleV2.findUnique({ where: { id } });
+    const existing = await this.prisma.commissionRuleV2.findFirst({ where: { id } });
     if (!existing) throw new NotFoundException('Commission rule not found');
 
     // Validate the merged shape so a partial update cannot produce an invalid
@@ -192,7 +192,7 @@ export class CommissionRulesService {
    * unaffected and the rule remains auditable.
    */
   async setActive(id: string, isActive: boolean) {
-    const rule = await this.prisma.commissionRuleV2.findUnique({ where: { id } });
+    const rule = await this.prisma.commissionRuleV2.findFirst({ where: { id } });
     if (!rule) throw new NotFoundException('Commission rule not found');
 
     if (!isActive) {
@@ -209,7 +209,7 @@ export class CommissionRulesService {
   /** Preview the human-readable effect of a rule without saving it. */
   async preview(dto: RuleInput) {
     await this.validate(dto);
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: dto.employeeId },
       select: { betterAuthUser: { select: { name: true } } },
     });
@@ -231,7 +231,7 @@ export class CommissionRulesService {
   private async validate(dto: RuleInput) {
     if (!dto.employeeId) throw new BadRequestException('Employee is required');
 
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: dto.employeeId },
       select: { id: true },
     });
@@ -428,7 +428,7 @@ export class CommissionRulesService {
    * calculation inputs, so no historical amount can move.
    */
   async endNow(id: string) {
-    const rule = await this.prisma.commissionRuleV2.findUnique({
+    const rule = await this.prisma.commissionRuleV2.findFirst({
       where: { id },
       select: { id: true, effectiveTo: true, effectiveFrom: true },
     });

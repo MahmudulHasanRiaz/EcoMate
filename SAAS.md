@@ -166,3 +166,16 @@ The next steps are registry sync from the platform API, the real `PrismaService`
 
 Verification: platform API **26/26** tests and backend tenancy **20/20** tests
 pass; both builds are clean. See `docs/saas/phase-2c-report.md`.
+
+
+## Phase 2D — tenant schema swap (WIP branch)
+
+The active tenant schema/migration swap is on `feat/saas-tenancy-swap`:
+
+- Active schema: 203 models (200 tenant-scoped, 3 global reference); RLS baseline + guards.
+- Backend `nest build`: green; Jest test migration is still in progress (388 failures, mostly mock alignment and DB-backed integration suites).
+- `PrismaService` is a transitional default-tenant RLS client; the tenant proxy/middleware/Better Auth wiring is the next runtime step.
+- Legacy license module removed from this branch; seed/scripts excluded from `nest build` pending tenant bootstrap.
+- **Do not merge this branch yet.** The verified Phase 0–2C branch is `feat/saas-multitenant`.
+
+See `docs/saas/phase-2d-wip-report.md`.

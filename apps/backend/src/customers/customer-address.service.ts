@@ -106,7 +106,7 @@ export class CustomerAddressService {
   /** Single default per (customer, role), enforced transactionally. */
   async setDefault(id: string) {
     return this.prisma.$transaction(async (tx) => {
-      const row = await tx.customerAddress.findUnique({
+      const row = await tx.customerAddress.findFirst({
         where: { id },
         select: { customerProfileId: true, type: true },
       });
@@ -128,7 +128,7 @@ export class CustomerAddressService {
    * edited address is correctly recognised as new.
    */
   async update(id: string, patch: Partial<AddressInput> & { label?: string | null }) {
-    const current = await this.prisma.customerAddress.findUnique({ where: { id } });
+    const current = await this.prisma.customerAddress.findFirst({ where: { id } });
     if (!current) return null;
 
     const merged: AddressInput = {

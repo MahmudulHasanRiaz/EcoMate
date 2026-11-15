@@ -106,7 +106,7 @@ export class UsersService {
   }
 
   async findByEmail(email: string) {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { email },
       select: {
         id: true,
@@ -130,7 +130,7 @@ export class UsersService {
   }
 
   async findOne(id: string) {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id },
       select: {
         id: true,
@@ -234,7 +234,7 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto) {
-    const existingUser = await this.prisma.userProfile.findUnique({
+    const existingUser = await this.prisma.userProfile.findFirst({
       where: { id },
     });
 
@@ -243,7 +243,7 @@ export class UsersService {
     }
 
     if (dto.email && dto.email !== existingUser.email) {
-      const emailTaken = await this.prisma.userProfile.findUnique({
+      const emailTaken = await this.prisma.userProfile.findFirst({
         where: { email: dto.email },
       });
       if (emailTaken) {
@@ -252,7 +252,7 @@ export class UsersService {
     }
 
     if (dto.username && dto.username !== existingUser.username) {
-      const usernameTaken = await this.prisma.userProfile.findUnique({
+      const usernameTaken = await this.prisma.userProfile.findFirst({
         where: { username: dto.username },
       });
       if (usernameTaken) {
@@ -328,7 +328,7 @@ export class UsersService {
   }
 
   async remove(id: string) {
-    const user = await this.prisma.userProfile.findUnique({ where: { id } });
+    const user = await this.prisma.userProfile.findFirst({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -383,7 +383,7 @@ export class UsersService {
   }
 
   async getSettings(userId: string) {
-    let settings = await this.prisma.userSettings.findUnique({
+    let settings = await this.prisma.userSettings.findFirst({
       where: { userId },
     });
     if (!settings) {

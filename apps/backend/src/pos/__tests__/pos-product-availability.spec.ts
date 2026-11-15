@@ -54,7 +54,7 @@ describe('PosOrdersService.getProductAvailability — network lookup', () => {
       // WS4: getProductAvailability reads the product's availabilityMode
       // first; the physical network lookup is the INVENTORY_CONTROLLED path.
       product: {
-        findUnique: jest
+        findFirst: jest
           .fn()
           .mockResolvedValue({ availabilityMode: 'INVENTORY_CONTROLLED' }),
       },

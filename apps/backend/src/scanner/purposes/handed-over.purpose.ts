@@ -71,7 +71,7 @@ export class HandedOverPurpose implements ScanPurposeHandler {
     }
 
     const dispatch = params.dispatchId
-      ? await this.prisma.dispatch.findUnique({ where: { id: params.dispatchId } })
+      ? await this.prisma.dispatch.findFirst({ where: { id: params.dispatchId } })
       : null;
     if (!dispatch) {
       return {

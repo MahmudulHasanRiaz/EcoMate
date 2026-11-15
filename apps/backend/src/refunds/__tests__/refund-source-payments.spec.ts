@@ -31,7 +31,7 @@ describe('RefundsService — sourcePaymentIds bulk refund (D-B)', () => {
         .fn()
         .mockImplementation(async ({ data }: any) => ({ id: 'pay-refund-1', ...data })),
     },
-    order: { findUnique: jest.fn(), update: jest.fn() },
+    order: { findFirst: jest.fn(), update: jest.fn() },
     orderStatus: { findFirst: jest.fn() },
     dispatch: { findFirst: jest.fn().mockResolvedValue(null) },
   };
@@ -56,7 +56,7 @@ describe('RefundsService — sourcePaymentIds bulk refund (D-B)', () => {
   });
 
   function saleOrderPaid(orderId = 'order-1', paid = 2000) {
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: orderId,
       total: paid,
       kind: 'SALE',

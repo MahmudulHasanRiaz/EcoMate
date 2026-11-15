@@ -120,7 +120,7 @@ describe('AccountingService', () => {
           useValue: {
             journalEntry: {
               findMany: jest.fn().mockResolvedValue([mockEntry]),
-              findUnique: jest.fn().mockResolvedValue(mockEntry),
+              findFirst: jest.fn().mockResolvedValue(mockEntry),
               create: jest.fn().mockResolvedValue(mockEntry),
               delete: jest.fn().mockResolvedValue(mockEntry),
               count: jest.fn().mockResolvedValue(1),
@@ -138,7 +138,7 @@ describe('AccountingService', () => {
                   equityAccount,
                   liabilityAccount,
                 ]),
-              findUnique: jest
+              findFirst: jest
                 .fn()
                 .mockImplementation(async ({ where }: any) => {
                   const map: any = {
@@ -152,7 +152,7 @@ describe('AccountingService', () => {
                 }),
             },
             financialPeriod: {
-              findUnique: jest
+              findFirst: jest
                 .fn()
                 .mockImplementation(async ({ where }: any) => {
                   const map: any = {
@@ -167,7 +167,7 @@ describe('AccountingService', () => {
               upsert: jest.fn().mockResolvedValue({ date: '250701', seq: 1 }),
             },
             expense: {
-              findUnique: jest.fn().mockResolvedValue(null),
+              findFirst: jest.fn().mockResolvedValue(null),
             },
             $queryRaw: jest.fn().mockResolvedValue([]),
             $queryRawUnsafe: jest.fn().mockResolvedValue([]),
@@ -333,7 +333,7 @@ describe('AccountingService', () => {
       });
 
       expect(txUpsert!).toHaveBeenCalledWith({
-        where: { date_family: { date: '260702', family: 'JE' } },
+        where: {  date: '260702', family: 'JE'  },
         update: { seq: { increment: 1 } },
         create: { date: '260702', family: 'JE', seq: 1 },
       });

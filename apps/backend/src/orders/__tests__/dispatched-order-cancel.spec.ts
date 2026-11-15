@@ -85,7 +85,7 @@ describe('OrdersService — cancel a dispatched order', () => {
   beforeEach(async () => {
     prisma = {
       order: {
-        findUnique: jest.fn().mockResolvedValue({ ...baseOrder }),
+        findFirst: jest.fn().mockResolvedValue({ ...baseOrder }),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockImplementation(async (args: any) => ({
           ...baseOrder,
@@ -95,7 +95,7 @@ describe('OrdersService — cancel a dispatched order', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(async ({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(async ({ where }: any) => {
           if (where?.id === 'status-cancelled') return cancelledStatus;
           if (where?.name === 'Cancelled') return cancelledStatus;
           return null;

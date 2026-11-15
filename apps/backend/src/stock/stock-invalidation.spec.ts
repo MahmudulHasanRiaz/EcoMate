@@ -27,7 +27,7 @@ describe('Product cache invalidation on direct stock writes', () => {
     beforeEach(async () => {
       const prismaMock: any = {
         physicalReservation: {
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             id: 'res-1',
             productId: 'p1',
             variantId: null,
@@ -40,7 +40,7 @@ describe('Product cache invalidation on direct stock writes', () => {
         },
         physicalInventory: {
           update: jest.fn().mockResolvedValue({}),
-          findUnique: jest.fn().mockResolvedValue({ quantity: 3, reservedQuantity: 0 }),
+          findFirst: jest.fn().mockResolvedValue({ quantity: 3, reservedQuantity: 0 }),
         },
         physicalInventoryLedger: {
           create: jest.fn().mockResolvedValue({}),
@@ -130,7 +130,7 @@ describe('Product cache invalidation on direct stock writes', () => {
           update: jest.fn().mockResolvedValue({}),
         },
         order: {
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             id: 'o1',
             items: [
               {
@@ -146,7 +146,7 @@ describe('Product cache invalidation on direct stock writes', () => {
           }),
         },
         physicalReservation: {
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             status: 'CONSUMED',
             productId: 'p1',
             variantId: null,
@@ -158,7 +158,7 @@ describe('Product cache invalidation on direct stock writes', () => {
         physicalInventory: {
           update: jest.fn().mockResolvedValue({}),
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-          findUnique: jest.fn().mockResolvedValue({ quantity: 5, reservedQuantity: 0 }),
+          findFirst: jest.fn().mockResolvedValue({ quantity: 5, reservedQuantity: 0 }),
         },
         physicalInventoryLedger: {
           create: jest.fn().mockResolvedValue({}),
@@ -189,7 +189,7 @@ describe('Product cache invalidation on direct stock writes', () => {
     beforeEach(async () => {
       const prismaMock: any = {
         combo: {
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             id: 'combo-1',
             name: 'Test Combo',
             items: [
@@ -245,11 +245,11 @@ describe('Product cache invalidation on direct stock writes', () => {
     beforeEach(async () => {
       const prismaMock: any = {
         productVariant: {
-          findUnique: jest.fn().mockResolvedValue({ productId: 'p1' }),
+          findFirst: jest.fn().mockResolvedValue({ productId: 'p1' }),
           update: jest.fn().mockResolvedValue({}),
         },
         product: {
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             availabilityMode: 'MANAGED_STOCK',
             syncManagedStock: true,
           }),

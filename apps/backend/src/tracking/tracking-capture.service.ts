@@ -77,7 +77,7 @@ export class TrackingCaptureService {
         // existing snapshot is looked up for the required snapshotId FK; a
         // failed lookup (row already purged) skips the marker silently.
         try {
-          const existing = await client.trackingSnapshot.findUnique({
+          const existing = await client.trackingSnapshot.findFirst({
             where: { eventId: input.eventId },
             select: { id: true },
           });
@@ -101,7 +101,7 @@ export class TrackingCaptureService {
       }
 
       // createMany does not return row ids, so read the snapshot back to link the outbox.
-      const snapshot = await client.trackingSnapshot.findUnique({
+      const snapshot = await client.trackingSnapshot.findFirst({
         where: { eventId: input.eventId },
       });
       if (!snapshot) {
@@ -164,12 +164,12 @@ export class TrackingCaptureService {
   ): Promise<{ requeued: boolean; providers: string[]; destinations: string[] }> {
     if (providers.length === 0)
       return { requeued: false, providers: [], destinations: [] };
-    const snapshot = await this.prisma.trackingSnapshot.findUnique({
+    const snapshot = await this.prisma.trackingSnapshot.findFirst({
       where: { eventId },
       select: { id: true },
     });
     if (!snapshot) return { requeued: false, providers: [], destinations: [] };
-    const outbox = await this.prisma.trackingOutbox.findUnique({
+    const outbox = await this.prisma.trackingOutbox.findFirst({
       where: { snapshotId: snapshot.id },
     });
     if (!outbox) return { requeued: false, providers: [], destinations: [] };

@@ -101,7 +101,7 @@ describe('OrdersService.updateOrder cost capture', () => {
   const editLockGet = jest.fn().mockResolvedValue(null);
   const mockPrisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(txMocks)),
-    order: { findUnique: orderFindUnique },
+    order: { findFirst: orderFindUnique },
   };
 
   const existingOrder: any = {
@@ -197,8 +197,8 @@ describe('OrdersService.updateOrder cost capture', () => {
 describe('OrdersService.verifyPayment fee capture', () => {
   let service: OrdersService;
   const txMocks: any = {
-    order: { findUnique: jest.fn(), update: jest.fn() },
-    orderStatus: { findUnique: jest.fn() },
+    order: { findFirst: jest.fn(), update: jest.fn() },
+    orderStatus: { findFirst: jest.fn() },
     payment: {
       findMany: jest.fn(),
       update: jest.fn(),
@@ -208,7 +208,7 @@ describe('OrdersService.verifyPayment fee capture', () => {
   };
   const mockPrisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(txMocks)),
-    order: { findUnique: jest.fn() },
+    order: { findFirst: jest.fn() },
   };
 
   const verifyingOrder: any = {
@@ -221,9 +221,9 @@ describe('OrdersService.verifyPayment fee capture', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    txMocks.order.findUnique.mockResolvedValue(verifyingOrder);
+    txMocks.order.findFirst.mockResolvedValue(verifyingOrder);
     txMocks.payment.updateMany.mockResolvedValue({ count: 1 });
-    txMocks.orderStatus.findUnique.mockResolvedValue({
+    txMocks.orderStatus.findFirst.mockResolvedValue({
       id: 's1',
       name: 'Confirmed',
     });

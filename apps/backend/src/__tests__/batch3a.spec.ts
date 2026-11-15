@@ -221,7 +221,7 @@ function createMockSharp() {
 
 describe('MediaQueueProcessor', () => {
   let processor: MediaQueueProcessor;
-  let prisma: { media: { findUnique: jest.Mock; update: jest.Mock } };
+  let prisma: { media: { findFirst: jest.Mock; update: jest.Mock } };
   let storage: { readMediaOriginal: jest.Mock; store: jest.Mock };
   let mediaQueue: { recoverStuck: jest.Mock };
   let mockSharpFn: jest.Mock;
@@ -238,7 +238,7 @@ describe('MediaQueueProcessor', () => {
     jest.spyOn(MediaQueueProcessor.prototype as any, 'loadSharp').mockResolvedValue(mockSharpFn);
     prisma = {
       media: {
-        findUnique: jest.fn().mockResolvedValue(sampleMedia),
+        findFirst: jest.fn().mockResolvedValue(sampleMedia),
         update: jest.fn().mockResolvedValue({}),
       },
     };
@@ -324,7 +324,7 @@ describe('MediaQueueProcessor', () => {
   /* ── Non-image pass-through ── */
 
   it('non-image media is marked READY without processing derivatives', async () => {
-    prisma.media.findUnique.mockResolvedValue({ ...sampleMedia, mimeType: 'application/pdf' });
+    prisma.media.findFirst.mockResolvedValue({ ...sampleMedia, mimeType: 'application/pdf' });
 
     await processor.process(makeJob());
 

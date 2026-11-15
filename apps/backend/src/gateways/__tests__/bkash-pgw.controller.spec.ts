@@ -99,7 +99,7 @@ describe('BkashPgwController', () => {
             $transaction: jest.fn((cb: any) => cb({
               $queryRawUnsafe: jest.fn(),
               order: {
-                findUnique: jest.fn(),
+                findFirst: jest.fn(),
                 update: jest.fn(),
               },
               payment: {
@@ -111,7 +111,7 @@ describe('BkashPgwController', () => {
               },
             })),
             order: {
-              findUnique: jest.fn().mockResolvedValue(mockOrder),
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
             },
             payment: {
               findFirst: jest.fn(),
@@ -141,7 +141,7 @@ describe('BkashPgwController', () => {
         cb({
           $queryRawUnsafe: jest.fn(),
           order: {
-            findUnique: jest.fn().mockResolvedValue(null),
+            findFirst: jest.fn().mockResolvedValue(null),
             update: jest.fn(),
           },
           payment: {
@@ -162,7 +162,7 @@ describe('BkashPgwController', () => {
         cb({
           $queryRawUnsafe: jest.fn(),
           order: {
-            findUnique: jest.fn().mockResolvedValue(mockOrder),
+            findFirst: jest.fn().mockResolvedValue(mockOrder),
             update: jest.fn(),
           },
           payment: {
@@ -183,7 +183,7 @@ describe('BkashPgwController', () => {
         cb({
           $queryRawUnsafe: jest.fn(),
           order: {
-            findUnique: jest.fn().mockResolvedValue({
+            findFirst: jest.fn().mockResolvedValue({
               ...mockOrder,
               payments: [{ amount: 2050, status: PaymentStatus.PAID }],
             }),
@@ -206,7 +206,7 @@ describe('BkashPgwController', () => {
       prisma.$transaction.mockImplementationOnce((cb: any) =>
         cb({
           $queryRawUnsafe: jest.fn(),
-          order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+          order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
           payment: {
             create: jest.fn().mockResolvedValue(mockPaymentRecord),
             findFirst: jest.fn(),
@@ -228,7 +228,7 @@ describe('BkashPgwController', () => {
     it('succeeds with valid viewToken and outstanding amount', async () => {
       const tx = {
         $queryRawUnsafe: jest.fn(),
-        order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+        order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
         payment: {
           create: jest.fn().mockResolvedValue(mockPaymentRecord),
           findFirst: jest.fn(),
@@ -251,7 +251,7 @@ describe('BkashPgwController', () => {
       prisma.$transaction.mockImplementationOnce((cb: any) =>
         cb({
           $queryRawUnsafe: jest.fn(),
-          order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+          order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
           payment: {
             create: jest.fn().mockResolvedValue(mockPaymentRecord),
             findFirst: jest.fn(),
@@ -271,7 +271,7 @@ describe('BkashPgwController', () => {
       prisma.$transaction.mockImplementationOnce((cb: any) =>
         cb({
           $queryRawUnsafe: jest.fn(),
-          order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+          order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
           payment: {
             create: jest.fn(),
             findFirst: jest.fn(),
@@ -288,7 +288,7 @@ describe('BkashPgwController', () => {
     it('ignores client-supplied invoiceNo', async () => {
       const tx = {
         $queryRawUnsafe: jest.fn(),
-        order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+        order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
         payment: {
           create: jest.fn().mockResolvedValue(mockPaymentRecord),
           findFirst: jest.fn(),
@@ -394,7 +394,7 @@ describe('BkashPgwController', () => {
 
       const tx = {
         $queryRawUnsafe: jest.fn(),
-        order: { findUnique: jest.fn(), update: jest.fn() },
+        order: { findFirst: jest.fn(), update: jest.fn() },
         payment: {
           findFirst: jest.fn().mockResolvedValue(mockPaymentRecord),
           findFirst: jest.fn(),
@@ -421,7 +421,7 @@ describe('BkashPgwController', () => {
 
       const tx = {
         $queryRawUnsafe: jest.fn(),
-        order: { findUnique: jest.fn(), update: jest.fn() },
+        order: { findFirst: jest.fn(), update: jest.fn() },
         payment: {
           findFirst: jest.fn().mockResolvedValue(mockPaymentRecord),
           update: jest.fn(),
@@ -447,7 +447,7 @@ describe('BkashPgwController', () => {
 
       const tx = {
         $queryRawUnsafe: jest.fn(),
-        order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+        order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
         payment: {
           findFirst: jest.fn().mockResolvedValue(null),
           update: jest.fn(),
@@ -476,7 +476,7 @@ describe('BkashPgwController', () => {
       let callCount = 0;
       const tx = {
         $queryRawUnsafe: jest.fn(),
-        order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+        order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
         payment: {
           findFirst: jest.fn().mockImplementation(() => {
             callCount++;
@@ -504,7 +504,7 @@ describe('BkashPgwController', () => {
       const tx = {
         $queryRawUnsafe: jest.fn(),
         order: {
-          findUnique: jest.fn().mockResolvedValue({ ...mockOrder, total: 2050, viewToken: 'vt-secret-123' }),
+          findFirst: jest.fn().mockResolvedValue({ ...mockOrder, total: 2050, viewToken: 'vt-secret-123' }),
           update: jest.fn(),
         },
         payment: {
@@ -533,7 +533,7 @@ describe('BkashPgwController', () => {
 
       const tx = {
         $queryRawUnsafe: jest.fn(),
-        order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+        order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
         payment: {
           findFirst: jest.fn().mockResolvedValue(mockPaymentRecord),
           update: jest.fn(),
@@ -558,7 +558,7 @@ describe('BkashPgwController', () => {
     it('provider create failure marks reservation FAILED', async () => {
       const tx = {
         $queryRawUnsafe: jest.fn(),
-        order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+        order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
         payment: {
           create: jest.fn().mockResolvedValue(mockPaymentRecord),
           findFirst: jest.fn(),
@@ -582,7 +582,7 @@ describe('BkashPgwController', () => {
     it('binding failure after provider success does NOT mark reservation FAILED', async () => {
       const tx = {
         $queryRawUnsafe: jest.fn(),
-        order: { findUnique: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
+        order: { findFirst: jest.fn().mockResolvedValue(mockOrder), update: jest.fn() },
         payment: {
           create: jest.fn().mockResolvedValue(mockPaymentRecord),
           findFirst: jest.fn(),
@@ -612,7 +612,7 @@ describe('BkashPgwController', () => {
       const tx = {
         $queryRawUnsafe: jest.fn(),
         order: {
-          findUnique: jest.fn().mockResolvedValue({ ...mockOrder, total: 2050, viewToken: 'vt-secret-123' }),
+          findFirst: jest.fn().mockResolvedValue({ ...mockOrder, total: 2050, viewToken: 'vt-secret-123' }),
           update: jest.fn(),
         },
         payment: {
@@ -661,7 +661,7 @@ describe('BkashPgwController', () => {
       const tx = {
         $queryRawUnsafe: jest.fn(),
         order: {
-          findUnique: jest.fn().mockResolvedValue({ ...mockOrder, total: 2050, viewToken: 'vt-secret-123' }),
+          findFirst: jest.fn().mockResolvedValue({ ...mockOrder, total: 2050, viewToken: 'vt-secret-123' }),
           update: jest.fn(),
         },
         payment: {

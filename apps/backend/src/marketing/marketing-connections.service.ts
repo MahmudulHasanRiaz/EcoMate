@@ -32,7 +32,7 @@ export class MarketingConnectionsService {
 
   async create(dto: CreateConnectionDto, userId?: string) {
     await this.platforms.ensureDefaults();
-    const platform = await this.prisma.marketingPlatform.findUnique({
+    const platform = await this.prisma.marketingPlatform.findFirst({
       where: { slug: dto.provider as any },
     });
     if (!platform) {
@@ -97,7 +97,7 @@ export class MarketingConnectionsService {
   }
 
   async findOne(id: string) {
-    const connection = await this.prisma.marketingConnection.findUnique({
+    const connection = await this.prisma.marketingConnection.findFirst({
       where: { id },
       include: { platform: true, adAccounts: true },
     });
@@ -106,7 +106,7 @@ export class MarketingConnectionsService {
   }
 
   async update(id: string, dto: UpdateConnectionDto, userId?: string) {
-    const existing = await this.prisma.marketingConnection.findUnique({
+    const existing = await this.prisma.marketingConnection.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Connection not found');
@@ -117,7 +117,7 @@ export class MarketingConnectionsService {
       data.providerUserId = dto.providerUserId;
     } else if (dto.accessToken) {
       // Resolve platform from connection → platform
-      const connWithPlatform = await this.prisma.marketingConnection.findUnique({
+      const connWithPlatform = await this.prisma.marketingConnection.findFirst({
         where: { id },
         include: { platform: true },
       });
@@ -154,7 +154,7 @@ export class MarketingConnectionsService {
   }
 
   async disconnect(id: string, userId?: string) {
-    const existing = await this.prisma.marketingConnection.findUnique({
+    const existing = await this.prisma.marketingConnection.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Connection not found');
@@ -174,7 +174,7 @@ export class MarketingConnectionsService {
   }
 
   async remove(id: string, userId?: string) {
-    const existing = await this.prisma.marketingConnection.findUnique({
+    const existing = await this.prisma.marketingConnection.findFirst({
       where: { id },
       include: { _count: { select: { adAccounts: true } } },
     });
@@ -197,12 +197,12 @@ export class MarketingConnectionsService {
   }
 
   async addAdAccount(dto: AddAdAccountDto, userId?: string) {
-    const connection = await this.prisma.marketingConnection.findUnique({
+    const connection = await this.prisma.marketingConnection.findFirst({
       where: { id: dto.connectionId },
     });
     if (!connection) throw new NotFoundException('Connection not found');
 
-    const existing = await this.prisma.adAccount.findUnique({
+    const existing = await this.prisma.adAccount.findFirst({
       where: { providerAccountId: dto.providerAccountId },
     });
     if (existing) throw new ConflictException('Ad account already connected');
@@ -233,7 +233,7 @@ export class MarketingConnectionsService {
   }
 
   async discoverAdAccounts(dto: { connectionId: string }, userId?: string) {
-    const connection = await this.prisma.marketingConnection.findUnique({
+    const connection = await this.prisma.marketingConnection.findFirst({
       where: { id: dto.connectionId },
       include: { platform: true },
     });
@@ -252,7 +252,7 @@ export class MarketingConnectionsService {
 
     const results: any[] = [];
     for (const acc of accounts) {
-      const existing = await this.prisma.adAccount.findUnique({
+      const existing = await this.prisma.adAccount.findFirst({
         where: { providerAccountId: acc.id },
       });
       if (existing) {
@@ -300,7 +300,7 @@ export class MarketingConnectionsService {
   }
 
   async updateAdAccount(id: string, dto: any) {
-    const existing = await this.prisma.adAccount.findUnique({ where: { id } });
+    const existing = await this.prisma.adAccount.findFirst({ where: { id } });
     if (!existing) throw new NotFoundException('Ad account not found');
     return this.prisma.adAccount.update({
       where: { id },
@@ -313,7 +313,7 @@ export class MarketingConnectionsService {
   }
 
   async removeAdAccount(id: string, userId?: string) {
-    const existing = await this.prisma.adAccount.findUnique({
+    const existing = await this.prisma.adAccount.findFirst({
       where: { id },
       include: {
         _count: { select: { campaigns: true, fundingEntries: true } },
@@ -364,7 +364,7 @@ export class MarketingConnectionsService {
   }
 
   async getAdAccount(id: string) {
-    const adAccount = await this.prisma.adAccount.findUnique({
+    const adAccount = await this.prisma.adAccount.findFirst({
       where: { id },
       include: {
         connection: { include: { platform: true } },
@@ -412,7 +412,7 @@ export class MarketingConnectionsService {
   }
 
   async getCampaign(id: string) {
-    const campaign = await this.prisma.marketingCampaign.findUnique({
+    const campaign = await this.prisma.marketingCampaign.findFirst({
       where: { id },
       include: {
         adAccount: { include: { connection: { include: { platform: true } } } },
@@ -424,7 +424,7 @@ export class MarketingConnectionsService {
   }
 
   async updateCampaign(id: string, dto: any) {
-    const existing = await this.prisma.marketingCampaign.findUnique({
+    const existing = await this.prisma.marketingCampaign.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Campaign not found');
@@ -500,7 +500,7 @@ export class MarketingConnectionsService {
   }
 
   async refreshLongLivedToken(connectionId: string) {
-    const connection = await this.prisma.marketingConnection.findUnique({
+    const connection = await this.prisma.marketingConnection.findFirst({
       where: { id: connectionId },
       include: { platform: true },
     });
@@ -510,8 +510,8 @@ export class MarketingConnectionsService {
     }
 
     const [appIdSetting, appSecretSetting] = await Promise.all([
-      this.prisma.systemSetting.findUnique({ where: { key: APP_ID_SETTING } }),
-      this.prisma.systemSetting.findUnique({ where: { key: APP_SECRET_SETTING } }),
+      this.prisma.systemSetting.findFirst({ where: { key: APP_ID_SETTING } }),
+      this.prisma.systemSetting.findFirst({ where: { key: APP_SECRET_SETTING } }),
     ]);
     if (!appIdSetting?.value || !appSecretSetting?.value) {
       this.logger.warn(
@@ -577,7 +577,7 @@ export class MarketingConnectionsService {
     status: 'PAUSED' | 'ACTIVE',
     userId?: string,
   ) {
-    const campaign = await this.prisma.marketingCampaign.findUnique({
+    const campaign = await this.prisma.marketingCampaign.findFirst({
       where: { id: campaignId },
       include: { adAccount: { include: { connection: { include: { platform: true } } } } },
     });

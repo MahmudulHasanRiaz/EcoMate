@@ -28,11 +28,11 @@ describe('RefundsService — Task 9 cancel/refund gate (RED)', () => {
     payment: {
       aggregate: jest.fn(),
       findFirst: jest.fn(),
-      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
     },
     order: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
     orderStatus: {
@@ -67,7 +67,7 @@ describe('RefundsService — Task 9 cancel/refund gate (RED)', () => {
   });
 
   function saleOrder(statusName = 'Pending') {
-    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.order.findFirst as jest.Mock).mockResolvedValue({
       id: 'order-id-1',
       total: 2000,
       kind: 'SALE',

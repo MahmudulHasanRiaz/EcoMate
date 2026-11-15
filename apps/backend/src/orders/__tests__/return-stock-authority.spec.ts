@@ -73,7 +73,7 @@ describe('OrdersService — return stock authority (hardening 2)', () => {
     };
     prisma = {
       order: {
-        findUnique: jest.fn().mockResolvedValue({ ...baseOrder }),
+        findFirst: jest.fn().mockResolvedValue({ ...baseOrder }),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockImplementation(async (args: any) => ({
           ...baseOrder,
@@ -82,7 +82,7 @@ describe('OrdersService — return stock authority (hardening 2)', () => {
         })),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(async ({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(async ({ where }: any) => {
           if (where?.id === 'status-returned') return returnedStatus;
           if (where?.name === 'Returned') return returnedStatus;
           return null;
@@ -91,7 +91,7 @@ describe('OrdersService — return stock authority (hardening 2)', () => {
       return: {
         findMany: jest.fn().mockResolvedValue([]),
         // A just-created row is visible to the same transaction — mirror that.
-        findUnique: jest.fn().mockImplementation(async ({ where }: any) =>
+        findFirst: jest.fn().mockImplementation(async ({ where }: any) =>
           createdReturn && createdReturn.id === where?.id ? createdReturn : null,
         ),
         create: jest.fn().mockImplementation(async ({ data }: any) => {
@@ -259,12 +259,12 @@ describe('OrdersService — return stock authority (hardening 2)', () => {
 
   it('Return Pending / Partial moves are status-only (no stock writes)', async () => {
     const partialStatus = { id: 'status-partial', name: 'Partial' };
-    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.order.findFirst as jest.Mock).mockResolvedValue({
       ...baseOrder,
       status: { id: 'status-shipping', name: 'Shipping' },
       statusId: 'status-shipping',
     });
-    (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(partialStatus);
+    (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(partialStatus);
 
     await service.updateStatus('order-1', { statusId: 'status-partial' }, 'staff-123');
 

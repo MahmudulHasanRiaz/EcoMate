@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailQueueService } from '../queue/email-queue/email-queue.service';
@@ -14,9 +15,9 @@ export class NotificationsService {
 
   async createSetting(dto: CreateNotificationSettingDto) {
     return this.prisma.notificationSetting.upsert({
-      where: {
-        channel_type: { channel: dto.channel, type: dto.type },
-      },
+      where: { tenantId_channel_type: tenantCompound({
+         channel: dto.channel, type: dto.type ,
+       }) },
       create: dto,
       update: dto,
     });
@@ -27,7 +28,7 @@ export class NotificationsService {
   }
 
   async updateSetting(id: string, dto: UpdateNotificationSettingDto) {
-    const setting = await this.prisma.notificationSetting.findUnique({
+    const setting = await this.prisma.notificationSetting.findFirst({
       where: { id },
     });
     if (!setting) throw new NotFoundException('Notification setting not found');
@@ -35,7 +36,7 @@ export class NotificationsService {
   }
 
   async removeSetting(id: string) {
-    const setting = await this.prisma.notificationSetting.findUnique({
+    const setting = await this.prisma.notificationSetting.findFirst({
       where: { id },
     });
     if (!setting) throw new NotFoundException('Notification setting not found');
@@ -43,9 +44,9 @@ export class NotificationsService {
   }
 
   async sendNotification(dto: SendNotificationDto, performedBy?: string) {
-    const setting = await this.prisma.notificationSetting.findUnique({
+    const setting = await this.prisma.notificationSetting.findFirst({
       where: {
-        channel_type: { channel: dto.channel, type: dto.eventType },
+         channel: dto.channel, type: dto.eventType ,
       },
     });
 

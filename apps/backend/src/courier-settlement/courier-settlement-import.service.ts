@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 // ── Ingestion pipeline (PRD §9, §13): analyze → preview → confirm → import.
 //
 // The financial document is NEVER committed by the upload click. `analyze()`
@@ -235,7 +236,7 @@ export class CourierSettlementImportService {
       select: { id: true, displayId: true, state: true },
     });
     if (draft && !input.revisionOfId) {
-      const full = (await this.prisma.courierSettlementInvoice.findUnique({
+      const full = (await this.prisma.courierSettlementInvoice.findFirst({
         where: { id: draft.id },
       })) as CourierSettlementInvoice;
       const preview = await this.previewFrom(input, draft.id, full);
@@ -299,7 +300,7 @@ export class CourierSettlementImportService {
 
   // ── Step 2: preview for a stored draft (reopen / resume). ──
   async previewFor(invoiceId: string): Promise<InvoicePreview> {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({ where: { id: invoiceId } });
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({ where: { id: invoiceId } });
     if (!invoice) throw new BadRequestException('Invoice not found');
     if (!DRAFT_STATES.includes(invoice.state)) {
       throw new ConflictException(
@@ -352,7 +353,7 @@ export class CourierSettlementImportService {
     invoiceId: string,
     actor?: string | null,
   ): Promise<UploadResult & { importProgress?: number }> {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id: invoiceId },
       select: { id: true, displayId: true, provider: true, state: true, rowCount: true },
     });
@@ -405,7 +406,7 @@ export class CourierSettlementImportService {
     /** supplied by the one-shot path so tests need no file storage */
     knownBuffer?: Buffer,
   ): Promise<UploadResult> {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({ where: { id: invoiceId } });
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({ where: { id: invoiceId } });
     if (!invoice) throw new BadRequestException('Invoice not found');
     // IMPORTING is accepted: the background job re-enters commit() there; every
     // other non-draft state is a replay and must 409.
@@ -1177,7 +1178,7 @@ export class CourierSettlementImportService {
         // CSYYMMDD is already a namespaced date key (never the shared order
         // row); family 'ORD' is the default — the compound PK (date, family)
         // requires the full key in `where`.
-        where: { date_family: { date: `CS${dateStr}`, family: 'ORD' } },
+        where: { tenantId_date_family: tenantCompound({   date: `CS${dateStr}`, family: 'ORD'   }) },
         create: { date: `CS${dateStr}`, family: 'ORD', seq: 1 },
         update: { seq: { increment: 1 } },
       });

@@ -205,7 +205,7 @@ export class CommissionEngineService {
 
     if (rules.length === 0) return { earned: [], skipped: [] };
 
-    const order = await client.order.findUnique({
+    const order = await client.order.findFirst({
       where: { id: orderId },
       select: { id: true, total: true, subtotal: true, trashedAt: true },
     });
@@ -362,13 +362,13 @@ export class CommissionEngineService {
   ): Promise<string | null> {
     // The actor is a UserProfile.id (payload.sub). Resolve it to the linked
     // Employee, which is the canonical staff identity.
-    const profile = await client.userProfile.findUnique({
+    const profile = await client.userProfile.findFirst({
       where: { id: actorUserId },
       select: { betterAuthUserId: true },
     });
     const baId = profile?.betterAuthUserId ?? actorUserId;
 
-    const employee = await client.employee.findUnique({
+    const employee = await client.employee.findFirst({
       where: { betterAuthUserId: baId },
       select: { id: true },
     });

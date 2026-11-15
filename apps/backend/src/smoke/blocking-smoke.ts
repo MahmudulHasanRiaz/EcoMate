@@ -128,8 +128,8 @@ const testIp = `203.0.113.${Math.floor(Math.random() * 100) + 1}`;
 
     await customers.blockPhone(customerA.id);
 
-    let a = await prisma.userProfile.findUnique({ where: { id: customerA.id } });
-    let b = await prisma.userProfile.findUnique({ where: { id: customerB.id } });
+    let a = await prisma.userProfile.findFirst({ where: { id: customerA.id } });
+    let b = await prisma.userProfile.findFirst({ where: { id: customerB.id } });
     assert(
       'B1. phone block suspends only the target customer',
       a!.status === 'suspended' && b!.status === 'active',
@@ -151,8 +151,8 @@ const countSuspended = await prisma.userProfile.count({
     );
 
     await customers.unblockPhone(customerA.id);
-    const freshA: any = await prisma.userProfile.findUnique({ where: { id: customerA.id } });
-    const bAfterUnblock: any = await prisma.userProfile.findUnique({ where: { id: customerB.id } });
+    const freshA: any = await prisma.userProfile.findFirst({ where: { id: customerA.id } });
+    const bAfterUnblock: any = await prisma.userProfile.findFirst({ where: { id: customerB.id } });
     assert(
       'B3. unblock restores target (phone-blocked id) to active, B untouched',
       freshA!.status === 'active' && bAfterUnblock!.status === 'active',
@@ -173,7 +173,7 @@ const countSuspended = await prisma.userProfile.count({
       `suspended=${blockedCount}`,
     );
 
-    const ipStill = await prisma.blockedIp.findUnique({ where: { ip: testIp } });
+    const ipStill = await prisma.blockedIp.findFirst({ where: { ip: testIp } });
     const phoneStill = await prisma.blockedPhone.findFirst({
       where: { phone: { in: [phoneA, phoneB] } },
     });
@@ -185,8 +185,8 @@ const countSuspended = await prisma.userProfile.count({
 
     assert(
       'B6. customers still resolvable after block/unblock cycle (no identity corruption)',
-      (await prisma.userProfile.findUnique({ where: { id: customerA.id } }))?.phoneNumber === phoneA,
-      `phone=${(await prisma.userProfile.findUnique({ where: { id: customerA.id } }))?.phoneNumber}`,
+      (await prisma.userProfile.findFirst({ where: { id: customerA.id } }))?.phoneNumber === phoneA,
+      `phone=${(await prisma.userProfile.findFirst({ where: { id: customerA.id } }))?.phoneNumber}`,
     );
 
     console.log('\n== evidence ==');

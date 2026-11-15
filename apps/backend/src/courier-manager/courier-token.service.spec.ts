@@ -47,7 +47,7 @@ describe('CourierTokenService (Pathao OAuth store)', () => {
   beforeEach(async () => {
     prisma = {
       courierAuthToken: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockResolvedValue({}),
       },
     };
@@ -79,7 +79,7 @@ describe('CourierTokenService (Pathao OAuth store)', () => {
   });
 
   it('returns a fresh DB token without calling the courier API', async () => {
-    prisma.courierAuthToken.findUnique.mockResolvedValue(futureRow);
+    prisma.courierAuthToken.findFirst.mockResolvedValue(futureRow);
 
     const token = await service.getAccessToken(creds);
 
@@ -99,12 +99,12 @@ describe('CourierTokenService (Pathao OAuth store)', () => {
     const token = await service.getAccessToken(creds);
 
     expect(token).toBe('REDIS-TOKEN');
-    expect(prisma.courierAuthToken.findUnique).not.toHaveBeenCalled();
+    expect(prisma.courierAuthToken.findFirst).not.toHaveBeenCalled();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('uses the refresh_token grant when the stored token is expired', async () => {
-    prisma.courierAuthToken.findUnique.mockResolvedValue(expiredRow);
+    prisma.courierAuthToken.findFirst.mockResolvedValue(expiredRow);
     global.fetch = jest.fn().mockImplementation(async (url: string, opts: any) => {
       expect(String(url)).toContain('/aladdin/api/v1/issue-token');
       const body = JSON.parse(opts.body);
@@ -131,7 +131,7 @@ describe('CourierTokenService (Pathao OAuth store)', () => {
   });
 
   it('falls back to the password grant when the refresh grant fails', async () => {
-    prisma.courierAuthToken.findUnique.mockResolvedValue(expiredRow);
+    prisma.courierAuthToken.findFirst.mockResolvedValue(expiredRow);
     const bodies: any[] = [];
     global.fetch = jest.fn().mockImplementation(async (url: string, opts: any) => {
       bodies.push(JSON.parse(opts.body));
@@ -187,7 +187,7 @@ describe('CourierTokenService (Pathao OAuth store)', () => {
   });
 
   it('propagates a first-time auth failure instead of masking it', async () => {
-    prisma.courierAuthToken.findUnique.mockResolvedValue(null);
+    prisma.courierAuthToken.findFirst.mockResolvedValue(null);
     global.fetch = jest.fn().mockImplementation(async () => ({
       ok: false,
       status: 401,

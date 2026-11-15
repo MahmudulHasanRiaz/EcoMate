@@ -35,15 +35,15 @@ describe('JobPostingsService', () => {
     prisma = {
       department: {
         findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue({ id: 'dept-1' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'dept-1' }),
       },
       designation: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'des-1' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'des-1' }),
       },
       jobPosting: {
         findMany: jest.fn().mockResolvedValue([published]),
         count: jest.fn().mockResolvedValue(1),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockImplementation(({ data }) => ({
           ...published,
           ...data,
@@ -116,21 +116,21 @@ describe('JobPostingsService', () => {
 
   describe('findPublicBySlug', () => {
     it('returns a published posting', async () => {
-      prisma.jobPosting.findUnique.mockResolvedValue(published);
+      prisma.jobPosting.findFirst.mockResolvedValue(published);
       await expect(service.findPublicBySlug('senior-qa')).resolves.toEqual(
         published,
       );
     });
 
     it('404s a DRAFT posting', async () => {
-      prisma.jobPosting.findUnique.mockResolvedValue(draft);
+      prisma.jobPosting.findFirst.mockResolvedValue(draft);
       await expect(service.findPublicBySlug('draft-role')).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('404s a posting past its deadline', async () => {
-      prisma.jobPosting.findUnique.mockResolvedValue(expired);
+      prisma.jobPosting.findFirst.mockResolvedValue(expired);
       await expect(service.findPublicBySlug('expired-role')).rejects.toThrow(
         NotFoundException,
       );
@@ -159,7 +159,7 @@ describe('JobPostingsService', () => {
     });
 
     it('suffixes the slug on collision', async () => {
-      prisma.jobPosting.findUnique
+      prisma.jobPosting.findFirst
         .mockResolvedValueOnce({ id: 'other' })
         .mockResolvedValueOnce(null);
       await service.create(dto as any);
@@ -171,7 +171,7 @@ describe('JobPostingsService', () => {
     });
 
     it('404s an unknown department', async () => {
-      prisma.department.findUnique.mockResolvedValue(null);
+      prisma.department.findFirst.mockResolvedValue(null);
       await expect(
         service.create({ ...dto, departmentId: 'ghost' } as any),
       ).rejects.toThrow(NotFoundException);
@@ -193,14 +193,14 @@ describe('JobPostingsService', () => {
 
   describe('update (admin)', () => {
     it('404s an unknown posting', async () => {
-      prisma.jobPosting.findUnique.mockResolvedValue(null);
+      prisma.jobPosting.findFirst.mockResolvedValue(null);
       await expect(
         service.update('ghost', { status: 'PUBLISHED' } as any),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('publishes a posting', async () => {
-      prisma.jobPosting.findUnique.mockResolvedValue(published);
+      prisma.jobPosting.findFirst.mockResolvedValue(published);
       await service.update('post-1', { status: 'PUBLISHED' } as any);
       expect(prisma.jobPosting.update).toHaveBeenCalledWith(
         expect.objectContaining({

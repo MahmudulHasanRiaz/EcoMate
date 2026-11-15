@@ -19,8 +19,8 @@ import { CacheService } from '../../cache/cache.service';
 describe('DispatchService dispatch shippingCost capture', () => {
   let service: DispatchService;
   const mockPrisma: any = {
-    dispatch: { findUnique: jest.fn(), create: jest.fn() },
-    order: { updateMany: jest.fn(), findUnique: jest.fn() },
+    dispatch: { findFirst: jest.fn(), create: jest.fn() },
+    order: { updateMany: jest.fn(), findFirst: jest.fn() },
     courierDispatchLog: { create: jest.fn() },
   };
   const mockCache: any = {
@@ -41,7 +41,7 @@ describe('DispatchService dispatch shippingCost capture', () => {
       ],
     }).compile();
     service = module.get(DispatchService);
-    mockPrisma.dispatch.findUnique.mockResolvedValue(null);
+    mockPrisma.dispatch.findFirst.mockResolvedValue(null);
     mockPrisma.dispatch.create.mockImplementation(async (args: any) => ({
       id: 'd1',
       ...args.data,
@@ -58,7 +58,7 @@ describe('DispatchService dispatch shippingCost capture', () => {
   });
 
   it('fills a missing shippingCost as manual', async () => {
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: 'o1',
       shippingCost: null,
       shippingCostSource: null,
@@ -71,7 +71,7 @@ describe('DispatchService dispatch shippingCost capture', () => {
   });
 
   it('never overwrites an existing manual cost (manual wins)', async () => {
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: 'o1',
       shippingCost: 55,
       shippingCostSource: 'manual',
@@ -84,7 +84,7 @@ describe('DispatchService dispatch shippingCost capture', () => {
   });
 
   it('overrides a courier_default estimate with a manual cost', async () => {
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: 'o1',
       shippingCost: 70,
       shippingCostSource: 'courier_default',

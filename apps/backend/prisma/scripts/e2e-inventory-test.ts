@@ -110,14 +110,14 @@ async function resolveStatuses() {
 
 // ─── DB helpers ──────────────────────────────────────────────────────────────
 async function getProductStock(productId: string) {
-  return prisma.product.findUnique({
+  return prisma.product.findFirst({
     where: { id: productId },
     select: { managedStockQuantity: true, reservedStock: true, availabilityMode: true, name: true },
   });
 }
 
 async function getVariantStock(variantId: string) {
-  return prisma.productVariant.findUnique({
+  return prisma.productVariant.findFirst({
     where: { id: variantId },
     select: { managedStockQuantity: true, reservedStock: true },
   });

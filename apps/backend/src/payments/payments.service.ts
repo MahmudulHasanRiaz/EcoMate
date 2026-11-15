@@ -88,7 +88,7 @@ export class PaymentsService {
     if (query.status) where.status = query.status;
     else where.status = { not: PaymentStatus.VOID };
     if (query.orderNumber) {
-      const order = await this.prisma.order.findUnique({
+      const order = await this.prisma.order.findFirst({
         where: { displayId: query.orderNumber },
         select: { id: true },
       });
@@ -197,7 +197,7 @@ export class PaymentsService {
         orderId,
       );
 
-      const order = await tx.order.findUniqueOrThrow({
+      const order = await tx.order.findFirstOrThrow({
         where: { id: orderId },
         include: { payments: true },
       });
@@ -366,7 +366,7 @@ export class PaymentsService {
 
   async verify(id: string, dto: VerifyPaymentDto, userId: string) {
     const updated = await this.prisma.$transaction(async (tx) => {
-      const payment = await tx.payment.findUnique({ where: { id } });
+      const payment = await tx.payment.findFirst({ where: { id } });
       if (!payment) throw new NotFoundException('Payment not found');
 
       // VOID rows are terminal (D-C actuals-only ledger placeholders) — they
@@ -423,7 +423,7 @@ export class PaymentsService {
         _sum: { amount: true },
       });
       const totalPaid = Number(paidAgg._sum.amount || 0);
-      const orderData = await tx.order.findUnique({
+      const orderData = await tx.order.findFirst({
         where: { id: payment.orderId },
         select: { total: true, customerId: true },
       });

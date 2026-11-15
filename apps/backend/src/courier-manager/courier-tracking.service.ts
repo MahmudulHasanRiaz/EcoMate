@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
@@ -57,7 +58,7 @@ export class CourierTrackingService {
   ) {}
 
   async getOrderTracking(orderId: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: {
         customerId: true,
@@ -130,8 +131,8 @@ export class CourierTrackingService {
       if (fresh) return { ...fresh, phone };
 
       // 2. DB cache hit
-      const dbRow = await this.prisma.courierReportCache.findUnique({
-        where: { courier_phone: { courier, phone } },
+      const dbRow = await this.prisma.courierReportCache.findFirst({
+        where: {  courier, phone  },
       });
 
       if (dbRow) {
@@ -192,7 +193,7 @@ export class CourierTrackingService {
     trackingCode?: string | null,
   ): Promise<CourierTrackingResult | null> {
     try {
-      const creds = await this.prisma.courierCredentials.findUnique({
+      const creds = await this.prisma.courierCredentials.findFirst({
         where: { courier },
       });
 
@@ -226,8 +227,8 @@ export class CourierTrackingService {
       this.logger.warn(`Tracking failed for ${courier}/${consignmentId}: ${e.message}`);
 
       // Fallback: check if we have stale DB data (race guard)
-      const dbRow = await this.prisma.courierReportCache.findUnique({
-        where: { courier_phone: { courier, phone } },
+      const dbRow = await this.prisma.courierReportCache.findFirst({
+        where: {  courier, phone  },
       });
       if (dbRow) {
         const staleResult = dbRow.report as unknown as CourierTrackingResult;
@@ -271,7 +272,7 @@ export class CourierTrackingService {
 
     await Promise.all([
       this.prisma.courierReportCache.upsert({
-        where: { courier_phone: { courier: result.courier, phone: result.phone } },
+        where: { tenantId_courier_phone: tenantCompound({   courier: result.courier, phone: result.phone   }) },
         create: {
           courier: result.courier,
           phone: result.phone,

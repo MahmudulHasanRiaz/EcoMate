@@ -35,7 +35,7 @@ export class TrackingSettingsService {
   /** Read a system setting, falling back to an env var when the setting is absent or unreadable. */
   async get(systemKey: string, envKey: string | null): Promise<string | null> {
     try {
-      const setting = await this.prisma.systemSetting.findUnique({
+      const setting = await this.prisma.systemSetting.findFirst({
         where: { key: systemKey },
       });
       if (setting?.value) return setting.value;

@@ -61,7 +61,7 @@ describe('POST /system-settings/search_engine_indexing — indexing-ON guard', (
     const store = new Map<string, string>(Object.entries(initial));
     const prisma = {
       systemSetting: {
-        findUnique: jest
+        findFirst: jest
           .fn()
           .mockImplementation(async ({ where }: any) => {
             const value = store.get(where.key);

@@ -4,7 +4,7 @@ import { MediaService } from './media.service';
 describe('MediaService derivative reprocessing', () => {
   const prisma = {
     media: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
     },
@@ -30,7 +30,7 @@ describe('MediaService derivative reprocessing', () => {
   });
 
   it('clears the persisted derivative manifest before reprocessing one media item', async () => {
-    prisma.media.findUnique.mockResolvedValue({ id: 'media-1' });
+    prisma.media.findFirst.mockResolvedValue({ id: 'media-1' });
 
     await service.reprocess('media-1');
 

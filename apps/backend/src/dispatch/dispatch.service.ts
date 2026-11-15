@@ -186,7 +186,7 @@ export class DispatchService {
     orderId: string,
   ): Promise<number | undefined> {
     if (!this.courierManager) return undefined;
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { payments: true },
     });
@@ -314,7 +314,7 @@ export class DispatchService {
   }
 
   async findOne(id: string) {
-    const dispatch = await this.prisma.dispatch.findUnique({
+    const dispatch = await this.prisma.dispatch.findFirst({
       where: { id },
       include: {
         order: {
@@ -353,7 +353,7 @@ export class DispatchService {
     dto: CreateDispatchDto,
   ): Promise<void> {
     if (dto.shippingCost === undefined || dto.shippingCost === null) return;
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: { shippingCost: true, shippingCostSource: true },
     });
@@ -386,13 +386,8 @@ export class DispatchService {
     // check: there is no consignment to dedupe on, and the unique lookup
     // would throw on undefined. The courier webhook backfills identifiers.
     if (dto.consignmentId) {
-      const existing = await this.prisma.dispatch.findUnique({
-        where: {
-          courier_consignmentId: {
-            courier: dto.courier as any,
-            consignmentId: dto.consignmentId,
-          },
-        },
+      const existing = await this.prisma.dispatch.findFirst({
+        where: { courier: dto.courier as any, consignmentId: dto.consignmentId },
       });
 
       if (existing && existing.status !== 'CANCELLED') {
@@ -529,7 +524,7 @@ export class DispatchService {
 
   async updateStatus(id: string, status: string, performedBy?: string) {
     // Validate transition BEFORE transaction
-    const current = await this.prisma.dispatch.findUnique({
+    const current = await this.prisma.dispatch.findFirst({
       where: { id },
       select: {
         status: true,
@@ -590,7 +585,7 @@ export class DispatchService {
 
       // Read the row INSIDE the transaction: a client outside it would not see
       // the update above and would hand a stale status to the order sync.
-      const dispatch = await tx.dispatch.findUnique({ where: { id } });
+      const dispatch = await tx.dispatch.findFirst({ where: { id } });
       if (!dispatch) return { claimed: false, dispatch: null };
       // Unreachable (updateStatus rejects unmatched rows up front) — an
       // unmatched dispatch has no order to deduct/sync against.
@@ -682,7 +677,7 @@ export class DispatchService {
     const targetName = map[dispatchStatus];
     if (!targetName) return;
 
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { status: true },
     });
@@ -733,7 +728,7 @@ export class DispatchService {
       if (openReturn) return;
     }
 
-    const targetStatus = await this.prisma.orderStatus.findUnique({
+    const targetStatus = await this.prisma.orderStatus.findFirst({
       where: { name: targetName },
     });
     if (!targetStatus) return;
@@ -782,7 +777,7 @@ export class DispatchService {
     // the sync. This path bypasses OrdersService.updateStatus by design, so it
     // calls the public fire method directly with a server-resolved re-read.
     try {
-      const withItems = await this.prisma.order.findUnique({
+      const withItems = await this.prisma.order.findFirst({
         where: { id: orderId },
         include: {
           items: {
@@ -846,7 +841,7 @@ export class DispatchService {
 
     for (const oi of orderItems) {
       if (oi.comboId) {
-        const combo = await this.prisma.combo.findUnique({
+        const combo = await this.prisma.combo.findFirst({
           where: { id: oi.comboId },
           include: { items: true },
         });
@@ -1241,7 +1236,7 @@ export class DispatchService {
    * This endpoint never cancels anything — it only refreshes and reports.
    */
   async getCancelPreview(orderId: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: { id: true },
     });
@@ -1543,7 +1538,7 @@ export class DispatchService {
     targetName: string,
     courier: string,
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { status: true },
     });
@@ -1553,7 +1548,7 @@ export class DispatchService {
     const targetIdx = ORDER_STATUS_FLOW.indexOf(targetName);
     if (currentIdx < 0 || targetIdx < 0 || currentIdx >= targetIdx) return;
 
-    const targetStatus = await this.prisma.orderStatus.findUnique({
+    const targetStatus = await this.prisma.orderStatus.findFirst({
       where: { name: targetName },
     });
     if (!targetStatus) return;
@@ -1610,12 +1605,12 @@ export class DispatchService {
 
     const path = this.findOrderTransitionPath(order.status.name, targetName);
     for (const step of path) {
-      const current = await this.prisma.order.findUnique({
+      const current = await this.prisma.order.findFirst({
         where: { id: orderId },
         include: { status: true },
       });
       if (!current || current.status.name === targetName) break;
-      const stepStatus = await this.prisma.orderStatus.findUnique({
+      const stepStatus = await this.prisma.orderStatus.findFirst({
         where: { name: step },
       });
       if (!stepStatus) continue;
@@ -1757,7 +1752,7 @@ export class DispatchService {
    * a timeline entry on the order.
    */
   async assignToOrder(id: string, orderId: string, performedBy?: string) {
-    const dispatch = await this.prisma.dispatch.findUnique({
+    const dispatch = await this.prisma.dispatch.findFirst({
       where: { id },
     });
     if (!dispatch) throw new NotFoundException('Dispatch not found');
@@ -1766,7 +1761,7 @@ export class DispatchService {
         'Dispatch is already assigned to an order.',
       );
     }
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: {
         id: true,

@@ -22,8 +22,8 @@ describe('MarketingConsumptionService', () => {
   });
 
   const mockPrisma = () => ({
-    marketingCampaign: { findUnique: jest.fn() },
-    marketingFundingLedger: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    marketingCampaign: { findFirst: jest.fn() },
+    marketingFundingLedger: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     marketingConsumption: { create: jest.fn(), aggregate: jest.fn() },
     financialPeriod: { findFirst: jest.fn() },
     account: { findFirst: jest.fn(), create: jest.fn() },
@@ -54,16 +54,16 @@ describe('MarketingConsumptionService', () => {
   it('returns empty for non-positive amount', async () => {
     const res = await service.consume('camp-1', 0);
     expect(res).toEqual({ consumedRows: 0, shortfall: 0 });
-    expect(prisma.marketingCampaign.findUnique).not.toHaveBeenCalled();
+    expect(prisma.marketingCampaign.findFirst).not.toHaveBeenCalled();
   });
 
   it('throws BadRequest for unknown campaign', async () => {
-    (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
     await expect(service.consume('nope', 10)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('consumes FIFO (oldest ledger row first) and records effectiveRate at draw time', async () => {
-    (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(mockCampaign);
+    (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(mockCampaign);
     const oldRow = makeLedger('row-old', 100, 120);
     const newRow = makeLedger('row-new', 50, 130, new Date('2026-01-02'));
     (prisma.marketingFundingLedger.findMany as jest.Mock).mockResolvedValue([oldRow, newRow]);
@@ -74,7 +74,7 @@ describe('MarketingConsumptionService', () => {
     (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
       const tx = {
         marketingFundingLedger: {
-          findUnique: jest.fn(async ({ where }: any) =>
+          findFirst: jest.fn(async ({ where }: any) =>
             where.id === 'row-old' ? oldRow : newRow,
           ),
           update: jest.fn(async (args: any) => {
@@ -109,13 +109,13 @@ describe('MarketingConsumptionService', () => {
   });
 
   it('stops at oldest rows and reports the shortfall when funds run out', async () => {
-    (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(mockCampaign);
+    (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(mockCampaign);
     const single = makeLedger('row-1', 40, 100);
     (prisma.marketingFundingLedger.findMany as jest.Mock).mockResolvedValue([single]);
     (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) =>
       cb({
         marketingFundingLedger: {
-          findUnique: jest.fn(async () => single),
+          findFirst: jest.fn(async () => single),
           update: jest.fn(),
         },
         marketingConsumption: { create: jest.fn() },
@@ -128,7 +128,7 @@ describe('MarketingConsumptionService', () => {
   });
 
   it('skips a stale ledger row that changed under a concurrent transaction', async () => {
-    (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(mockCampaign);
+    (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(mockCampaign);
     const row = makeLedger('row-stale', 10, 100);
     (prisma.marketingFundingLedger.findMany as jest.Mock).mockResolvedValue([row]);
     (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {

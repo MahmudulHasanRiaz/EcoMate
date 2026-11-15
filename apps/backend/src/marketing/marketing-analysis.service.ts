@@ -84,7 +84,7 @@ export class MarketingAnalysisService {
   async campaignPerformance(campaignId: string, fromDate?: string, toDate?: string) {
     const { from, to } = this.range(fromDate, toDate);
 
-    const campaign = await this.prisma.marketingCampaign.findUnique({
+    const campaign = await this.prisma.marketingCampaign.findFirst({
       where: { id: campaignId },
     });
     if (!campaign) throw new NotFoundException('Campaign not found');

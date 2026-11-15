@@ -75,14 +75,14 @@ describe('CommissionRulesService', () => {
   beforeEach(async () => {
     prisma = {
       employee: {
-        findUnique: jest.fn().mockResolvedValue({ id: EMPLOYEE }),
+        findFirst: jest.fn().mockResolvedValue({ id: EMPLOYEE }),
       },
       orderStatus: {
         findFirst: jest.fn().mockResolvedValue({ id: 'status-1' }),
       },
       commissionRuleV2: {
         create: jest.fn(),
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
       },
@@ -148,7 +148,7 @@ describe('CommissionRulesService', () => {
           : Promise.resolve([{ id: 'other', effectiveFrom: null, effectiveTo: null }]),
       );
       prisma.commissionRuleV2.create.mockResolvedValue(baseRule({ purpose: 'Packed' }));
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule({ purpose: 'Packed' }));
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule({ purpose: 'Packed' }));
 
       await expect(service.create(input({ purpose: 'Packed' }))).resolves.toBeTruthy();
       expect(prisma.commissionRuleV2.create).toHaveBeenCalledWith(
@@ -161,7 +161,7 @@ describe('CommissionRulesService', () => {
       // an inactive rule can never be returned as a blocker.
       prisma.commissionRuleV2.findMany.mockResolvedValue([]);
       prisma.commissionRuleV2.create.mockResolvedValue(baseRule());
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
 
       await service.create(input());
 
@@ -177,7 +177,7 @@ describe('CommissionRulesService', () => {
         { id: 'other', effectiveFrom: null, effectiveTo: null },
       ]);
       prisma.commissionRuleV2.create.mockResolvedValue(baseRule({ isActive: false }));
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule({ isActive: false }));
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule({ isActive: false }));
 
       await expect(service.create(input({ isActive: false }))).resolves.toBeTruthy();
       expect(prisma.commissionRuleV2.findMany).not.toHaveBeenCalled();
@@ -197,7 +197,7 @@ describe('CommissionRulesService', () => {
 
     it('anchors a start date to the beginning of that Dhaka day', async () => {
       prisma.commissionRuleV2.create.mockResolvedValue(baseRule());
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
 
       await service.create(input({ effectiveFrom: '2026-11-01' }));
 
@@ -212,7 +212,7 @@ describe('CommissionRulesService', () => {
 
     it('extends an end date to the end of that Dhaka day so the day still pays', async () => {
       prisma.commissionRuleV2.create.mockResolvedValue(baseRule());
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
 
       await service.create(input({ effectiveFrom: '2026-10-01', effectiveTo: '2026-10-04' }));
 
@@ -227,7 +227,7 @@ describe('CommissionRulesService', () => {
 
     it('accepts a one-day window — start and end on the same date', async () => {
       prisma.commissionRuleV2.create.mockResolvedValue(baseRule());
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
 
       await expect(
         service.create(input({ effectiveFrom: '2026-10-04', effectiveTo: '2026-10-04' })),
@@ -243,7 +243,7 @@ describe('CommissionRulesService', () => {
 
     it('stores null bounds as null — an endless rule is a real configuration', async () => {
       prisma.commissionRuleV2.create.mockResolvedValue(baseRule());
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
 
       await service.create(input({ effectiveFrom: null, effectiveTo: null }));
 
@@ -255,7 +255,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('normalises dates supplied on update too', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
       prisma.commissionRuleV2.findMany.mockResolvedValue([]);
       prisma.commissionRuleV2.update.mockResolvedValue(baseRule());
 
@@ -269,7 +269,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('clears a date when explicitly passed null on update', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(
         baseRule({ effectiveTo: new Date('2026-10-04T17:59:59.999Z') }),
       );
       prisma.commissionRuleV2.findMany.mockResolvedValue([]);
@@ -285,7 +285,7 @@ describe('CommissionRulesService', () => {
 
   describe('the response carries the Dhaka day, not a UTC timestamp', () => {
     it('emits effectiveFrom as the day the operator configured', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(
         baseRule({ effectiveFrom: new Date('2026-10-31T18:00:00.000Z') }),
       );
 
@@ -295,7 +295,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('emits effectiveTo as the same day, not the previous one', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(
         baseRule({ effectiveTo: new Date('2026-10-04T17:59:59.999Z') }),
       );
 
@@ -305,7 +305,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('emits null for an endless rule', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
 
       const out = await service.get('rule-1');
 
@@ -316,7 +316,7 @@ describe('CommissionRulesService', () => {
 
   describe('endNow', () => {
     it('closes the window at the end of the current Dhaka day', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
       prisma.commissionRuleV2.update.mockResolvedValue(baseRule());
 
       await service.endNow('rule-1');
@@ -330,7 +330,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('never deletes or deactivates the rule — it stays auditable', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
       prisma.commissionRuleV2.update.mockResolvedValue(baseRule());
 
       await service.endNow('rule-1');
@@ -340,7 +340,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('is idempotent — re-ending an already-ended rule changes nothing', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(
         baseRule({ effectiveTo: new Date('2026-01-15T17:59:59.999Z') }),
       );
 
@@ -350,7 +350,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('404s for a rule that does not exist', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(null);
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(null);
 
       await expect(service.endNow('nope')).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -358,7 +358,7 @@ describe('CommissionRulesService', () => {
 
   describe('validation guards', () => {
     it('requires the employee to exist', async () => {
-      prisma.employee.findUnique.mockResolvedValue(null);
+      prisma.employee.findFirst.mockResolvedValue(null);
 
       await expect(service.create(input())).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -408,7 +408,7 @@ describe('CommissionRulesService', () => {
     // A partial update must not be able to produce a rule that create would
     // have rejected — the merged shape is what gets validated.
     it('validates the MERGED shape on update, not just the supplied fields', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(
         baseRule({ minimumCount: 10, thresholdPeriod: 'daily' }),
       );
       prisma.commissionRuleV2.findMany.mockResolvedValue([]);
@@ -420,7 +420,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('404s on update of a missing rule', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(null);
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(null);
 
       await expect(service.update('nope', { amount: 10 } as any)).rejects.toBeInstanceOf(
         NotFoundException,
@@ -430,7 +430,7 @@ describe('CommissionRulesService', () => {
 
   describe('setActive', () => {
     it('re-runs the overlap check when re-activating', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule({ isActive: false }));
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule({ isActive: false }));
       prisma.commissionRuleV2.findMany.mockResolvedValue([
         { id: 'other', effectiveFrom: null, effectiveTo: null },
       ]);
@@ -440,7 +440,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('does not check for overlap when deactivating', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule());
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule());
       prisma.commissionRuleV2.update.mockResolvedValue(baseRule({ isActive: false }));
 
       await service.setActive('rule-1', false);
@@ -449,7 +449,7 @@ describe('CommissionRulesService', () => {
     });
 
     it('excludes the rule itself from the overlap check', async () => {
-      prisma.commissionRuleV2.findUnique.mockResolvedValue(baseRule({ isActive: false }));
+      prisma.commissionRuleV2.findFirst.mockResolvedValue(baseRule({ isActive: false }));
       prisma.commissionRuleV2.findMany.mockResolvedValue([]);
       prisma.commissionRuleV2.update.mockResolvedValue(baseRule());
 

@@ -28,9 +28,9 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
     isActive: true,
   };
 
-  /** binLocation.findUnique serves both the bin load (by id) and the dup check (by warehouseId_code). */
+  /** binLocation.findFirst serves both the bin load (by id) and the dup check (by warehouseId_code). */
   const mockBinLoad = (dup: any = null) => {
-    prisma.binLocation.findUnique.mockImplementation((args: any) => {
+    prisma.binLocation.findFirst.mockImplementation((args: any) => {
       if (args.where.id) return Promise.resolve(bin);
       if (args.where.warehouseId_code) return Promise.resolve(dup);
       return Promise.resolve(null);
@@ -39,25 +39,25 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
 
   beforeEach(() => {
     prisma = {
-      warehouse: { findUnique: jest.fn(), delete: jest.fn() },
+      warehouse: { findFirst: jest.fn(), delete: jest.fn() },
       binLocation: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         update: jest
           .fn()
           .mockImplementation(({ data }: any) =>
             Promise.resolve({ ...bin, ...data }),
           ),
       },
-      zone: { findUnique: jest.fn() },
-      rack: { findUnique: jest.fn() },
-      shelf: { findUnique: jest.fn() },
+      zone: { findFirst: jest.fn() },
+      rack: { findFirst: jest.fn() },
+      shelf: { findFirst: jest.fn() },
     };
     svc = new WarehousesService(prisma);
   });
 
   it('moves a bin to another warehouse and clears the old hierarchy', async () => {
     mockBinLoad();
-    prisma.warehouse.findUnique.mockResolvedValue({ id: 'wh-2', name: 'Overflow' });
+    prisma.warehouse.findFirst.mockResolvedValue({ id: 'wh-2', name: 'Overflow' });
 
     await svc.updateBinLocation('bin-1', { warehouseId: 'wh-2' });
 
@@ -71,8 +71,8 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
 
   it('keeps DTO-supplied hierarchy that belongs to the target warehouse', async () => {
     mockBinLoad();
-    prisma.warehouse.findUnique.mockResolvedValue({ id: 'wh-2' });
-    prisma.zone.findUnique.mockResolvedValue({ warehouseId: 'wh-2' });
+    prisma.warehouse.findFirst.mockResolvedValue({ id: 'wh-2' });
+    prisma.zone.findFirst.mockResolvedValue({ warehouseId: 'wh-2' });
 
     await svc.updateBinLocation('bin-1', {
       warehouseId: 'wh-2',
@@ -88,8 +88,8 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
 
   it('rejects hierarchy from a different warehouse on a move', async () => {
     mockBinLoad();
-    prisma.warehouse.findUnique.mockResolvedValue({ id: 'wh-2' });
-    prisma.zone.findUnique.mockResolvedValue({ warehouseId: 'wh-1' });
+    prisma.warehouse.findFirst.mockResolvedValue({ id: 'wh-2' });
+    prisma.zone.findFirst.mockResolvedValue({ warehouseId: 'wh-1' });
 
     await expect(
       svc.updateBinLocation('bin-1', { warehouseId: 'wh-2', zoneId: 'zone-1' }),
@@ -99,7 +99,7 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
 
   it('rejects a move to a warehouse that does not exist', async () => {
     mockBinLoad();
-    prisma.warehouse.findUnique.mockResolvedValue(null);
+    prisma.warehouse.findFirst.mockResolvedValue(null);
 
     await expect(
       svc.updateBinLocation('bin-1', { warehouseId: 'wh-ghost' }),
@@ -109,7 +109,7 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
 
   it('rejects a move when the code already exists in the target warehouse', async () => {
     mockBinLoad({ id: 'bin-other', code: 'A-01', warehouseId: 'wh-2' });
-    prisma.warehouse.findUnique.mockResolvedValue({ id: 'wh-2' });
+    prisma.warehouse.findFirst.mockResolvedValue({ id: 'wh-2' });
 
     await expect(
       svc.updateBinLocation('bin-1', { warehouseId: 'wh-2' }),
@@ -130,11 +130,11 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
     expect(data.zoneId).toBe('zone-1');
     expect(data.rackId).toBe('rack-1');
     expect(data.isActive).toBe(false);
-    expect(prisma.warehouse.findUnique).not.toHaveBeenCalled();
+    expect(prisma.warehouse.findFirst).not.toHaveBeenCalled();
   });
 
   it('maps an FK-constrained warehouse delete to a clear BadRequest', async () => {
-    prisma.warehouse.findUnique.mockResolvedValue({ id: 'wh-1', binLocations: [] });
+    prisma.warehouse.findFirst.mockResolvedValue({ id: 'wh-1', binLocations: [] });
     prisma.warehouse.delete.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError(
         'Foreign key constraint violated',
@@ -148,7 +148,7 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
   });
 
   it('deletes an unreferenced warehouse normally', async () => {
-    prisma.warehouse.findUnique.mockResolvedValue({ id: 'wh-1', binLocations: [] });
+    prisma.warehouse.findFirst.mockResolvedValue({ id: 'wh-1', binLocations: [] });
     prisma.warehouse.delete.mockResolvedValue({ id: 'wh-1' });
 
     await expect(svc.remove('wh-1')).resolves.toEqual({ id: 'wh-1' });
@@ -156,7 +156,7 @@ describe('WarehousesService — bin moves + warehouse delete', () => {
 
   it('rethrows non-FK delete errors untouched', async () => {
     const boom = new Error('db down');
-    prisma.warehouse.findUnique.mockResolvedValue({ id: 'wh-1', binLocations: [] });
+    prisma.warehouse.findFirst.mockResolvedValue({ id: 'wh-1', binLocations: [] });
     prisma.warehouse.delete.mockRejectedValue(boom);
 
     await expect(svc.remove('wh-1')).rejects.toBe(boom);

@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   BadRequestException,
   ConflictException,
@@ -97,7 +98,7 @@ export class ExchangeService {
 
   /** Preview for the creation screen: what the customer already paid. */
   async getSettlementPreview(orderId: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: { id: true, displayId: true, kind: true, total: true, trashedAt: true },
     });
@@ -250,7 +251,7 @@ export class ExchangeService {
   }
 
   async findById(id: string) {
-    const exchange = await this.prisma.order.findUnique({
+    const exchange = await this.prisma.order.findFirst({
       where: { id },
       include: {
         status: true,
@@ -291,7 +292,7 @@ export class ExchangeService {
     if (mode !== 'FULL' && mode !== 'PARTIAL') {
       throw new BadRequestException(`Invalid exchange mode: ${dto.mode}`);
     }
-    const original = await this.prisma.order.findUnique({
+    const original = await this.prisma.order.findFirst({
       where: { id: originalOrderId },
       include: {
         status: true,
@@ -493,10 +494,10 @@ export class ExchangeService {
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
-        const confirmed = await tx.orderStatus.findUnique({
+        const confirmed = await tx.orderStatus.findFirst({
           where: { name: 'Confirmed' },
         });
-        const returnPending = await tx.orderStatus.findUnique({
+        const returnPending = await tx.orderStatus.findFirst({
           where: { name: 'Return Pending' },
         });
         if (!confirmed || !returnPending) {
@@ -948,7 +949,7 @@ export class ExchangeService {
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date_family: { date: dateStr, family: 'Ex' } },
+        where: { tenantId_date_family: tenantCompound({   date: dateStr, family: 'Ex'   }) },
         create: { date: dateStr, family: 'Ex', seq: 1 },
         update: { seq: { increment: 1 } },
       });

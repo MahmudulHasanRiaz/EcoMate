@@ -26,7 +26,7 @@ describe('ShiftService', () => {
       shiftPreset: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(preset()),
         update: jest.fn().mockResolvedValue(preset()),
       },
@@ -37,7 +37,7 @@ describe('ShiftService', () => {
         create: jest.fn().mockResolvedValue({ id: 'sa-1' }),
         update: jest.fn().mockResolvedValue({ id: 'sa-1' }),
       },
-      employee: { findUnique: jest.fn().mockResolvedValue({ id: 'emp-1' }) },
+      employee: { findFirst: jest.fn().mockResolvedValue({ id: 'emp-1' }) },
       employmentHistory: { create: jest.fn().mockResolvedValue({}) },
       $transaction: jest.fn(),
     };
@@ -48,10 +48,10 @@ describe('ShiftService', () => {
 
     service = module.get(ShiftService);
     jest.clearAllMocks();
-    prisma.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+    prisma.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
     prisma.shiftAssignment.count.mockResolvedValue(0);
     prisma.shiftAssignment.findFirst.mockResolvedValue(null);
-    prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+    prisma.shiftPreset.findFirst.mockResolvedValue(preset());
   });
 
   describe('standard minutes', () => {
@@ -139,7 +139,7 @@ describe('ShiftService', () => {
     });
 
     it('throws when the employee does not exist', async () => {
-      prisma.employee.findUnique.mockResolvedValue(null);
+      prisma.employee.findFirst.mockResolvedValue(null);
       await expect(service.getRotation('nope')).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -189,12 +189,12 @@ describe('ShiftService', () => {
     });
 
     it('refuses to assign a retired preset', async () => {
-      prisma.shiftPreset.findUnique.mockResolvedValue(preset({ isActive: false }));
+      prisma.shiftPreset.findFirst.mockResolvedValue(preset({ isActive: false }));
       await expect(service.setRotationDay('emp-1', 1, 'sp-1')).rejects.toThrow(/retired/);
     });
 
     it('throws when the preset does not exist', async () => {
-      prisma.shiftPreset.findUnique.mockResolvedValue(null);
+      prisma.shiftPreset.findFirst.mockResolvedValue(null);
       await expect(service.setRotationDay('emp-1', 1, 'nope')).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -331,7 +331,7 @@ describe('ShiftService', () => {
 
     it('creates a new custom preset when no match exists', async () => {
       prisma.shiftPreset.findFirst.mockResolvedValue(null);
-      prisma.shiftPreset.findUnique.mockResolvedValue(null);
+      prisma.shiftPreset.findFirst.mockResolvedValue(null);
       prisma.shiftPreset.create.mockResolvedValue(
         preset({ id: 'sp-custom', name: 'Custom (11:00–19:00)', code: 'CUSTOM_1100_1900' }),
       );
@@ -365,7 +365,7 @@ describe('ShiftService', () => {
 
     it('applies assignments across multiple weekdays atomically', async () => {
       prisma.shiftAssignment.findFirst.mockResolvedValue(null);
-      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+      prisma.shiftPreset.findFirst.mockResolvedValue(preset());
 
       const res = await service.bulkSetRotation('emp-1', [
         { dayOfWeek: 0, shiftPresetId: 'sp-1' },
@@ -379,7 +379,7 @@ describe('ShiftService', () => {
 
     it('quickAssignPreset targets workdays (Sun-Thu by default)', async () => {
       prisma.shiftAssignment.findFirst.mockResolvedValue(null);
-      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+      prisma.shiftPreset.findFirst.mockResolvedValue(preset());
 
       const res = await service.quickAssignPreset('emp-1', 'sp-1');
       expect(res.total).toBe(5);
@@ -390,7 +390,7 @@ describe('ShiftService', () => {
       // An empty array means the admin deselected every day. Treating it as
       // "unspecified" silently assigned Sun–Thu and the UI said otherwise.
       prisma.shiftAssignment.findFirst.mockResolvedValue(null);
-      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+      prisma.shiftPreset.findFirst.mockResolvedValue(preset());
 
       const res = await service.quickAssignPreset('emp-1', 'sp-1', []);
       expect(res.total).toBe(0);
@@ -399,7 +399,7 @@ describe('ShiftService', () => {
 
     it('quickAssignPreset still defaults when days is undefined', async () => {
       prisma.shiftAssignment.findFirst.mockResolvedValue(null);
-      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+      prisma.shiftPreset.findFirst.mockResolvedValue(preset());
 
       const res = await service.quickAssignPreset('emp-1', 'sp-1', undefined);
       expect(res.total).toBe(5);
@@ -409,7 +409,7 @@ describe('ShiftService', () => {
       // The transaction boundary must wrap the whole loop. If it were per-day,
       // a failure on day 2 would leave day 1 written with no way to roll back.
       prisma.shiftAssignment.findFirst.mockResolvedValue(null);
-      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+      prisma.shiftPreset.findFirst.mockResolvedValue(preset());
       let txCalls = 0;
       prisma.$transaction.mockImplementation((fn: any) => {
         txCalls += 1;

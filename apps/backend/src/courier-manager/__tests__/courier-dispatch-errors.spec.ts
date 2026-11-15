@@ -53,13 +53,13 @@ describe('CourierManagerService — Fix 5 dispatch error bodies + retry discipli
   beforeEach(() => {
     prisma = {
       courierCredentials: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+        findFirst: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve(credsFor(where.courier)),
         ),
       },
       order: {
         findMany: jest.fn().mockResolvedValue([order]),
-        findUnique: jest.fn().mockResolvedValue({ timeline: [] }),
+        findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
         findFirst: jest.fn().mockResolvedValue({ id: 'order-1' }),
         update: jest.fn().mockResolvedValue(order),
       },
@@ -69,7 +69,7 @@ describe('CourierManagerService — Fix 5 dispatch error bodies + retry discipli
         create: jest.fn().mockResolvedValue({}),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
-      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+      systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     service = new CourierManagerService(prisma as any, tokenStore as any);
     tokenStore.getAccessToken.mockClear();

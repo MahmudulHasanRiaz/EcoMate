@@ -106,6 +106,7 @@ interface DraftLeg extends LedgerLeg {
 
 interface AnchorDelegate {
   findUnique(args: any): Promise<any>;
+  findFirst(args: any): Promise<any>;
   update(args: any): Promise<any>;
 }
 
@@ -149,7 +150,7 @@ export class PaymentJournalService {
   /** Same gate the settlement uses: `SystemSetting.accounting_enabled`. */
   async isEnabled(): Promise<boolean> {
     try {
-      const row = await this.prisma.systemSetting.findUnique({
+      const row = await this.prisma.systemSetting.findFirst({
         where: { key: SETTING_ACCOUNTING_ENABLED },
       });
       return row?.value === 'true';
@@ -171,7 +172,7 @@ export class PaymentJournalService {
   ): Promise<PaymentJournalOutcome> {
     const dryRun = opts.dryRun === true;
     return this.guard(`order payment ${paymentId}`, async () => {
-      const payment = await this.prisma.payment.findUnique({
+      const payment = await this.prisma.payment.findFirst({
         where: { id: paymentId },
         include: {
           order: { select: { displayId: true, paymentOptionType: true } },
@@ -199,7 +200,7 @@ export class PaymentJournalService {
       if (dryRun) return wouldPost();
 
       return this.withAnchorLock('Payment', paymentId, async (tx) => {
-        const fresh = await this.anchorDelegate(tx, 'Payment').findUnique({
+        const fresh = await this.anchorDelegate(tx, 'Payment').findFirst({
           where: { id: paymentId },
           select: { journalEntryId: true },
         });
@@ -244,7 +245,7 @@ export class PaymentJournalService {
     sourcePaymentId?: string | null,
   ): Promise<PaymentJournalOutcome> {
     return this.guard(`refund mirror ${refundPaymentId}`, async () => {
-      const payment = await this.prisma.payment.findUnique({
+      const payment = await this.prisma.payment.findFirst({
         where: { id: refundPaymentId },
         include: {
           order: { select: { displayId: true, paymentOptionType: true } },
@@ -261,7 +262,7 @@ export class PaymentJournalService {
         return skip(COD_SKIP_REASON);
 
       const source = sourcePaymentId
-        ? await this.prisma.payment.findUnique({
+        ? await this.prisma.payment.findFirst({
             where: { id: sourcePaymentId },
             select: { id: true, accountId: true },
           })
@@ -274,7 +275,7 @@ export class PaymentJournalService {
       if (legs.length === 0) return skip('zero_amount');
 
       return this.withAnchorLock('Payment', refundPaymentId, async (tx) => {
-        const fresh = await this.anchorDelegate(tx, 'Payment').findUnique({
+        const fresh = await this.anchorDelegate(tx, 'Payment').findFirst({
           where: { id: refundPaymentId },
           select: { journalEntryId: true },
         });
@@ -313,7 +314,7 @@ export class PaymentJournalService {
   ): Promise<PaymentJournalOutcome> {
     const dryRun = opts.dryRun === true;
     return this.guard(`payroll payment ${paymentId}`, async () => {
-      const payment = await this.prisma.payrollPayment.findUnique({
+      const payment = await this.prisma.payrollPayment.findFirst({
         where: { id: paymentId },
         include: { payslip: { select: { periodKey: true } } },
       });
@@ -329,7 +330,7 @@ export class PaymentJournalService {
       if (dryRun) return wouldPost();
 
       return this.withAnchorLock('PayrollPayment', paymentId, async (tx) => {
-        const fresh = await this.anchorDelegate(tx, 'PayrollPayment').findUnique({
+        const fresh = await this.anchorDelegate(tx, 'PayrollPayment').findFirst({
           where: { id: paymentId },
           select: { journalEntryId: true },
         });
@@ -380,7 +381,7 @@ export class PaymentJournalService {
   ): Promise<PaymentJournalOutcome> {
     const dryRun = opts.dryRun === true;
     return this.guard(`supplier payment ${paymentId}`, async () => {
-      const payment = await this.prisma.supplierPayment.findUnique({
+      const payment = await this.prisma.supplierPayment.findFirst({
         where: { id: paymentId },
         include: { supplier: { select: { name: true } } },
       });
@@ -398,7 +399,7 @@ export class PaymentJournalService {
         const fresh = await this.anchorDelegate(
           tx,
           'SupplierPayment',
-        ).findUnique({
+        ).findFirst({
           where: { id: paymentId },
           select: { journalEntryId: true },
         });
@@ -612,7 +613,7 @@ export class PaymentJournalService {
     reason: string,
   ): Promise<PaymentJournalOutcome> {
     return this.guard(`reversal of ${table} ${id}`, async () => {
-      const row = await this.anchorDelegate(this.prisma, table).findUnique({
+      const row = await this.anchorDelegate(this.prisma, table).findFirst({
         where: { id },
         select: { journalEntryId: true, reversalJournalEntryId: true },
       });
@@ -623,7 +624,7 @@ export class PaymentJournalService {
       if (!(await this.isEnabled())) return skip('accounting_disabled');
 
       return this.withAnchorLock(table, id, async (tx) => {
-        const fresh = await this.anchorDelegate(tx, table).findUnique({
+        const fresh = await this.anchorDelegate(tx, table).findFirst({
           where: { id },
           select: { journalEntryId: true, reversalJournalEntryId: true },
         });
@@ -632,7 +633,7 @@ export class PaymentJournalService {
           return adopted(fresh.reversalJournalEntryId);
         if (!fresh.journalEntryId) return skip('nothing_to_reverse');
 
-        const source = await this.prisma.journalEntry.findUnique({
+        const source = await this.prisma.journalEntry.findFirst({
           where: { id: fresh.journalEntryId },
           include: { lines: true },
         });
@@ -710,7 +711,7 @@ export class PaymentJournalService {
     name: string,
     type: AccountType,
   ): Promise<string> {
-    const existing = await this.prisma.account.findUnique({ where: { code } });
+    const existing = await this.prisma.account.findFirst({ where: { code } });
     if (existing) return existing.id;
     try {
       const created = await this.prisma.account.create({
@@ -723,7 +724,7 @@ export class PaymentJournalService {
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === 'P2002'
       ) {
-        const raced = await this.prisma.account.findUnique({
+        const raced = await this.prisma.account.findFirst({
           where: { code },
         });
         if (raced) return raced.id;

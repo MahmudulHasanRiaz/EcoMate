@@ -89,8 +89,8 @@ async function main() {
 
   const snapshot = async (orderId: string, productId: string): Promise<Snapshot> => {
     const [product, order] = await Promise.all([
-      prisma.product.findUnique({ where: { id: productId } }),
-      prisma.order.findUnique({
+      prisma.product.findFirst({ where: { id: productId } }),
+      prisma.order.findFirst({
         where: { id: orderId },
         include: { status: true, items: true },
       }),
@@ -114,7 +114,7 @@ async function main() {
   const adminUserId = adminUser.id;
 
   try {
-    const previous = await prisma.product.findUnique({ where: { slug: SMOKE_SLUG } });
+    const previous = await prisma.product.findFirst({ where: { slug: SMOKE_SLUG } });
     if (previous) {
       await prisma.orderItem.deleteMany({ where: { productId: previous.id } });
       await prisma.managedStockLedger.deleteMany({ where: { productId: previous.id } });
@@ -122,7 +122,7 @@ async function main() {
     }
 
     console.log('\n== step 0: ensure lookup seeds (dev DB may be unseeded) ==');
-    let codOption = await prisma.paymentOption.findUnique({ where: { type: 'CASH_ON_DELIVERY' } });
+    let codOption = await prisma.paymentOption.findFirst({ where: { type: 'CASH_ON_DELIVERY' } });
     if (!codOption) {
       codOption = await prisma.paymentOption.create({
         data: { type: 'CASH_ON_DELIVERY', name: 'Cash on Delivery', sortOrder: 3 },
@@ -161,7 +161,7 @@ async function main() {
 
     let snapA = await snapshot(orderId, productId);
     if (!snapA.itemReserved && snapA.reserved === 0) {
-      const confirmed = await prisma.orderStatus.findUnique({ where: { name: 'Confirmed' } });
+      const confirmed = await prisma.orderStatus.findFirst({ where: { name: 'Confirmed' } });
       if (confirmed) {
         await ordersService.updateStatus(
           orderId,
@@ -210,7 +210,7 @@ async function main() {
     assert('2c. no return-restore ledger rows yet', snapB.returnLedgerRows === 0, `rows=${snapB.returnLedgerRows}`);
 
     console.log('\n== step 3: manual admin → Returned ==');
-    const returned = await prisma.orderStatus.findUnique({ where: { name: 'Returned' } });
+    const returned = await prisma.orderStatus.findFirst({ where: { name: 'Returned' } });
     if (!returned) throw new Error('Returned status not seeded');
     await ordersService.updateStatus(
       orderId,
@@ -249,7 +249,7 @@ async function main() {
       `reTransition=${reResult} (guard rejects) heal=${healOutcome} onHand=${snapD.onHand} reserved=${snapD.reserved} restoreRows ${snapC.returnLedgerRows}->${snapD.returnLedgerRows}`,
     );
 
-    const freshDispatch = await prisma.dispatch.findUnique({ where: { id: dispatch.id } });
+    const freshDispatch = await prisma.dispatch.findFirst({ where: { id: dispatch.id } });
     if (freshDispatch && freshDispatch.status !== 'RETURNED') {
       await dispatchService.updateStatus(dispatch.id, 'RETURNED', 'courier_webhook');
     }

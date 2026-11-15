@@ -193,7 +193,7 @@ export class ProductsService {
     if (!tagNames?.length) return;
     for (const name of tagNames) {
       const slug = slugify(name);
-      let tag = await this.prisma.tag.findUnique({ where: { slug } });
+      let tag = await this.prisma.tag.findFirst({ where: { slug } });
       if (tag) {
         await this.prisma.tag.update({
           where: { id: tag.id },
@@ -223,7 +223,7 @@ export class ProductsService {
    * Returns the computed value, or null when the product is gone.
    */
   async syncEffectivePrice(productId: string): Promise<number | null> {
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.product.findFirst({
       where: { id: productId },
       select: {
         type: true,
@@ -290,7 +290,7 @@ export class ProductsService {
     performedBy?: string;
   }): Promise<void> {
     const { productId, fromMode, toMode, performedBy } = params;
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.product.findFirst({
       where: { id: productId },
       select: { type: true, managedStockQuantity: true, reservedStock: true },
     });
@@ -701,7 +701,7 @@ export class ProductsService {
 
   async resolveCategorySlug(slug: string): Promise<string | undefined> {
     if (!slug) return undefined;
-    const cat = await this.prisma.category.findUnique({
+    const cat = await this.prisma.category.findFirst({
       where: { slug },
       select: { id: true },
     });
@@ -1303,7 +1303,7 @@ export class ProductsService {
     const cacheKey = `product:slug:${slug}:${opts?.isStaff ? 'staff' : 'public'}`;
     const cached = await this.cache.get<any>(cacheKey);
     if (cached) return cached;
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.product.findFirst({
       where: { slug, isActive: true, status: { not: 'draft' } },
       include: {
         brand: true,
@@ -1337,7 +1337,7 @@ export class ProductsService {
   }
 
   async findOne(id: string) {
-    const p = await this.prisma.product.findUnique({
+    const p = await this.prisma.product.findFirst({
       where: { id },
       include: {
         brand: { select: { id: true, name: true, slug: true } },
@@ -1371,7 +1371,7 @@ export class ProductsService {
   }
 
   async create(dto: CreateProductDto) {
-    const existing = await this.prisma.product.findUnique({
+    const existing = await this.prisma.product.findFirst({
       where: { slug: dto.slug },
       select: { id: true, status: true },
     });
@@ -1628,7 +1628,7 @@ export class ProductsService {
   }
 
   async update(id: string, dto: UpdateProductDto, performedBy?: string) {
-    const p = await this.prisma.product.findUnique({ where: { id } });
+    const p = await this.prisma.product.findFirst({ where: { id } });
     if (!p) throw new NotFoundException('Product not found');
     // Same rule as updateDraft: a usable provided slug wins (with the
     // usual conflict check); an invalid stored slug regenerates on save
@@ -1808,7 +1808,7 @@ export class ProductsService {
   }
 
   async remove(id: string) {
-    await this.prisma.product.findUniqueOrThrow({ where: { id } });
+    await this.prisma.product.findFirstOrThrow({ where: { id } });
     await this.prisma.comboItem.deleteMany({ where: { productId: id } });
     const variants = await this.prisma.productVariant.findMany({
       where: { productId: id },
@@ -1882,7 +1882,7 @@ export class ProductsService {
     const provided = this.usableSlug(dto.slug);
     if (provided) {
       if (provided !== p.slug) {
-        const exists = await this.prisma.product.findUnique({
+        const exists = await this.prisma.product.findFirst({
           where: { slug: provided },
         });
         if (exists) throw new ConflictException('Slug already exists');
@@ -1917,13 +1917,13 @@ export class ProductsService {
   }
 
   private async ensureUniqueSlug(base: string): Promise<string> {
-    const exists = await this.prisma.product.findUnique({
+    const exists = await this.prisma.product.findFirst({
       where: { slug: base },
     });
     if (!exists) return base;
     let i = 2;
     while (
-      await this.prisma.product.findUnique({
+      await this.prisma.product.findFirst({
         where: { slug: `${base}-${i}` },
       })
     ) {
@@ -2087,7 +2087,7 @@ export class ProductsService {
 
   /** Autosave: update the SAME draft record. Scalars only; stays a draft. */
   async updateDraft(id: string, dto: UpdateProductDto) {
-    const p = await this.prisma.product.findUnique({ where: { id } });
+    const p = await this.prisma.product.findFirst({ where: { id } });
     if (!p) throw new NotFoundException('Product not found');
     if (p.status !== 'draft') {
       throw new BadRequestException(
@@ -2292,7 +2292,7 @@ export class ProductsService {
 
   /** Publish: validate completeness, then activate the draft. */
   async publishDraft(id: string, dto: UpdateProductDto) {
-    const p = await this.prisma.product.findUnique({ where: { id } });
+    const p = await this.prisma.product.findFirst({ where: { id } });
     if (!p) throw new NotFoundException('Product not found');
     if (p.status !== 'draft') {
       throw new BadRequestException('Product is not a draft');
@@ -2573,7 +2573,7 @@ export class ProductsService {
   }
 
   async generateVariants(productId: string, dto: GenerateVariantsDto) {
-    const product = await this.prisma.product.findUniqueOrThrow({
+    const product = await this.prisma.product.findFirstOrThrow({
       where: { id: productId },
     });
 
@@ -2663,7 +2663,7 @@ export class ProductsService {
     variantId: string,
     dto: UpdateVariantDto,
   ) {
-    const variant = await this.prisma.productVariant.findUnique({
+    const variant = await this.prisma.productVariant.findFirst({
       where: { id: variantId },
     });
     if (!variant || variant.productId !== productId) {
@@ -2877,7 +2877,7 @@ export class ProductsService {
   }
 
   async checkSlugAvailability(slug: string) {
-    const existing = await this.prisma.product.findUnique({ where: { slug }, select: { id: true } });
+    const existing = await this.prisma.product.findFirst({ where: { slug }, select: { id: true } });
     return { available: !existing };
   }
 
@@ -2926,7 +2926,7 @@ export class ProductsService {
   }
 
   async removeVariant(productId: string, variantId: string) {
-    const variant = await this.prisma.productVariant.findUnique({
+    const variant = await this.prisma.productVariant.findFirst({
       where: { id: variantId },
     });
     if (!variant || variant.productId !== productId) {

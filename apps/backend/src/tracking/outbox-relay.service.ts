@@ -182,7 +182,7 @@ export class OutboxRelayService implements OnModuleInit, OnModuleDestroy {
    */
   private async releaseLock(id: string): Promise<void> {
     try {
-      const row = await this.prisma.trackingOutbox.findUnique({
+      const row = await this.prisma.trackingOutbox.findFirst({
         where: { id },
         select: { attemptCount: true },
       });

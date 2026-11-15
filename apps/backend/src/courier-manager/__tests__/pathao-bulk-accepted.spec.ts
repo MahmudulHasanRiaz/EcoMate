@@ -84,13 +84,13 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
   function bulkPrisma(orders: any[]) {
     return {
       courierCredentials: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+        findFirst: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve(credsFor(where.courier)),
         ),
       },
       order: {
         findMany: jest.fn().mockResolvedValue(orders),
-        findUnique: jest.fn().mockResolvedValue({ timeline: [] }),
+        findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
         findFirst: jest.fn().mockResolvedValue({ id: orders[0]?.id }),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: orders.length }),
@@ -98,7 +98,7 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
         upsert: jest.fn().mockResolvedValue({}),
         create: jest.fn().mockImplementation(({ data }: any) =>
@@ -108,7 +108,7 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
-      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+      systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
   }
 
@@ -232,13 +232,13 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
     };
     const prisma: any = {
       courierCredentials: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+        findFirst: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve(credsFor(where.courier)),
         ),
       },
       order: {
         findMany: jest.fn().mockImplementation(() => Promise.resolve([mkOrder('order-1', 'ORD-1')])),
-        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+        findFirst: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve(db.orders.find((o) => o.id === where.id) ?? null),
         ),
         findFirst: jest.fn().mockImplementation(({ where }: any) => {
@@ -281,7 +281,7 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
         }),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+        findFirst: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve({ id: `status-${where.name}`, name: where.name }),
         ),
       },
@@ -344,7 +344,7 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
         }),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
-      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+      systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const ordersService: any = { updateStatus: jest.fn().mockResolvedValue({}) };
     const manager = new CourierManagerService(prisma as any, tokenStore as any);

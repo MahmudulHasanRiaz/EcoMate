@@ -51,13 +51,13 @@ async function makeService(over: {
 } = {}) {
   const prisma: any = {
     courierSettlementInvoice: {
-      findUnique: jest.fn().mockResolvedValue(
+      findFirst: jest.fn().mockResolvedValue(
         over.invoice === undefined ? invoice : over.invoice,
       ),
       update: jest.fn().mockResolvedValue({}),
     },
     courierSettlementRow: {
-      findUnique: jest.fn().mockResolvedValue(
+      findFirst: jest.fn().mockResolvedValue(
         over.row === undefined ? makeRow() : over.row,
       ),
       update: jest.fn().mockResolvedValue({}),
@@ -85,14 +85,14 @@ async function makeService(over: {
       create: jest
         .fn()
         .mockResolvedValue({ id: 'adj-1', adjustmentClass: 'source' }),
-      findUnique: jest.fn().mockResolvedValue(
+      findFirst: jest.fn().mockResolvedValue(
         over.adjustment ?? { id: 'adj-1', invoiceId: 'inv-1', field: 'effectiveCharges', difference: 20, adjustmentClass: 'cost', counterpart: 'net', journalEntryId: 'je-1', reversedById: null, rowId: 'row-1' },
       ),
       update: jest.fn().mockResolvedValue({}),
       count: jest.fn().mockResolvedValue(over.count ?? 1),
       findMany: jest.fn().mockResolvedValue([]),
     },
-    systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+    systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     $transaction: jest.fn(),
   };
   const accounting = {
@@ -343,7 +343,7 @@ describe('CourierSettlementAdjustmentsService — class C (settlement)', () => {
 describe('CourierSettlementAdjustmentsService — reversal (§10)', () => {
   it('throws NotFoundException for a missing adjustment', async () => {
     const { svc, prisma } = await makeService({ adjustment: null });
-    prisma.courierSettlementAdjustment.findUnique.mockResolvedValue(null);
+    prisma.courierSettlementAdjustment.findFirst.mockResolvedValue(null);
     await expect(svc.reverse('nope', 'fix')).rejects.toBeInstanceOf(
       NotFoundException,
     );

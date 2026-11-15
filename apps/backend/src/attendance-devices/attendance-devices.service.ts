@@ -124,7 +124,7 @@ export class AttendanceDevicesService {
   }
 
   async updateDevice(id: string, dto: Record<string, any>) {
-    const existing = await this.prisma.attendanceDevice.findUnique({
+    const existing = await this.prisma.attendanceDevice.findFirst({
       where: { id },
     });
     if (!existing) {
@@ -141,7 +141,7 @@ export class AttendanceDevicesService {
   }
 
   async deleteDevice(id: string) {
-    const existing = await this.prisma.attendanceDevice.findUnique({
+    const existing = await this.prisma.attendanceDevice.findFirst({
       where: { id },
     });
     if (!existing) {
@@ -218,7 +218,7 @@ export class AttendanceDevicesService {
 
   async createMapping(deviceId: string, dto: CreateDeviceMappingDto) {
     await this.requireDevice(deviceId);
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: dto.employeeId },
       select: { id: true, attendanceMethod: true },
     });
@@ -294,7 +294,7 @@ export class AttendanceDevicesService {
     };
     for (const event of events) {
       const idempotencyKey = this.idempotencyKey(deviceId, event);
-      const existing = await this.prisma.rawAttendanceEvent.findUnique({
+      const existing = await this.prisma.rawAttendanceEvent.findFirst({
         where: { idempotencyKey },
         select: { id: true },
       });
@@ -406,7 +406,7 @@ export class AttendanceDevicesService {
   // ------------------------------------------------------------------
 
   private async requireDevice(id: string) {
-    const device = await this.prisma.attendanceDevice.findUnique({
+    const device = await this.prisma.attendanceDevice.findFirst({
       where: { id },
     });
     if (!device) {

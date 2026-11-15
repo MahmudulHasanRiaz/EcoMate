@@ -20,7 +20,7 @@ export class ExpectedCodResolver {
   constructor(private readonly prisma: PrismaService) {}
 
   async resolveForOrder(orderId: string): Promise<ExpectedCodResult | null> {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: {
         paymentOptionType: true,

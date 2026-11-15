@@ -56,7 +56,7 @@ describe('Task 10 — COD-alert skips approval_pending dispatches', () => {
   function makeService(dispatches: any[]) {
     const prisma: any = {
       order: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'o1',
           total: 1000,
           payments: [],
@@ -82,7 +82,7 @@ describe('Task 10 — COD-alert skips approval_pending dispatches', () => {
     ]);
     // systemDue for total 1000, no payments = 1000; courierAmount 1000 matches,
     // but even a mismatch must not alert for unsettled rows — use mismatch:
-    prisma.order.findUnique.mockResolvedValue({
+    prisma.order.findFirst.mockResolvedValue({
       id: 'o1',
       total: 500,
       payments: [],
@@ -97,7 +97,7 @@ describe('Task 10 — COD-alert skips approval_pending dispatches', () => {
 
   it('confirmed DELIVERED dispatches still raise COD alerts on mismatch', async () => {
     const { service, prisma } = makeService([]);
-    prisma.order.findUnique.mockResolvedValue({
+    prisma.order.findFirst.mockResolvedValue({
       id: 'o1',
       total: 500,
       payments: [],

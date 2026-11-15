@@ -12,7 +12,7 @@ export class AccountingEnabledGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     try {
-      const setting = await this.prisma.systemSetting.findUnique({
+      const setting = await this.prisma.systemSetting.findFirst({
         where: { key: 'accounting_enabled' },
       });
 

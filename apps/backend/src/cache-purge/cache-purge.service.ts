@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable, Logger } from '@nestjs/common';
 import { CacheService } from '../cache/cache.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -79,7 +80,7 @@ export class CachePurgeService {
 
   /** Current cache version, or null when no purge has ever run. */
   async getCacheVersion(): Promise<{ version: string | null }> {
-    const row = await this.prisma.systemSetting.findUnique({
+    const row = await this.prisma.systemSetting.findFirst({
       where: { key: CACHE_VERSION_KEY },
     });
     return { version: row?.value ?? null };
@@ -281,7 +282,7 @@ export class CachePurgeService {
     // rememberCacheVersion stores what the server actually has.
     let previous: string | null = null;
     try {
-      const current = await this.prisma.systemSetting.findUnique({
+      const current = await this.prisma.systemSetting.findFirst({
         where: { key: CACHE_VERSION_KEY },
       });
       previous = current?.value ?? null;
@@ -290,7 +291,7 @@ export class CachePurgeService {
         Math.max(Date.now(), Number.isFinite(prev) ? prev + 1 : 0),
       );
       await this.prisma.systemSetting.upsert({
-        where: { key: CACHE_VERSION_KEY },
+        where: { tenantId_key: tenantCompound({  key: CACHE_VERSION_KEY  }) },
         update: { value: next },
         create: { key: CACHE_VERSION_KEY, value: next },
       });
@@ -324,7 +325,7 @@ export class CachePurgeService {
    * https://CLIENT_DOMAIN. Never hardcoded.
    */
   private async resolveStorefrontUrl(): Promise<string> {
-    const stored = await this.prisma.systemSetting.findUnique({
+    const stored = await this.prisma.systemSetting.findFirst({
       where: { key: 'storefront_url' },
     });
     return (

@@ -110,7 +110,7 @@ describe('HrAttendanceService', () => {
           day && day.id ? [{ id: day.id }] : [],
         ),
       attendanceDay: {
-        findUnique: jest.fn(async () => day),
+        findFirst: jest.fn(async () => day),
         create: jest.fn(async (args: any) => {
           day = {
             id: 'day-new',
@@ -179,11 +179,11 @@ describe('HrAttendanceService', () => {
   };
 
   const prismaMock = {
-    employee: { findUnique: jest.fn() },
+    employee: { findFirst: jest.fn() },
     employeeId: {},
-    attendanceSettings: { findUnique: jest.fn() },
+    attendanceSettings: { findFirst: jest.fn() },
     attendanceDay: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
       groupBy: jest.fn(),
@@ -192,11 +192,11 @@ describe('HrAttendanceService', () => {
       }),
     },
     attendanceSession: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
     },
-    attendanceBreak: { findUnique: jest.fn() },
+    attendanceBreak: { findFirst: jest.fn() },
     attendanceAdjustment: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
     leaveRequest: { findMany: jest.fn() },
     weeklyOff: { findMany: jest.fn() },
@@ -220,8 +220,8 @@ describe('HrAttendanceService', () => {
     service = module.get<HrAttendanceService>(HrAttendanceService);
     prisma = module.get<PrismaService>(PrismaService);
     jest.clearAllMocks();
-    prismaMock.employee.findUnique.mockResolvedValue(EMPLOYEE);
-    prismaMock.attendanceSettings.findUnique.mockResolvedValue(null);
+    prismaMock.employee.findFirst.mockResolvedValue(EMPLOYEE);
+    prismaMock.attendanceSettings.findFirst.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -230,15 +230,15 @@ describe('HrAttendanceService', () => {
 
   describe('getSettings', () => {
     it('falls back to APP when no settings row exists', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue(null);
       await expect(service.getSettings()).resolves.toEqual({ mode: 'APP' });
-      expect(prismaMock.attendanceSettings.findUnique).toHaveBeenCalledWith({
+      expect(prismaMock.attendanceSettings.findFirst).toHaveBeenCalledWith({
         where: { id: 'global' },
       });
     });
 
     it('returns the persisted mode when present', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({
         mode: 'MACHINE',
       });
       await expect(service.getSettings()).resolves.toEqual({ mode: 'MACHINE' });
@@ -252,7 +252,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('APP mode: APP employees allowed, employee method ignored', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'APP' });
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'APP' });
       await expect(service.effectiveMethod(employee('APP'))).resolves.toMatchObject({
         allowed: true,
         method: 'APP',
@@ -263,14 +263,14 @@ describe('HrAttendanceService', () => {
     });
 
     it('NONE method blocks in any mode', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'APP' });
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'APP' });
       const res = await service.effectiveMethod(employee('NONE'));
       expect(res.allowed).toBe(false);
       expect(res.blockedReason).toMatch(/disabled/i);
     });
 
     it('MACHINE mode blocks the app for all employees', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'MACHINE' });
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'MACHINE' });
       const app = await service.effectiveMethod(employee('APP'));
       expect(app.allowed).toBe(false);
       expect(app.blockedReason).toMatch(/MACHINE mode/i);
@@ -280,7 +280,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('BOTH mode honors the employee method', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'BOTH' });
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'BOTH' });
       await expect(service.effectiveMethod(employee('APP'))).resolves.toMatchObject({
         allowed: true,
         method: 'APP',
@@ -371,12 +371,12 @@ describe('HrAttendanceService', () => {
     });
 
     it('throws 404 when the employee is missing', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue(null);
       await expect(service.checkIn('missing')).rejects.toThrow(NotFoundException);
     });
 
     it('throws 400 for a terminated employee', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({
+      prismaMock.employee.findFirst.mockResolvedValue({
         ...EMPLOYEE,
         status: 'terminated',
       });
@@ -384,7 +384,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('throws 400 when application attendance is disabled in MACHINE mode', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'MACHINE' });
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'MACHINE' });
       await expect(service.checkIn('emp-1', { date: '2026-08-28' })).rejects.toThrow(
         /Application attendance is disabled in MACHINE mode/,
       );
@@ -392,7 +392,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('throws 400 when the employee method is NONE', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({
+      prismaMock.employee.findFirst.mockResolvedValue({
         ...EMPLOYEE,
         attendanceMethod: 'NONE',
       });
@@ -402,8 +402,8 @@ describe('HrAttendanceService', () => {
     });
 
     it('BOTH mode: APP employee checked in, MACHINE employee blocked from app', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'BOTH' });
-      prismaMock.employee.findUnique.mockResolvedValue({
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'BOTH' });
+      prismaMock.employee.findFirst.mockResolvedValue({
         ...EMPLOYEE,
         attendanceMethod: 'MACHINE',
       });
@@ -560,48 +560,48 @@ describe('HrAttendanceService', () => {
   describe('getDayState', () => {
     it('exposes the app-path gate so clients can hide check-in instead of 400ing', async () => {
       // MACHINE mode → app attendance blocked for every employee.
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'MACHINE' });
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'MACHINE' });
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(null);
       const res = await service.getDayState('emp-1', '2026-08-28');
       expect(res).toMatchObject({ state: 'none', appAllowed: false, appMethod: 'APP' });
       expect(res.appBlockedReason).toMatch(/MACHINE mode/i);
     });
 
     it('reports appAllowed with no reason when app attendance is permitted', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'BOTH' });
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'BOTH' });
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(null);
       const res = await service.getDayState('emp-1', '2026-08-28');
       expect(res).toMatchObject({ appAllowed: true, appMethod: 'APP' });
       expect(res.appBlockedReason).toBeUndefined();
     });
 
     it('blocks BOTH-mode employees whose own method is MACHINE', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'BOTH' });
-      prismaMock.employee.findUnique.mockResolvedValue({
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'BOTH' });
+      prismaMock.employee.findFirst.mockResolvedValue({
         ...EMPLOYEE,
         attendanceMethod: 'MACHINE',
       });
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(null);
       const res = await service.getDayState('emp-1', '2026-08-28');
       expect(res.appAllowed).toBe(false);
       expect(res.appBlockedReason).toMatch(/machine attendance/i);
     });
 
     it('blocks employees with attendanceMethod NONE', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'APP' });
-      prismaMock.employee.findUnique.mockResolvedValue({
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'APP' });
+      prismaMock.employee.findFirst.mockResolvedValue({
         ...EMPLOYEE,
         attendanceMethod: 'NONE',
       });
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(null);
       const res = await service.getDayState('emp-1', '2026-08-28');
       expect(res.appAllowed).toBe(false);
       expect(res.appBlockedReason).toMatch(/disabled/i);
     });
 
     it('keeps the existing state fields intact alongside the gate', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'APP' });
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(makeDay());
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'APP' });
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(makeDay());
       const res = await service.getDayState('emp-1', '2026-08-28');
       expect(res).toMatchObject({
         state: 'before_work',
@@ -612,13 +612,13 @@ describe('HrAttendanceService', () => {
     });
 
     it('returns none when no day exists', async () => {
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(null);
       await expect(service.getDayState('emp-1', '2026-08-28')).resolves.toMatchObject({
         state: 'none',
         workedMinutes: 0,
         breakMinutes: 0,
       });
-      expect(prismaMock.attendanceDay.findUnique).toHaveBeenCalledWith({
+      expect(prismaMock.attendanceDay.findFirst).toHaveBeenCalledWith({
         where: {
           employeeId_date: {
             employeeId: 'emp-1',
@@ -632,7 +632,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('returns before_work for a day with no sessions', async () => {
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(makeDay());
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(makeDay());
       await expect(service.getDayState('emp-1', '2026-08-28')).resolves.toMatchObject({
         state: 'before_work',
       });
@@ -640,7 +640,7 @@ describe('HrAttendanceService', () => {
 
     it('returns working with live minutes for an open session', async () => {
       jest.useFakeTimers({ now: new Date('2026-08-28T12:00:00.000Z') });
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(
         makeDay({
           sessions: [openSession('day-1', new Date('2026-08-28T09:00:00.000Z'))],
         }),
@@ -657,7 +657,7 @@ describe('HrAttendanceService', () => {
 
     it('returns on_break with the running break counted to now', async () => {
       jest.useFakeTimers({ now: new Date('2026-08-28T12:00:00.000Z') });
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(
         makeDay({
           sessions: [
             openSession('day-1', new Date('2026-08-28T09:00:00.000Z'), [
@@ -675,7 +675,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('returns checked_out with materialized minutes and times', async () => {
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(
         makeDay({
           workedMinutes: 495,
           breakMinutes: 45,
@@ -709,9 +709,9 @@ describe('HrAttendanceService', () => {
       const day = { ...DAY, ...overrides.day };
       const session = { ...SESSION, ...overrides.session };
       const brk = { ...BREAK, ...overrides.brk };
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(day);
-      prismaMock.attendanceSession.findUnique.mockResolvedValue(session);
-      prismaMock.attendanceBreak.findUnique.mockResolvedValue(brk);
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(day);
+      prismaMock.attendanceSession.findFirst.mockResolvedValue(session);
+      prismaMock.attendanceBreak.findFirst.mockResolvedValue(brk);
 
       const tx = {
         attendanceDay: {
@@ -888,7 +888,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('404 when the employee does not exist', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue(null);
       await expect(
         service.adjust('missing', { field: 'status', correctedValue: 'LATE', reason: 'x', dayId: 'day-1' }, 'actor-1'),
       ).rejects.toThrow(NotFoundException);
@@ -1053,8 +1053,8 @@ describe('HrAttendanceService', () => {
     };
 
     beforeEach(() => {
-      prismaMock.employee.findUnique.mockResolvedValue(machineEmployee);
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'MACHINE' });
+      prismaMock.employee.findFirst.mockResolvedValue(machineEmployee);
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'MACHINE' });
     });
 
     it('CHECK_IN creates a MACHINE day + session with deviceId', async () => {
@@ -1181,7 +1181,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('MACHINE events blocked in APP mode', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'APP' });
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'APP' });
       await expect(
         service.ingestMachineEvent('emp-1', 'dev-1', 'CHECK_IN', occurred('2026-08-28T08:00:00.000Z')),
       ).rejects.toThrow(/APP mode/);
@@ -1189,8 +1189,8 @@ describe('HrAttendanceService', () => {
     });
 
     it('NONE method blocks machine events', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'MACHINE' });
-      prismaMock.employee.findUnique.mockResolvedValue({
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'MACHINE' });
+      prismaMock.employee.findFirst.mockResolvedValue({
         ...EMPLOYEE,
         attendanceMethod: 'NONE',
       });
@@ -1200,14 +1200,14 @@ describe('HrAttendanceService', () => {
     });
 
     it('BOTH mode: MACHINE employee allowed, APP employee blocked from machine', async () => {
-      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'BOTH' });
+      prismaMock.attendanceSettings.findFirst.mockResolvedValue({ mode: 'BOTH' });
 
       const tx = makeStateTx(null);
       prismaMock.$transaction.mockImplementation(async (cb: any) => cb(tx));
       const res = await service.ingestMachineEvent('emp-1', 'dev-1', 'CHECK_IN', occurred('2026-08-28T08:00:00.000Z'));
       expect(res).toEqual({ dayId: 'day-new', sessionId: 's-new' });
 
-      prismaMock.employee.findUnique.mockResolvedValue({
+      prismaMock.employee.findFirst.mockResolvedValue({
         ...EMPLOYEE,
         attendanceMethod: 'APP',
       });
@@ -1248,7 +1248,7 @@ describe('HrAttendanceService', () => {
 
   describe('missingCheckout (derived open-session flag)', () => {
     it('getDayState: open session → missingCheckout true', async () => {
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(
         makeDay({
           sessions: [openSession('day-1', new Date('2026-08-28T09:00:00.000Z'))],
         }),
@@ -1258,7 +1258,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('getDayState: all sessions closed → missingCheckout false', async () => {
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(
         makeDay({
           sessions: [
             closedSession(
@@ -1274,19 +1274,19 @@ describe('HrAttendanceService', () => {
     });
 
     it('getDayState: no day → missingCheckout false', async () => {
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(null);
       const res = await service.getDayState('emp-1', '2026-08-28');
       expect(res.missingCheckout).toBe(false);
     });
 
     it('resolves "today" by Dhaka date when no date is supplied', async () => {
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(null);
       await service.getDayState(
         'emp-1',
         undefined,
         new Date('2026-08-24T18:30:00.000Z'),
       );
-      expect(prismaMock.attendanceDay.findUnique).toHaveBeenCalledWith({
+      expect(prismaMock.attendanceDay.findFirst).toHaveBeenCalledWith({
         where: {
           employeeId_date: {
             employeeId: 'emp-1',
@@ -1328,7 +1328,7 @@ describe('HrAttendanceService', () => {
 
   describe('createDay (manual absence days)', () => {
     it('creates an absence day + a status audit adjustment', async () => {
-      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceDay.findFirst.mockResolvedValue(null);
       const tx = makeStateTx(null);
       tx.attendanceDay.create.mockImplementation(async (args: any) => {
         const row = {
@@ -1380,7 +1380,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('409 when a day already exists for (employee, date)', async () => {
-      prismaMock.attendanceDay.findUnique.mockResolvedValue({ id: 'day-1' });
+      prismaMock.attendanceDay.findFirst.mockResolvedValue({ id: 'day-1' });
       await expect(
         service.createDay({
           employeeId: 'emp-1',
@@ -1393,7 +1393,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('400 for a terminated/inactive employee', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({
+      prismaMock.employee.findFirst.mockResolvedValue({
         ...EMPLOYEE,
         status: 'terminated',
       });
@@ -1430,7 +1430,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('404 when the employee does not exist', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue(null);
       await expect(
         service.createDay({
           employeeId: 'missing',
@@ -1610,7 +1610,7 @@ describe('HrAttendanceService', () => {
     });
 
     it('404 when the employee does not exist', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue(null);
       await expect(
         service.report('missing', '2026-08-01', '2026-08-09'),
       ).rejects.toThrow(NotFoundException);

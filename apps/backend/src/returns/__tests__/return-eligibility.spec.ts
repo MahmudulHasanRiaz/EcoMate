@@ -59,7 +59,7 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
         update: jest.fn().mockImplementation(({ data }: any) =>
           Promise.resolve({ id: 'ret-new', ...data }),
         ),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         // Courier upsert link-first lookup inside its transaction.
         findFirst: jest.fn((...args: any[]) => prisma.return.findFirst(...args)),
         findMany: jest.fn().mockImplementation(async (args: any) => {
@@ -70,7 +70,7 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
       // §5 mark-original-delivered (partial returns): status write + timeline.
       order: {
         update: jest.fn().mockResolvedValue({}),
-        findUnique: jest.fn((...args: any[]) => prisma.order.findUnique(...args)),
+        findFirst: jest.fn((...args: any[]) => prisma.order.findFirst(...args)),
       },
       product: {
         findMany: jest.fn((...args: any[]) =>
@@ -78,15 +78,15 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
         ),
       },
       orderStatus: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'st-delivered', name: 'Delivered' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'st-delivered', name: 'Delivered' }),
       },
       $executeRaw: jest.fn().mockResolvedValue(1),
     };
     prisma = {
-      order: { findUnique: jest.fn().mockResolvedValue(order) },
+      order: { findFirst: jest.fn().mockResolvedValue(order) },
       return: {
         create: tx.return.create,
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockImplementation(async (args: any) => {
           if (args?.where?.createdAt) return recent;
@@ -94,7 +94,7 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
         }),
         update: tx.return.update,
       },
-      refund: { findUnique: jest.fn().mockResolvedValue({ id: 'refund-1' }) },
+      refund: { findFirst: jest.fn().mockResolvedValue({ id: 'refund-1' }) },
       dispatch: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       $transaction: jest.fn((cb: any) => cb(tx)),
     };

@@ -60,7 +60,7 @@ function assertCount(
 }
 
 async function snap(pid: string, wh: string) {
-  const p = await prisma.product.findUnique({ where: { id: pid } }) as any;
+  const p = await prisma.product.findFirst({ where: { id: pid } }) as any;
   const pi = await prisma.physicalInventory.findFirst({
     where: { productId: pid, warehouseId: wh },
   });

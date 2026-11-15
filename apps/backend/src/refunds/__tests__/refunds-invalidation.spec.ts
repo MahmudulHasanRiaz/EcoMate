@@ -26,18 +26,18 @@ describe('RefundsService analytics invalidation', () => {
         .mockImplementation(async ({ data }: any) => ({ id: 'pay-refund-1', ...data })),
     },
     orderStatus: { findFirst: jest.fn() },
-    order: { findUnique: jest.fn(), update: jest.fn() },
+    order: { findFirst: jest.fn(), update: jest.fn() },
   };
   const mockPrisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(txMocks)),
     refund: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
     },
-    orderStatus: { findUnique: jest.fn() },
-    order: { findUnique: jest.fn(), update: jest.fn() },
+    orderStatus: { findFirst: jest.fn() },
+    order: { findFirst: jest.fn(), update: jest.fn() },
     // Refund ceiling is the PAID amount, not the order total.
     payment: {
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 1000 } }),
@@ -66,7 +66,7 @@ describe('RefundsService analytics invalidation', () => {
   });
 
   it('drops analytics:* after create', async () => {
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: 'o1',
       total: 1000,
       kind: 'SALE',
@@ -94,7 +94,7 @@ describe('RefundsService analytics invalidation', () => {
   });
 
   it('drops analytics:* after updateStatus to completed', async () => {
-    mockPrisma.refund.findUnique.mockResolvedValue({
+    mockPrisma.refund.findFirst.mockResolvedValue({
       id: 'r1',
       orderId: 'o1',
       status: 'approved',
@@ -105,7 +105,7 @@ describe('RefundsService analytics invalidation', () => {
       order: { id: 'o1', displayId: 'ORD-1' },
       ...args.data,
     }));
-    txMocks.order.findUnique.mockResolvedValue({ total: 1000 });
+    txMocks.order.findFirst.mockResolvedValue({ total: 1000 });
     txMocks.refund.aggregate.mockResolvedValue({ _sum: { amount: 100 } });
     txMocks.order.update.mockResolvedValue({});
 

@@ -24,7 +24,7 @@ describe('CustomerCreditService.grantFromOverpayment (marginal excess)', () => {
   const mockPrisma: any = {
     $transaction: jest.fn(),
     $queryRawUnsafe: jest.fn(),
-    order: { findUnique: jest.fn() },
+    order: { findFirst: jest.fn() },
     payment: { create: jest.fn() },
     customerCreditEntry: {
       aggregate: jest.fn(),
@@ -134,7 +134,7 @@ describe('CustomerCreditService.applyCredit (clamped, never negative)', () => {
   const mockPrisma: any = {
     $transaction: jest.fn(),
     $queryRawUnsafe: jest.fn(),
-    order: { findUnique: jest.fn() },
+    order: { findFirst: jest.fn() },
     payment: { create: jest.fn() },
     customerCreditEntry: {
       aggregate: jest.fn(),
@@ -151,7 +151,7 @@ describe('CustomerCreditService.applyCredit (clamped, never negative)', () => {
     ]; // balance = 200
     mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
     mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: 'order-1',
       customerId: 'cust-1',
       total: 1000,
@@ -227,7 +227,7 @@ describe('CustomerCreditService.applyCredit (clamped, never negative)', () => {
   });
 
   it('order without customer → 400 (guest credit cannot exist)', async () => {
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: 'order-g',
       customerId: null,
       total: 500,
@@ -238,7 +238,7 @@ describe('CustomerCreditService.applyCredit (clamped, never negative)', () => {
   });
 
   it('unknown order → 404', async () => {
-    mockPrisma.order.findUnique.mockResolvedValue(null);
+    mockPrisma.order.findFirst.mockResolvedValue(null);
     await expect(service.applyCredit('nope', 50, 'staff-1')).rejects.toThrow(
       NotFoundException,
     );
@@ -291,9 +291,9 @@ describe('PaymentsService.create credit-grant wiring (Task 8)', () => {
   const mockPrisma: any = {
     $transaction: jest.fn(),
     $queryRawUnsafe: jest.fn(),
-    order: { findUniqueOrThrow: jest.fn() },
+    order: { findFirstOrThrow: jest.fn() },
     payment: { create: jest.fn() },
-    paymentGateway: { findUnique: jest.fn() },
+    paymentGateway: { findFirst: jest.fn() },
     systemSetting: { findMany: jest.fn() },
   };
   const mockCredit = { grantFromOverpayment: jest.fn() };
@@ -320,8 +320,8 @@ describe('PaymentsService.create credit-grant wiring (Task 8)', () => {
   function mockPaidCreate(order: any) {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-      mockPrisma.order.findUniqueOrThrow.mockResolvedValue(order);
-      mockPrisma.paymentGateway.findUnique.mockResolvedValue({
+      mockPrisma.order.findFirstOrThrow.mockResolvedValue(order);
+      mockPrisma.paymentGateway.findFirst.mockResolvedValue({
         id: 'gw-bkash',
         code: 'bkash',
         name: 'bKash',
@@ -429,9 +429,9 @@ describe('PaymentsService.verify credit-grant wiring (D2)', () => {
   const mockPrisma: any = {
     $transaction: jest.fn(),
     $queryRawUnsafe: jest.fn(),
-    order: { findUnique: jest.fn(), update: jest.fn() },
+    order: { findFirst: jest.fn(), update: jest.fn() },
     payment: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       aggregate: jest.fn(),
     },
@@ -465,7 +465,7 @@ describe('PaymentsService.verify credit-grant wiring (D2)', () => {
   }) {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-      mockPrisma.payment.findUnique.mockResolvedValue(opts.payment);
+      mockPrisma.payment.findFirst.mockResolvedValue(opts.payment);
       mockPrisma.payment.update.mockImplementation(async (args: any) => ({
         ...opts.payment,
         ...args.data,
@@ -473,7 +473,7 @@ describe('PaymentsService.verify credit-grant wiring (D2)', () => {
       mockPrisma.payment.aggregate.mockResolvedValue({
         _sum: { amount: opts.paidTotalAfter },
       });
-      mockPrisma.order.findUnique.mockResolvedValue({
+      mockPrisma.order.findFirst.mockResolvedValue({
         total: opts.orderTotal,
         customerId: opts.customerId,
       });

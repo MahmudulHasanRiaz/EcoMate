@@ -13,9 +13,9 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
   const dispatchEventCreate = jest.fn();
 
   const prisma = {
-    trackingReplayArchive: { upsert: archiveUpsert, findUnique: archiveFindUnique },
-    trackingOutbox: { findUnique: outboxFindUnique, update: outboxUpdate },
-    trackingSnapshot: { findUnique: snapshotFindUnique },
+    trackingReplayArchive: { upsert: archiveUpsert, findFirst: archiveFindUnique },
+    trackingOutbox: { findFirst: outboxFindUnique, update: outboxUpdate },
+    trackingSnapshot: { findFirst: snapshotFindUnique },
     trackingDispatchEvent: { create: dispatchEventCreate },
   } as any;
   const service = new ReplayService(prisma);
@@ -307,9 +307,9 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
       const outboxUpdate = jest.fn().mockResolvedValue({});
       const dispatchEventCreate = jest.fn().mockResolvedValue({});
       const svc = new ReplayService({
-        trackingOutbox: { findMany: outboxFindMany, findUnique: outboxFindUnique, update: outboxUpdate },
-        trackingSnapshot: { findMany: snapshotFindMany, findUnique: snapshotFindUnique },
-        trackingReplayArchive: { findMany: archiveFindMany, findUnique: jest.fn().mockResolvedValue(null) },
+        trackingOutbox: { findMany: outboxFindMany, findFirst: outboxFindUnique, update: outboxUpdate },
+        trackingSnapshot: { findMany: snapshotFindMany, findFirst: snapshotFindUnique },
+        trackingReplayArchive: { findMany: archiveFindMany, findFirst: jest.fn().mockResolvedValue(null) },
         trackingDispatchEvent: { create: dispatchEventCreate },
       } as any);
 
@@ -339,9 +339,9 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
         .mockResolvedValue({ id: 'o-1', status: 'SENT', snapshotId: 's-1', configSnapshot: { enabledProviders: ['meta'] }, attemptCount: 5 });
       const snapshotFindUnique = jest.fn().mockResolvedValue(null);
       const svc = new ReplayService({
-        trackingOutbox: { findMany: outboxFindMany, findUnique: outboxFindUnique, update: jest.fn() },
-        trackingSnapshot: { findMany: snapshotFindMany, findUnique: snapshotFindUnique },
-        trackingReplayArchive: { findMany: archiveFindMany, findUnique: jest.fn().mockResolvedValue(null) },
+        trackingOutbox: { findMany: outboxFindMany, findFirst: outboxFindUnique, update: jest.fn() },
+        trackingSnapshot: { findMany: snapshotFindMany, findFirst: snapshotFindUnique },
+        trackingReplayArchive: { findMany: archiveFindMany, findFirst: jest.fn().mockResolvedValue(null) },
         trackingDispatchEvent: { create: jest.fn() },
       } as any);
 
@@ -375,9 +375,9 @@ describe('ReplayService (TrackingReplayArchive + DEAD -> PENDING replay)', () =>
         .fn()
         .mockResolvedValue({ id: 'o-1', status: 'DEAD', snapshotId: 's-1', configSnapshot: { enabledProviders: ['meta'] }, attemptCount: 5 });
       const svc = new ReplayService({
-        trackingOutbox: { findMany: outboxFindMany, findUnique: outboxFindUnique, update: jest.fn() },
-        trackingSnapshot: { findMany: snapshotFindMany, findUnique: snapshotFindUnique },
-        trackingReplayArchive: { findMany: archiveFindMany, findUnique: archiveFindUnique },
+        trackingOutbox: { findMany: outboxFindMany, findFirst: outboxFindUnique, update: jest.fn() },
+        trackingSnapshot: { findMany: snapshotFindMany, findFirst: snapshotFindUnique },
+        trackingReplayArchive: { findMany: archiveFindMany, findFirst: archiveFindUnique },
         trackingDispatchEvent: { create: jest.fn() },
       } as any);
 

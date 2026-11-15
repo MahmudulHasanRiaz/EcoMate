@@ -72,7 +72,7 @@ export class DeletionService {
   async deleteByCustomerId(customerId: string): Promise<DeletionResult> {
     // Guest orders carry customerId=null and are matched by the customer's
     // phone (CustomerProfile.phone is unique); resolve it up front.
-    const customer = await this.prisma.customerProfile.findUnique({
+    const customer = await this.prisma.customerProfile.findFirst({
       where: { id: customerId },
       select: { phone: true },
     });

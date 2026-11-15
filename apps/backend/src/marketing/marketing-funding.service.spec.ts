@@ -47,9 +47,9 @@ describe('MarketingFundingService', () => {
   });
 
   const mockPrisma = () => ({
-    adAccount: { findUnique: jest.fn() },
+    adAccount: { findFirst: jest.fn() },
     marketingFundingEntry: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(({ data }) => Promise.resolve(data)),
       delete: jest.fn(),
       findMany: jest.fn(),
@@ -62,7 +62,7 @@ describe('MarketingFundingService', () => {
       updateMany: jest.fn(),
     },
     financialPeriod: { findFirst: jest.fn() },
-    account: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
+    account: { findFirst: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
     marketingAuditLog: { create: jest.fn() },
     $transaction: jest.fn(),
   });
@@ -84,7 +84,7 @@ describe('MarketingFundingService', () => {
 
   describe('addFunding', () => {
     it('creates draft entry + confirmed ledger row inside one transaction', async () => {
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(mockAdAccount);
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(mockAdAccount);
       const tx = {
         marketingFundingEntry: { create: jest.fn().mockResolvedValue({ id: 'fund-1' }) },
         marketingFundingLedger: { create: jest.fn().mockResolvedValue({}) },
@@ -114,7 +114,7 @@ describe('MarketingFundingService', () => {
     });
 
     it('derives baseAmount from effectiveRate when omitted', async () => {
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(mockAdAccount);
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(mockAdAccount);
       const tx = {
         marketingFundingEntry: { create: jest.fn().mockResolvedValue({ id: 'fund-x' }) },
         marketingFundingLedger: { create: jest.fn().mockResolvedValue({}) },
@@ -132,7 +132,7 @@ describe('MarketingFundingService', () => {
     });
 
     it('rejects when baseAmount cannot be derived', async () => {
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(mockAdAccount);
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(mockAdAccount);
       await expect(
         service.addFunding({
           adAccountId: 'acct-1',
@@ -144,7 +144,7 @@ describe('MarketingFundingService', () => {
     });
 
     it('throws NotFound for unknown ad account', async () => {
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
         service.addFunding({ adAccountId: 'nope', fundingDate: '2026-01-15', currencyAmount: 10 } as any),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -154,7 +154,7 @@ describe('MarketingFundingService', () => {
 
   describe('confirm', () => {
     it('confirms only draft entries', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(mockEntry());
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(mockEntry());
       (prisma.marketingFundingEntry.update as jest.Mock).mockResolvedValue({ status: 'confirmed' });
       const res = await service.confirm('fund-1');
       expect(prisma.marketingFundingEntry.update).toHaveBeenCalledWith({
@@ -165,14 +165,14 @@ describe('MarketingFundingService', () => {
     });
 
     it('rejects confirming a non-draft entry', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(mockEntry({ status: 'posted', journalEntryId: 'je-1' }));
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(mockEntry({ status: 'posted', journalEntryId: 'je-1' }));
       await expect(service.confirm('fund-1')).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
   describe('post', () => {
     it('posts confirmed funding to accounting on an open period (Dr expense / Cr funding)', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(
         mockEntry({ status: 'confirmed' }),
       );
       (prisma.financialPeriod.findFirst as jest.Mock).mockResolvedValue({
@@ -183,7 +183,7 @@ describe('MarketingFundingService', () => {
         id: 'acct-prepaid',
         code: MARKETING_PREPAID_ACCOUNT_CODE,
       });
-      (prisma.account.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.account.findFirst as jest.Mock).mockResolvedValue({
         id: 'acct-funding',
         name: 'Bank',
         isGroup: false,
@@ -209,19 +209,19 @@ describe('MarketingFundingService', () => {
     });
 
     it('rejects posting a draft (must confirm first)', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(mockEntry());
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(mockEntry());
       await expect(service.post('fund-1', { fundingAccountId: 'acct-funding' })).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('rejects double posting', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(
         mockEntry({ status: 'posted', journalEntryId: 'je-1' }),
       );
       await expect(service.post('fund-1', { fundingAccountId: 'acct-funding' })).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('rejects posting into a closed financial period (accounting integrity)', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(
         mockEntry({ status: 'confirmed' }),
       );
       (prisma.financialPeriod.findFirst as jest.Mock).mockResolvedValue({
@@ -235,12 +235,12 @@ describe('MarketingFundingService', () => {
     });
 
     it('rejects group accounts as funding source', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(
         mockEntry({ status: 'confirmed' }),
       );
       (prisma.financialPeriod.findFirst as jest.Mock).mockResolvedValue({ id: 'period-1', isClosed: false });
       (prisma.account.findFirst as jest.Mock).mockResolvedValue({ id: 'acct-expense' });
-      (prisma.account.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.account.findFirst as jest.Mock).mockResolvedValue({
         id: 'acct-group',
         name: 'Assets (group)',
         isGroup: true,
@@ -254,7 +254,7 @@ describe('MarketingFundingService', () => {
 
   describe('archive / remove', () => {
     it('archives only fully-consumed entries', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(
         mockEntry({ status: 'fully_consumed', ledger: [{ remainingAmount: 0 }] }),
       );
       (prisma.marketingFundingEntry.update as jest.Mock).mockResolvedValue({ status: 'archived' });
@@ -263,14 +263,14 @@ describe('MarketingFundingService', () => {
     });
 
     it('rejects archiving with unconsumed funds', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(
         mockEntry({ status: 'fully_consumed', ledger: [{ remainingAmount: 50 }] }),
       );
       await expect(service.archive('fund-1')).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('deletes only draft entries (with their ledger rows)', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(mockEntry({ status: 'draft' }));
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(mockEntry({ status: 'draft' }));
       const res = await service.remove('fund-1');
       expect(prisma.marketingFundingLedger.deleteMany).toHaveBeenCalledWith({
         where: { fundingEntryId: 'fund-1' },
@@ -280,7 +280,7 @@ describe('MarketingFundingService', () => {
     });
 
     it('rejects deleting a confirmed/posted entry', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue(
         mockEntry({ status: 'confirmed' }),
       );
       await expect(service.remove('fund-1')).rejects.toBeInstanceOf(ConflictException);

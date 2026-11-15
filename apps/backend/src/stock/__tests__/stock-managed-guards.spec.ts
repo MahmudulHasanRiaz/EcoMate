@@ -30,15 +30,15 @@ describe('StockService — managed guards', () => {
       $queryRawUnsafe: jest.fn().mockResolvedValue([]),
       product: {
         findMany: jest.fn().mockResolvedValue([productRow()]),
-        findUnique: jest.fn().mockResolvedValue(productRow()),
+        findFirst: jest.fn().mockResolvedValue(productRow()),
         update: jest.fn().mockResolvedValue({}),
       },
       productVariant: {
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue({ productId: 'p1' }),
+        findFirst: jest.fn().mockResolvedValue({ productId: 'p1' }),
         update: jest.fn().mockResolvedValue({}),
       },
-      combo: { findUnique: jest.fn() },
+      combo: { findFirst: jest.fn() },
       inventoryLog: { create: jest.fn().mockResolvedValue({}) },
       managedStockLedger: { create: jest.fn().mockResolvedValue({}) },
       order: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -99,7 +99,7 @@ describe('StockService — managed guards', () => {
       const { service, tx } = makeService();
       const row = productRow({ manageStock: false, managedStockQuantity: 0, reservedStock: 0 });
       tx.product.findMany.mockResolvedValue([row]);
-      tx.product.findUnique.mockResolvedValue(row);
+      tx.product.findFirst.mockResolvedValue(row);
       await service.reserve(baseParams({ quantity: 5, tx }));
       expect(tx.product.update).toHaveBeenCalledWith({
         where: { id: 'p1' },
@@ -113,7 +113,7 @@ describe('StockService — managed guards', () => {
       const { service, tx } = makeService();
       const row = productRow({ availabilityMode: 'INVENTORY_CONTROLLED' });
       tx.product.findMany.mockResolvedValue([row]);
-      tx.product.findUnique.mockResolvedValue(row);
+      tx.product.findFirst.mockResolvedValue(row);
 
       await service.reserve(baseParams({ tx }));
 
@@ -129,7 +129,7 @@ describe('StockService — managed guards', () => {
         syncManagedStock: true,
       });
       tx.product.findMany.mockResolvedValue([row]);
-      tx.product.findUnique.mockResolvedValue(row);
+      tx.product.findFirst.mockResolvedValue(row);
 
       await service.reserve(baseParams({ tx }));
 
@@ -142,7 +142,7 @@ describe('StockService — managed guards', () => {
       const { service, tx, costingLotService } = makeService();
       const row = productRow({ availabilityMode: 'INVENTORY_CONTROLLED' });
       tx.product.findMany.mockResolvedValue([row]);
-      tx.product.findUnique.mockResolvedValue(row);
+      tx.product.findFirst.mockResolvedValue(row);
 
       await service.deduct(baseParams({ tx }));
 
@@ -156,7 +156,7 @@ describe('StockService — managed guards', () => {
   describe('duplicate aggregation (item 5b)', () => {
     it('guards a combo whose components repeat the same product on the SUM', async () => {
       const { service, tx } = makeService();
-      tx.combo.findUnique.mockResolvedValue({
+      tx.combo.findFirst.mockResolvedValue({
         id: 'c1',
         items: [
           { productId: 'p1', variantId: null, quantity: 2 },
@@ -177,7 +177,7 @@ describe('StockService — managed guards', () => {
 
     it('writes one aggregated movement when the sum fits', async () => {
       const { service, tx } = makeService();
-      tx.combo.findUnique.mockResolvedValue({
+      tx.combo.findFirst.mockResolvedValue({
         id: 'c1',
         items: [
           { productId: 'p1', variantId: null, quantity: 2 },

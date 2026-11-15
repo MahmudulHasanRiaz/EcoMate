@@ -70,7 +70,7 @@ export class BkashPgwController {
         dto.orderId,
       );
 
-      const order = await tx.order.findUnique({
+      const order = await tx.order.findFirst({
         where: { id: dto.orderId },
         select: {
           id: true, total: true, displayId: true, viewToken: true, customerId: true,
@@ -274,7 +274,7 @@ export class BkashPgwController {
           _sum: { amount: true },
         });
         const totalPaid = Number(paidAgg._sum.amount || 0);
-        const orderData = await tx.order.findUnique({
+        const orderData = await tx.order.findFirst({
           where: { id: pendingPayment.orderId },
           select: { total: true, viewToken: true },
         });

@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
@@ -62,7 +63,7 @@ export class CourierTokenService {
     if (cached) return cached;
 
     // 2. Durable store: restart-safe, avoids re-auth after a deploy.
-    const row = await this.prisma.courierAuthToken.findUnique({
+    const row = await this.prisma.courierAuthToken.findFirst({
       where: { courier: opts.courier },
     });
     if (row?.accessToken && new Date(row.expiresAt).getTime() > Date.now() + FIFTEEN_MINUTES_MS) {
@@ -138,7 +139,7 @@ export class CourierTokenService {
     const expiresAt = new Date(Date.now() + Math.max(0, issued.expires_in - 60) * 1000);
 
     await this.prisma.courierAuthToken.upsert({
-      where: { courier },
+      where: { tenantId_courier: tenantCompound({  courier  }) },
       update: {
         accessToken: issued.access_token,
         refreshToken: issued.refresh_token || undefined,

@@ -5,14 +5,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 describe('SizeChartsService.findByProductSlug (Fix 2)', () => {
   let svc: SizeChartsService;
   let prisma: {
-    product: { findUnique: jest.Mock };
-    sizeChart: { findUnique: jest.Mock };
+    product: { findFirst: jest.Mock };
+    sizeChart: { findFirst: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
-      product: { findUnique: jest.fn() },
-      sizeChart: { findUnique: jest.fn() },
+      product: { findFirst: jest.fn() },
+      sizeChart: { findFirst: jest.fn() },
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [SizeChartsService, { provide: PrismaService, useValue: prisma }],
@@ -24,38 +24,38 @@ describe('SizeChartsService.findByProductSlug (Fix 2)', () => {
   const inactiveChart = { id: 'c2', name: 'Old', isActive: false, tableData: [] };
 
   it('returns the chart for direct product assignment', async () => {
-    prisma.product.findUnique.mockResolvedValue({ sizeChartId: 'c1', category: null, productCategories: [] });
-    prisma.sizeChart.findUnique.mockResolvedValue(activeChart);
+    prisma.product.findFirst.mockResolvedValue({ sizeChartId: 'c1', category: null, productCategories: [] });
+    prisma.sizeChart.findFirst.mockResolvedValue(activeChart);
     await expect(svc.findByProductSlug('p')).resolves.toEqual(activeChart);
   });
 
   it('hides inactive charts (product assignment)', async () => {
-    prisma.product.findUnique.mockResolvedValue({ sizeChartId: 'c2', category: null, productCategories: [] });
-    prisma.sizeChart.findUnique.mockResolvedValue(inactiveChart);
+    prisma.product.findFirst.mockResolvedValue({ sizeChartId: 'c2', category: null, productCategories: [] });
+    prisma.sizeChart.findFirst.mockResolvedValue(inactiveChart);
     await expect(svc.findByProductSlug('p')).resolves.toBeNull();
   });
 
   it('falls back to category assignment, still honoring isActive', async () => {
-    prisma.product.findUnique.mockResolvedValue({
+    prisma.product.findFirst.mockResolvedValue({
       sizeChartId: null,
       category: { sizeChartId: 'c1' },
       productCategories: [],
     });
-    prisma.sizeChart.findUnique.mockResolvedValue(activeChart);
+    prisma.sizeChart.findFirst.mockResolvedValue(activeChart);
     await expect(svc.findByProductSlug('p')).resolves.toEqual(activeChart);
 
-    prisma.sizeChart.findUnique.mockResolvedValue(inactiveChart);
+    prisma.sizeChart.findFirst.mockResolvedValue(inactiveChart);
     await expect(svc.findByProductSlug('p')).resolves.toBeNull();
   });
 
   it('returns null when nothing is assigned', async () => {
-    prisma.product.findUnique.mockResolvedValue({ sizeChartId: null, category: null, productCategories: [] });
+    prisma.product.findFirst.mockResolvedValue({ sizeChartId: null, category: null, productCategories: [] });
     await expect(svc.findByProductSlug('p')).resolves.toBeNull();
-    expect(prisma.sizeChart.findUnique).not.toHaveBeenCalled();
+    expect(prisma.sizeChart.findFirst).not.toHaveBeenCalled();
   });
 
   it('throws NotFound for unknown slug', async () => {
-    prisma.product.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue(null);
     await expect(svc.findByProductSlug('ghost')).rejects.toThrow('Product not found');
   });
 });

@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Controller,
   Get,
@@ -186,7 +187,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     ];
     for (const g of gateways) {
       await this.prisma.paymentGateway.upsert({
-        where: { code: g.code },
+        where: { tenantId_code: tenantCompound({  code: g.code  }) },
         create: g,
         update: {},
       });
@@ -198,7 +199,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     // the app from booting.
     for (const g of gateways) {
       try {
-        const row = await this.prisma.paymentGateway.findUnique({
+        const row = await this.prisma.paymentGateway.findFirst({
           where: { code: g.code },
           select: { id: true, code: true, name: true, accountId: true },
         });
@@ -512,7 +513,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       if (key in dto) surfaceUpdate[key] = dto[key] === true;
     }
     if ('logoUrl' in dto) surfaceUpdate.logoUrl = dto.logoUrl || null;
-    const existing = await this.prisma.paymentGateway.findUnique({
+    const existing = await this.prisma.paymentGateway.findFirst({
       where: { code },
       select: { id: true, credentials: true },
     });
@@ -536,7 +537,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       }
     }
     const saved = await this.prisma.paymentGateway.upsert({
-      where: { code },
+      where: { tenantId_code: tenantCompound({  code  }) },
       create: {
         code,
         name: dto.name,
@@ -746,7 +747,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   // phoneNumber. Writes reuse the gateway settings permissions — no new
   // permission key: managing accounts is part of managing gateways.
   private async requireBankGateway() {
-    const gateway = await this.prisma.paymentGateway.findUnique({
+    const gateway = await this.prisma.paymentGateway.findFirst({
       where: { code: 'bank' },
     });
     if (!gateway)
@@ -859,7 +860,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   @RequiresFeature('admin_payments')
   @Get(':code')
   async findOne(@Param('code') code: string) {
-    const gateway = await this.prisma.paymentGateway.findUnique({
+    const gateway = await this.prisma.paymentGateway.findFirst({
       where: { code },
       include: { bankAccounts: { orderBy: { sortOrder: 'asc' } } },
     });

@@ -9,7 +9,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
   let service: CustomersService;
   const prisma = {
     customerProfile: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
       upsert: jest.fn(),
@@ -17,7 +17,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
     },
     customerPhone: {
       findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
     },
     order: {
@@ -50,7 +50,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
   });
 
   it('stores a real guest email on an existing phone-based profile (replacing a temporary one)', async () => {
-    prisma.customerProfile.findUnique.mockResolvedValue({
+    prisma.customerProfile.findFirst.mockResolvedValue({
       id: 'cust-1',
       phone: '+8801812345678',
       // Exactly what the generator emits: digits of the NORMALISED (E.164)
@@ -76,7 +76,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
     // The customer already gave us a real address. A later order supplying a
     // different one is not permission to rewrite their identity â€” that stays an
     // explicit profile-edit decision (Part 19 / Rule 5).
-    prisma.customerProfile.findUnique.mockResolvedValue({
+    prisma.customerProfile.findFirst.mockResolvedValue({
       id: 'cust-1',
       phone: '+8801812345678',
       email: 'real-before@example.com',
@@ -96,7 +96,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
   });
 
   it('keeps a real profile email when no email is supplied (no synthetic overwrite)', async () => {
-    prisma.customerProfile.findUnique.mockResolvedValue({
+    prisma.customerProfile.findFirst.mockResolvedValue({
       id: 'cust-1',
       phone: '+8801812345678',
       email: 'real@example.com',
@@ -109,7 +109,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
   });
 
   it('creates a synthetic cust_ email only when the guest provides none', async () => {
-    prisma.customerProfile.findUnique.mockResolvedValue(null);
+    prisma.customerProfile.findFirst.mockResolvedValue(null);
     prisma.userProfile.findFirst.mockResolvedValue(null);
     prisma.userProfile.create.mockResolvedValue({ id: 'new-user' });
     prisma.userSettings.create.mockResolvedValue({});
@@ -124,7 +124,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
   });
 
   it('uses the provided real email for brand-new customers (no synthetic)', async () => {
-    prisma.customerProfile.findUnique.mockResolvedValue(null);
+    prisma.customerProfile.findFirst.mockResolvedValue(null);
     prisma.userProfile.findFirst.mockResolvedValue(null);
     prisma.userProfile.create.mockResolvedValue({ id: 'new-user' });
     prisma.userSettings.create.mockResolvedValue({});
@@ -142,7 +142,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
   });
 
   it('replaces a synthetic profile email with the real email a later order supplies (spec Â§15)', async () => {
-    prisma.customerProfile.findUnique.mockResolvedValue({
+    prisma.customerProfile.findFirst.mockResolvedValue({
       id: 'cust-1',
       phone: '+8801712345678',
       email: 'cust_8801712345678@myeco.store',
@@ -163,7 +163,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
   });
 
   it('never replaces a synthetic-shaped email belonging to a DIFFERENT phone', async () => {
-    prisma.customerProfile.findUnique.mockResolvedValue({
+    prisma.customerProfile.findFirst.mockResolvedValue({
       id: 'cust-1',
       phone: '+8801712345678',
       email: 'cust_8809999999999@myeco.store', // another customer's placeholder
@@ -181,7 +181,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
   });
 
   it('does not rename an existing customer on a repeat checkout', async () => {
-    prisma.customerProfile.findUnique.mockResolvedValue({
+    prisma.customerProfile.findFirst.mockResolvedValue({
       id: 'cust-1',
       phone: '+8801712345678',
       email: 'real@example.com',
@@ -197,13 +197,13 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
 describe('CustomersService â€” linked phone numbers (CustomerPhone)', () => {
   let service: CustomersService;
   const prisma: any = {
-    customerProfile: { findUnique: jest.fn() },
+    customerProfile: { findFirst: jest.fn() },
     customerPhone: {
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
     },
-    userProfile: { findUnique: jest.fn(), findFirst: jest.fn() },
+    userProfile: { findFirst: jest.fn(), findFirst: jest.fn() },
     order: {
       aggregate: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
@@ -218,7 +218,7 @@ describe('CustomersService â€” linked phone numbers (CustomerPhone)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     prisma.customerPhone.findMany.mockResolvedValue([]);
-    prisma.customerPhone.findUnique.mockResolvedValue(null);    const moduleRef = await Test.createTestingModule({
+    prisma.customerPhone.findFirst.mockResolvedValue(null);    const moduleRef = await Test.createTestingModule({
       providers: [
         CustomersService,
         { provide: PrismaServiceToken, useValue: prisma },
@@ -238,7 +238,7 @@ describe('CustomersService â€” linked phone numbers (CustomerPhone)', () => {
   });
 
   it('is idempotent for an already-linked number', async () => {
-    prisma.customerPhone.findUnique.mockResolvedValue({ customerProfileId: 'cust-1' });
+    prisma.customerPhone.findFirst.mockResolvedValue({ customerProfileId: 'cust-1' });
 
     const linked = await service.linkPhones('cust-1', ['01800000002'], 'secondary');
 
@@ -247,7 +247,7 @@ describe('CustomersService â€” linked phone numbers (CustomerPhone)', () => {
   });
 
   it('refuses a number owned by another customer (never merges)', async () => {
-    prisma.customerPhone.findUnique.mockResolvedValue({ customerProfileId: 'cust-OTHER' });
+    prisma.customerPhone.findFirst.mockResolvedValue({ customerProfileId: 'cust-OTHER' });
 
     await expect(service.linkPhones('cust-1', ['01800000002'], 'secondary')).rejects.toThrow(
       'already linked to another customer',
@@ -278,7 +278,7 @@ describe('CustomersService â€” linked phone numbers (CustomerPhone)', () => {
   });
 
   it('findOne returns only the customer IPs with block state (never global)', async () => {
-    prisma.userProfile.findUnique.mockResolvedValue({
+    prisma.userProfile.findFirst.mockResolvedValue({
       id: 'cust-1', firstName: 'Jane', lastName: 'Doe', username: 'cust_x',
       email: null, phoneNumber: '+8801812345678', lastIp: '9.9.9.9',
       status: 'active', role: 'customer', createdAt: new Date(), updatedAt: new Date(),
@@ -293,7 +293,7 @@ describe('CustomersService â€” linked phone numbers (CustomerPhone)', () => {
         { ipAddress: '1.1.1.1', createdAt: new Date('2026-01-01'), displayId: 'ORD-2' },
         { ipAddress: '2.2.2.2', createdAt: new Date('2026-01-03'), displayId: 'ORD-3' },
       ]);
-    prisma.customerProfile.findUnique.mockResolvedValue({ lastOrderIp: null });
+    prisma.customerProfile.findFirst.mockResolvedValue({ lastOrderIp: null });
     prisma.blockedIp.findMany.mockResolvedValue([{ id: 'b1', ip: '2.2.2.2', reason: 'fraud' }]);
 
     const result = await service.findOne('cust-1');
@@ -312,13 +312,13 @@ describe('CustomersService â€” linked phone numbers (CustomerPhone)', () => {
   });
 
   it('findOne reads phone/IP block state with the LIVE predicate (active, not whitelisted, not expired) â€” 2026-10-31', async () => {
-    prisma.userProfile.findUnique.mockResolvedValue({
+    prisma.userProfile.findFirst.mockResolvedValue({
       id: 'cust-1', firstName: 'Jane', lastName: 'Doe', username: 'cust_x',
       email: null, phoneNumber: '+8801812345678', lastIp: null,
       status: 'active', role: 'customer', createdAt: new Date(), updatedAt: new Date(),
     });
     prisma.order.aggregate.mockResolvedValue({ _count: 0, _sum: { total: 0 } });
-    prisma.customerProfile.findUnique.mockResolvedValue({
+    prisma.customerProfile.findFirst.mockResolvedValue({
       phone: '+8801812345678',
       lastOrderIp: null,
     });

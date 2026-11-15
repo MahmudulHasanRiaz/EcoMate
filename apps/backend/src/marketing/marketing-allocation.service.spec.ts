@@ -8,12 +8,12 @@ describe('MarketingAllocationService', () => {
 
   const mockPrisma = () => ({
     orderAttribution: { findMany: jest.fn() },
-    marketingCampaign: { findUnique: jest.fn() },
+    marketingCampaign: { findFirst: jest.fn() },
     marketingConsumption: { findMany: jest.fn(), groupBy: jest.fn(), aggregate: jest.fn() },
     marketingCampaignInsight: { findMany: jest.fn() },
     marketingCostAllocation: { upsert: jest.fn() },
     productMarketingCost: { deleteMany: jest.fn(), create: jest.fn() },
-    systemSetting: { findUnique: jest.fn() },
+    systemSetting: { findFirst: jest.fn() },
     $transaction: jest.fn(),
   });
 
@@ -26,7 +26,7 @@ describe('MarketingAllocationService', () => {
     }).compile();
     service = module.get(MarketingAllocationService);
     prisma = module.get(PrismaService);
-    (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue({
       adAccount: { currency: 'USD' },
     });
   });
@@ -147,7 +147,7 @@ describe('MarketingAllocationService', () => {
   });
 
   it('defaults to product_value when the allocation mode setting is missing', async () => {
-    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.orderAttribution.findMany as jest.Mock).mockResolvedValue([
       {
         id: 'attr-1',
@@ -164,12 +164,12 @@ describe('MarketingAllocationService', () => {
     (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => cb(tx));
 
     await service.allocateCampaignDate({ campaignId: 'camp-1', date: new Date('2026-01-10'), spend: 50 });
-    expect(prisma.systemSetting.findUnique).toHaveBeenCalledWith({ where: { key: 'marketing_allocation_mode' } });
+    expect(prisma.systemSetting.findFirst).toHaveBeenCalledWith({ where: { key: 'marketing_allocation_mode' } });
     expect(tx.marketingCostAllocation.upsert.mock.calls[0][0].create.allocationMethod).toBe('product_value');
   });
 
   it('falls back to product_value for an invalid allocation mode setting', async () => {
-    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({ key: 'marketing_allocation_mode', value: 'exact_cost' });
+    (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue({ key: 'marketing_allocation_mode', value: 'exact_cost' });
     (prisma.orderAttribution.findMany as jest.Mock).mockResolvedValue([
       {
         id: 'attr-1',
@@ -190,7 +190,7 @@ describe('MarketingAllocationService', () => {
   });
 
   it('splits spend equally across candidates in equal mode (1/n regardless of order totals)', async () => {
-    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({ key: 'marketing_allocation_mode', value: 'equal' });
+    (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue({ key: 'marketing_allocation_mode', value: 'equal' });
     const attrs = [
       {
         id: 'attr-1',
@@ -236,7 +236,7 @@ describe('MarketingAllocationService', () => {
   });
 
   it('weights shares by ordered item quantity in quantity mode', async () => {
-    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({ key: 'marketing_allocation_mode', value: 'quantity' });
+    (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue({ key: 'marketing_allocation_mode', value: 'quantity' });
     const attrs = [
       {
         id: 'attr-1',
@@ -282,7 +282,7 @@ describe('MarketingAllocationService', () => {
   });
 
   it('rewrites the recorded method in the update branch and re-reads the setting per run', async () => {
-    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({ key: 'marketing_allocation_mode', value: 'equal' });
+    (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue({ key: 'marketing_allocation_mode', value: 'equal' });
     (prisma.orderAttribution.findMany as jest.Mock).mockResolvedValue([
       {
         id: 'attr-1',
@@ -307,7 +307,7 @@ describe('MarketingAllocationService', () => {
     await service.allocateCampaignDate({ campaignId: 'camp-1', date: new Date('2026-01-10'), spend: 50 });
     const second = tx.marketingCostAllocation.upsert.mock.calls[1][0];
     expect(second.update.allocationMethod).toBe('equal');
-    expect((prisma.systemSetting.findUnique as jest.Mock).mock.calls).toHaveLength(2);
+    expect((prisma.systemSetting.findFirst as jest.Mock).mock.calls).toHaveLength(2);
   });
 
   it('groups spend days by (campaignId, spendDate) and aggregates per day', async () => {

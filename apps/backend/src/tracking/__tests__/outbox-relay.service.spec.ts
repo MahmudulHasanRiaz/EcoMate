@@ -6,7 +6,7 @@ describe('OutboxRelayService', () => {
   const outboxUpdate = jest.fn();
   const prisma = {
     $queryRaw: queryRaw,
-    trackingOutbox: { findUnique: outboxFindUnique, update: outboxUpdate },
+    trackingOutbox: { findFirst: outboxFindUnique, update: outboxUpdate },
   } as any;
   const trackingQueue = { add: jest.fn() } as any;
   const settings = { get: jest.fn() } as any;

@@ -68,13 +68,13 @@ export class CourierSettlementAdjustmentsService {
   ) {}
 
   async create(input: CreateAdjustmentInput) {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id: input.invoiceId },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
 
     const row = input.rowId
-      ? await this.prisma.courierSettlementRow.findUnique({ where: { id: input.rowId } })
+      ? await this.prisma.courierSettlementRow.findFirst({ where: { id: input.rowId } })
       : null;
 
     // Class A never touches money: identification fields are opaque strings
@@ -296,13 +296,13 @@ export class CourierSettlementAdjustmentsService {
 
   /** Reverse a prior correction: full compensating reversal, original preserved. */
   async reverse(adjustmentId: string, reason: string, actor?: string | null) {
-    const original = await this.prisma.courierSettlementAdjustment.findUnique({
+    const original = await this.prisma.courierSettlementAdjustment.findFirst({
       where: { id: adjustmentId },
     });
     if (!original) throw new NotFoundException('Adjustment not found');
     if (original.reversedById) throw new BadRequestException('Adjustment already reversed');
 
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id: original.invoiceId },
     });
     const difference = num(original.difference);
@@ -350,7 +350,7 @@ export class CourierSettlementAdjustmentsService {
     });
 
     if (original.rowId) {
-      const row = await this.prisma.courierSettlementRow.findUnique({ where: { id: original.rowId } });
+      const row = await this.prisma.courierSettlementRow.findFirst({ where: { id: original.rowId } });
       if (row) {
         const restored = isCost
           ? { effectiveCharges: num(row.effectiveCharges) - difference }
@@ -381,7 +381,7 @@ export class CourierSettlementAdjustmentsService {
     const adjustments = await this.prisma.courierSettlementAdjustment.count({
       where: { invoiceId, reversalOfId: null },
     });
-    const current = await this.prisma.courierSettlementInvoice.findUnique({
+    const current = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id: invoiceId },
       select: { state: true },
     });
@@ -443,7 +443,7 @@ export class CourierSettlementAdjustmentsService {
   }
 
   private async threshold(): Promise<number> {
-    const s = await this.prisma.systemSetting.findUnique({
+    const s = await this.prisma.systemSetting.findFirst({
       where: { key: 'courier_settlement_residual_threshold' },
     });
     const v = Number(s?.value);

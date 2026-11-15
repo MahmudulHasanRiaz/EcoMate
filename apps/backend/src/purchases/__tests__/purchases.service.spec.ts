@@ -29,16 +29,16 @@ describe('PurchasesService lifecycle', () => {
 
   const mockTx = (over: Record<string, any> = {}) => {
     const tx: Record<string, any> = {
-      supplier: { findUnique: jest.fn(), update: jest.fn() },
-      product: { findUnique: jest.fn() },
-      productVariant: { findUnique: jest.fn() },
+      supplier: { findFirst: jest.fn(), update: jest.fn() },
+      product: { findFirst: jest.fn() },
+      productVariant: { findFirst: jest.fn() },
       purchaseCounter: { upsert: jest.fn() },
-      purchase: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+      purchase: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
       purchaseItem: { findMany: jest.fn(), update: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
       goodsReceiptNote: { create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
       goodsReceiptNoteItem: { findMany: jest.fn().mockResolvedValue([]) },
       costingLot: { create: jest.fn() },
-      warehouse: { findUnique: jest.fn().mockImplementation(async ({ where }: any) => ({ id: where.id })) },
+      warehouse: { findFirst: jest.fn().mockImplementation(async ({ where }: any) => ({ id: where.id })) },
       supplierUpdate: jest.fn(),
       purchaseEvent: { create: jest.fn() },
       ...over,
@@ -51,8 +51,8 @@ describe('PurchasesService lifecycle', () => {
     jest.clearAllMocks();
     prisma = {
       $transaction: jest.fn(),
-      supplier: { findUnique: jest.fn(), update: jest.fn() },
-      purchase: { findUnique: jest.fn() },
+      supplier: { findFirst: jest.fn(), update: jest.fn() },
+      purchase: { findFirst: jest.fn() },
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -92,12 +92,12 @@ describe('PurchasesService lifecycle', () => {
 
     function baseTx() {
       return mockTx({
-        supplier: { findUnique: jest.fn().mockResolvedValue({ id: 'sup-1' }), update: jest.fn() },
-        product: { findUnique: jest.fn().mockResolvedValue({ id: 'prod-1', type: 'simple' }) },
+        supplier: { findFirst: jest.fn().mockResolvedValue({ id: 'sup-1' }), update: jest.fn() },
+        product: { findFirst: jest.fn().mockResolvedValue({ id: 'prod-1', type: 'simple' }) },
         purchaseCounter: { upsert: jest.fn().mockResolvedValue({ date: '261008', seq: 7 }) },
         purchase: {
           create: jest.fn().mockResolvedValue({ id: 'po-1', referenceNo: 'PO-261008-0007' }),
-          findUnique: jest.fn(),
+          findFirst: jest.fn(),
           update: jest.fn(),
         },
       });
@@ -105,7 +105,7 @@ describe('PurchasesService lifecycle', () => {
 
     it('rejects an unknown product with 400, not a 500 FK crash', async () => {
       const tx = baseTx();
-      tx.product.findUnique.mockResolvedValue(null);
+      tx.product.findFirst.mockResolvedValue(null);
       runTx(tx);
       await expect(service.create(dto() as any)).rejects.toThrow(BadRequestException);
       expect(tx.purchase.create).not.toHaveBeenCalled();
@@ -113,14 +113,14 @@ describe('PurchasesService lifecycle', () => {
 
     it('requires a variant for variable products', async () => {
       const tx = baseTx();
-      tx.product.findUnique.mockResolvedValue({ id: 'prod-1', type: 'variable' });
+      tx.product.findFirst.mockResolvedValue({ id: 'prod-1', type: 'variable' });
       runTx(tx);
       await expect(service.create(dto() as any)).rejects.toThrow(/select a variant/);
     });
 
     it('rejects a variant that belongs to another product', async () => {
       const tx = baseTx();
-      tx.productVariant.findUnique.mockResolvedValue({ id: 'v-9', productId: 'other' });
+      tx.productVariant.findFirst.mockResolvedValue({ id: 'v-9', productId: 'other' });
       runTx(tx);
       await expect(
         service.create(dto({ items: [{ productId: 'prod-1', variantId: 'v-9', quantity: 2, totalBill: 200 }] }) as any),
@@ -183,14 +183,14 @@ describe('PurchasesService lifecycle', () => {
           findFirst: jest.fn().mockResolvedValue(null),
         },
         costingLot: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
-        supplier: { findUnique: jest.fn(), update: jest.fn() },
+        supplier: { findFirst: jest.fn(), update: jest.fn() },
         purchase: {
           create: jest.fn(),
-          findUnique: jest.fn(),
+          findFirst: jest.fn(),
           update: jest.fn().mockResolvedValue({}),
         },
         product: {
-          findUnique: jest.fn(),
+          findFirst: jest.fn(),
           findMany: jest.fn().mockResolvedValue([{ id: 'prod-1', availabilityMode: 'MANAGED_STOCK' }]),
         },
       });
@@ -203,7 +203,7 @@ describe('PurchasesService lifecycle', () => {
     });
 
     beforeEach(() => {
-      prisma.purchase.findUnique.mockResolvedValue({ ...purchase, items: [poItem()] });
+      prisma.purchase.findFirst.mockResolvedValue({ ...purchase, items: [poItem()] });
     });
 
     it('posts the managed leg for MANAGED_STOCK (router decision), not physical-only', async () => {
@@ -301,7 +301,7 @@ describe('PurchasesService lifecycle', () => {
       const evtArg = tx.purchaseEvent.create.mock.calls[0][0].data;
       expect(evtArg.data.lines[0].damageValue).toBe(1000);
       // Summary via findOne over the persisted GRN lines.
-      prisma.purchase.findUnique.mockResolvedValue({
+      prisma.purchase.findFirst.mockResolvedValue({
         ...purchase,
         items: [poItem()],
         grns: [{
@@ -355,7 +355,7 @@ describe('PurchasesService lifecycle', () => {
 
     it('rejects an unknown warehouse', async () => {
       const tx = grnTx();
-      tx.warehouse.findUnique.mockResolvedValue(null);
+      tx.warehouse.findFirst.mockResolvedValue(null);
       runTx(tx);
       await expect(service.createGrn('po-1', grnDto() as any)).rejects.toThrow(/Warehouse/);
     });
@@ -390,7 +390,7 @@ describe('PurchasesService lifecycle', () => {
 
     it('rejects a client variantId that does not belong to the received product', async () => {
       const tx = grnTx();
-      tx.productVariant.findUnique.mockResolvedValue({ id: 'v-9', productId: 'other' });
+      tx.productVariant.findFirst.mockResolvedValue({ id: 'v-9', productId: 'other' });
       runTx(tx);
       await expect(
         service.createGrn(
@@ -405,7 +405,7 @@ describe('PurchasesService lifecycle', () => {
 
     it('accepts a client variantId that belongs to the received product (legacy variant-less line)', async () => {
       const tx = grnTx();
-      tx.productVariant.findUnique.mockResolvedValue({ id: 'v-1', productId: 'prod-1' });
+      tx.productVariant.findFirst.mockResolvedValue({ id: 'v-1', productId: 'prod-1' });
       runTx(tx);
       await service.createGrn(
         'po-1',
@@ -419,7 +419,7 @@ describe('PurchasesService lifecycle', () => {
     it('replays the original GRN for a repeated idempotency key (no double-post)', async () => {
       const existing = { id: 'grn-old', grnNumber: 'GRN-261008-0009', items: [] };
       (prisma as any).goodsReceiptNote = {
-        findUnique: jest.fn().mockResolvedValue(existing),
+        findFirst: jest.fn().mockResolvedValue(existing),
       };
       const tx = grnTx();
       runTx(tx);
@@ -430,7 +430,7 @@ describe('PurchasesService lifecycle', () => {
     });
 
     it('stores a fresh idempotency key on the created GRN', async () => {
-      (prisma as any).goodsReceiptNote = { findUnique: jest.fn().mockResolvedValue(null) };
+      (prisma as any).goodsReceiptNote = { findFirst: jest.fn().mockResolvedValue(null) };
       const tx = grnTx();
       runTx(tx);
       await service.createGrn('po-1', grnDto() as any, 'user-1', 'key-new');
@@ -440,7 +440,7 @@ describe('PurchasesService lifecycle', () => {
     });
 
     it('retries once on serialization conflict (P2034) then succeeds', async () => {
-      (prisma as any).goodsReceiptNote = { findUnique: jest.fn().mockResolvedValue(null) };
+      (prisma as any).goodsReceiptNote = { findFirst: jest.fn().mockResolvedValue(null) };
       const tx = grnTx();
       const conflict = new Prisma.PrismaClientKnownRequestError('serialization failure', {
         code: 'P2034',
@@ -458,7 +458,7 @@ describe('PurchasesService lifecycle', () => {
       const winner = { id: 'grn-win', grnNumber: 'GRN-261008-0002', items: [] };
       // Pre-tx replay misses (the race is in flight), post-race re-read hits.
       (prisma as any).goodsReceiptNote = {
-        findUnique: jest.fn().mockResolvedValueOnce(null).mockResolvedValue(winner),
+        findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValue(winner),
       };
       const tx = grnTx();
       // Pre-tx replay misses (the race), create collides, post-race re-read hits.
@@ -493,14 +493,14 @@ describe('PurchasesService lifecycle', () => {
         goodsReceiptNoteItem: { findMany: jest.fn().mockResolvedValue(priorLines) },
         purchase: {
           create: jest.fn(),
-          findUnique: jest.fn(),
+          findFirst: jest.fn(),
           update: jest.fn().mockResolvedValue({}),
         },
       });
     }
 
     it('short-closes remaining qty with a reason and recomputes status', async () => {
-      prisma.purchase.findUnique.mockResolvedValue({ id: 'po-1', status: 'ordered', referenceNo: 'PO-1' });
+      prisma.purchase.findFirst.mockResolvedValue({ id: 'po-1', status: 'ordered', referenceNo: 'PO-1' });
       const tx = scTx({}, [{ purchaseItemId: 'pi-1', receivedQty: 60, acceptedQty: 60, rejectedQty: 0 }]);
       runTx(tx);
       (service as any).findOneTx = jest.fn().mockResolvedValue({ id: 'po-1' });
@@ -514,7 +514,7 @@ describe('PurchasesService lifecycle', () => {
     });
 
     it('rejects short-close beyond remaining', async () => {
-      prisma.purchase.findUnique.mockResolvedValue({ id: 'po-1', status: 'ordered', referenceNo: 'PO-1' });
+      prisma.purchase.findFirst.mockResolvedValue({ id: 'po-1', status: 'ordered', referenceNo: 'PO-1' });
       const tx = scTx({}, [{ purchaseItemId: 'pi-1', receivedQty: 90, acceptedQty: 90, rejectedQty: 0 }]);
       runTx(tx);
       await expect(
@@ -523,7 +523,7 @@ describe('PurchasesService lifecycle', () => {
     });
 
     it('cancel short-closes the remainder and blocks later GRNs', async () => {
-      prisma.purchase.findUnique.mockResolvedValue({
+      prisma.purchase.findFirst.mockResolvedValue({
         id: 'po-1',
         status: 'partially_received',
         items: [poItem({ receivedQty: 60 })],
@@ -541,7 +541,7 @@ describe('PurchasesService lifecycle', () => {
     });
 
     it('refuses to cancel a fully received purchase', async () => {
-      prisma.purchase.findUnique.mockResolvedValue({ id: 'po-1', status: 'received', items: [] });
+      prisma.purchase.findFirst.mockResolvedValue({ id: 'po-1', status: 'received', items: [] });
       await expect(service.cancel('po-1', { reason: 'x' } as any)).rejects.toThrow(/fully received/);
     });
   });
@@ -549,10 +549,10 @@ describe('PurchasesService lifecycle', () => {
   // ─── update locks ─────────────────────────────────────────────────
   describe('update locks', () => {
     it('blocks supplier/date/item changes after any GRN (notes stay open)', async () => {
-      prisma.purchase.findUnique.mockResolvedValue({ id: 'po-1' });
+      prisma.purchase.findFirst.mockResolvedValue({ id: 'po-1' });
       const tx = mockTx({
         goodsReceiptNote: { count: jest.fn().mockResolvedValue(1), create: jest.fn() },
-        purchase: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn().mockResolvedValue({ id: 'po-1' }) },
+        purchase: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({ id: 'po-1' }) },
         purchaseItem: { findMany: jest.fn(), update: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
       });
       runTx(tx);
@@ -561,10 +561,10 @@ describe('PurchasesService lifecycle', () => {
     });
 
     it('blocks every change on a cancelled purchase except notes', async () => {
-      prisma.purchase.findUnique.mockResolvedValue({ id: 'po-1', status: 'cancelled' });
+      prisma.purchase.findFirst.mockResolvedValue({ id: 'po-1', status: 'cancelled' });
       const tx = mockTx({
         goodsReceiptNote: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
-        purchase: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn().mockResolvedValue({ id: 'po-1' }) },
+        purchase: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({ id: 'po-1' }) },
       });
       runTx(tx);
       await expect(service.update('po-1', { notes: 'ok' } as any)).resolves.toBeDefined();

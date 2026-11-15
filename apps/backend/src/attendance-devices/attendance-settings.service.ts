@@ -7,7 +7,7 @@ export class AttendanceSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getSettings() {
-    const settings = await this.prisma.attendanceSettings.findUnique({
+    const settings = await this.prisma.attendanceSettings.findFirst({
       where: { id: 'global' },
     });
     if (!settings) {

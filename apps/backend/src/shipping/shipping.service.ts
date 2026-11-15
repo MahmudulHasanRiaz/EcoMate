@@ -35,7 +35,7 @@ export class ShippingService {
   }
 
   async updateOption(id: string, dto: UpdateShippingOptionDto) {
-    const existing = await this.prisma.shippingOption.findUnique({
+    const existing = await this.prisma.shippingOption.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Shipping option not found');
@@ -43,7 +43,7 @@ export class ShippingService {
   }
 
   async deleteOption(id: string) {
-    const existing = await this.prisma.shippingOption.findUnique({
+    const existing = await this.prisma.shippingOption.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Shipping option not found');
@@ -94,7 +94,7 @@ export class ShippingService {
   }
 
   async updateZoneGroup(id: string, dto: UpdateShippingZoneGroupDto) {
-    const existing = await this.prisma.shippingZoneGroup.findUnique({
+    const existing = await this.prisma.shippingZoneGroup.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Zone group not found');
@@ -132,7 +132,7 @@ export class ShippingService {
   }
 
   async deleteZoneGroup(id: string) {
-    const existing = await this.prisma.shippingZoneGroup.findUnique({
+    const existing = await this.prisma.shippingZoneGroup.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Zone group not found');

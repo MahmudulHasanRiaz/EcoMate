@@ -66,7 +66,7 @@ export class CourierSettlementAccountingService {
    * `journalEntryId` to null before calling so the unique constraint is free.
    */
   async postFinalization(input: PostFinalizationInput): Promise<AccountingPostResult> {
-    const existing = await this.prisma.courierSettlementInvoice.findUnique({
+    const existing = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id: input.invoiceId },
       select: { journalEntryId: true },
     });

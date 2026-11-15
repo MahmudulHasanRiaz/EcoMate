@@ -70,7 +70,7 @@ describe('UsersService', () => {
               .mockImplementation(async (cb) => cb(prisma)),
             userProfile: {
               findMany: jest.fn(),
-              findUnique: jest.fn(),
+              findFirst: jest.fn(),
               findFirst: jest.fn(),
               create: jest.fn(),
               update: jest.fn(),
@@ -82,7 +82,7 @@ describe('UsersService', () => {
             userSettings: {
               create: jest.fn(),
               upsert: jest.fn(),
-              findUnique: jest.fn(),
+              findFirst: jest.fn(),
             },
           },
         },
@@ -192,13 +192,13 @@ describe('UsersService', () => {
 
   describe('findOne', () => {
     it('should return a user by id', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(
         mockUserResponse,
       );
 
       const result = await service.findOne('user-id-1');
 
-      expect(prisma.userProfile.findUnique).toHaveBeenCalledWith(
+      expect(prisma.userProfile.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'user-id-1' } }),
       );
       expect(result).not.toHaveProperty('password');
@@ -206,7 +206,7 @@ describe('UsersService', () => {
     });
 
     it('should throw NotFoundException if user not found', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.findOne('nonexistent-id')).rejects.toThrow(
         NotFoundException,
@@ -330,7 +330,7 @@ describe('UsersService', () => {
     };
 
     it('should update a user successfully', async () => {
-      (prisma.userProfile.findUnique as jest.Mock)
+      (prisma.userProfile.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
@@ -350,7 +350,7 @@ describe('UsersService', () => {
     });
 
     it('should throw NotFoundException if user not found', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.update('nonexistent-id', updateDto)).rejects.toThrow(
         NotFoundException,
@@ -358,7 +358,7 @@ describe('UsersService', () => {
     });
 
     it('should throw ConflictException if new email is already taken', async () => {
-      (prisma.userProfile.findUnique as jest.Mock)
+      (prisma.userProfile.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce({
           id: 'other-user',
@@ -371,7 +371,7 @@ describe('UsersService', () => {
     });
 
     it('should throw ConflictException if new username is already taken', async () => {
-      (prisma.userProfile.findUnique as jest.Mock)
+      (prisma.userProfile.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce({ id: 'other-user', username: 'takenuser' });
 
@@ -381,7 +381,7 @@ describe('UsersService', () => {
     });
 
     it('should hash password when updating password', async () => {
-      (prisma.userProfile.findUnique as jest.Mock)
+      (prisma.userProfile.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
@@ -396,7 +396,7 @@ describe('UsersService', () => {
     });
 
     it('should omit status, role, password from the data if not provided', async () => {
-      (prisma.userProfile.findUnique as jest.Mock)
+      (prisma.userProfile.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockUserResponse)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
@@ -414,7 +414,7 @@ describe('UsersService', () => {
     });
 
     it('ignores override_permissions on update (custom access is HR-only now, via Employee Management)', async () => {
-      (prisma.userProfile.findUnique as jest.Mock)
+      (prisma.userProfile.findFirst as jest.Mock)
         .mockResolvedValueOnce({
           ...mockUserResponse,
           betterAuthUserId: 'ba-1',
@@ -435,7 +435,7 @@ describe('UsersService', () => {
     });
 
     it('update with undefined override_permissions leaves BA user unchanged (no BA write)', async () => {
-      (prisma.userProfile.findUnique as jest.Mock)
+      (prisma.userProfile.findFirst as jest.Mock)
         .mockResolvedValueOnce({
           ...mockUserResponse,
           betterAuthUserId: 'ba-1',
@@ -452,7 +452,7 @@ describe('UsersService', () => {
 
   describe('remove', () => {
     it('should delete a user successfully', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(
         mockUserResponse,
       );
       (prisma.userProfile.delete as jest.Mock).mockResolvedValue(
@@ -468,7 +468,7 @@ describe('UsersService', () => {
     });
 
     it('should throw NotFoundException if user not found', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.remove('nonexistent-id')).rejects.toThrow(
         NotFoundException,

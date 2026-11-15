@@ -692,10 +692,10 @@ export class InventoryService {
   ) {
     {
       const guardProduct: any = productId
-        ? await this.prisma.product.findUnique({ where: { id: productId } })
+        ? await this.prisma.product.findFirst({ where: { id: productId } })
         : variantId
           ? (
-              await this.prisma.productVariant.findUnique({
+              await this.prisma.productVariant.findFirst({
                 where: { id: variantId },
                 include: { product: true },
               })
@@ -727,7 +727,7 @@ export class InventoryService {
     }
 
     if (comboId) {
-      const combo = await this.prisma.combo.findUnique({
+      const combo = await this.prisma.combo.findFirst({
         where: { id: comboId },
         include: {
           items: {
@@ -869,7 +869,7 @@ export class InventoryService {
     }
 
     if (variantId) {
-      const variant = await this.prisma.productVariant.findUnique({
+      const variant = await this.prisma.productVariant.findFirst({
         where: { id: variantId },
         include: {
           product: {
@@ -928,7 +928,7 @@ export class InventoryService {
       );
     const q = quantity ?? 0;
 
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.product.findFirst({
       where: { id: productId },
     });
     if (!product) throw new NotFoundException('Product not found');
@@ -977,7 +977,7 @@ export class InventoryService {
       try {
         return await this.prisma.$transaction(
           async (tx) => {
-            const product = await tx.product.findUnique({
+            const product = await tx.product.findFirst({
               where: { id: productId },
             });
             if (!product) throw new NotFoundException('Product not found');
@@ -994,7 +994,7 @@ export class InventoryService {
               tx,
               ledgerType: ManagedStockMovementType.ADJUSTMENT,
             });
-            return tx.product.findUnique({
+            return tx.product.findFirst({
               where: { id: productId },
               select: {
                 id: true,
@@ -2011,12 +2011,12 @@ export class InventoryService {
     const prisma = tx ?? this.prisma;
 
     const [product, sourceWarehouse, destWarehouse] = await Promise.all([
-      prisma.product.findUnique({
+      prisma.product.findFirst({
         where: { id: dto.productId },
         select: { id: true, name: true, managedStockQuantity: true, type: true },
       }),
-      prisma.warehouse.findUnique({ where: { id: dto.sourceLocation } }),
-      prisma.warehouse.findUnique({
+      prisma.warehouse.findFirst({ where: { id: dto.sourceLocation } }),
+      prisma.warehouse.findFirst({
         where: { id: dto.destinationLocation },
       }),
     ]);
@@ -2056,7 +2056,7 @@ export class InventoryService {
     // transfer as product B — corrupt ledger + costing lineage. The picker only
     // ever emits matched pairs, but the API must not trust it.
     if (dto.variantId) {
-      const variant = await prisma.productVariant.findUnique({
+      const variant = await prisma.productVariant.findFirst({
         where: { id: dto.variantId },
         select: { id: true, productId: true, sku: true },
       });
@@ -2085,7 +2085,7 @@ export class InventoryService {
     // Idempotency check — INSIDE the transaction, so two concurrent requests
     // carrying the same key cannot both pass it. The unique index on
     // idempotencyKey is the real arbiter; P2002 is handled below.
-    const existing = await prisma.stockTransfer.findUnique({
+    const existing = await prisma.stockTransfer.findFirst({
       where: { idempotencyKey },
     });
     if (existing) return existing;
@@ -2101,7 +2101,7 @@ export class InventoryService {
         err.code === 'P2002' &&
         this.isStockTransferIdempotencyConflict(err)
       ) {
-        const winner = await this.prisma.stockTransfer.findUnique({
+        const winner = await this.prisma.stockTransfer.findFirst({
           where: { idempotencyKey },
         });
         if (winner) return winner;
@@ -2342,7 +2342,7 @@ export class InventoryService {
   }
 
   private async getTransferRequest(id: string) {
-    const row = await this.prisma.stockTransfer.findUnique({
+    const row = await this.prisma.stockTransfer.findFirst({
       where: { id },
       include: {
         sourceWarehouse: { select: { id: true, name: true, type: true } },
@@ -2380,7 +2380,7 @@ export class InventoryService {
     let requestItems: any[] = [];
     try {
       await this.prisma.$transaction(async (tx) => {
-        const request = await tx.stockTransfer.findUnique({
+        const request = await tx.stockTransfer.findFirst({
           where: { id },
           include: { items: true },
         });
@@ -2449,7 +2449,7 @@ export class InventoryService {
   }
 
   async rejectTransferRequest(id: string, performedBy: string, reason?: string) {
-    const request = await this.prisma.stockTransfer.findUnique({
+    const request = await this.prisma.stockTransfer.findFirst({
       where: { id },
       select: { id: true, status: true, notes: true },
     });

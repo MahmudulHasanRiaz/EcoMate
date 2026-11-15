@@ -5,8 +5,6 @@ import { ValidationPipe } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { FeatureGuard } from '@ecomate/feature-flags';
 import { NoStoreMiddleware } from './common/middleware/no-store.middleware';
-import { LicenseGuard } from './license/license.guard';
-import { LicenseModule } from './license/license.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -179,7 +177,6 @@ import { TenancyModule } from './tenancy/tenancy.module';
     SecurityModule,
     SearchModule,
     LandingPagesModule,
-    LicenseModule,
     QueueModule,
     SuppliersModule,
     PurchasesModule,
@@ -233,7 +230,6 @@ import { TenancyModule } from './tenancy/tenancy.module';
     },
     { provide: APP_GUARD, useClass: DualModeAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
-    { provide: APP_GUARD, useClass: LicenseGuard },
     { provide: APP_GUARD, useClass: FeatureGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],

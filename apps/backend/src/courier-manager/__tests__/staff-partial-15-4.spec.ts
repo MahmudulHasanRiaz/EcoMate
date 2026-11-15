@@ -56,11 +56,11 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(shippingOrder),
-        findUnique: jest.fn().mockResolvedValue(shippingOrder),
+        findFirst: jest.fn().mockResolvedValue(shippingOrder),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.name === 'Partial') return Promise.resolve(partialStatus);
           if (where?.name === 'Delivered') return Promise.resolve(deliveredStatus);
           return Promise.resolve(null);
@@ -102,7 +102,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
   describe('staff-first sequence (Shipping → Partial → confirmed partial → Delivered)', () => {
     it('steadfast CONFIRMED partial on a staff-Partial order promotes via 15.4 (dispatch still PARTIAL)', async () => {
       prisma.order.findFirst.mockResolvedValue(partialOrder);
-      prisma.order.findUnique.mockResolvedValue(partialOrder);
+      prisma.order.findFirst.mockResolvedValue(partialOrder);
 
       const result = await service.handleSteadfast({
         notification_type: 'delivery_status',
@@ -133,7 +133,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
         ...partialOrder,
         courierService: 'pathao',
       });
-      prisma.order.findUnique.mockResolvedValue(partialOrder);
+      prisma.order.findFirst.mockResolvedValue(partialOrder);
 
       await service.handlePathao({
         event: 'order.partial-delivery',
@@ -151,7 +151,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
 
     it('courier-first confirmed partial on Shipping (no staff Return yet) takes the normal path, NOT 15.4', async () => {
       prisma.order.findFirst.mockResolvedValue(shippingOrder);
-      prisma.order.findUnique.mockResolvedValue(shippingOrder);
+      prisma.order.findFirst.mockResolvedValue(shippingOrder);
 
       await service.handleSteadfast({
         notification_type: 'delivery_status',
@@ -174,7 +174,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
   describe('approval-pending partial NEVER Delivers', () => {
     it('steadfast approval-pending on a staff-Partial order stays Partial (dispatch PARTIAL, no promotion)', async () => {
       prisma.order.findFirst.mockResolvedValue(partialOrder);
-      prisma.order.findUnique.mockResolvedValue(partialOrder);
+      prisma.order.findFirst.mockResolvedValue(partialOrder);
 
       const result = await service.handleSteadfast({
         notification_type: 'delivery_status',
@@ -199,7 +199,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
   describe('15.4 fail-closed: promotion failure keeps the lock', () => {
     it('a Partial order with NO staff Return stays Partial (confirm rejects → no throw)', async () => {
       prisma.order.findFirst.mockResolvedValue(partialOrder);
-      prisma.order.findUnique.mockResolvedValue(partialOrder);
+      prisma.order.findFirst.mockResolvedValue(partialOrder);
       ordersService.confirmStaffPartialDelivered.mockRejectedValue(
         new Error('Partial → Delivered requires an open staff-created partial return.'),
       );
@@ -218,7 +218,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
 
     it('promotion failure records a hold timeline entry with the failure reason', async () => {
       prisma.order.findFirst.mockResolvedValue(partialOrder);
-      prisma.order.findUnique.mockResolvedValue(partialOrder);
+      prisma.order.findFirst.mockResolvedValue(partialOrder);
       ordersService.confirmStaffPartialDelivered.mockRejectedValue(
         new Error('Partial → Delivered requires an open staff-created partial return.'),
       );
@@ -245,7 +245,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
   describe('instant-delivery variant + Delivered→Partial LOCK', () => {
     it('instant-delivery (already Delivered) + later partial webhook → no-op, stays Delivered', async () => {
       prisma.order.findFirst.mockResolvedValue(deliveredOrder);
-      prisma.order.findUnique.mockResolvedValue(deliveredOrder);
+      prisma.order.findFirst.mockResolvedValue(deliveredOrder);
 
       const result = await service.handleSteadfast({
         notification_type: 'delivery_status',
@@ -269,7 +269,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
 
     it('Delivered order WITH a staff Return + later partial webhook → stays Delivered (lock covers staff case)', async () => {
       prisma.order.findFirst.mockResolvedValue(deliveredOrder);
-      prisma.order.findUnique.mockResolvedValue(deliveredOrder);
+      prisma.order.findFirst.mockResolvedValue(deliveredOrder);
       ordersService.updateStatus.mockRejectedValue(
         new Error('Cannot transition from "Delivered" to "Partial". Allowed: Return Pending'),
       );
@@ -290,7 +290,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
   describe('Partial amount collection ONLY if definite (existing behavior lock)', () => {
     it('pathao partial-delivery with a definite collected_amount records it', async () => {
       prisma.order.findFirst.mockResolvedValue(shippingOrder);
-      prisma.order.findUnique.mockResolvedValue(shippingOrder);
+      prisma.order.findFirst.mockResolvedValue(shippingOrder);
 
       await service.handlePathao({
         event: 'order.partial-delivery',
@@ -304,7 +304,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
 
     it('pathao partial-delivery with a non-definite collected_amount records nothing', async () => {
       prisma.order.findFirst.mockResolvedValue(shippingOrder);
-      prisma.order.findUnique.mockResolvedValue(shippingOrder);
+      prisma.order.findFirst.mockResolvedValue(shippingOrder);
 
       await service.handlePathao({
         event: 'order.partial-delivery',
@@ -322,7 +322,7 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
         ...shippingOrder,
         courierService: 'carrybee',
       });
-      prisma.order.findUnique.mockResolvedValue(shippingOrder);
+      prisma.order.findFirst.mockResolvedValue(shippingOrder);
 
       await service.handleCarrybee({
         event: 'order.partial-delivery',

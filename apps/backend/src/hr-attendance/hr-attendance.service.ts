@@ -68,7 +68,7 @@ export class HrAttendanceService {
   }
 
   private async loadEmployee(employeeId: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId },
     });
     if (!employee) throw new NotFoundException('Employee not found');
@@ -80,7 +80,7 @@ export class HrAttendanceService {
   // ------------------------------------------------------------------
 
   async getSettings(): Promise<{ mode: 'APP' | 'MACHINE' | 'BOTH' }> {
-    const settings = await this.prisma.attendanceSettings.findUnique({
+    const settings = await this.prisma.attendanceSettings.findFirst({
       where: { id: 'global' },
     });
     return { mode: settings?.mode ?? 'APP' };
@@ -159,7 +159,7 @@ export class HrAttendanceService {
   // ------------------------------------------------------------------
 
   private findDayById(tx: TransactionClient, id: string) {
-    return tx.attendanceDay.findUnique({
+    return tx.attendanceDay.findFirst({
       where: { id },
       include: DAY_INCLUDE,
     });
@@ -527,7 +527,7 @@ export class HrAttendanceService {
       throw new BadRequestException('Adjustment reason is required');
     }
     return this.prisma.$transaction(async (tx) => {
-      const day = await tx.attendanceDay.findUnique({
+      const day = await tx.attendanceDay.findFirst({
         where: { id: dto.dayId },
         include: DAY_INCLUDE,
       });
@@ -729,7 +729,7 @@ export class HrAttendanceService {
           );
         }
       }
-      const day = await this.prisma.attendanceDay.findUnique({
+      const day = await this.prisma.attendanceDay.findFirst({
         where: { id: dto.dayId },
       });
       if (!day) throw new NotFoundException('Attendance day not found');
@@ -753,7 +753,7 @@ export class HrAttendanceService {
       if (Number.isNaN(corrected.getTime())) {
         throw new BadRequestException('correctedValue must be a valid date');
       }
-      const session = await this.prisma.attendanceSession.findUnique({
+      const session = await this.prisma.attendanceSession.findFirst({
         where: { id: dto.sessionId },
       });
       if (!session) throw new NotFoundException('Attendance session not found');
@@ -781,7 +781,7 @@ export class HrAttendanceService {
       if (Number.isNaN(corrected.getTime())) {
         throw new BadRequestException('correctedValue must be a valid date');
       }
-      const brk = await this.prisma.attendanceBreak.findUnique({
+      const brk = await this.prisma.attendanceBreak.findFirst({
         where: { id: dto.breakId },
       });
       if (!brk) throw new NotFoundException('Attendance break not found');

@@ -45,7 +45,7 @@ describe('FeedService', () => {
       findMany: jest.fn(),
     },
     systemSetting: {
-      findUnique: jest.fn().mockResolvedValue({ value: 'Test Store' }),
+      findFirst: jest.fn().mockResolvedValue({ value: 'Test Store' }),
     },
   };
 

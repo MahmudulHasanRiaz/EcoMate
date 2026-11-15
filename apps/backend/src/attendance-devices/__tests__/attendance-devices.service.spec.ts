@@ -75,21 +75,21 @@ describe('AttendanceDevicesService', () => {
   beforeEach(async () => {
     prisma = {
       attendanceDevice: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
       },
-      employee: { findUnique: jest.fn() },
+      employee: { findFirst: jest.fn() },
       deviceEmployeeMapping: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         create: jest.fn(),
         deleteMany: jest.fn(),
       },
       rawAttendanceEvent: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         create: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
@@ -187,7 +187,7 @@ describe('AttendanceDevicesService', () => {
 
   describe('updateDevice', () => {
     it('404s when the device does not exist', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(null);
       await expect(
         service.updateDevice('dev-x', { name: 'new' }),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -195,7 +195,7 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('updates allowed fields and strips syncStatus/credentials from client input', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
       prisma.attendanceDevice.update.mockResolvedValue({ ...DEVICE, name: 'new' });
       const res = await service.updateDevice('dev-1', {
         name: 'new',
@@ -212,14 +212,14 @@ describe('AttendanceDevicesService', () => {
 
   describe('deleteDevice', () => {
     it('404s when not found', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(null);
       await expect(service.deleteDevice('dev-x')).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it('deletes an existing device', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
       prisma.attendanceDevice.delete.mockResolvedValue(DEVICE);
       await service.deleteDevice('dev-1');
       expect(prisma.attendanceDevice.delete).toHaveBeenCalledWith({
@@ -230,14 +230,14 @@ describe('AttendanceDevicesService', () => {
 
   describe('testConnection', () => {
     it('404s for unknown device', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(null);
       await expect(service.testConnection('dev-x')).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it('400 when host/port are not configured', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue({
         ...DEVICE,
         host: null,
         port: null,
@@ -249,7 +249,7 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('marks CONNECTED on successful TCP connect', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
       prisma.attendanceDevice.update.mockResolvedValue({
         ...DEVICE,
         syncStatus: 'CONNECTED',
@@ -266,7 +266,7 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('marks DISCONNECTED + lastSyncError on connect failure', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
       prisma.attendanceDevice.update.mockResolvedValue({
         ...DEVICE,
         syncStatus: 'DISCONNECTED',
@@ -286,7 +286,7 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('does not change the saved device when not found', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(null);
       await expect(service.testConnection('dev-x')).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -295,7 +295,7 @@ describe('AttendanceDevicesService', () => {
 
   describe('syncDevice', () => {
     it('sets SYNCING then CONNECTED + lastSyncAt on success', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
       prisma.attendanceDevice.update.mockResolvedValueOnce({
         ...DEVICE,
         syncStatus: 'SYNCING',
@@ -322,7 +322,7 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('sets FAILED + lastSyncError when probe fails', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
       prisma.attendanceDevice.update.mockResolvedValueOnce({
         ...DEVICE,
         syncStatus: 'SYNCING',
@@ -344,14 +344,14 @@ describe('AttendanceDevicesService', () => {
 
   describe('mappings', () => {
     it('404 when device missing on list', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(null);
       await expect(service.listMappings('dev-x')).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it('lists mappings with employee + betterAuthUser name', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
       prisma.deviceEmployeeMapping.findMany.mockResolvedValue([
         {
           id: 'm-1',
@@ -375,8 +375,8 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('creates a mapping (device need not be enabled)', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue({ ...DEVICE });
-      prisma.employee.findUnique.mockResolvedValue(EMPLOYEE);
+      prisma.attendanceDevice.findFirst.mockResolvedValue({ ...DEVICE });
+      prisma.employee.findFirst.mockResolvedValue(EMPLOYEE);
       prisma.deviceEmployeeMapping.create.mockResolvedValue({
         id: 'm-1',
         deviceId: 'dev-1',
@@ -391,7 +391,7 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('404 when the device is unknown', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(null);
       await expect(
         service.createMapping('dev-x', {
           employeeId: 'emp-1',
@@ -401,8 +401,8 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('404 when the employee is unknown', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.employee.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.employee.findFirst.mockResolvedValue(null);
       await expect(
         service.createMapping('dev-1', {
           employeeId: 'emp-x',
@@ -412,8 +412,8 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('400 when the employee attendance method is NONE', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.employee.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.employee.findFirst.mockResolvedValue({
         ...EMPLOYEE,
         attendanceMethod: 'NONE',
       });
@@ -429,9 +429,9 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('409 friendly on duplicate deviceEmployeeId', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.employee.findUnique.mockResolvedValue(EMPLOYEE);
-      prisma.deviceEmployeeMapping.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.employee.findFirst.mockResolvedValue(EMPLOYEE);
+      prisma.deviceEmployeeMapping.findFirst.mockResolvedValue({
         id: 'm-existing',
       });
       await expect(
@@ -443,9 +443,9 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('maps a concurrent P2002 create to a friendly 409', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.employee.findUnique.mockResolvedValue(EMPLOYEE);
-      prisma.deviceEmployeeMapping.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.employee.findFirst.mockResolvedValue(EMPLOYEE);
+      prisma.deviceEmployeeMapping.findFirst.mockResolvedValue(null);
       prisma.deviceEmployeeMapping.create.mockRejectedValue({
         code: 'P2002',
         meta: { target: ['deviceId', 'employeeId'] },
@@ -490,9 +490,9 @@ describe('AttendanceDevicesService', () => {
       });
 
     it('parses CSV and ingests through the machine path', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.rawAttendanceEvent.findUnique.mockResolvedValue(null);
-      prisma.deviceEmployeeMapping.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.rawAttendanceEvent.findFirst.mockResolvedValue(null);
+      prisma.deviceEmployeeMapping.findFirst.mockResolvedValue({
         id: 'm-1',
         deviceEmployeeId: 'DE-1',
         employeeId: 'emp-1',
@@ -530,9 +530,9 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('parses a JSON event array', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.rawAttendanceEvent.findUnique.mockResolvedValue(null);
-      prisma.deviceEmployeeMapping.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.rawAttendanceEvent.findFirst.mockResolvedValue(null);
+      prisma.deviceEmployeeMapping.findFirst.mockResolvedValue({
         id: 'm-1',
         employeeId: 'emp-1',
         employee: EMPLOYEE,
@@ -557,8 +557,8 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('skips events whose idempotency key already exists', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.rawAttendanceEvent.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.rawAttendanceEvent.findFirst.mockResolvedValue({
         id: 'r-existing',
         idempotencyKey: `dev-1:DE-1:${TS}`,
       });
@@ -577,9 +577,9 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('counts a concurrent P2002 on raw row create as duplicate', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.rawAttendanceEvent.findUnique.mockResolvedValue(null);
-      prisma.deviceEmployeeMapping.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.rawAttendanceEvent.findFirst.mockResolvedValue(null);
+      prisma.deviceEmployeeMapping.findFirst.mockResolvedValue({
         id: 'm-1',
         employeeId: 'emp-1',
         employee: EMPLOYEE,
@@ -599,11 +599,11 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('parks unmapped device employee ids as UNMAPPED and continues', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.rawAttendanceEvent.findUnique
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.rawAttendanceEvent.findFirst
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
-      prisma.deviceEmployeeMapping.findUnique.mockResolvedValue(null);
+      prisma.deviceEmployeeMapping.findFirst.mockResolvedValue(null);
       prisma.rawAttendanceEvent.create.mockResolvedValue({ id: 'r-1' });
       const res = await service.ingestEvents('dev-1', {
         events: [
@@ -633,9 +633,9 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('records SKIPPED for NONE-method employees without calling the service', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.rawAttendanceEvent.findUnique.mockResolvedValue(null);
-      prisma.deviceEmployeeMapping.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.rawAttendanceEvent.findFirst.mockResolvedValue(null);
+      prisma.deviceEmployeeMapping.findFirst.mockResolvedValue({
         id: 'm-1',
         employeeId: 'emp-1',
         employee: { ...EMPLOYEE, attendanceMethod: 'NONE' },
@@ -658,9 +658,9 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('marks FAILED when the machine path throws a friendly business error', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.rawAttendanceEvent.findUnique.mockResolvedValue(null);
-      prisma.deviceEmployeeMapping.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.rawAttendanceEvent.findFirst.mockResolvedValue(null);
+      prisma.deviceEmployeeMapping.findFirst.mockResolvedValue({
         id: 'm-1',
         employeeId: 'emp-1',
         employee: EMPLOYEE,
@@ -693,9 +693,9 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('marks FAILED when the machine path throws an unknown error', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.rawAttendanceEvent.findUnique.mockResolvedValue(null);
-      prisma.deviceEmployeeMapping.findUnique.mockResolvedValue({
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.rawAttendanceEvent.findFirst.mockResolvedValue(null);
+      prisma.deviceEmployeeMapping.findFirst.mockResolvedValue({
         id: 'm-1',
         employeeId: 'emp-1',
         employee: EMPLOYEE,
@@ -720,8 +720,8 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('counts malformed CSV rows as failed', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
-      prisma.rawAttendanceEvent.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
+      prisma.rawAttendanceEvent.findFirst.mockResolvedValue(null);
       const csv = [
         'deviceEmployeeId,eventType,occurredAt',
         'DE-1,CHECK_IN,2026-08-24T09:00:00.000Z',
@@ -735,7 +735,7 @@ describe('AttendanceDevicesService', () => {
     });
 
     it('404s when the device is unknown', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(null);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(null);
       await expect(service.ingestEvents('dev-x', 'x')).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -744,7 +744,7 @@ describe('AttendanceDevicesService', () => {
 
   describe('listEvents', () => {
     it('returns the raw audit list with idempotencyKey and optional status filter', async () => {
-      prisma.attendanceDevice.findUnique.mockResolvedValue(DEVICE);
+      prisma.attendanceDevice.findFirst.mockResolvedValue(DEVICE);
       prisma.rawAttendanceEvent.findMany.mockResolvedValue([
         {
           id: 'r-1',

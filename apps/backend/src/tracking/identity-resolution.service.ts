@@ -56,7 +56,7 @@ export class IdentityResolutionService {
     tx?: Prisma.TransactionClient,
   ): Promise<string | null> {
     const client = tx ?? this.prisma;
-    const row = await client.customerProfile.findUnique({
+    const row = await client.customerProfile.findFirst({
       where: { id: customerId },
       select: { externalId: true },
     });
@@ -73,7 +73,7 @@ export class IdentityResolutionService {
       return updated.externalId;
     } catch (err) {
       if ((err as { code?: string })?.code === 'P2002') {
-        const winner = await client.customerProfile.findUnique({
+        const winner = await client.customerProfile.findFirst({
           where: { id: customerId },
           select: { externalId: true },
         });
@@ -216,7 +216,7 @@ export class IdentityResolutionService {
     customerId: string | undefined | null,
   ): Promise<string | undefined> {
     if (!customerId) return undefined;
-    const profile = await this.prisma.customerProfile.findUnique({
+    const profile = await this.prisma.customerProfile.findFirst({
       where: { id: customerId },
       select: { betterAuthUserId: true },
     });

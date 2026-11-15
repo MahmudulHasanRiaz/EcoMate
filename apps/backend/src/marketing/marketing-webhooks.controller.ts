@@ -42,7 +42,7 @@ export class MarketingWebhooksController {
     @Query('hub.verify_token') token?: string,
     @Query('hub.challenge') challenge?: string,
   ) {
-    const setting = await this.prisma.systemSetting.findUnique({
+    const setting = await this.prisma.systemSetting.findFirst({
       where: { key: WEBHOOK_VERIFY_TOKEN_SETTING },
     });
     if (mode === 'subscribe' && setting?.value && token === setting.value) {
@@ -55,7 +55,7 @@ export class MarketingWebhooksController {
   @RateLimitPolicy('api')
   @Post('meta')
   async event(@Body() payload: any, @Headers('x-hub-signature-256') signature?: string) {
-    const appSecret = await this.prisma.systemSetting.findUnique({
+    const appSecret = await this.prisma.systemSetting.findFirst({
       where: { key: WEBHOOK_APP_SECRET_SETTING },
     });
 

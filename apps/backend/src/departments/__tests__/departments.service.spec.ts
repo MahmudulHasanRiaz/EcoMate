@@ -21,7 +21,7 @@ describe('DepartmentsService', () => {
     const prismaMock = {
       department: {
         findMany: jest.fn().mockResolvedValue([mockDepartment]),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(mockDepartment),
         update: jest.fn().mockResolvedValue({
           ...mockDepartment,
@@ -69,7 +69,7 @@ describe('DepartmentsService', () => {
     });
 
     it('should throw on duplicate name', async () => {
-      (prisma.department.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.department.findFirst as jest.Mock).mockResolvedValue(
         mockDepartment,
       );
       await expect(service.create({ name: 'Engineering' })).rejects.toThrow(
@@ -117,7 +117,7 @@ describe('DepartmentsService', () => {
 
   describe('findOne', () => {
     it('should return a department', async () => {
-      (prisma.department.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.department.findFirst as jest.Mock).mockResolvedValue(
         mockDepartment,
       );
       const result = await service.findOne('dept-1');
@@ -131,7 +131,7 @@ describe('DepartmentsService', () => {
 
   describe('update', () => {
     it('should re-slug when name changes', async () => {
-      (prisma.department.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.department.findFirst as jest.Mock).mockResolvedValue(
         mockDepartment,
       );
       await service.update('dept-1', { name: 'Sales' });
@@ -142,7 +142,7 @@ describe('DepartmentsService', () => {
     });
 
     it('should throw on duplicate name from another department', async () => {
-      (prisma.department.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.department.findFirst as jest.Mock).mockResolvedValue({
         ...mockDepartment,
         id: 'dept-2',
         name: 'Sales',
@@ -153,7 +153,7 @@ describe('DepartmentsService', () => {
     });
 
     it('should allow keeping the same name', async () => {
-      (prisma.department.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.department.findFirst as jest.Mock).mockResolvedValue(
         mockDepartment,
       );
       await service.update('dept-1', { name: 'Engineering' });
@@ -163,7 +163,7 @@ describe('DepartmentsService', () => {
 
   describe('remove', () => {
     it('should delete a department with no employees', async () => {
-      (prisma.department.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.department.findFirst as jest.Mock).mockResolvedValue(
         mockDepartment,
       );
       (prisma.employee.count as jest.Mock).mockResolvedValue(0);
@@ -175,7 +175,7 @@ describe('DepartmentsService', () => {
     });
 
     it('should throw when employees are assigned', async () => {
-      (prisma.department.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.department.findFirst as jest.Mock).mockResolvedValue(
         mockDepartment,
       );
       (prisma.employee.count as jest.Mock).mockResolvedValue(3);

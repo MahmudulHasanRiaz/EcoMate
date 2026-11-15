@@ -39,7 +39,7 @@ export class MediaQueueProcessor extends WorkerHost {
 
     const { mediaId } = job.data as { mediaId: string };
 
-    const media = await this.prisma.media.findUnique({
+    const media = await this.prisma.media.findFirst({
       where: { id: mediaId },
     });
 

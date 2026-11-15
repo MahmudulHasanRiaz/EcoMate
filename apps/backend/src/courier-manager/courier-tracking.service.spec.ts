@@ -21,14 +21,14 @@ describe('CourierTrackingService.getDispatchTracking', () => {
   beforeEach(async () => {
     prisma = {
       courierReportCache: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockResolvedValue({}),
       },
       courierCredentials: {
-        findUnique: jest.fn().mockResolvedValue(creds),
+        findFirst: jest.fn().mockResolvedValue(creds),
       },
       courierAuthToken: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockResolvedValue({}),
       },
       isRestoreWriteBlocked: jest.fn().mockResolvedValue(false),
@@ -90,7 +90,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
 
     expect(result?.currentStatus).toBe('delivered');
     expect(global.fetch).not.toHaveBeenCalled();
-    expect(prisma.courierReportCache.findUnique).not.toHaveBeenCalled();
+    expect(prisma.courierReportCache.findFirst).not.toHaveBeenCalled();
   });
 
   it('force: true skips the fresh cache and fetches the latest status from the courier API', async () => {
@@ -104,7 +104,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
       fetchedAt: '2026-08-01T09:00:00.000Z',
     };
     cache.get.mockResolvedValue(stale); // fast path WOULD return stale — must be bypassed
-    prisma.courierReportCache.findUnique.mockResolvedValue({
+    prisma.courierReportCache.findFirst.mockResolvedValue({
       report: stale,
       courierStatus: 'pending',
       fetchedAt: new Date('2026-08-01T09:00:00Z'),
@@ -180,7 +180,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
       events: [],
       fetchedAt: '2026-08-02T09:00:00.000Z',
     };
-    prisma.courierReportCache.findUnique.mockResolvedValue({
+    prisma.courierReportCache.findFirst.mockResolvedValue({
       report: staleResult,
       courierStatus: 'in_transit',
       fetchedAt: new Date('2026-08-02T09:00:00Z'),
@@ -205,7 +205,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
   });
 
   it('reports unconfigured couriers without making an API call', async () => {
-    prisma.courierCredentials.findUnique.mockResolvedValue({
+    prisma.courierCredentials.findFirst.mockResolvedValue({
       ...creds,
       enabled: false,
     });
@@ -258,7 +258,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
     }
 
     beforeEach(() => {
-      prisma.courierCredentials.findUnique.mockResolvedValue(pathaoCreds);
+      prisma.courierCredentials.findFirst.mockResolvedValue(pathaoCreds);
     });
 
     it('queries /orders/{id}/info first and parses order_status (official vocabulary)', async () => {
@@ -358,7 +358,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
     it('uses the persisted token from the shared store instead of re-issuing on every call', async () => {
       // First call: no stored row → issues once. Subsequent calls: the
       // durable CourierAuthToken row is present → no token API call.
-      prisma.courierAuthToken.findUnique
+      prisma.courierAuthToken.findFirst
         .mockResolvedValueOnce(null)
         .mockResolvedValue({
           courier: 'pathao',
@@ -406,7 +406,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
   describe('getOrderTracking — order snapshot is the phone source of truth (D-A)', () => {
     it('uses customerPhone snapshot, not the stale profile phone', async () => {
       (prisma as any).order = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           customerId: 'cust-1',
           customer: { phone: 'STALE' },
           customerPhone: '01711111111',
@@ -417,7 +417,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
 
       const result = await service.getOrderTracking('order-1');
 
-      expect((prisma as any).order.findUnique).toHaveBeenCalledWith(
+      expect((prisma as any).order.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'order-1' } }),
       );
       expect(result.phone).toBe('01711111111');
@@ -426,7 +426,7 @@ describe('CourierTrackingService.getDispatchTracking', () => {
 
     it('falls back to guestPhone when the snapshot phone is empty', async () => {
       (prisma as any).order = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           customerId: null,
           customer: null,
           customerPhone: null,

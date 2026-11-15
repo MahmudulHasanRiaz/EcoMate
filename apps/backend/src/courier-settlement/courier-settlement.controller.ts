@@ -117,7 +117,7 @@ export class CourierSettlementController {
     const page = Math.max(1, Number(rowsPage) || 1);
     const limit = Math.min(500, Math.max(1, Number(rowsLimit) || 250));
     const exceptionLimit = Math.min(1000, Math.max(1, Number(exceptionsLimit) || 200));
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id },
       include: {
         rows: {
@@ -189,7 +189,7 @@ export class CourierSettlementController {
     @Param('id') id: string,
     @Res({ passthrough: true }) res: fastify.FastifyReply,
   ) {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id },
       select: { fileStorageId: true, fileOriginalName: true, fileMime: true },
     });
@@ -238,7 +238,7 @@ export class CourierSettlementController {
   @Get('rows/:rowId')
   @Permissions('view_courier_settlement')
   async getRow(@Param('rowId') rowId: string) {
-    const row = await this.prisma.courierSettlementRow.findUnique({
+    const row = await this.prisma.courierSettlementRow.findFirst({
       where: { id: rowId },
       include: { exceptions: true, adjustments: true },
     });

@@ -17,13 +17,13 @@ describe('OrderStaffPerformanceService', () => {
   beforeEach(async () => {
     prisma = {
       employee: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
       userProfile: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
       },
       orderStaffEvent: {
@@ -53,15 +53,15 @@ describe('OrderStaffPerformanceService', () => {
 
   describe('resolveEmployeeByUserId', () => {
     it('returns the id directly when it is already an Employee.id', async () => {
-      prisma.employee.findUnique.mockResolvedValueOnce({ id: 'emp-1' });
+      prisma.employee.findFirst.mockResolvedValueOnce({ id: 'emp-1' });
       await expect(service.resolveEmployeeByUserId('emp-1')).resolves.toBe('emp-1');
     });
 
     it('resolves via userProfile.betterAuthUserId', async () => {
-      prisma.employee.findUnique
+      prisma.employee.findFirst
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ id: 'emp-1' });
-      prisma.userProfile.findUnique.mockResolvedValueOnce({ betterAuthUserId: 'auth-u1' });
+      prisma.userProfile.findFirst.mockResolvedValueOnce({ betterAuthUserId: 'auth-u1' });
       await expect(service.resolveEmployeeByUserId('profile-1')).resolves.toBe('emp-1');
     });
 
@@ -70,8 +70,8 @@ describe('OrderStaffPerformanceService', () => {
     // employeeId came out NULL — making the whole feature attribute zero
     // orders. This is the exact input that broke it.
     it('resolves an EMAIL actor, which is what the order controller actually passes', async () => {
-      prisma.employee.findUnique.mockResolvedValue(null);
-      prisma.userProfile.findUnique.mockResolvedValue(null);
+      prisma.employee.findFirst.mockResolvedValue(null);
+      prisma.userProfile.findFirst.mockResolvedValue(null);
       prisma.employee.findFirst.mockResolvedValueOnce({ id: 'emp-1' });
 
       await expect(service.resolveEmployeeByUserId('staff@ecomate.com')).resolves.toBe('emp-1');
@@ -90,7 +90,7 @@ describe('OrderStaffPerformanceService', () => {
   describe('recordStaffEvent', () => {
     // The real vocabulary written by orders.service.ts: lowercase.
     it('records a real lowercase "confirmed" event with the resolved employee', async () => {
-      prisma.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+      prisma.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
 
       await service.recordStaffEvent({
         orderId: 'order-1',
@@ -115,7 +115,7 @@ describe('OrderStaffPerformanceService', () => {
       // The removed guard keyed on (orderId, action, toStatus) with no actor,
       // so a second employee moving the same order to the same status would
       // have been silently dropped. Every reader already de-dupes per order.
-      prisma.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+      prisma.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
 
       await service.recordStaffEvent({
         orderId: 'order-1',
@@ -134,7 +134,7 @@ describe('OrderStaffPerformanceService', () => {
     });
 
     it('never lets a write failure escape as a false success', async () => {
-      prisma.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+      prisma.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
       prisma.orderStaffEvent.create.mockRejectedValue(new Error('db down'));
 
       await expect(

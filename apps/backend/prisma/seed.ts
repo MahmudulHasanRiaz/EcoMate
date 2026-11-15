@@ -39,7 +39,7 @@ async function main() {
   // admin password back to the publicly-known default.
   const email = process.env.ADMIN_EMAIL || 'admin@ecomate.com';
   const explicitPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS;
-  let admin = await prisma.userProfile.findUnique({ where: { email } });
+  let admin = await prisma.userProfile.findFirst({ where: { email } });
   if (admin) {
     console.log(`  ✓ Super admin already exists — password left unchanged: ${email}`);
   } else {
@@ -140,7 +140,7 @@ async function main() {
   const orderStatusMap: Record<string, string> = {};
   const createdStatusNames = new Set<string>();
   for (const s of statuses) {
-    const existing = await prisma.orderStatus.findUnique({
+    const existing = await prisma.orderStatus.findFirst({
       where: { name: s.name },
       select: { id: true },
     });
@@ -587,7 +587,7 @@ async function main() {
       continue;
     }
 
-    const existingProduct = await prisma.product.findUnique({ where: { slug: productData.slug } });
+    const existingProduct = await prisma.product.findFirst({ where: { slug: productData.slug } });
     if (existingProduct) {
       createdProductIds.push(existingProduct.id);
       continue;
@@ -697,7 +697,7 @@ async function main() {
 
   for (const combo of combos) {
     const catId = categoryMap[combo.category];
-    const existingCombo = await prisma.combo.findUnique({ where: { slug: combo.slug } });
+    const existingCombo = await prisma.combo.findFirst({ where: { slug: combo.slug } });
     if (existingCombo) {
       continue;
     }
@@ -730,7 +730,7 @@ async function main() {
 
       let variantId: string | undefined;
       if (item.variantSku) {
-        const variant = await prisma.productVariant.findUnique({ where: { sku: item.variantSku } });
+        const variant = await prisma.productVariant.findFirst({ where: { sku: item.variantSku } });
         if (variant) variantId = variant.id;
       }
 
@@ -854,7 +854,7 @@ async function main() {
         const product = await prisma.product.findFirst({ where: { name: item.productName } });
         let variantId: string | undefined;
         if ((item as any).variantSku) {
-          const variant = await prisma.productVariant.findUnique({
+          const variant = await prisma.productVariant.findFirst({
             where: { sku: (item as any).variantSku },
           });
           if (variant) variantId = variant.id;
@@ -1072,7 +1072,7 @@ async function main() {
   }
 
   // Storefront hero slides
-  const heroRow = await prisma.systemSetting.findUnique({ where: { key: 'hero_slides' } });
+  const heroRow = await prisma.systemSetting.findFirst({ where: { key: 'hero_slides' } });
   if (heroRow?.value) {
     try {
       const slides: { image: string; link?: string; alt?: string }[] = JSON.parse(heroRow.value);

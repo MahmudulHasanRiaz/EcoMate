@@ -24,7 +24,7 @@ describe('DispatchService.getCancelPreview', () => {
 
   const makeService = () => {
     const prisma: any = {
-      order: { findUnique: jest.fn().mockResolvedValue({ id: 'order-1' }) },
+      order: { findFirst: jest.fn().mockResolvedValue({ id: 'order-1' }) },
       dispatch: {
         findMany: jest.fn().mockImplementation(async (args: any) =>
           args?.select
@@ -150,7 +150,7 @@ describe('DispatchService.getCancelPreview', () => {
 
   it('404s for a missing order', async () => {
     const { service, prisma } = makeService();
-    prisma.order.findUnique.mockResolvedValue(null);
+    prisma.order.findFirst.mockResolvedValue(null);
     await expect(service.getCancelPreview('nope')).rejects.toThrow(
       /Order not found/,
     );

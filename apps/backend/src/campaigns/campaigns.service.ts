@@ -36,7 +36,7 @@ export class CampaignsService {
   }
 
   async findTemplate(id: string) {
-    const template = await this.prisma.emailTemplate.findUnique({
+    const template = await this.prisma.emailTemplate.findFirst({
       where: { id },
     });
     if (!template) throw new NotFoundException('Template not found');
@@ -98,7 +98,7 @@ export class CampaignsService {
   }
 
   async findOne(id: string) {
-    const campaign = await this.prisma.emailCampaign.findUnique({
+    const campaign = await this.prisma.emailCampaign.findFirst({
       where: { id },
       include: { template: true },
     });

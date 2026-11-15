@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 /**
  * Order Source Tracking Policy
  *
@@ -138,7 +139,7 @@ export class OrderSourcePolicyService {
     const configKey = SOURCE_CONFIG_KEYS[category];
 
     // Read configuration (database-backed with runtime defaults)
-    const setting = await this.prisma.systemSetting.findUnique({
+    const setting = await this.prisma.systemSetting.findFirst({
       where: { key: configKey },
     });
 
@@ -213,7 +214,7 @@ export class OrderSourcePolicyService {
   async updateSetting(category: OrderSourceCategory, enabled: boolean): Promise<void> {
     const key = SOURCE_CONFIG_KEYS[category];
     await this.prisma.systemSetting.upsert({
-      where: { key },
+      where: { tenantId_key: tenantCompound({  key  }) },
       create: { key, value: String(enabled) },
       update: { value: String(enabled) },
     });

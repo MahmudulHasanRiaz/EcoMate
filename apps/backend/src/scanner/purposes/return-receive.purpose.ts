@@ -127,7 +127,7 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
       damagedQuantity?: number;
     }>,
   ): Promise<ScanResult> {
-    const ret = await this.prisma.return.findUnique({ where: { id: returnId } });
+    const ret = await this.prisma.return.findFirst({ where: { id: returnId } });
     if (!ret) {
       return {
         status: 'error',
@@ -156,7 +156,7 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
           (ret as any).exchangeOrderId === orderId;
         let isChildOfReturnOrder = false;
         if (!isOwnExchange) {
-          const child = (await this.prisma.order.findUnique({
+          const child = (await this.prisma.order.findFirst({
             where: { id: orderId },
             select: { exchangeOfOrderId: true, returnOfOrderId: true },
           })) as any;
@@ -235,7 +235,7 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
   }
 
   private async describeExchange(identifier: string, exchangeId: string): Promise<ScanResult> {
-    const exchange = await this.prisma.order.findUnique({
+    const exchange = await this.prisma.order.findFirst({
       where: { id: exchangeId },
       include: { status: true },
     });

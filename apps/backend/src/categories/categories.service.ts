@@ -94,7 +94,7 @@ export class CategoriesService {
   }
 
   async findOne(id: string) {
-    const cat = await this.prisma.category.findUnique({
+    const cat = await this.prisma.category.findFirst({
       where: { id },
       include: {
         children: true,
@@ -108,13 +108,13 @@ export class CategoriesService {
   }
 
   async create(dto: CreateCategoryDto) {
-    const existing = await this.prisma.category.findUnique({
+    const existing = await this.prisma.category.findFirst({
       where: { slug: dto.slug },
     });
     if (existing) throw new ConflictException('Slug already exists');
 
     if (dto.parentId) {
-      const parent = await this.prisma.category.findUnique({
+      const parent = await this.prisma.category.findFirst({
         where: { id: dto.parentId },
       });
       if (!parent) throw new NotFoundException('Parent category not found');
@@ -140,11 +140,11 @@ export class CategoriesService {
   }
 
   async update(id: string, dto: UpdateCategoryDto) {
-    const cat = await this.prisma.category.findUnique({ where: { id } });
+    const cat = await this.prisma.category.findFirst({ where: { id } });
     if (!cat) throw new NotFoundException('Category not found');
 
     if (dto.slug && dto.slug !== cat.slug) {
-      const exist = await this.prisma.category.findUnique({
+      const exist = await this.prisma.category.findFirst({
         where: { slug: dto.slug },
       });
       if (exist) throw new ConflictException('Slug already exists');
@@ -155,7 +155,7 @@ export class CategoriesService {
         throw new ConflictException('Category cannot be its own parent');
       }
       if (dto.parentId !== null) {
-        const parent = await this.prisma.category.findUnique({
+        const parent = await this.prisma.category.findFirst({
           where: { id: dto.parentId },
         });
         if (!parent) throw new NotFoundException('Parent category not found');
@@ -164,7 +164,7 @@ export class CategoriesService {
           if (current === id) {
             throw new ConflictException('Circular parent reference detected');
           }
-          const ancestor = await this.prisma.category.findUnique({
+          const ancestor = await this.prisma.category.findFirst({
             where: { id: current },
             select: { parentId: true },
           });
@@ -196,7 +196,7 @@ export class CategoriesService {
   }
 
   async remove(id: string) {
-    const cat = await this.prisma.category.findUnique({ where: { id } });
+    const cat = await this.prisma.category.findFirst({ where: { id } });
     if (!cat) throw new NotFoundException('Category not found');
 
     await this.prisma.category.updateMany({

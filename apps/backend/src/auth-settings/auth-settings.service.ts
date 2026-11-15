@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as crypto from 'crypto';
@@ -35,7 +36,7 @@ export class AuthSettingsService {
       updateData.clientSecret = this.encrypt(data.clientSecret);
 
     return this.prisma.authSettings.upsert({
-      where: { providerName },
+      where: { tenantId_providerName: tenantCompound({  providerName  }) },
       create: { providerName, ...updateData },
       update: updateData,
     });

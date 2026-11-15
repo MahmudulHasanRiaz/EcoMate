@@ -16,12 +16,12 @@ export class HrLeaveService {
   constructor(private prisma: PrismaService) {}
 
   async createType(dto: CreateLeaveTypeDto) {
-    const byName = await this.prisma.leaveType.findUnique({
+    const byName = await this.prisma.leaveType.findFirst({
       where: { name: dto.name },
     });
     if (byName)
       throw new ConflictException('Leave type with this name already exists');
-    const byCode = await this.prisma.leaveType.findUnique({
+    const byCode = await this.prisma.leaveType.findFirst({
       where: { code: dto.code },
     });
     if (byCode)
@@ -59,11 +59,11 @@ export class HrLeaveService {
   }
 
   async updateType(id: string, dto: UpdateLeaveTypeDto) {
-    const existing = await this.prisma.leaveType.findUnique({ where: { id } });
+    const existing = await this.prisma.leaveType.findFirst({ where: { id } });
     if (!existing) throw new NotFoundException('Leave type not found');
 
     if (dto.name !== undefined && dto.name !== existing.name) {
-      const byName = await this.prisma.leaveType.findUnique({
+      const byName = await this.prisma.leaveType.findFirst({
         where: { name: dto.name },
       });
       if (byName)
@@ -72,7 +72,7 @@ export class HrLeaveService {
         );
     }
     if (dto.code !== undefined && dto.code !== existing.code) {
-      const byCode = await this.prisma.leaveType.findUnique({
+      const byCode = await this.prisma.leaveType.findFirst({
         where: { code: dto.code },
       });
       if (byCode)
@@ -103,7 +103,7 @@ export class HrLeaveService {
   }
 
   async deleteType(id: string) {
-    const existing = await this.prisma.leaveType.findUnique({ where: { id } });
+    const existing = await this.prisma.leaveType.findFirst({ where: { id } });
     if (!existing) throw new NotFoundException('Leave type not found');
 
     // LeaveType → LeaveRequest is onDelete: Restrict; deleting a type that
@@ -165,12 +165,12 @@ export class HrLeaveService {
   }
 
   async createRequest(dto: CreateLeaveRequestDto, actorId?: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: dto.employeeId },
     });
     if (!employee) throw new NotFoundException('Employee not found');
 
-    const type = await this.prisma.leaveType.findUnique({
+    const type = await this.prisma.leaveType.findFirst({
       where: { id: dto.typeId },
     });
     if (!type) throw new NotFoundException('Leave type not found');
@@ -234,7 +234,7 @@ export class HrLeaveService {
   }
 
   private async loadPending(id: string) {
-    const req = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    const req = await this.prisma.leaveRequest.findFirst({ where: { id } });
     if (!req) throw new NotFoundException('Leave request not found');
     if (req.status !== 'pending') {
       throw new BadRequestException(
@@ -277,7 +277,7 @@ export class HrLeaveService {
   }
 
   async cancelRequest(id: string, actorId?: string) {
-    const req = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    const req = await this.prisma.leaveRequest.findFirst({ where: { id } });
     if (!req) throw new NotFoundException('Leave request not found');
     if (req.status !== 'pending' && req.status !== 'approved') {
       throw new BadRequestException(
@@ -296,7 +296,7 @@ export class HrLeaveService {
   }
 
   async leaveBalances(employeeId: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId },
     });
     if (!employee) throw new NotFoundException('Employee not found');

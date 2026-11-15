@@ -18,7 +18,7 @@ export class CourierService {
     const cached = await this.cache.get<string>('courier:hoorin:api_key');
     if (cached) return cached;
 
-    const setting = await this.prisma.systemSetting.findUnique({
+    const setting = await this.prisma.systemSetting.findFirst({
       where: { key: 'courier_hoorin_api_key' },
     });
     if (!setting?.value) {

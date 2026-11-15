@@ -106,7 +106,7 @@ export class JobPostingsService {
   }
 
   async findPublicBySlug(slug: string) {
-    const posting = await this.prisma.jobPosting.findUnique({
+    const posting = await this.prisma.jobPosting.findFirst({
       where: { slug },
       include: POSTING_INCLUDE,
     });
@@ -150,7 +150,7 @@ export class JobPostingsService {
 
   async findAdmin(id: string) {
     assertCareersFeature(this.featureFlags);
-    const posting = await this.prisma.jobPosting.findUnique({
+    const posting = await this.prisma.jobPosting.findFirst({
       where: { id },
       include: {
         ...POSTING_INCLUDE,
@@ -199,7 +199,7 @@ export class JobPostingsService {
 
   async update(id: string, dto: UpdateJobPostingDto) {
     assertCareersFeature(this.featureFlags);
-    const existing = await this.prisma.jobPosting.findUnique({
+    const existing = await this.prisma.jobPosting.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Job posting not found');
@@ -252,14 +252,14 @@ export class JobPostingsService {
     designationId?: string | null,
   ): Promise<void> {
     if (departmentId) {
-      const dept = await this.prisma.department.findUnique({
+      const dept = await this.prisma.department.findFirst({
         where: { id: departmentId },
         select: { id: true },
       });
       if (!dept) throw new NotFoundException('Department not found');
     }
     if (designationId) {
-      const des = await this.prisma.designation.findUnique({
+      const des = await this.prisma.designation.findFirst({
         where: { id: designationId },
         select: { id: true },
       });
@@ -271,7 +271,7 @@ export class JobPostingsService {
     let candidate = base;
     let n = 2;
     while (
-      await this.prisma.jobPosting.findUnique({
+      await this.prisma.jobPosting.findFirst({
         where: { slug: candidate },
         select: { id: true },
       })

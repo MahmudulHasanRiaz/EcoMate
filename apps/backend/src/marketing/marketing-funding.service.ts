@@ -28,7 +28,7 @@ export class MarketingFundingService {
   ) {}
 
   async addFunding(dto: CreateFundingDto, userId?: string) {
-    const adAccount = await this.prisma.adAccount.findUnique({
+    const adAccount = await this.prisma.adAccount.findFirst({
       where: { id: dto.adAccountId },
       include: { connection: { include: { platform: true } } },
     });
@@ -128,7 +128,7 @@ export class MarketingFundingService {
   }
 
   async confirm(id: string, userId?: string) {
-    const entry = await this.prisma.marketingFundingEntry.findUnique({
+    const entry = await this.prisma.marketingFundingEntry.findFirst({
       where: { id },
     });
     if (!entry) throw new NotFoundException('Funding entry not found');
@@ -150,7 +150,7 @@ export class MarketingFundingService {
    * double-entry totals.
    */
   async post(id: string, dto: PostFundingDto, userId?: string) {
-    const entry = await this.prisma.marketingFundingEntry.findUnique({
+    const entry = await this.prisma.marketingFundingEntry.findFirst({
       where: { id },
       include: { adAccount: true },
     });
@@ -188,7 +188,7 @@ export class MarketingFundingService {
     let journalEntry: any = null;
     if (!isPromotional) {
       const marketingPrepaid = await this.ensureMarketingPrepaidAccount();
-      const fundingAccount = await this.prisma.account.findUnique({
+      const fundingAccount = await this.prisma.account.findFirst({
         where: { id: dto.fundingAccountId },
       });
       if (!fundingAccount) throw new NotFoundException('Funding account not found');
@@ -239,7 +239,7 @@ export class MarketingFundingService {
   }
 
   async archive(id: string, userId?: string) {
-    const entry = await this.prisma.marketingFundingEntry.findUnique({
+    const entry = await this.prisma.marketingFundingEntry.findFirst({
       where: { id },
       include: { ledger: true },
     });
@@ -262,7 +262,7 @@ export class MarketingFundingService {
   }
 
   async remove(id: string, userId?: string) {
-    const entry = await this.prisma.marketingFundingEntry.findUnique({
+    const entry = await this.prisma.marketingFundingEntry.findFirst({
       where: { id },
     });
     if (!entry) throw new NotFoundException('Funding entry not found');

@@ -45,8 +45,8 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
           ),
           // The guarded stock core re-loads the row INSIDE the transaction —
           // delegate to the outer mock so tests control the stored row.
-          findUnique: jest.fn((...args: any[]) =>
-            (prisma.return.findUnique as jest.Mock)(...args),
+          findFirst: jest.fn((...args: any[]) =>
+            (prisma.return.findFirst as jest.Mock)(...args),
           ),
           // Link-first lookup inside the courier upsert transaction.
           findFirst: jest.fn((...args: any[]) =>
@@ -57,13 +57,13 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         // Signed adjustment path: original-order write + atomic timeline append.
         order: {
           update: jest.fn().mockResolvedValue({}),
-          findUnique: jest.fn((...args: any[]) =>
-            (prisma.order.findUnique as jest.Mock)(...args),
+          findFirst: jest.fn((...args: any[]) =>
+            (prisma.order.findFirst as jest.Mock)(...args),
           ),
         },
         // Mark-original-delivered path: the existing Delivered status row.
         orderStatus: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'st-delivered', name: 'Delivered' }),
+          findFirst: jest.fn().mockResolvedValue({ id: 'st-delivered', name: 'Delivered' }),
         },
         $executeRaw: jest.fn().mockResolvedValue(1),
         ...over,
@@ -73,7 +73,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
   beforeEach(async () => {
     prisma = {
       order: {
-        findUnique: jest.fn().mockResolvedValue(order),
+        findFirst: jest.fn().mockResolvedValue(order),
         findFirst: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
@@ -81,7 +81,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         create: jest.fn().mockImplementation(({ data }: any) =>
           Promise.resolve({ id: 'ret-1', ...data }),
         ),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockImplementation(({ data }: any) =>
@@ -89,7 +89,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         ),
       },
       refund: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'refund-1' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'refund-1' }),
       },
       dispatch: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -144,7 +144,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
           },
         ],
       };
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         ...order,
         items: [
           {
@@ -203,7 +203,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('404s for a missing order and 400s for bad items', async () => {
-      prisma.order.findUnique.mockResolvedValueOnce(null);
+      prisma.order.findFirst.mockResolvedValueOnce(null);
       await expect(service.create({ orderId: 'ghost', type: 'FULL' })).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -225,9 +225,9 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
 
   describe('get / list / detail', () => {
     it('get returns the Return with its order link; 404 when missing', async () => {
-      prisma.return.findUnique.mockResolvedValueOnce(null);
+      prisma.return.findFirst.mockResolvedValueOnce(null);
       await expect(service.get('ghost')).rejects.toBeInstanceOf(NotFoundException);
-      prisma.return.findUnique.mockResolvedValueOnce({ id: 'ret-1', orderId: 'order-1' });
+      prisma.return.findFirst.mockResolvedValueOnce({ id: 'ret-1', orderId: 'order-1' });
       await expect(service.get('ret-1')).resolves.toMatchObject({ id: 'ret-1' });
     });
 
@@ -270,14 +270,14 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('get includes the exchange-order and refund links', async () => {
-      prisma.return.findUnique.mockResolvedValueOnce({
+      prisma.return.findFirst.mockResolvedValueOnce({
         id: 'ret-1',
         orderId: 'order-1',
         exchangeOrderId: 'ex-1',
         refundId: 'refund-1',
       });
-      prisma.order.findUnique.mockResolvedValueOnce({ id: 'ex-1', displayId: 'ORD-EX-1' });
-      (prisma.refund.findUnique as jest.Mock).mockResolvedValueOnce({
+      prisma.order.findFirst.mockResolvedValueOnce({ id: 'ex-1', displayId: 'ORD-EX-1' });
+      (prisma.refund.findFirst as jest.Mock).mockResolvedValueOnce({
         id: 'refund-1',
         status: 'pending',
       });
@@ -288,9 +288,9 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('get deep-loads the original order: customer snapshot + item snapshots in ONE query (no N+1)', async () => {
-      prisma.return.findUnique.mockResolvedValueOnce({ id: 'ret-1', orderId: 'order-1' });
+      prisma.return.findFirst.mockResolvedValueOnce({ id: 'ret-1', orderId: 'order-1' });
       await service.get('ret-1');
-      expect(prisma.return.findUnique).toHaveBeenCalledWith(
+      expect(prisma.return.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'ret-1' },
           include: expect.objectContaining({
@@ -336,7 +336,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     };
 
     it('RECEIVED → RESTOCKED with an item-level restore of exactly the stored items', async () => {
-      prisma.return.findUnique.mockResolvedValue(stored);
+      prisma.return.findFirst.mockResolvedValue(stored);
       const res = await service.markReceived('ret-1', { performedBy: 'staff@x.com' });
 
       expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
@@ -356,7 +356,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('PARTIAL keeps the dispatch at PARTIAL (never RETURNED)', async () => {
-      prisma.return.findUnique.mockResolvedValue({ ...stored, type: 'PARTIAL' });
+      prisma.return.findFirst.mockResolvedValue({ ...stored, type: 'PARTIAL' });
       await service.markReceived('ret-1', {});
       expect(prisma.dispatch.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'PARTIAL' }) }),
@@ -364,11 +364,11 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('accepts an explicit items override and 400s when quantities are unknown', async () => {
-      prisma.return.findUnique.mockResolvedValueOnce({ ...stored, items: [] });
+      prisma.return.findFirst.mockResolvedValueOnce({ ...stored, items: [] });
       await expect(service.markReceived('ret-1', {})).rejects.toBeInstanceOf(BadRequestException);
       expect(cancelReturnStock.restoreForReturnItems).not.toHaveBeenCalled();
 
-      prisma.return.findUnique.mockResolvedValue({ ...stored, items: [] });
+      prisma.return.findFirst.mockResolvedValue({ ...stored, items: [] });
       await service.markReceived('ret-1', { items: [{ productId: 'p-9', quantity: 1 }] });
       expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
         expect.objectContaining({ items: [{ productId: 'p-9', variantId: null, quantity: 1, damagedQuantity: 0 }] }),
@@ -376,7 +376,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('is idempotent: an already-RESTOCKED Return never restores twice', async () => {
-      prisma.return.findUnique.mockResolvedValue({
+      prisma.return.findFirst.mockResolvedValue({
         ...stored,
         status: 'RESTOCKED',
         stockReconciled: true,
@@ -387,29 +387,29 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('400s on CLOSED Returns', async () => {
-      prisma.return.findUnique.mockResolvedValue({ ...stored, status: 'CLOSED' });
+      prisma.return.findFirst.mockResolvedValue({ ...stored, status: 'CLOSED' });
       await expect(service.markReceived('ret-1', {})).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
   describe('linkRefund / close', () => {
     it('links an existing refund by id; 404s for a missing refund', async () => {
-      prisma.return.findUnique.mockResolvedValue({ id: 'ret-1' });
+      prisma.return.findFirst.mockResolvedValue({ id: 'ret-1' });
       await service.linkRefund('ret-1', { refundId: 'refund-1' });
       expect(prisma.return.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ refundId: 'refund-1' }) }),
       );
-      prisma.refund.findUnique.mockResolvedValueOnce(null);
+      prisma.refund.findFirst.mockResolvedValueOnce(null);
       await expect(service.linkRefund('ret-1', { refundId: 'ghost' })).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
 
     it('close moves any open Return to CLOSED; 400s when already CLOSED', async () => {
-      prisma.return.findUnique.mockResolvedValue({ id: 'ret-1', status: 'RESTOCKED' });
+      prisma.return.findFirst.mockResolvedValue({ id: 'ret-1', status: 'RESTOCKED' });
       const res = await service.close('ret-1');
       expect(res).toMatchObject({ status: 'CLOSED' });
-      prisma.return.findUnique.mockResolvedValue({ id: 'ret-1', status: 'CLOSED' });
+      prisma.return.findFirst.mockResolvedValue({ id: 'ret-1', status: 'CLOSED' });
       await expect(service.close('ret-1')).rejects.toBeInstanceOf(BadRequestException);
     });
   });
@@ -551,7 +551,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     it('courier FULL creates even when the order is past the staff-eligible statuses (external fact)', async () => {
       // Order already sits at Return Pending (e.g. a previous Return was
       // closed) — Rule 27(a) still requires the courier signal to be recorded.
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         ...order,
         status: { id: 'st-rp', name: 'Return Pending' },
       });
@@ -591,7 +591,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       reason: 'Exchanged with 0 Tk for Exchange With Full Price',
     };
     function mockExchangeOrders() {
-      (prisma.order.findUnique as jest.Mock).mockImplementation(({ where }: any) =>
+      (prisma.order.findFirst as jest.Mock).mockImplementation(({ where }: any) =>
         Promise.resolve(where?.id === 'order-ex' ? exchangeOrder : order),
       );
     }
@@ -646,7 +646,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('orphan exchange (no source order) fails closed — no Return, no lookup', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         ...exchangeOrder,
         exchangeOfOrderId: null,
       });
@@ -755,7 +755,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         return cb(txMock);
       });
       prisma.$transaction.mockClear();
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue(richOrder);
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(richOrder);
     });
 
     it('shipping +50 raises original shippingCharge and total by exactly 50 + writes the timeline entry', async () => {
@@ -831,7 +831,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('percentage-type order: recomputes the effective discount from the new stored value', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         ...richOrder,
         subtotal: 1000,
         discount: 10,
@@ -894,7 +894,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       expect(prisma.$transaction).toHaveBeenCalledTimes(1); // displayId sequence only
       expect(txMock.order.update).not.toHaveBeenCalled();
       expect(txMock.$executeRaw).not.toHaveBeenCalled();
-      expect(txMock.orderStatus.findUnique).not.toHaveBeenCalled();
+      expect(txMock.orderStatus.findFirst).not.toHaveBeenCalled();
       expect(prisma.return.create).toHaveBeenCalled();
     });
 
@@ -940,12 +940,12 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         return cb(txMock);
       });
       prisma.$transaction.mockClear();
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue(decOrder);
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(decOrder);
     });
 
     it('default (omitted) → original order set to Delivered + decision timeline entry', async () => {
       const ret: any = await service.create(baseDto(), 'staff@shop.com');
-      expect(txMock.orderStatus.findUnique).toHaveBeenCalledWith({ where: { name: 'Delivered' } });
+      expect(txMock.orderStatus.findFirst).toHaveBeenCalledWith({ where: { name: 'Delivered' } });
       expect(txMock.order.update).toHaveBeenCalledWith({
         where: { id: 'order-1' },
         data: { statusId: 'st-delivered' },
@@ -977,7 +977,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         'staff@shop.com',
       );
       // Remaining units = 5 ordered − 5 returned = 0 → delivered-marking never applies.
-      expect(txMock.orderStatus.findUnique).not.toHaveBeenCalled();
+      expect(txMock.orderStatus.findFirst).not.toHaveBeenCalled();
       expect(txMock.order.update).not.toHaveBeenCalled();
       expect(txMock.return.create).toHaveBeenCalled();
       const payload = txMock.$executeRaw.mock.calls[0][1] as string;
@@ -997,7 +997,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
           'staff@shop.com',
         ),
       ).rejects.toThrow(/covers all items/i);
-      expect(txMock.orderStatus.findUnique).not.toHaveBeenCalled();
+      expect(txMock.orderStatus.findFirst).not.toHaveBeenCalled();
       expect(txMock.order.update).not.toHaveBeenCalled();
       expect(txMock.return.create).not.toHaveBeenCalled();
       expect(txMock.$executeRaw).not.toHaveBeenCalled();
@@ -1005,7 +1005,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
 
     it('unchecked → original order status untouched + left-for-courier timeline entry', async () => {
       const ret: any = await service.create({ ...baseDto(), markOriginalDelivered: false }, 'staff@shop.com');
-      expect(txMock.orderStatus.findUnique).not.toHaveBeenCalled();
+      expect(txMock.orderStatus.findFirst).not.toHaveBeenCalled();
       expect(txMock.order.update).not.toHaveBeenCalled();
       const payload = txMock.$executeRaw.mock.calls[0][1] as string;
       expect(payload).toContain(
@@ -1015,13 +1015,13 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('already-Delivered order → entry written, no no-op status update', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         ...decOrder,
         statusId: 'st-delivered',
         status: { id: 'st-delivered', name: 'Delivered' },
       });
       await service.create(baseDto(), 'staff@shop.com');
-      expect(txMock.orderStatus.findUnique).toHaveBeenCalled();
+      expect(txMock.orderStatus.findFirst).toHaveBeenCalled();
       expect(txMock.order.update).not.toHaveBeenCalled();
       const payload = txMock.$executeRaw.mock.calls[0][1] as string;
       expect(payload).toContain('Original order marked Delivered on partial return');
@@ -1039,7 +1039,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
     });
 
     it('incomplete status configuration → 400, nothing persists', async () => {
-      const noDelivered = makeTx({ orderStatus: { findUnique: jest.fn().mockResolvedValue(null) } });
+      const noDelivered = makeTx({ orderStatus: { findFirst: jest.fn().mockResolvedValue(null) } });
       prisma.$transaction.mockImplementation((cb: any) => cb(noDelivered));
       await expect(service.create(baseDto(), 'staff@shop.com')).rejects.toThrow(
         'Order status configuration is incomplete',

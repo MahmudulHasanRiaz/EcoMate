@@ -13,7 +13,7 @@ describe('PaymentsService.findAll — VOID exclusion (D-C)', () => {
   let service: PaymentsService;
   const mockPrisma: any = {
     payment: { findMany: jest.fn(), count: jest.fn() },
-    order: { findUnique: jest.fn() },
+    order: { findFirst: jest.fn() },
   };
 
   beforeEach(async () => {

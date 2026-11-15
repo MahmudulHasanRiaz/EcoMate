@@ -21,7 +21,7 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
   const mockPrisma: any = {
     $transaction: jest.fn(),
     dispatch: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -31,10 +31,10 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
     order: {
       update: jest.fn(),
       updateMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findFirst: jest.fn(),
     },
-    orderStatus: { findUnique: jest.fn() },
+    orderStatus: { findFirst: jest.fn() },
     courierDispatchLog: { create: jest.fn() },
   };
   const mockOrders: any = {
@@ -74,7 +74,7 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
   });
 
   it('drops analytics:* after a claimed updateStatus (deliveredAt + order sync)', async () => {
-    mockPrisma.dispatch.findUnique.mockResolvedValue({
+    mockPrisma.dispatch.findFirst.mockResolvedValue({
       id: 'd1',
       status: 'ASSIGNED_TO_RIDER',
       orderId: 'o1',
@@ -85,7 +85,7 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
     const tx: any = {
       dispatch: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'd1',
           status: 'DELIVERED',
           orderId: 'o1',
@@ -95,7 +95,7 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
       },
     };
     mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(tx));
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: 'o1',
       trashedAt: null,
       status: { name: 'Shipping' },
@@ -103,7 +103,7 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
       items: [],
       customer: null,
     });
-    mockPrisma.orderStatus.findUnique.mockResolvedValue({
+    mockPrisma.orderStatus.findFirst.mockResolvedValue({
       id: 's-del',
       name: 'Delivered',
     });
@@ -114,7 +114,7 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
   });
 
   it('does not invalidate when updateStatus claims nothing', async () => {
-    mockPrisma.dispatch.findUnique.mockResolvedValue({
+    mockPrisma.dispatch.findFirst.mockResolvedValue({
       id: 'd1',
       status: 'ASSIGNED_TO_RIDER',
       orderId: 'o1',
@@ -163,7 +163,7 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
       currentStatus: 'delivered',
       configured: true,
     });
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: 'o1',
       trashedAt: null,
       status: { name: 'Shipping' },
@@ -171,7 +171,7 @@ describe('DispatchService analytics invalidation (P2 §6)', () => {
       items: [],
       customer: null,
     });
-    mockPrisma.orderStatus.findUnique.mockResolvedValue({
+    mockPrisma.orderStatus.findFirst.mockResolvedValue({
       id: 's-del',
       name: 'Delivered',
     });

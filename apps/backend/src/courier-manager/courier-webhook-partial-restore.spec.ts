@@ -52,11 +52,11 @@ describe('CourierWebhookService — T6 partial restore-or-hold', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
-        findUnique: jest.fn().mockResolvedValue(order),
+        findFirst: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.name === 'Partial') return Promise.resolve(partialStatus);
           if (where?.name === 'Return Pending') return Promise.resolve(returnPendingStatus);
           return Promise.resolve(null);

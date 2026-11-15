@@ -31,7 +31,7 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
 
   beforeEach(() => {
     prisma = {
-      courierCredentials: { findUnique: jest.fn().mockResolvedValue(creds) },
+      courierCredentials: { findFirst: jest.fn().mockResolvedValue(creds) },
       order: {
         findMany: jest.fn().mockResolvedValue([order]),
         update: jest.fn().mockResolvedValue(order),
@@ -41,7 +41,7 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
         upsert: jest.fn().mockResolvedValue({}),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
-      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+      systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     service = new CourierManagerService(prisma as any);
   });
@@ -170,7 +170,7 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
   // --- Hotfix 2: effective courier office note ---
 
   it('legacy order with NULL office note dispatches with NO note (no silent default inheritance)', async () => {
-    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue({
       key: 'default_office_note',
       value: 'handle-with-care', // a LATER default must not leak into existing orders
     });
@@ -185,7 +185,7 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
   });
 
   it('sends the order override office note when set', async () => {
-    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue({
       key: 'default_office_note',
       value: 'default',
     });
@@ -199,7 +199,7 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
   });
 
   it('an explicit empty office note is authoritative (default is NOT applied)', async () => {
-    (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue({
       key: 'default_office_note',
       value: 'default',
     });
@@ -261,7 +261,7 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
         officeNotes: null,
       };
 
-      (prisma.courierCredentials.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.courierCredentials.findFirst as jest.Mock).mockResolvedValue({
         courier: 'steadfast',
         enabled: true,
         apiKey: 'test-api-key',
@@ -320,7 +320,7 @@ describe('CourierManagerService — order secondary phone to couriers', () => {
 
   beforeEach(() => {
     prisma = {
-      courierCredentials: { findUnique: jest.fn().mockResolvedValue(creds) },
+      courierCredentials: { findFirst: jest.fn().mockResolvedValue(creds) },
       order: {
         findMany: jest.fn().mockResolvedValue([order]),
         update: jest.fn().mockResolvedValue(order),
@@ -330,7 +330,7 @@ describe('CourierManagerService — order secondary phone to couriers', () => {
         upsert: jest.fn().mockResolvedValue({}),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
-      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+      systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     service = new CourierManagerService(prisma as any);
   });
@@ -407,7 +407,7 @@ describe('CourierManagerService — order snapshot is recipient source of truth 
 
   beforeEach(() => {
     prisma = {
-      courierCredentials: { findUnique: jest.fn().mockResolvedValue(creds) },
+      courierCredentials: { findFirst: jest.fn().mockResolvedValue(creds) },
       order: {
         findMany: jest.fn().mockResolvedValue([order]),
         update: jest.fn().mockResolvedValue(order),
@@ -418,7 +418,7 @@ describe('CourierManagerService — order snapshot is recipient source of truth 
         create: jest.fn().mockResolvedValue({}),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
-      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+      systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     service = new CourierManagerService(prisma as any, tokenStore as any);
   });
@@ -474,7 +474,7 @@ describe('CourierManagerService — order snapshot is recipient source of truth 
   });
 
   it('bulk steadfast recipient uses snapshot, not profile', async () => {
-    (prisma.courierCredentials.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.courierCredentials.findFirst as jest.Mock).mockResolvedValue({
       courier: 'steadfast',
       enabled: true,
       apiKey: 'test-api-key',
@@ -571,10 +571,10 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
 
   beforeEach(() => {
     prisma = {
-      courierCredentials: { findUnique: jest.fn().mockResolvedValue(creds) },
+      courierCredentials: { findFirst: jest.fn().mockResolvedValue(creds) },
       order: {
         findMany: jest.fn().mockResolvedValue([shortOrder]),
-        findUnique: jest.fn().mockResolvedValue({ timeline: [] }),
+        findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
         update: jest.fn().mockResolvedValue(shortOrder),
       },
       dispatch: {
@@ -583,7 +583,7 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
         create: jest.fn().mockResolvedValue({}),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
-      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+      systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     service = new CourierManagerService(prisma as any, tokenStore as any);
   });
@@ -903,7 +903,7 @@ describe('CourierManagerService — Steadfast return-status client (Task 5)', ()
 
   beforeEach(() => {
     prisma = {
-      courierCredentials: { findUnique: jest.fn().mockResolvedValue(creds) },
+      courierCredentials: { findFirst: jest.fn().mockResolvedValue(creds) },
     };
     service = new CourierManagerService(prisma as any);
   });
@@ -932,7 +932,7 @@ describe('CourierManagerService — Steadfast return-status client (Task 5)', ()
   });
 
   it('throws when Steadfast is not configured (never an unauthenticated call)', async () => {
-    prisma.courierCredentials.findUnique.mockResolvedValue(null);
+    prisma.courierCredentials.findFirst.mockResolvedValue(null);
     global.fetch = jest.fn();
 
     await expect(service.getSteadfastReturnStatus('123456')).rejects.toThrow();
@@ -986,7 +986,7 @@ describe('CourierManagerService — getCities/getZones (finding 2)', () => {
   }
 
   beforeEach(() => {
-    prisma = { courierCredentials: { findUnique: jest.fn() } };
+    prisma = { courierCredentials: { findFirst: jest.fn() } };
     tokenStore = { getAccessToken: jest.fn().mockResolvedValue('test-token') };
   });
 
@@ -995,7 +995,7 @@ describe('CourierManagerService — getCities/getZones (finding 2)', () => {
   });
 
   it('returns an empty list with courierConfigured:false when no courier is enabled — never throws', async () => {
-    prisma.courierCredentials.findUnique = credsFor({});
+    prisma.courierCredentials.findFirst = credsFor({});
     global.fetch = jest.fn();
 
     const res = await service().getCities();
@@ -1005,7 +1005,7 @@ describe('CourierManagerService — getCities/getZones (finding 2)', () => {
   });
 
   it('returns an empty zones list with courierConfigured:false when no courier is enabled', async () => {
-    prisma.courierCredentials.findUnique = credsFor({});
+    prisma.courierCredentials.findFirst = credsFor({});
     global.fetch = jest.fn();
 
     const res = await service().getZones('1');
@@ -1015,7 +1015,7 @@ describe('CourierManagerService — getCities/getZones (finding 2)', () => {
   });
 
   it('maps the Pathao city list and reports source pathao', async () => {
-    prisma.courierCredentials.findUnique = credsFor({ pathao: pathaoCreds });
+    prisma.courierCredentials.findFirst = credsFor({ pathao: pathaoCreds });
     global.fetch = jest.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -1042,7 +1042,7 @@ describe('CourierManagerService — getCities/getZones (finding 2)', () => {
   });
 
   it('serves the second cities call from the last-good cache without re-hitting the courier API', async () => {
-    prisma.courierCredentials.findUnique = credsFor({ pathao: pathaoCreds });
+    prisma.courierCredentials.findFirst = credsFor({ pathao: pathaoCreds });
     global.fetch = jest.fn().mockResolvedValue(
       new Response(
         JSON.stringify({ data: [{ city_id: 1, city_name: 'Dhaka' }] }),
@@ -1059,7 +1059,7 @@ describe('CourierManagerService — getCities/getZones (finding 2)', () => {
   });
 
   it('falls back to Carrybee when Pathao is disabled', async () => {
-    prisma.courierCredentials.findUnique = credsFor({
+    prisma.courierCredentials.findFirst = credsFor({
       pathao: { ...pathaoCreds, enabled: false },
       carrybee: carrybeeCreds,
     });
@@ -1082,7 +1082,7 @@ describe('CourierManagerService — getCities/getZones (finding 2)', () => {
   });
 
   it('maps Pathao zones for a city', async () => {
-    prisma.courierCredentials.findUnique = credsFor({ pathao: pathaoCreds });
+    prisma.courierCredentials.findFirst = credsFor({ pathao: pathaoCreds });
     global.fetch = jest.fn().mockResolvedValue(
       new Response(
         JSON.stringify({ data: [{ zone_id: 5, zone_name: 'Mirpur' }] }),

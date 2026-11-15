@@ -39,7 +39,7 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
         update: jest.fn().mockImplementation(({ data }: any) =>
           Promise.resolve({ id: 'ret-1', ...stored, ...data }),
         ),
-        findUnique: jest.fn().mockResolvedValue({ ...stored }),
+        findFirst: jest.fn().mockResolvedValue({ ...stored }),
         findMany: jest.fn().mockResolvedValue([]),
       },
       orderItem: {
@@ -55,7 +55,7 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
     };
     prisma = {
       order: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'order-1',
           displayId: 'ORD-260101-0001',
           trashedAt: null,
@@ -66,11 +66,11 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
       return: {
         create: tx.return.create,
         update: tx.return.update,
-        findUnique: jest.fn().mockResolvedValue({ ...stored }),
+        findFirst: jest.fn().mockResolvedValue({ ...stored }),
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
       },
-      refund: { findUnique: jest.fn().mockResolvedValue({ id: 'refund-1' }) },
+      refund: { findFirst: jest.fn().mockResolvedValue({ id: 'refund-1' }) },
       dispatch: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       orderItem: {
         findMany: jest.fn().mockResolvedValue([
@@ -104,7 +104,7 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
     expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledTimes(1);
 
     // The stored row is now reconciled — a repeat receive restores nothing.
-    prisma.return.findUnique.mockResolvedValue({
+    prisma.return.findFirst.mockResolvedValue({
       ...stored,
       status: 'RESTOCKED',
       stockReconciled: true,
@@ -118,7 +118,7 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
     await service.restoreStockForReturn('ret-1', { performedBy: 'staff@x.com' });
     expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledTimes(1);
 
-    prisma.return.findUnique.mockResolvedValue({
+    prisma.return.findFirst.mockResolvedValue({
       ...stored,
       status: 'RESTOCKED',
       stockReconciled: true,
@@ -135,7 +135,7 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
     expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledTimes(1);
 
     // Second scan of the same return id: flag-guarded no-op.
-    prisma.return.findUnique.mockResolvedValue({
+    prisma.return.findFirst.mockResolvedValue({
       ...stored,
       status: 'RESTOCKED',
       stockReconciled: true,

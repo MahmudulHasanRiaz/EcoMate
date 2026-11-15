@@ -23,7 +23,7 @@ export class HrPaymentsService {
   ) {}
 
   async createPayment(dto: CreatePaymentInput, actorId?: string) {
-    const payslip = await this.prisma.payslip.findUnique({
+    const payslip = await this.prisma.payslip.findFirst({
       where: { id: dto.payslipId },
     });
     if (!payslip)
@@ -96,7 +96,7 @@ export class HrPaymentsService {
   }
 
   async findPayments(payslipId: string) {
-    const payslip = await this.prisma.payslip.findUnique({
+    const payslip = await this.prisma.payslip.findFirst({
       where: { id: payslipId },
     });
     if (!payslip)
@@ -121,13 +121,13 @@ export class HrPaymentsService {
       throw new BadRequestException('reason is required to void a payment');
     }
 
-    const payslip = await this.prisma.payslip.findUnique({
+    const payslip = await this.prisma.payslip.findFirst({
       where: { id: payslipId },
     });
     if (!payslip)
       throw new NotFoundException(`Payslip with ID ${payslipId} not found`);
 
-    const payment = await this.prisma.payrollPayment.findUnique({
+    const payment = await this.prisma.payrollPayment.findFirst({
       where: { id: paymentId },
     });
     if (!payment || payment.payslipId !== payslipId)

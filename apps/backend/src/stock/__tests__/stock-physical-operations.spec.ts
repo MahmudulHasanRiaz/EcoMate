@@ -41,12 +41,12 @@ describe('StockService — physical inventory operations', () => {
     let row = { ...PI_ROW };
     tx = {
       product: {
-        findUnique: jest
+        findFirst: jest
           .fn()
           .mockResolvedValue({ availabilityMode: 'INVENTORY_CONTROLLED' }),
       },
       productVariant: {
-        findUnique: jest.fn().mockResolvedValue({ productId: 'prod-1' }),
+        findFirst: jest.fn().mockResolvedValue({ productId: 'prod-1' }),
         update: jest.fn().mockResolvedValue({}),
       },
       physicalInventory: {
@@ -264,7 +264,7 @@ describe('StockService — physical inventory operations', () => {
 
   describe('availability guards still apply', () => {
     it('refuses a movement for an ALWAYS_IN_STOCK product', async () => {
-      tx.product.findUnique.mockResolvedValue({ availabilityMode: 'ALWAYS_IN_STOCK' });
+      tx.product.findFirst.mockResolvedValue({ availabilityMode: 'ALWAYS_IN_STOCK' });
 
       await expect(service.deductPhysical(params())).rejects.toThrow(
         /always in stock/i,
@@ -273,7 +273,7 @@ describe('StockService — physical inventory operations', () => {
     });
 
     it('refuses a movement for an ALWAYS_OUT_OF_STOCK product', async () => {
-      tx.product.findUnique.mockResolvedValue({
+      tx.product.findFirst.mockResolvedValue({
         availabilityMode: 'ALWAYS_OUT_OF_STOCK',
       });
 

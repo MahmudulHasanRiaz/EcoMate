@@ -29,7 +29,7 @@ describe('CourierWebhookController — Diagnostics', () => {
 
     prisma = {
       courierCredentials: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
       },
     };
 
@@ -82,7 +82,7 @@ describe('CourierWebhookController — Diagnostics', () => {
 
   describe('Steadfast — HMAC auth diagnostics (Task 4)', () => {
     it('records AUTH_FAILED when no X-Signature header (Bearer alone is not a fallback)', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
 
       await expect(
         controller.steadfast(
@@ -101,7 +101,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('records AUTH_FAILED when HMAC does not match', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
 
       await expect(
         controller.steadfast(
@@ -121,7 +121,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('records SUCCESS with correlation ID on valid HMAC webhook', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
       const rawBody = '{"status":"delivered","consignment_id":12345}';
 
       await controller.steadfast(
@@ -142,7 +142,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('records PROCESSING_ERROR when handler throws a transient error', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
       webhookSvc.handleSteadfast.mockRejectedValue(new Error('DB connection lost'));
       const rawBody = '{"consignment_id":"CG-1"}';
 
@@ -164,7 +164,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('never stores raw token in authResult', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: 'super-secret-token-123' });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: 'super-secret-token-123' });
       const rawBody = '{"consignment_id":"CG-1"}';
 
       await controller.steadfast(
@@ -188,7 +188,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('accepts with a recorded warning when no token is configured', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue(null);
+      prisma.courierCredentials.findFirst.mockResolvedValue(null);
 
       const result = await controller.steadfast(
         { consignment_id: 'CG-1' },
@@ -230,7 +230,7 @@ describe('CourierWebhookController — Diagnostics', () => {
 
   describe('Pathao — signature + integration-secret response header', () => {
     it('accepts the merchant-registered webhook secret as the inbound signature', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({
+      prisma.courierCredentials.findFirst.mockResolvedValue({
         webhookSecret: 'registered-secret-V',
         pathaoIntegrationSecret: 'f3992ecc-59da-4cbe-a049-a13da2018d51',
       });
@@ -249,7 +249,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('does NOT accept the public integration constant as the inbound signature (anti-forgery)', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({
+      prisma.courierCredentials.findFirst.mockResolvedValue({
         webhookSecret: 'registered-secret-V',
         pathaoIntegrationSecret: 'f3992ecc-59da-4cbe-a049-a13da2018d51',
       });
@@ -273,7 +273,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('accepts with a recorded warning when the registered secret is missing (Task 4: never silent)', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({
+      prisma.courierCredentials.findFirst.mockResolvedValue({
         webhookSecret: null,
         pathaoIntegrationSecret: 'f3992ecc-59da-4cbe-a049-a13da2018d51',
       });
@@ -296,7 +296,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('echoes the stored integration secret in the required response header', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({
+      prisma.courierCredentials.findFirst.mockResolvedValue({
         webhookSecret: 'wh-secret',
         pathaoIntegrationSecret: 'f3992ecc-59da-4cbe-a049-a13da2018d51',
       });
@@ -316,7 +316,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('echoes the built-in constant when no integration secret is stored', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({
+      prisma.courierCredentials.findFirst.mockResolvedValue({
         webhookSecret: 'wh-secret',
         pathaoIntegrationSecret: null,
       });
@@ -335,7 +335,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('accepts with a recorded warning when neither secret is configured', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({
+      prisma.courierCredentials.findFirst.mockResolvedValue({
         webhookSecret: null,
         pathaoIntegrationSecret: null,
       });
@@ -359,7 +359,7 @@ describe('CourierWebhookController — Diagnostics', () => {
 
   describe('Correlation ID', () => {
     it('generates unique correlation ID per request', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
       const rawBody = '{"consignment_id":"CG-1"}';
 
       await controller.steadfast(
@@ -376,7 +376,7 @@ describe('CourierWebhookController — Diagnostics', () => {
 
   describe('Best-effort diagnostics', () => {
     it('diagnostic DB failure does not break webhook processing', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
       attemptSvc.startAttempt.mockRejectedValue(new Error('DB down'));
       webhookSvc.handleSteadfast.mockResolvedValue({ status: 'success', message: 'ok' });
       const rawBody = '{"consignment_id":"CG-1"}';
@@ -392,7 +392,7 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('completeAttempt failure does not cause 500 when handler succeeds', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
       attemptSvc.completeAttempt.mockRejectedValue(new Error('DB write failed'));
       const rawBody = '{"consignment_id":"CG-1"}';
 

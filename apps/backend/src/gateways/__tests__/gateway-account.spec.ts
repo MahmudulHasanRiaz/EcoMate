@@ -12,13 +12,13 @@ const assetLeaf = {
 
 function controllerWith(overrides: any = {}) {
   const prisma: any = {
-    account: { findUnique: jest.fn(), create: jest.fn() },
+    account: { findFirst: jest.fn(), create: jest.fn() },
     paymentGateway: {
       upsert: jest.fn().mockResolvedValue({ id: 'gw-1' }),
       create: jest.fn().mockResolvedValue({ id: 'gw-1' }),
       findMany: jest.fn().mockResolvedValue([]),
       // D6: upsertGateway pre-checks existence to detect a genuine create.
-      findUnique: jest.fn().mockResolvedValue({ id: 'gw-1' }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'gw-1' }),
       update: jest.fn().mockResolvedValue({}),
     },
     paymentOption: { findMany: jest.fn().mockResolvedValue([]) },
@@ -30,7 +30,7 @@ function controllerWith(overrides: any = {}) {
 describe('GatewayConfigController — Part 1 settlement account', () => {
   it('accepts an active, non-group asset leaf and stores accountId', async () => {
     const { controller, prisma } = controllerWith();
-    prisma.account.findUnique.mockResolvedValue(assetLeaf);
+    prisma.account.findFirst.mockResolvedValue(assetLeaf);
 
     await controller.upsertGateway('bkash', {
       name: 'bKash',
@@ -58,7 +58,7 @@ describe('GatewayConfigController — Part 1 settlement account', () => {
       accountId: null,
     });
 
-    expect(prisma.account.findUnique).not.toHaveBeenCalled();
+    expect(prisma.account.findFirst).not.toHaveBeenCalled();
     expect(prisma.paymentGateway.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         update: expect.objectContaining({ accountId: null }),
@@ -81,7 +81,7 @@ describe('GatewayConfigController — Part 1 settlement account', () => {
 
   it('rejects a missing account', async () => {
     const { controller, prisma } = controllerWith();
-    prisma.account.findUnique.mockResolvedValue(null);
+    prisma.account.findFirst.mockResolvedValue(null);
 
     await expect(
       controller.upsertGateway('bkash', {
@@ -101,7 +101,7 @@ describe('GatewayConfigController — Part 1 settlement account', () => {
     ['inactive', { ...assetLeaf, isActive: false }],
   ])('rejects a %s account', async (_label, account) => {
     const { controller, prisma } = controllerWith();
-    prisma.account.findUnique.mockResolvedValue(account);
+    prisma.account.findFirst.mockResolvedValue(account);
 
     await expect(
       controller.upsertGateway('bkash', {
@@ -116,7 +116,7 @@ describe('GatewayConfigController — Part 1 settlement account', () => {
 
   it('validates the account on create too', async () => {
     const { controller, prisma } = controllerWith();
-    prisma.account.findUnique.mockResolvedValue({ ...assetLeaf, type: 'income' });
+    prisma.account.findFirst.mockResolvedValue({ ...assetLeaf, type: 'income' });
 
     await expect(
       controller.createGateway({

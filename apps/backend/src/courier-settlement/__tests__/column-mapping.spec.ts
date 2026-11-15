@@ -21,7 +21,7 @@ function makePrisma(aliases: any[] = []) {
             (where?.field === undefined || a.field === where.field) &&
             (where?.active === undefined || a.active === where.active),
         ),
-      findUnique: async ({ where }: any) =>
+      findFirst: async ({ where }: any) =>
         where.id
           ? store.find((a) => a.id === where.id) ?? null
           : store.find(

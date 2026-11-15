@@ -288,7 +288,7 @@ export class MonitoringController {
   @Get('timeline')
   async timeline(@Query('eventId') eventId?: string) {
     if (!eventId) throw new BadRequestException('eventId is required');
-    const snapshot = await this.prisma.trackingSnapshot.findUnique({
+    const snapshot = await this.prisma.trackingSnapshot.findFirst({
       where: { eventId },
       select: { id: true, eventType: true },
     });
@@ -298,7 +298,7 @@ export class MonitoringController {
         orderBy: { createdAt: 'asc' },
       }),
       snapshot
-        ? this.prisma.trackingOutbox.findUnique({
+        ? this.prisma.trackingOutbox.findFirst({
             where: { snapshotId: snapshot.id },
             select: { status: true },
           })

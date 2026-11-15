@@ -111,8 +111,8 @@ export class ReplayService {
    */
   async replay(snapshotId: string): Promise<boolean> {
     const [archive, outbox] = await Promise.all([
-      this.prisma.trackingReplayArchive.findUnique({ where: { snapshotId } }),
-      this.prisma.trackingOutbox.findUnique({ where: { snapshotId } }),
+      this.prisma.trackingReplayArchive.findFirst({ where: { snapshotId } }),
+      this.prisma.trackingOutbox.findFirst({ where: { snapshotId } }),
     ]);
 
     if (!outbox) {
@@ -131,7 +131,7 @@ export class ReplayService {
 
     // Load the live snapshot too: it carries orderId/ctxId for the transition
     // event, and it IS the replay source when no archive exists yet.
-    const snapshot = await this.prisma.trackingSnapshot.findUnique({
+    const snapshot = await this.prisma.trackingSnapshot.findFirst({
       where: { id: snapshotId },
     });
     if (!archive && !snapshot) {

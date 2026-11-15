@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Controller,
   Get,
@@ -102,7 +103,7 @@ export class MobileBuilderController {
   @SkipLicenseCheck()
   @Get('metadata/:buildId')
   async getMetadataForBuild(@Param('buildId') buildId: string) {
-    const build = await this.prisma.mobileBuild.findUnique({ where: { id: buildId } });
+    const build = await this.prisma.mobileBuild.findFirst({ where: { id: buildId } });
     if (!build) throw new BadRequestException('Build not found');
 
     const settings = await this.prisma.systemSetting.findMany({
@@ -182,7 +183,7 @@ export class MobileBuilderController {
   @Get('builds/:id')
   @RequiresFeature('mobile_distribution')
   async getBuildDetail(@Param('id') id: string) {
-    const build = await this.prisma.mobileBuild.findUnique({ where: { id } });
+    const build = await this.prisma.mobileBuild.findFirst({ where: { id } });
     if (!build) throw new BadRequestException('Build not found');
     return build;
   }
@@ -192,7 +193,7 @@ export class MobileBuilderController {
   @Permissions('edit_mobile_builder')
   @RequiresFeature('mobile_distribution')
   async cancelBuild(@Param('id') id: string) {
-    const build = await this.prisma.mobileBuild.findUnique({ where: { id } });
+    const build = await this.prisma.mobileBuild.findFirst({ where: { id } });
     if (!build) throw new BadRequestException('Build not found');
     if (!['queued', 'running', 'uploading'].includes(build.status)) throw new BadRequestException(`Cannot cancel build with status ${build.status}`);
 
@@ -233,12 +234,12 @@ export class MobileBuilderController {
     if (runningCount > 0) throw new ConflictException('A build is already queued or in progress');
 
     // Resolve immutable packageId
-    const locked = await this.prisma.systemSetting.findUnique({ where: { key: PKG_LOCK_KEY } });
+    const locked = await this.prisma.systemSetting.findFirst({ where: { key: PKG_LOCK_KEY } });
     const settings = await this.prisma.systemSetting.findMany({ where: { key: { in: ['store_name'] as string[] } } });
     const smap: Record<string, string> = {};
     for (const s of settings) smap[s.key] = s.value;
     const packageId = locked?.value || computePackageId(smap['store_name'] || '');
-    if (!locked) await this.prisma.systemSetting.upsert({ where: { key: PKG_LOCK_KEY }, create: { key: PKG_LOCK_KEY, value: packageId }, update: {} });
+    if (!locked) await this.prisma.systemSetting.upsert({ where: { tenantId_key: tenantCompound({  key: PKG_LOCK_KEY  }) }, create: { key: PKG_LOCK_KEY, value: packageId }, update: {} });
 
     // Create build records for each app
     const builds: any[] = [];
@@ -305,7 +306,7 @@ export class MobileBuilderController {
     // Find the build — try pending, then recently failed (in case auto-poll timed out)
     let build: any = null;
     if (body?.buildId) {
-      build = await this.prisma.mobileBuild.findUnique({ where: { id: body.buildId } });
+      build = await this.prisma.mobileBuild.findFirst({ where: { id: body.buildId } });
     } else {
       build = await this.prisma.mobileBuild.findFirst({
         where: { status: { in: ['running', 'queued'] } },
@@ -398,7 +399,7 @@ export class MobileBuilderController {
         throw new BadRequestException(`Invalid platform: ${platform}`);
       }
 
-      const existing = await this.prisma.mobileBuild.findUnique({ where: { id: buildId } });
+      const existing = await this.prisma.mobileBuild.findFirst({ where: { id: buildId } });
       if (!existing) throw new BadRequestException(`Build ${buildId} not found`);
 
       const updateData: any = { status };
@@ -449,7 +450,7 @@ export class MobileBuilderController {
     if (!buildId || !status) throw new BadRequestException('buildId and status required');
     if (body.status === 'completed' && !runId) throw new BadRequestException('runId required for GitHub artifact pull');
 
-    const existing = await this.prisma.mobileBuild.findUnique({ where: { id: buildId } });
+    const existing = await this.prisma.mobileBuild.findFirst({ where: { id: buildId } });
     if (!existing) throw new BadRequestException(`Build ${buildId} not found`);
 
     // If status is completed, pull artifact from GitHub

@@ -26,7 +26,7 @@ function mockPathaoApi(globalFetch: jest.Mock, rating: string | null, totalOrder
 }
 
 function neverResolvedCache(prisma: any, row: any = null) {
-  prisma.courierReportCache.findUnique.mockResolvedValue(row);
+  prisma.courierReportCache.findFirst.mockResolvedValue(row);
 }
 
 describe('CourierCustomerHistoryService', () => {
@@ -40,12 +40,12 @@ describe('CourierCustomerHistoryService', () => {
 
     prisma = {
       courierReportCache: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         upsert: jest.fn().mockResolvedValue({}),
       },
       courierCredentials: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           courier: 'pathao',
           enabled: true,
           username: 'user',
@@ -54,7 +54,7 @@ describe('CourierCustomerHistoryService', () => {
         }),
       },
       systemSetting: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
     };
   });
@@ -279,7 +279,7 @@ describe('CourierCustomerHistoryService', () => {
     });
 
     it('honors a configured calibration override from system settings', async () => {
-      prisma.systemSetting.findUnique.mockResolvedValue({
+      prisma.systemSetting.findFirst.mockResolvedValue({
         key: 'pathao_rating_calibration',
         value: JSON.stringify({ excellent: 95, good: 200, moderate: -5 }),
       });
@@ -295,7 +295,7 @@ describe('CourierCustomerHistoryService', () => {
     });
 
     it('falls back to defaults when calibration JSON is invalid', async () => {
-      prisma.systemSetting.findUnique.mockResolvedValue({
+      prisma.systemSetting.findFirst.mockResolvedValue({
         key: 'pathao_rating_calibration',
         value: 'not-json{',
       });
@@ -465,7 +465,7 @@ describe('CourierCustomerHistoryService', () => {
 
     it('stamps non-pathao fetched reports as actual', async () => {
       const creds = { courier: 'steadfast', enabled: true, apiKey: 'k', secretKey: 's', credentials: {} };
-      prisma.courierCredentials.findUnique.mockResolvedValue(creds);
+      prisma.courierCredentials.findFirst.mockResolvedValue(creds);
       globalFetchSpy.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({
@@ -547,7 +547,7 @@ describe('CourierCustomerHistoryService', () => {
 
     it('refresh all forces a fetch for every courier', async () => {
       const creds = { courier: 'steadfast', enabled: true, apiKey: 'k', secretKey: 's', credentials: {} };
-      prisma.courierCredentials.findUnique.mockResolvedValue(creds);
+      prisma.courierCredentials.findFirst.mockResolvedValue(creds);
       globalFetchSpy.mockImplementation((url: string) => {
         if (url.includes('/fraud_check/score/')) {
           return Promise.resolve({

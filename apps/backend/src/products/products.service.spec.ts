@@ -81,16 +81,16 @@ describe('ProductsService', () => {
       $transaction: jest.fn((fn: any) => fn(prismaMock)),
       product: {
         findMany: jest.fn(),
-        findUnique: jest.fn(),
         findFirst: jest.fn(),
-        findUniqueOrThrow: jest.fn(),
+        findFirst: jest.fn(),
+        findFirstOrThrow: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
         count: jest.fn(),
       },
       productVariant: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findFirst: jest.fn(),
         findMany: jest.fn(),
         deleteMany: jest.fn(),
@@ -110,7 +110,7 @@ describe('ProductsService', () => {
         upsert: jest.fn().mockResolvedValue({}),
       },
       tag: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'tag-1',
           name: 'Test Tag',
           slug: 'test-tag',
@@ -141,7 +141,7 @@ describe('ProductsService', () => {
       },
       category: {
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'cat-1',
           name: 'Test Category',
           slug: 'test-category',
@@ -151,7 +151,7 @@ describe('ProductsService', () => {
         groupBy: jest.fn().mockResolvedValue([]),
       },
       warehouse: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
       },
       managedStockLedger: {
@@ -636,18 +636,18 @@ describe('ProductsService', () => {
 
   describe('findOne', () => {
     it('should return a product by id', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(mockProduct);
 
       const result = await service.findOne('prod-1');
 
-      expect(prisma.product.findUnique).toHaveBeenCalledWith(
+      expect(prisma.product.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'prod-1' } }),
       );
       expect(result).toEqual(mockProduct);
     });
 
     it('should throw NotFoundException if product not found', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.findOne('nonexistent-id')).rejects.toThrow(
         NotFoundException,
@@ -671,13 +671,13 @@ describe('ProductsService', () => {
     };
 
     it('should create a simple product without variants', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockResolvedValue(mockProduct);
       (media.syncEntityImages as jest.Mock).mockResolvedValue(createDto.images);
 
       const result = await service.create(createDto);
 
-      expect(prisma.product.findUnique).toHaveBeenCalledWith({
+      expect(prisma.product.findFirst).toHaveBeenCalledWith({
         where: { slug: 'new-product' },
         select: { id: true, status: true },
       });
@@ -691,7 +691,7 @@ describe('ProductsService', () => {
     });
 
     it('persists videoUrl and detailRows scalars on create', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockResolvedValue(mockProduct);
       (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
 
@@ -721,7 +721,7 @@ describe('ProductsService', () => {
     });
 
     it('trims a padded videoUrl on create and clears a whitespace-only one', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockResolvedValue(mockProduct);
       (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
 
@@ -740,7 +740,7 @@ describe('ProductsService', () => {
     });
 
     it('persists an explicit availabilityMode on variable products (no force to MANAGED_STOCK)', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockResolvedValue(mockProduct);
       (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
 
@@ -756,7 +756,7 @@ describe('ProductsService', () => {
     });
 
     it('defaults variable products to MANAGED_STOCK when availabilityMode is omitted', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockResolvedValue(mockProduct);
       (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
 
@@ -767,7 +767,7 @@ describe('ProductsService', () => {
     });
 
     it('should throw ConflictException if slug already exists', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(mockProduct);
 
       await expect(service.create(createDto)).rejects.toThrow(
         ConflictException,
@@ -777,7 +777,7 @@ describe('ProductsService', () => {
     it('adopts a draft row that already holds the slug instead of throwing', async () => {
       const draftRow = { id: 'draft-9', status: 'draft' };
       const adopted = { ...mockProduct, id: 'draft-9', status: 'active' };
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftRow);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftRow);
       (prisma.product.update as jest.Mock).mockResolvedValue(adopted);
       (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
 
@@ -796,7 +796,7 @@ describe('ProductsService', () => {
     it('promotes the draft that holds the SKU when the slug does not collide (P2002 path)', async () => {
       const skuDraft = { id: 'draft-42', status: 'draft' };
       const adopted = { ...mockProduct, id: 'draft-42', status: 'active' };
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockRejectedValue({ code: 'P2002' });
       (prisma.product.findFirst as jest.Mock).mockResolvedValue(skuDraft);
       (prisma.product.update as jest.Mock).mockResolvedValue(adopted);
@@ -813,7 +813,7 @@ describe('ProductsService', () => {
     });
 
     it('maps raw SKU unique violations to a friendly ConflictException when no draft holds the SKU', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockRejectedValue({ code: 'P2002' });
       (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
 
@@ -823,7 +823,7 @@ describe('ProductsService', () => {
     });
 
     it('propagates non-unique errors from the insert', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockRejectedValue(
         new Error('db down'),
       );
@@ -847,7 +847,7 @@ describe('ProductsService', () => {
 
       const productWithVariant = { ...mockProduct, variants: [mockVariant] };
 
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockResolvedValue(
         productWithVariant,
       );
@@ -876,7 +876,7 @@ describe('ProductsService', () => {
           },
         ],
       };
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockResolvedValue({
         ...mockProduct,
         variants: [mockVariant],
@@ -914,7 +914,7 @@ describe('ProductsService', () => {
         (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
           true,
         );
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(managedProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue({
           ...managedProduct,
@@ -939,7 +939,7 @@ describe('ProductsService', () => {
         (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
           true,
         );
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.warehouse.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(managedProduct);
 
@@ -959,7 +959,7 @@ describe('ProductsService', () => {
         (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
           false,
         );
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(managedProduct);
 
         await service.create({
@@ -988,7 +988,7 @@ describe('ProductsService', () => {
         (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
           true,
         );
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(variableProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue({
           ...variableProduct,
@@ -1081,7 +1081,7 @@ describe('ProductsService', () => {
     };
 
     it('should update a product successfully', async () => {
-      (prisma.product.findUnique as jest.Mock)
+      (prisma.product.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockProduct)
         .mockResolvedValueOnce(null);
       (prisma.product.update as jest.Mock).mockResolvedValue({
@@ -1099,7 +1099,7 @@ describe('ProductsService', () => {
     });
 
     it('normalizes videoUrl on update only when the field is present', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(mockProduct);
       (prisma.product.update as jest.Mock).mockResolvedValue(mockProduct);
 
       await service.update('prod-1', {
@@ -1124,7 +1124,7 @@ describe('ProductsService', () => {
     });
 
     it('should throw NotFoundException if product not found', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.update('nonexistent-id', updateDto)).rejects.toThrow(
         NotFoundException,
@@ -1132,7 +1132,7 @@ describe('ProductsService', () => {
     });
 
     it('should throw ConflictException if new slug already exists on another product', async () => {
-      (prisma.product.findUnique as jest.Mock)
+      (prisma.product.findFirst as jest.Mock)
         .mockResolvedValueOnce(mockProduct)
         .mockResolvedValueOnce({ id: 'other-prod', slug: 'taken-slug' });
 
@@ -1142,19 +1142,19 @@ describe('ProductsService', () => {
     });
 
     it('should allow updating to same slug', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(mockProduct);
       (prisma.product.update as jest.Mock).mockResolvedValue(mockProduct);
 
       await service.update('prod-1', { slug: 'test-product' });
 
-      expect(prisma.product.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.product.findFirst).toHaveBeenCalledTimes(1);
       expect(prisma.product.update).toHaveBeenCalled();
     });
 
     it('regenerates an invalid stored slug on update instead of persisting it', async () => {
       // Once-only mock: the uniqueness check for the regenerated slug
       // must see "no collision" (undefined), not the stored row again.
-      (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+      (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce({
         ...mockProduct,
         slug: '-',
       });
@@ -1167,7 +1167,7 @@ describe('ProductsService', () => {
     });
 
     it('keeps a valid stored slug when an invalid slug is sent on update', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(mockProduct);
       (prisma.product.update as jest.Mock).mockResolvedValue(mockProduct);
 
       await service.update('prod-1', { slug: '-' });
@@ -1177,7 +1177,7 @@ describe('ProductsService', () => {
     });
 
     it('should sync images via MediaService when images are provided', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+      (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce(
         mockProduct,
       );
       (prisma.product.update as jest.Mock).mockResolvedValue(mockProduct);
@@ -1201,7 +1201,7 @@ describe('ProductsService', () => {
         availabilityMode: 'MANAGED_STOCK',
         manageStock: false,
       };
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(stranded);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(stranded);
       (prisma.product.update as jest.Mock).mockResolvedValue(stranded);
 
       await service.update('prod-1', { name: 'Updated Product' });
@@ -1218,7 +1218,7 @@ describe('ProductsService', () => {
         availabilityMode: 'INVENTORY_CONTROLLED',
         manageStock: true,
       };
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(icProduct);
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(icProduct);
       (prisma.product.update as jest.Mock).mockResolvedValue(icProduct);
 
       await service.update('prod-1', { name: 'Updated Product' });
@@ -1231,7 +1231,7 @@ describe('ProductsService', () => {
 
   describe('remove', () => {
     it('should delete a product successfully and detach all media', async () => {
-      (prisma.product.findUniqueOrThrow as jest.Mock).mockResolvedValue(
+      (prisma.product.findFirstOrThrow as jest.Mock).mockResolvedValue(
         mockProduct,
       );
       (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
@@ -1252,7 +1252,7 @@ describe('ProductsService', () => {
 
     it('should throw Prisma error (NotFound) if product does not exist', async () => {
       const notFoundError = new Error('Not found');
-      (prisma.product.findUniqueOrThrow as jest.Mock).mockRejectedValue(
+      (prisma.product.findFirstOrThrow as jest.Mock).mockRejectedValue(
         notFoundError,
       );
 
@@ -1265,7 +1265,7 @@ describe('ProductsService', () => {
 
   describe('updateVariant', () => {
     it('should update variant fields and sync its image attachment', async () => {
-      (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue(
         mockVariant,
       );
       (prisma.productVariant.update as jest.Mock).mockResolvedValue({
@@ -1292,7 +1292,7 @@ describe('ProductsService', () => {
     });
 
     it('should throw NotFoundException if variant does not belong to product', async () => {
-      (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue({
         ...mockVariant,
         productId: 'other-prod',
       });
@@ -1303,7 +1303,7 @@ describe('ProductsService', () => {
     });
 
     it('persists standardCost edits (previously silently dropped)', async () => {
-      (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue(
         mockVariant,
       );
       (prisma.productVariant.update as jest.Mock).mockResolvedValue({
@@ -1332,7 +1332,7 @@ describe('ProductsService', () => {
     it('should generate variants from attribute combinations', async () => {
       const product = { ...mockProduct, sku: 'PROD', basePrice: 1000 };
 
-      (prisma.product.findUniqueOrThrow as jest.Mock).mockResolvedValue(
+      (prisma.product.findFirstOrThrow as jest.Mock).mockResolvedValue(
         product,
       );
       (prisma.productVariant.deleteMany as jest.Mock).mockResolvedValue({
@@ -1371,7 +1371,7 @@ describe('ProductsService', () => {
         ...product,
         type: 'variable',
       });
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({
         ...product,
         type: 'variable',
         variants: [mockVariant],
@@ -1402,7 +1402,7 @@ describe('ProductsService', () => {
 
     describe('createDraft', () => {
       it('creates a hidden draft record with a typed slug', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
 
         const result = await service.createDraft({ name: 'New Item' });
@@ -1418,7 +1418,7 @@ describe('ProductsService', () => {
       });
 
       it('uses the global IM setting for the draft default mode', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
         (
           stockRouter.isInventoryManagementEnabled as jest.Mock
@@ -1432,7 +1432,7 @@ describe('ProductsService', () => {
       });
 
       it('ensures slug uniqueness for explicit slugs', async () => {
-        (prisma.product.findUnique as jest.Mock)
+        (prisma.product.findFirst as jest.Mock)
           .mockResolvedValueOnce(mockProduct)
           .mockResolvedValueOnce(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
@@ -1444,7 +1444,7 @@ describe('ProductsService', () => {
       });
 
       it('treats a no-alphanumeric slug as empty and falls back to the SKU slug', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.createDraft({ slug: '-', sku: 'WOO-ID-127' });
@@ -1454,7 +1454,7 @@ describe('ProductsService', () => {
       });
 
       it('falls back to a draft-uuid slug when name and SKU yield nothing usable', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.createDraft({ slug: '-', name: 'টেস্ট পণ্য' });
@@ -1464,7 +1464,7 @@ describe('ProductsService', () => {
       });
 
       it('creates nested variants and invalidates the product cache', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.createDraft({
@@ -1485,7 +1485,7 @@ describe('ProductsService', () => {
 
     describe('findBySlug', () => {
       it('caches the enriched product with a short 10s TTL so stock never serves stale for long', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(mockProduct);
 
         const result = await service.findBySlug('test-product');
 
@@ -1504,11 +1504,11 @@ describe('ProductsService', () => {
         const result = await service.findBySlug('test-product');
 
         expect(result).toEqual(mockProduct);
-        expect(prisma.product.findUnique).not.toHaveBeenCalled();
+        expect(prisma.product.findFirst).not.toHaveBeenCalled();
       });
 
       it('throws NotFoundException for an unknown slug', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
 
         await expect(service.findBySlug('missing-slug')).rejects.toThrow(
           NotFoundException,
@@ -1518,7 +1518,7 @@ describe('ProductsService', () => {
 
     describe('updateDraft', () => {
       it('refuses to edit a non-draft product', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(mockProduct);
 
         await expect(service.updateDraft('prod-1', { name: 'X' })).rejects.toThrow(
           BadRequestException,
@@ -1527,7 +1527,7 @@ describe('ProductsService', () => {
       });
 
       it('persists autosave data while keeping the record a hidden draft', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce(
           draftProduct,
         );
         (prisma.product.update as jest.Mock).mockResolvedValue({
@@ -1549,7 +1549,7 @@ describe('ProductsService', () => {
       });
 
       it('rejects a slug owned by another product', async () => {
-        (prisma.product.findUnique as jest.Mock)
+        (prisma.product.findFirst as jest.Mock)
           .mockResolvedValueOnce(draftProduct)
           .mockResolvedValueOnce(mockProduct);
 
@@ -1561,7 +1561,7 @@ describe('ProductsService', () => {
       it('regenerates an invalid stored slug from the SKU on draft save', async () => {
         // Pre-fix Bengali draft: stored "-" must not survive a save.
         // Name-derived yields nothing usable, so the SKU slug wins.
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce({
           ...draftProduct,
           slug: '-',
           name: 'টেস্ট পণ্য',
@@ -1579,7 +1579,7 @@ describe('ProductsService', () => {
       });
 
       it('regenerates an invalid stored slug from the name when the SKU yields nothing', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce({
           ...draftProduct,
           slug: '-',
           name: 'Old Name',
@@ -1593,7 +1593,7 @@ describe('ProductsService', () => {
       });
 
       it('keeps a valid stored slug when the draft save carries an unusable slug', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.updateDraft('draft-1', { slug: '-' });
@@ -1603,7 +1603,7 @@ describe('ProductsService', () => {
       });
 
       it('replaces the variant set wholesale when variants are provided', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.updateDraft('draft-1', {
@@ -1633,7 +1633,7 @@ describe('ProductsService', () => {
       });
 
       it('leaves existing variants untouched when variants are omitted', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.updateDraft('draft-1', { name: 'Renamed Draft' });
@@ -1646,7 +1646,7 @@ describe('ProductsService', () => {
       });
 
       it('clears stale variant rows when switching back to a simple product', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue({
           ...draftProduct,
           type: 'variable',
         });
@@ -1659,7 +1659,7 @@ describe('ProductsService', () => {
       });
 
       it('preserves existing tags when tags are omitted from the autosave', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.updateDraft('draft-1', { name: 'No Tags Sent' });
@@ -1668,7 +1668,7 @@ describe('ProductsService', () => {
       });
 
       it('clears tag links when tags are explicitly emptied', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.productTag.findMany as jest.Mock).mockResolvedValue([
           { tagId: 'tag-1' },
@@ -1684,7 +1684,7 @@ describe('ProductsService', () => {
       });
 
       it('drops DTO-only categoryIds instead of passing them to Prisma', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.updateDraft('draft-1', {
@@ -1702,7 +1702,7 @@ describe('ProductsService', () => {
       });
 
       it('drops variant attribute rows without an attributeValueId', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.updateDraft('draft-1', {
@@ -1727,7 +1727,7 @@ describe('ProductsService', () => {
       });
 
       it('never stores a no-alphanumeric slug on update (keeps the stored slug)', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
 
         await service.updateDraft('draft-1', { slug: '-' });
@@ -1737,7 +1737,7 @@ describe('ProductsService', () => {
       });
 
       it('maps post-update media failures to a named error, not a bare 500', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
         (media.syncEntityImages as jest.Mock).mockRejectedValue({
           code: 'P2003',
@@ -1752,7 +1752,7 @@ describe('ProductsService', () => {
 
     describe('publishDraft', () => {
       it('activates a complete draft and replaces variants', async () => {
-        (prisma.product.findUnique as jest.Mock)
+        (prisma.product.findFirst as jest.Mock)
           .mockResolvedValueOnce(draftProduct)
           .mockResolvedValueOnce(null);
         (prisma.product.update as jest.Mock).mockResolvedValue({
@@ -1782,7 +1782,7 @@ describe('ProductsService', () => {
       });
 
       it('keeps the stored slug when the publish payload carries "-"', async () => {
-        (prisma.product.findUnique as jest.Mock)
+        (prisma.product.findFirst as jest.Mock)
           .mockResolvedValueOnce(draftProduct)
           .mockResolvedValueOnce(null);
         (prisma.product.update as jest.Mock).mockResolvedValue({
@@ -1803,7 +1803,7 @@ describe('ProductsService', () => {
       });
 
       it('regenerates an invalid stored slug from the name on publish', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce({
           ...draftProduct,
           slug: '-',
         });
@@ -1827,7 +1827,7 @@ describe('ProductsService', () => {
         (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
           true,
         );
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce({
           ...draftProduct,
           availabilityMode: 'MANAGED_STOCK',
           manageStock: true,
@@ -1860,7 +1860,7 @@ describe('ProductsService', () => {
       });
 
       it('rejects unnamed drafts', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(
           draftProduct,
         );
 
@@ -1874,7 +1874,7 @@ describe('ProductsService', () => {
       });
 
       it('rejects negative base price', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce(
           draftProduct,
         );
 
@@ -1884,7 +1884,7 @@ describe('ProductsService', () => {
       });
 
       it('rejects publishing a non-draft record', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce(
           mockProduct,
         );
 
@@ -1894,7 +1894,7 @@ describe('ProductsService', () => {
       });
 
       it('rejects sale price above base price', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce({
           ...draftProduct,
           salePrice: null,
         });
@@ -1910,7 +1910,7 @@ describe('ProductsService', () => {
       });
 
       it('rejects a variable draft with zero variants', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce({
           ...draftProduct,
           type: 'variable',
           salePrice: null,
@@ -1925,7 +1925,7 @@ describe('ProductsService', () => {
       });
 
       it('rejects a variant SKU already held by another product with a named conflict', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce(
           draftProduct,
         );
         (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue({
@@ -1945,7 +1945,7 @@ describe('ProductsService', () => {
 
     describe('update() on drafts', () => {
       it('never activates a draft through the generic edit path', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
+        (prisma.product.findFirst as jest.Mock).mockResolvedValueOnce(
           draftProduct,
         );
         (prisma.product.update as jest.Mock).mockResolvedValue({
@@ -2071,7 +2071,7 @@ describe('ProductsService', () => {
 
     describe('syncEffectivePrice', () => {
       it('writes the variable minimum when the stored value drifted', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue({
           id: 'prod-1',
           type: 'variable',
           basePrice: 2000,
@@ -2096,7 +2096,7 @@ describe('ProductsService', () => {
       });
 
       it('writes nothing when the stored value already matches', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue({
           id: 'prod-1',
           type: 'simple',
           basePrice: 1000,
@@ -2112,7 +2112,7 @@ describe('ProductsService', () => {
       });
 
       it('returns null for a missing product', async () => {
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue(null);
         await expect(service.syncEffectivePrice('ghost')).resolves.toBeNull();
         expect(prisma.product.update).not.toHaveBeenCalled();
       });
@@ -2324,7 +2324,7 @@ describe('ProductsService', () => {
 
     describe('updateVariant → effectivePrice maintenance', () => {
       it('recomputes the parent sort price from the post-edit variant set', async () => {
-        (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue(
           mockVariant,
         );
         (prisma.productVariant.update as jest.Mock).mockResolvedValue({
@@ -2332,7 +2332,7 @@ describe('ProductsService', () => {
           price: 600,
           salePrice: 550,
         });
-        (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.product.findFirst as jest.Mock).mockResolvedValue({
           id: 'prod-1',
           type: 'variable',
           basePrice: 2000,
@@ -2420,7 +2420,7 @@ describe('ProductsService', () => {
     });
 
     it('releases live reservations + clears already-deducted flags, ending at reserved 0', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(
         simpleProduct(2),
       );
       (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([
@@ -2494,7 +2494,7 @@ describe('ProductsService', () => {
     });
 
     it('already-deducted history rows clear their flags with NO counter move', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(
         simpleProduct(0),
       );
       (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([
@@ -2530,7 +2530,7 @@ describe('ProductsService', () => {
     });
 
     it('zero reservations behaves exactly as before (one qty clearing entry, nothing else)', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(
         simpleProduct(0),
       );
       (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([]);
@@ -2555,7 +2555,7 @@ describe('ProductsService', () => {
     });
 
     it('variable product: a live reservation releases the VARIANT counter, not the product row', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({
         type: 'variable',
         managedStockQuantity: 0,
         reservedStock: 0,
@@ -2600,7 +2600,7 @@ describe('ProductsService', () => {
     });
 
     it('combo-component lines release the component product counter and clear their flags', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(
         simpleProduct(2),
       );
       (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([]);
@@ -2637,7 +2637,7 @@ describe('ProductsService', () => {
     });
 
     it('orphaned reserved units with no backing line are zeroed by the residual sweep', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue(
         simpleProduct(3),
       );
       (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([]);

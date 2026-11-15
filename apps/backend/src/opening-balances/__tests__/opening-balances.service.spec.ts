@@ -24,16 +24,16 @@ describe('OpeningBalancesService', () => {
           useValue: {
             openingBalance: {
               findMany: jest.fn().mockResolvedValue([mockBalance]),
-              findUnique: jest.fn().mockResolvedValue(mockBalance),
+              findFirst: jest.fn().mockResolvedValue(mockBalance),
               upsert: jest.fn().mockResolvedValue(mockBalance),
             },
             account: {
-              findUnique: jest
+              findFirst: jest
                 .fn()
                 .mockResolvedValue({ id: 'acc-1', name: 'Cash' }),
             },
             financialPeriod: {
-              findUnique: jest
+              findFirst: jest
                 .fn()
                 .mockResolvedValue({ id: 'fp-1', isClosed: false }),
             },

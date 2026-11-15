@@ -90,7 +90,7 @@ describe('POST /system-settings/canonical_domain', () => {
   function mockSetController() {
     const prisma = {
       systemSetting: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         upsert: jest
           .fn()
           .mockImplementation(async ({ create }: any) => create),

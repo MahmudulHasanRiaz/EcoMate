@@ -48,12 +48,12 @@ describe('JobApplicationsService', () => {
     featureFlags = { canUse: jest.fn().mockReturnValue(true) };
     prisma = {
       jobPosting: {
-        findUnique: jest.fn().mockResolvedValue(posting),
+        findFirst: jest.fn().mockResolvedValue(posting),
       },
       jobApplication: {
         findMany: jest.fn().mockResolvedValue([application]),
         count: jest.fn().mockResolvedValue(1),
-        findUnique: jest.fn().mockResolvedValue(application),
+        findFirst: jest.fn().mockResolvedValue(application),
         create: jest
           .fn()
           .mockImplementation(({ data }) => ({ ...application, ...data })),
@@ -179,7 +179,7 @@ describe('JobApplicationsService', () => {
     });
 
     it('404s an unknown or unpublished posting', async () => {
-      prisma.jobPosting.findUnique.mockResolvedValue(null);
+      prisma.jobPosting.findFirst.mockResolvedValue(null);
       await expect(
         service.apply('ghost', dto as any, {
           buffer: PDF,
@@ -189,7 +189,7 @@ describe('JobApplicationsService', () => {
     });
 
     it('rejects applying to a DRAFT posting', async () => {
-      prisma.jobPosting.findUnique.mockResolvedValue({
+      prisma.jobPosting.findFirst.mockResolvedValue({
         ...posting,
         status: 'DRAFT',
       });
@@ -231,7 +231,7 @@ describe('JobApplicationsService', () => {
     });
 
     it('rejects any move out of REJECTED (terminal)', async () => {
-      prisma.jobApplication.findUnique.mockResolvedValue({
+      prisma.jobApplication.findFirst.mockResolvedValue({
         ...application,
         status: 'REJECTED',
       });
@@ -264,7 +264,7 @@ describe('JobApplicationsService', () => {
     });
 
     it('refuses when the application has no CV', async () => {
-      prisma.jobApplication.findUnique.mockResolvedValue({
+      prisma.jobApplication.findFirst.mockResolvedValue({
         ...application,
         cvUrl: null,
       });
@@ -295,7 +295,7 @@ describe('JobApplicationsService', () => {
     });
 
     it('404s when the CV was deleted', async () => {
-      prisma.jobApplication.findUnique.mockResolvedValue({
+      prisma.jobApplication.findFirst.mockResolvedValue({
         ...application,
         cvUrl: null,
       });
@@ -305,7 +305,7 @@ describe('JobApplicationsService', () => {
     });
 
     it('refuses a cvUrl outside the private namespace', async () => {
-      prisma.jobApplication.findUnique.mockResolvedValue({
+      prisma.jobApplication.findFirst.mockResolvedValue({
         ...application,
         cvUrl: '/uploads/evil.pdf',
       });

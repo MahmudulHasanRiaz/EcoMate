@@ -152,7 +152,7 @@ describe('LandingPagesService — custom-code validation on save', () => {
       landingPage: {
         create: jest.fn().mockResolvedValue({ id: 'lp-1', slug: 'sale' }),
         update: jest.fn().mockResolvedValue({ id: 'lp-1', slug: 'sale' }),
-        findUnique: jest.fn().mockResolvedValue({ id: 'lp-1', slug: 'sale' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'lp-1', slug: 'sale' }),
       },
     };
     return { svc: new LandingPagesService(prisma as any), prisma };

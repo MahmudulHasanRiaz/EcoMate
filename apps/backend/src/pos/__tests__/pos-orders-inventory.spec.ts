@@ -87,11 +87,11 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
           provide: PrismaService,
           useValue: {
             $transaction: jest.fn(),
-            posSession: { findUnique: jest.fn() },
-            product: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn() },
-            productVariant: { findMany: jest.fn(), findUnique: jest.fn() },
+            posSession: { findFirst: jest.fn() },
+            product: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
+            productVariant: { findMany: jest.fn(), findFirst: jest.fn() },
             combo: { findMany: jest.fn() },
-            order: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
+            order: { findFirst: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
             orderStatus: { findFirst: jest.fn() },
             orderCounter: { upsert: jest.fn() },
             orderItem: {
@@ -295,7 +295,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
       (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(true);
       // WS4: the physical/network answer is for INVENTORY_CONTROLLED
       // products; the mode is read from the product row first.
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({
         availabilityMode: 'INVENTORY_CONTROLLED',
       });
       (stock.checkPhysicalAvailability as jest.Mock).mockResolvedValue({
@@ -332,14 +332,14 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
 
   describe('getSessionShowroom', () => {
     it('returns showroomId for valid session', async () => {
-      (prisma.posSession.findUnique as jest.Mock).mockResolvedValue({ showroomId: 'showroom-1' });
+      (prisma.posSession.findFirst as jest.Mock).mockResolvedValue({ showroomId: 'showroom-1' });
 
       const result = await service.getSessionShowroom('session-1');
       expect(result.showroomId).toBe('showroom-1');
     });
 
     it('throws for missing session', async () => {
-      (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.getSessionShowroom('invalid-session'))
         .rejects.toThrow(BadRequestException);
@@ -460,7 +460,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
         reserved: 0,
         available: true,
       });
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({ name: 'Test Product' });
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({ name: 'Test Product' });
       (prisma.stockTransfer.create as jest.Mock).mockResolvedValue({ id: 'trf-1' });
       (prisma.physicalInventory.findFirst as jest.Mock).mockResolvedValue({
         quantity: 100,
@@ -472,7 +472,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
     // inventory rows. Validating the quantity against the PRODUCT total would
     // let a request move stock that belongs to a sibling variant.
     it('rejects a quantity the exact variant cannot cover, even if the product total can', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({
         name: 'Thobe',
         type: 'variable',
       });
@@ -502,7 +502,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
     });
 
     it('allows a quantity the exact variant can cover', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({
         name: 'Thobe',
         type: 'variable',
       });
@@ -746,7 +746,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
     });
 
     it('refuses a variable product request that does not name a variant', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({
         type: 'variable',
         name: 'Test Variable Products',
       });
@@ -764,7 +764,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
     });
 
     it('accepts a variable product once the variant is named', async () => {
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({
         type: 'variable',
         name: 'Test Variable Products',
       });
@@ -801,9 +801,9 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
 
   describe('create with cross-warehouse items', () => {
     function setupMocks() {
-      (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(mockSession);
+      (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(mockSession);
       (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
-      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.product.findFirst as jest.Mock).mockResolvedValue({
         id: 'prod-1',
         availabilityMode: 'INVENTORY_CONTROLLED',
         manageStock: true,

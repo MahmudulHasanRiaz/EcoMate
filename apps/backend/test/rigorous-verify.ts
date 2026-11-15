@@ -81,7 +81,7 @@ async function api(method: string, path: string, body?: any, headers?: Record<st
 }
 
 async function snap(pid: string, wh: string) {
-  const p = await prisma.product.findUnique({ where: { id: pid } }) as any;
+  const p = await prisma.product.findFirst({ where: { id: pid } }) as any;
   const pi = await prisma.physicalInventory.findFirst({
     where: { productId: pid, warehouseId: wh },
   });
@@ -310,7 +310,7 @@ async function verifyCycleIsolation(token: string, adminId: string, customerId: 
 
   // 2. Cancel Order 1 (Terminates cycle 1)
   await api('PUT', `/orders/${order1Id}/status`, { statusId: ST.cancelled }, { 'Authorization': `Bearer ${token}` });
-  const cycleAfterCancel1 = await prisma.orderStockCycle.findUnique({ where: { id: activeCycle1!.id } });
+  const cycleAfterCancel1 = await prisma.orderStockCycle.findFirst({ where: { id: activeCycle1!.id } });
   isolationResults.push({
     step: 'cycle1_terminated',
     ok: cycleAfterCancel1?.status === 'TERMINATED',
@@ -345,7 +345,7 @@ async function verifyCycleIsolation(token: string, adminId: string, customerId: 
   assertSnap(isolationResults, 'idempotent_cancel', 'cancel2_stock_same', postCancel1.p, postCancel2.p, 'same', 'managedStockQuantity');
   assertSnap(isolationResults, 'idempotent_cancel', 'cancel2_pi_rsv_same', postCancel1.pi, postCancel2.pi, 'same', 'reservedQuantity');
   
-  const cycleCancel2 = await prisma.orderStockCycle.findUnique({ where: { id: activeCycle2!.id } });
+  const cycleCancel2 = await prisma.orderStockCycle.findFirst({ where: { id: activeCycle2!.id } });
   isolationResults.push({
     step: 'idempotent_cancel_ledger_stable',
     ok: cycleCancel2?.status === 'TERMINATED',

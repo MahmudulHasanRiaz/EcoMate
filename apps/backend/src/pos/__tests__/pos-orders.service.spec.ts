@@ -79,12 +79,12 @@ describe('PosOrdersService', () => {
             $transaction: jest.fn(),
             $queryRawUnsafe: jest.fn().mockResolvedValue([]),
             posSession: {
-              findUnique: jest.fn(),
+              findFirst: jest.fn(),
               findFirst: jest.fn(),
             },
             product: {
               findMany: jest.fn(),
-              findUnique: jest.fn(),
+              findFirst: jest.fn(),
               count: jest.fn(),
             },
             productVariant: {
@@ -95,7 +95,7 @@ describe('PosOrdersService', () => {
             },
             order: {
               findFirst: jest.fn(),
-              findUnique: jest.fn(),
+              findFirst: jest.fn(),
               create: jest.fn(),
               findMany: jest.fn(),
             },
@@ -112,7 +112,7 @@ describe('PosOrdersService', () => {
               create: jest.fn(),
             },
             paymentGateway: {
-              findUnique: jest.fn(),
+              findFirst: jest.fn(),
               findFirst: jest.fn(),
             },
           },
@@ -249,7 +249,7 @@ describe('PosOrdersService', () => {
   describe('create', () => {
     describe('session validation', () => {
       it('should reject non-existent session', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(null);
 
         await expect(
           service.create(
@@ -269,7 +269,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject closed session', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue({
           ...mockSession,
           status: 'closed',
         });
@@ -292,7 +292,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject foreign session (different cashier)', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue({
           ...mockSession,
           cashierId: 'other-cashier',
         });
@@ -317,7 +317,7 @@ describe('PosOrdersService', () => {
 
     describe('price and item validation', () => {
       it('should reject forged item price (client sends different price than DB)', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -336,7 +336,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject non-existent variant', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([]);
@@ -357,7 +357,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject inactive variant', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
@@ -378,7 +378,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject inactive product', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([
@@ -399,7 +399,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject non-existent product', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
@@ -418,7 +418,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject negative quantity', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -437,7 +437,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject zero quantity', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -456,7 +456,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject item with no productId, variantId, or comboId', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
 
@@ -474,7 +474,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject variant/product mismatch when item.productId differs from variant.productId', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
@@ -497,7 +497,7 @@ describe('PosOrdersService', () => {
 
     describe('discount validation', () => {
       it('should reject percentage discount > 100', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -518,7 +518,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject negative percentage discount', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -539,7 +539,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject negative flat discount', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -560,7 +560,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject flat discount exceeding subtotal', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -581,7 +581,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject negative item-level percentage discount', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(mockSession);
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(mockSession);
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
 
         const dto = {
@@ -594,7 +594,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject item-level percentage discount > 100', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(mockSession);
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(mockSession);
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
 
         const dto = {
@@ -607,7 +607,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject item-level flat discount exceeding line total', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(mockSession);
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(mockSession);
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
 
         const dto = {
@@ -620,7 +620,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject non-finite item discount', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(mockSession);
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(mockSession);
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
 
         const dto = {
@@ -635,7 +635,7 @@ describe('PosOrdersService', () => {
 
     describe('payment validation', () => {
       it('should reject payment splits exceeding computed total', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -667,7 +667,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should accept payment splits summing to exactly the total', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -694,7 +694,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject payment splits summing to less than total (exact required for PAID)', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -721,7 +721,7 @@ describe('PosOrdersService', () => {
 
     describe('successful creation', () => {
       function setupSuccessMocks() {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
@@ -830,7 +830,7 @@ describe('PosOrdersService', () => {
 
       it('stamps the configured account on POS payments (legacy CASH resolves case-insensitively)', async () => {
         setupSuccessMocks();
-        (prisma.paymentGateway.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.paymentGateway.findFirst as jest.Mock).mockResolvedValue(null);
         (prisma.paymentGateway.findFirst as jest.Mock).mockResolvedValue({
           accountId: 'acc-cash',
         });
@@ -856,7 +856,7 @@ describe('PosOrdersService', () => {
 
       it('captures an offline Purchase snapshot for counter sales (physical_store)', async () => {
         setupSuccessMocks();
-        (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.order.findFirst as jest.Mock).mockResolvedValue({
           id: 'order-1',
           total: 2000,
           createdAt: new Date('2025-01-15'),
@@ -923,7 +923,7 @@ describe('PosOrdersService', () => {
       });
 
       it('should reject client price matching basePrice when salePrice is set', async () => {
-        (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
           mockSession,
         );
         (prisma.product.findMany as jest.Mock).mockResolvedValue([
@@ -1035,7 +1035,7 @@ describe('PosOrdersService', () => {
       const id = await (service as any).generateDisplayId();
 
       expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
-        where: { date_family: { date: dateStr, family: 'POS' } },
+        where: {  date: dateStr, family: 'POS'  },
         create: { date: dateStr, family: 'POS', seq: 1 },
         update: { seq: { increment: 1 } },
       });

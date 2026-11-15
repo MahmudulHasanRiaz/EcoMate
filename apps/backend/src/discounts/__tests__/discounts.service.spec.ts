@@ -137,7 +137,7 @@ describe('DiscountsService (D19)', () => {
       category: { findMany: jest.fn().mockResolvedValue([{ id: 'c1' }]) },
       product: { findMany: jest.fn().mockResolvedValue([{ id: 'p1' }]) },
       discount: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         create: jest.fn().mockImplementation(({ data }: any) => ({
           id: 'd1',
           ...data,
@@ -196,7 +196,7 @@ describe('DiscountsService (D19)', () => {
   });
 
   it('refuses to delete a discount that has been applied to orders', async () => {
-    prisma.discount.findUnique.mockResolvedValue({
+    prisma.discount.findFirst.mockResolvedValue({
       id: 'd1',
       _count: { applications: 3 },
     });
@@ -205,7 +205,7 @@ describe('DiscountsService (D19)', () => {
   });
 
   it('deletes an never-applied discount', async () => {
-    prisma.discount.findUnique.mockResolvedValue({
+    prisma.discount.findFirst.mockResolvedValue({
       id: 'd1',
       _count: { applications: 0 },
     });
@@ -257,7 +257,7 @@ describe('DiscountsService (D19)', () => {
   });
 
   it('V2: update changing scope away from PRODUCT clears variantIds', async () => {
-    prisma.discount.findUnique.mockResolvedValue({
+    prisma.discount.findFirst.mockResolvedValue({
       id: 'd1',
       scope: 'PRODUCT',
       categoryIds: [],
@@ -275,7 +275,7 @@ describe('DiscountsService (D19)', () => {
   });
 
   it('update with endsAt: null reopens an ended campaign', async () => {
-    prisma.discount.findUnique.mockResolvedValue({
+    prisma.discount.findFirst.mockResolvedValue({
       id: 'd1',
       scope: 'SITEWIDE',
       categoryIds: [],

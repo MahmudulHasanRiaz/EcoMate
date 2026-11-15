@@ -68,24 +68,24 @@ describe('Order billing snapshot separation', () => {
       update: jest.fn().mockResolvedValue({ id: 'cust-1' }),
     };
     tx = {
-      order: { update: jest.fn(), findUnique: jest.fn() },
+      order: { update: jest.fn(), findFirst: jest.fn() },
       orderItem: { deleteMany: jest.fn(), createMany: jest.fn().mockResolvedValue({ count: 0 }) },
       payment: { deleteMany: jest.fn() },
       customerProfile,
-      orderLock: { findUnique: jest.fn().mockResolvedValue(null) },
+      orderLock: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     prisma = {
       ...tx,
       $transaction: jest.fn(async (cb: any) => cb(tx)),
       order: {
-        findUnique: jest.fn().mockResolvedValue(mockOrder),
+        findFirst: jest.fn().mockResolvedValue(mockOrder),
         update: jest.fn().mockResolvedValue(mockOrder),
         count: jest.fn().mockResolvedValue(0),
       },
       customerProfile,
       orderItem: tx.orderItem,
       payment: tx.payment,
-      orderLock: { findUnique: jest.fn().mockResolvedValue(null) },
+      orderLock: { findFirst: jest.fn().mockResolvedValue(null) },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -144,7 +144,7 @@ describe('Order billing snapshot separation', () => {
   });
 
   it('a shipping edit does not implicitly edit the billing snapshot', async () => {
-    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.order.findFirst as jest.Mock).mockResolvedValue({
       ...mockOrder,
       shippingAddress: SHIPPING,
       billingAddress: BILLING,
@@ -158,7 +158,7 @@ describe('Order billing snapshot separation', () => {
   });
 
   it('a billing edit does not implicitly edit the shipping snapshot', async () => {
-    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.order.findFirst as jest.Mock).mockResolvedValue({
       ...mockOrder,
       shippingAddress: SHIPPING,
       billingAddress: BILLING,
@@ -170,7 +170,7 @@ describe('Order billing snapshot separation', () => {
   });
 
   it('leaves an existing billing snapshot completely intact when neither is sent', async () => {
-    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.order.findFirst as jest.Mock).mockResolvedValue({
       ...mockOrder,
       shippingAddress: SHIPPING,
       billingAddress: BILLING,

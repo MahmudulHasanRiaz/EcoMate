@@ -33,7 +33,7 @@ export class CourierSettlementSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async raw(key: string): Promise<string | null> {
-    const s = await this.prisma.systemSetting.findUnique({ where: { key } });
+    const s = await this.prisma.systemSetting.findFirst({ where: { key } });
     return s?.value ?? null;
   }
 
@@ -68,7 +68,7 @@ export class CourierSettlementSettingsService {
   async cashAccountId(): Promise<string> {
     const configured = await this.defaultCashAccountId();
     if (configured) {
-      const account = await this.prisma.account.findUnique({ where: { id: configured } });
+      const account = await this.prisma.account.findFirst({ where: { id: configured } });
       if (account && !account.isGroup) return account.id;
     }
     return (await this.ensureAccount(

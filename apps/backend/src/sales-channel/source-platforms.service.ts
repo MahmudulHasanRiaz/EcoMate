@@ -84,7 +84,7 @@ export class SourcePlatformsService {
   }
 
   async capabilitiesFor(slug: string): Promise<string[] | null> {
-    const row = await this.prisma.sourcePlatform.findUnique({
+    const row = await this.prisma.sourcePlatform.findFirst({
       where: { slug },
       select: { capabilities: true, enabled: true },
     });

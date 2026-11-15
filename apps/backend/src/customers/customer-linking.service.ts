@@ -9,12 +9,12 @@ export class CustomerLinkingService {
   async linkByEmail(customerProfileId: string, email: string) {
     if (!email) return;
 
-    const baUser = await baPrisma.betterAuthUser.findUnique({
+    const baUser = await baPrisma.betterAuthUser.findFirst({
       where: { email },
     });
     if (!baUser) return;
 
-    const profile = await this.prisma.customerProfile.findUnique({
+    const profile = await this.prisma.customerProfile.findFirst({
       where: { id: customerProfileId },
     });
     if (profile?.betterAuthUserId) return;

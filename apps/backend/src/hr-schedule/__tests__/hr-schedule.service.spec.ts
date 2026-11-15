@@ -12,7 +12,7 @@ describe('HrScheduleService', () => {
   beforeEach(async () => {
     const prismaMock = {
       employee: {
-        findUnique: jest.fn().mockResolvedValue(mockEmployee),
+        findFirst: jest.fn().mockResolvedValue(mockEmployee),
       },
       weeklyOff: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -66,7 +66,7 @@ describe('HrScheduleService', () => {
     });
 
     it('should throw NotFound when employee missing', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(service.getSchedule('nope')).rejects.toThrow(
         NotFoundException,
       );
@@ -190,7 +190,7 @@ describe('HrScheduleService', () => {
     });
 
     it('should throw NotFound when employee missing', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(
         service.setSchedule('nope', { days: [0] }),
       ).rejects.toThrow(NotFoundException);
@@ -231,7 +231,7 @@ describe('HrScheduleService', () => {
     });
 
     it('should throw NotFound when employee missing', async () => {
-      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(service.getHistory('nope')).rejects.toThrow(
         NotFoundException,
       );

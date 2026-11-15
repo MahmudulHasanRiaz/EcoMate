@@ -58,7 +58,7 @@ describe('RefundsService — cancel a dispatched order with the refund', () => {
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
       $executeRaw: jest.fn().mockResolvedValue(1),
       order: {
-        findUnique: jest.fn().mockResolvedValue({ ...order }),
+        findFirst: jest.fn().mockResolvedValue({ ...order }),
         update: jest.fn().mockResolvedValue({ ...order }),
       },
       orderStatus: {
@@ -75,7 +75,7 @@ describe('RefundsService — cancel a dispatched order with the refund', () => {
       payment: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 2000 } }),
         findFirst: jest.fn().mockResolvedValue({ id: 'pay-1' }),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({ id: 'pay-neg-1' }),
       },

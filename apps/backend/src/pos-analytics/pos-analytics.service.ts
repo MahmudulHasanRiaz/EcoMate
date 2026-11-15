@@ -98,7 +98,7 @@ export class PosAnalyticsService {
         'POS session required (x-pos-session-id header)',
       );
     }
-    const session = await this.prisma.posSession.findUnique({
+    const session = await this.prisma.posSession.findFirst({
       where: { id: req.sessionId },
       include: { showroom: true, cashier: true },
     });

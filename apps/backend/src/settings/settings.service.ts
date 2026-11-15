@@ -11,7 +11,7 @@ export class SettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getSettings(userId: string) {
-    let settings = await this.prisma.userSettings.findUnique({
+    let settings = await this.prisma.userSettings.findFirst({
       where: { userId },
     });
 

@@ -22,7 +22,7 @@ describe('DispatchService', () => {
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({
           id: 'd-1',
@@ -36,13 +36,13 @@ describe('DispatchService', () => {
         groupBy: jest.fn().mockResolvedValue([]),
       },
       order: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       orderStatus: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       courierDispatchLog: {
         create: jest.fn().mockResolvedValue({}),
@@ -182,14 +182,14 @@ describe('DispatchService', () => {
 
   it('maps dispatch RETURNED to order "Return Pending" (never a raw Returned)', async () => {
     // Dispatch claim: currently RETURN_PENDING, claimed to RETURNED.
-    prisma.dispatch.findUnique.mockResolvedValueOnce({
+    prisma.dispatch.findFirst.mockResolvedValueOnce({
       id: 'd-1',
       status: 'RETURN_PENDING',
       orderId: 'order-1',
     });
     prisma.dispatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
     // findOne result used inside the transaction (claim winner).
-    prisma.dispatch.findUnique.mockResolvedValueOnce({
+    prisma.dispatch.findFirst.mockResolvedValueOnce({
       id: 'd-1',
       orderId: 'order-1',
       status: 'RETURNED',
@@ -198,7 +198,7 @@ describe('DispatchService', () => {
       productMapping: null,
     });
     prisma.order = {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Delivered' },
@@ -207,7 +207,7 @@ describe('DispatchService', () => {
       update: jest.fn().mockResolvedValue({}),
     };
     prisma.orderStatus = {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'status-return-pending',
         name: 'Return Pending',
       }),
@@ -230,7 +230,7 @@ describe('DispatchService', () => {
   });
 
   it('courier DELIVERED sync emits the OrderDelivered lifecycle event for the genuine transition', async () => {
-    prisma.dispatch.findUnique
+    prisma.dispatch.findFirst
       .mockResolvedValueOnce({ id: 'd-1', status: 'ASSIGNED_TO_RIDER', orderId: 'order-1' })
       .mockResolvedValueOnce({
         id: 'd-1',
@@ -247,7 +247,7 @@ describe('DispatchService', () => {
       customer: null,
     };
     prisma.order = {
-      findUnique: jest
+      findFirst: jest
         .fn()
         .mockResolvedValueOnce({
           id: 'order-1',
@@ -259,7 +259,7 @@ describe('DispatchService', () => {
       update: jest.fn().mockResolvedValue({}),
     };
     prisma.orderStatus = {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'status-delivered',
         name: 'Delivered',
       }),
@@ -286,7 +286,7 @@ describe('DispatchService', () => {
   // ── Event timestamps: the authoritative times for KPI/reporting ──────
   describe('updateStatus persists pickup/delivery event timestamps', () => {
     function mockClaim(overrides: Record<string, any>) {
-      prisma.dispatch.findUnique
+      prisma.dispatch.findFirst
         .mockResolvedValueOnce({
           id: 'd-1',
           status: 'HANDED_OVER',
@@ -307,7 +307,7 @@ describe('DispatchService', () => {
       prisma.dispatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
       prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
       prisma.order = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'order-1',
           trashedAt: null,
           status: { name: 'Shipping' },
@@ -316,7 +316,7 @@ describe('DispatchService', () => {
         update: jest.fn().mockResolvedValue({}),
       };
       prisma.orderStatus = {
-        findUnique: jest.fn().mockResolvedValue({ id: 's', name: 'Shipping' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 's', name: 'Shipping' }),
       };
     }
 
@@ -419,7 +419,7 @@ describe('DispatchService', () => {
     it('advances the order from the status that was applied, not a stale read', async () => {
       // The in-transaction dispatch read reports the OLD status; the order
       // sync must still use the status this transition applied.
-      prisma.dispatch.findUnique
+      prisma.dispatch.findFirst
         .mockResolvedValueOnce({
           id: 'd-1',
           status: 'ASSIGNED_TO_RIDER',
@@ -439,7 +439,7 @@ describe('DispatchService', () => {
       prisma.dispatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
       prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
       prisma.order = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'order-1',
           trashedAt: null,
           status: { name: 'Shipping' },
@@ -448,7 +448,7 @@ describe('DispatchService', () => {
         update: jest.fn().mockResolvedValue({}),
       };
       prisma.orderStatus = {
-        findUnique: jest
+        findFirst: jest
           .fn()
           .mockResolvedValue({ id: 'status-delivered', name: 'Delivered' }),
       };
@@ -466,7 +466,7 @@ describe('DispatchService', () => {
   });
 
   it('never writes a Returned order status via then dispatch sync path', async () => {
-    prisma.dispatch.findUnique
+    prisma.dispatch.findFirst
       .mockResolvedValueOnce({ id: 'd-1', status: 'RETURN_PENDING', orderId: 'order-1' })
       .mockResolvedValueOnce({
         id: 'd-1',
@@ -478,7 +478,7 @@ describe('DispatchService', () => {
       });
     prisma.dispatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
     prisma.order = {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Return Pending' },
@@ -487,7 +487,7 @@ describe('DispatchService', () => {
       update: jest.fn().mockResolvedValue({}),
     };
     prisma.orderStatus = {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'status-returned',
         name: 'Returned',
       }),
@@ -505,7 +505,7 @@ describe('DispatchService', () => {
   });
 
   it('a staff member can manually move a Partial order forward via dispatch status change', async () => {
-    prisma.dispatch.findUnique
+    prisma.dispatch.findFirst
       .mockResolvedValueOnce({ id: 'd-1', status: 'PARTIAL', orderId: 'order-1' })
       .mockResolvedValueOnce({
         id: 'd-1',
@@ -517,7 +517,7 @@ describe('DispatchService', () => {
       });
     prisma.dispatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
     prisma.order = {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { id: 'status-partial', name: 'Partial' },
@@ -526,7 +526,7 @@ describe('DispatchService', () => {
       update: jest.fn().mockResolvedValue({}),
     };
     prisma.orderStatus = {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'status-return-pending',
         name: 'Return Pending',
       }),
@@ -588,12 +588,12 @@ describe('DispatchService', () => {
     it('reconciles: persists raw courier status AND updates dispatch status separately, advances order', async () => {
       tracking.getDispatchTracking.mockResolvedValue(trackingResult());
       prisma.dispatch.findFirst.mockResolvedValue(null); // no progress for cancel resolution
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Packed' },
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-shipping',
         name: 'Shipping',
       });
@@ -649,12 +649,12 @@ describe('DispatchService', () => {
 
       // The order never left Packed — e.g. the pickup webhook was missed and
       // the courier status was only ever recorded.
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Packed' },
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-delivered',
         name: 'Delivered',
       });
@@ -686,12 +686,12 @@ describe('DispatchService', () => {
       tracking.getDispatchTracking.mockResolvedValue(
         trackingResult({ currentStatus: 'order.in-transit' }),
       );
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Packed' },
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-shipping',
         name: 'Shipping',
       });
@@ -716,7 +716,7 @@ describe('DispatchService', () => {
       tracking.getDispatchTracking.mockResolvedValue(
         trackingResult({ currentStatus: 'in transit' }),
       );
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Packed' },
@@ -726,7 +726,7 @@ describe('DispatchService', () => {
         trashedAt: null,
         timeline: [],
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-shipping',
         name: 'Shipping',
       });
@@ -755,7 +755,7 @@ describe('DispatchService', () => {
       tracking.getDispatchTracking.mockResolvedValue(
         trackingResult({ currentStatus: 'in transit' }),
       );
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Packed' },
@@ -765,7 +765,7 @@ describe('DispatchService', () => {
         trashedAt: null,
         timeline: [],
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-shipping',
         name: 'Shipping',
       });
@@ -781,7 +781,7 @@ describe('DispatchService', () => {
         { ...dispatchRow, pickedUpAt: null, deliveredAt: null },
       ]);
       tracking.getDispatchTracking.mockResolvedValue(trackingResult());
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Shipping' },
@@ -791,7 +791,7 @@ describe('DispatchService', () => {
         trashedAt: null,
         timeline: [],
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-delivered',
         name: 'Delivered',
       });
@@ -815,7 +815,7 @@ describe('DispatchService', () => {
       tracking.getDispatchTracking.mockResolvedValue(
         trackingResult({ currentStatus: 'order.in-transit' }),
       );
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Shipping' },
@@ -1017,12 +1017,12 @@ describe('DispatchService', () => {
       tracking.getDispatchTracking.mockResolvedValue(
         trackingResult({ currentStatus: 'returned' }),
       );
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { id: 'status-partial', name: 'Partial' },
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-return-pending',
         name: 'Return Pending',
       });
@@ -1053,7 +1053,7 @@ describe('DispatchService', () => {
 
   describe('create — manual dispatch links the order for webhook/tracking resolution', () => {
     it('writes courierService/courierConsignmentId on the order when not already claimed (Pathao)', async () => {
-      prisma.dispatch.findUnique.mockResolvedValue(null); // no existing row
+      prisma.dispatch.findFirst.mockResolvedValue(null); // no existing row
       prisma.dispatch.create.mockResolvedValue({ id: 'd-new', courier: 'pathao', consignmentId: 'CG-001' });
 
       await service.create({
@@ -1080,7 +1080,7 @@ describe('DispatchService', () => {
     });
 
     it('never overwrites an order already claimed by a different consignment/courier', async () => {
-      prisma.dispatch.findUnique.mockResolvedValue(null);
+      prisma.dispatch.findFirst.mockResolvedValue(null);
 
       await service.create({
         orderId: 'order-1',
@@ -1102,7 +1102,7 @@ describe('DispatchService', () => {
     });
 
     it('links the order even when the dispatch row is flagged as a duplicate', async () => {
-      prisma.dispatch.findUnique.mockResolvedValue({
+      prisma.dispatch.findFirst.mockResolvedValue({
         id: 'd-existing',
         status: 'IN_TRANSIT',
         consignmentId: 'CG-001',
@@ -1121,7 +1121,7 @@ describe('DispatchService', () => {
     });
 
     it('persists productMapping quantities (whitelist-safe DTO) — drives remaining-fulfillment', async () => {
-      prisma.dispatch.findUnique.mockResolvedValue(null);
+      prisma.dispatch.findFirst.mockResolvedValue(null);
 
       await service.create({
         orderId: 'order-1',
@@ -1148,8 +1148,8 @@ describe('DispatchService', () => {
     });
 
     it('persists dispatch-time courierAmount via the shared collectable helper', async () => {
-      prisma.dispatch.findUnique.mockResolvedValue(null);
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.dispatch.findFirst.mockResolvedValue(null);
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         total: 1000,
         payments: [{ status: 'PAID', amount: 250 }],
@@ -1185,7 +1185,7 @@ describe('DispatchService', () => {
 
       // No consignment to dedupe on — the unique lookup would throw on
       // undefined, so it must be skipped for identifier-less rows.
-      expect(prisma.dispatch.findUnique).not.toHaveBeenCalled();
+      expect(prisma.dispatch.findFirst).not.toHaveBeenCalled();
       expect(prisma.dispatch.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -1208,7 +1208,7 @@ describe('DispatchService', () => {
         trackingCode: '',
       } as any);
 
-      expect(prisma.dispatch.findUnique).not.toHaveBeenCalled();
+      expect(prisma.dispatch.findFirst).not.toHaveBeenCalled();
       const createdData = prisma.dispatch.create.mock.calls[0][0].data;
       expect(createdData.consignmentId).toBeNull();
       expect(createdData.trackingCode ?? null).toBeNull();
@@ -1239,7 +1239,7 @@ describe('DispatchService', () => {
       }
       // The unique-where lookup only runs when a real consignment exists —
       // with no lookup and no '' sent, a P2002 cannot occur.
-      expect(prisma.dispatch.findUnique).not.toHaveBeenCalled();
+      expect(prisma.dispatch.findFirst).not.toHaveBeenCalled();
     });
 
     it('identifier-less create stamps courierService but never a consignment claim', async () => {
@@ -1257,7 +1257,7 @@ describe('DispatchService', () => {
     });
 
     it('identifier-less create keeps the courierAmount helper behavior', async () => {      prisma.dispatch.create.mockResolvedValue({ id: 'd-manual' });
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         total: 1000,
         payments: [{ status: 'PAID', amount: 250 }],
@@ -1281,7 +1281,7 @@ describe('DispatchService', () => {
 
   describe('manual dispatch cancel', () => {
     it('releases the order reservation through the shared cancel routine', async () => {
-      prisma.dispatch.findUnique
+      prisma.dispatch.findFirst
         .mockResolvedValueOnce({
           id: 'd-1',
           status: 'DISPATCHED',
@@ -1296,14 +1296,14 @@ describe('DispatchService', () => {
           orderId: 'order-1',
           courier: 'pathao',
         });
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Confirmed' },
         timeline: [],
         items: [],
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'st-cancelled',
         name: 'Cancelled',
       });

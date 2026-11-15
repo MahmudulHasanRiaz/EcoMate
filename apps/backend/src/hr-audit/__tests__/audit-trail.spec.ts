@@ -12,7 +12,7 @@ import { AttendanceDevicesService } from '../../attendance-devices/attendance-de
 function makePrismaMock() {
   return {
     employee: {
-      findUnique: jest.fn().mockResolvedValue({ id: 'emp1', joiningDate: new Date('2024-01-01'), status: 'active' }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'emp1', joiningDate: new Date('2024-01-01'), status: 'active' }),
       update: jest.fn().mockResolvedValue({}),
     },
     salaryStructure: {
@@ -24,44 +24,44 @@ function makePrismaMock() {
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     payslip: {
-      findUnique: jest.fn().mockResolvedValue({ id: 'ps1', status: 'approved', netPay: 50000 }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'ps1', status: 'approved', netPay: 50000 }),
       update: jest.fn().mockResolvedValue({}),
     },
     payrollPayment: {
       create: jest.fn().mockResolvedValue({ id: 'pay1' }),
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
       update: jest.fn().mockResolvedValue({ id: 'pay1', voidedAt: new Date(), voidedById: 'actor1', voidReason: 'test' }),
-      findUnique: jest.fn().mockResolvedValue({ id: 'pay1', payslipId: 'ps1', voidedAt: null }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'pay1', payslipId: 'ps1', voidedAt: null }),
     },
     commissionEarning: {
-      findUnique: jest.fn().mockResolvedValue({ id: 'ce1', status: 'approved', amount: 1000, orderId: 'ord1' }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'ce1', status: 'approved', amount: 1000, orderId: 'ord1' }),
     },
     commissionReversal: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'cr1' }),
     },
     order: {
-      findUnique: jest.fn().mockResolvedValue({ id: 'ord1', total: 10000 }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'ord1', total: 10000 }),
     },
     orderStatus: {
       findFirst: jest.fn().mockResolvedValue(null),
     },
     leaveRequest: {
       update: jest.fn().mockResolvedValue({ id: 'lr1' }),
-      findUnique: jest.fn().mockResolvedValue({ id: 'lr1', status: 'pending', startDate: new Date('2025-01-01'), endDate: new Date('2025-01-03'), employeeId: 'emp1', createdById: 'u1' }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'lr1', status: 'pending', startDate: new Date('2025-01-01'), endDate: new Date('2025-01-03'), employeeId: 'emp1', createdById: 'u1' }),
       findFirst: jest.fn().mockResolvedValue(null),
     },
     leaveType: {
-      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     attendanceDay: {
-      findUnique: jest.fn().mockResolvedValue({ id: 'ad1', status: 'present', workedMinutes: 480, breakMinutes: 60 }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'ad1', status: 'present', workedMinutes: 480, breakMinutes: 60 }),
     },
     attendanceAdjustment: {
       create: jest.fn().mockResolvedValue({ id: 'aa1' }),
     },
-    attendanceSession: { findUnique: jest.fn() },
-    attendanceBreak: { findUnique: jest.fn() },
+    attendanceSession: { findFirst: jest.fn() },
+    attendanceBreak: { findFirst: jest.fn() },
     $transaction: jest.fn(async (fn: any) => fn({
       salaryStructure: { updateMany: jest.fn().mockResolvedValue({ count: 0 }), create: jest.fn().mockResolvedValue({ id: 'ss1' }) },
       employee: { update: jest.fn().mockResolvedValue({}) },
@@ -96,7 +96,7 @@ describe('G-19/G-05/G-20 — HR audit trail (actor fields)', () => {
   });
 
   it('PayrollService.setSalaryStructure passes createdById', async () => {
-    prisma.employee.findUnique.mockResolvedValueOnce({ id: 'emp1', joiningDate: new Date('2024-01-01'), status: 'active' });
+    prisma.employee.findFirst.mockResolvedValueOnce({ id: 'emp1', joiningDate: new Date('2024-01-01'), status: 'active' });
     await payroll.setSalaryStructure(
       { employeeId: 'emp1', basicSalary: 50000, effectiveFrom: '2025-06-01' },
       'actor-123',
@@ -114,7 +114,7 @@ describe('G-19/G-05/G-20 — HR audit trail (actor fields)', () => {
   });
 
   it('EmployeesService.update writes EmploymentHistory with changedById', async () => {
-    prisma.employee.findUnique
+    prisma.employee.findFirst
       .mockResolvedValueOnce({
         id: 'emp1', status: 'active', employmentType: 'full_time',
         departmentId: 'd1', designationId: 'dg1', accessPresetId: null,
@@ -152,8 +152,8 @@ describe('G-19/G-05/G-20 — HR audit trail (actor fields)', () => {
   });
 
   it('HrPaymentsService.voidPayment records voidedById + voidReason', async () => {
-    prisma.payslip.findUnique.mockResolvedValueOnce({ id: 'ps1', status: 'paid', netPay: 50000 });
-    prisma.payrollPayment.findUnique.mockResolvedValueOnce({ id: 'pay1', payslipId: 'ps1', voidedAt: null, amount: 10000 });
+    prisma.payslip.findFirst.mockResolvedValueOnce({ id: 'ps1', status: 'paid', netPay: 50000 });
+    prisma.payrollPayment.findFirst.mockResolvedValueOnce({ id: 'pay1', payslipId: 'ps1', voidedAt: null, amount: 10000 });
     prisma.payrollPayment.aggregate.mockResolvedValueOnce({ _sum: { amount: 10000 } });
     const txMock = {
       payrollPayment: {
@@ -177,11 +177,11 @@ describe('G-19/G-05/G-20 — HR audit trail (actor fields)', () => {
   });
 
   it('CommissionsService.reverseEarning records reversedById', async () => {
-    prisma.commissionEarning.findUnique.mockResolvedValueOnce({
+    prisma.commissionEarning.findFirst.mockResolvedValueOnce({
       id: 'ce1', status: 'approved', amount: 1000, orderId: 'ord1',
     });
     prisma.commissionReversal.findFirst.mockResolvedValueOnce(null);
-    prisma.order.findUnique.mockResolvedValueOnce({ id: 'ord1', total: 10000 });
+    prisma.order.findFirst.mockResolvedValueOnce({ id: 'ord1', total: 10000 });
 
     await commissions.reverseEarning(
       'ce1',
@@ -197,7 +197,7 @@ describe('G-19/G-05/G-20 — HR audit trail (actor fields)', () => {
   });
 
   it('HrLeaveService.approveRequest records approvedById', async () => {
-    prisma.leaveRequest.findUnique.mockResolvedValueOnce({
+    prisma.leaveRequest.findFirst.mockResolvedValueOnce({
       id: 'lr1', status: 'pending', startDate: new Date('2025-01-01'),
       endDate: new Date('2025-01-03'), employeeId: 'emp1', createdById: 'u1',
     });
@@ -212,8 +212,8 @@ describe('G-19/G-05/G-20 — HR audit trail (actor fields)', () => {
   });
 
   it('HrAttendanceService.adjust records adjustedById', async () => {
-    prisma.employee.findUnique.mockResolvedValueOnce({ id: 'emp1' });
-    prisma.attendanceDay.findUnique.mockResolvedValueOnce({
+    prisma.employee.findFirst.mockResolvedValueOnce({ id: 'emp1' });
+    prisma.attendanceDay.findFirst.mockResolvedValueOnce({
       id: 'ad1', status: 'present', workedMinutes: 480, breakMinutes: 60,
     });
     const txMock = {

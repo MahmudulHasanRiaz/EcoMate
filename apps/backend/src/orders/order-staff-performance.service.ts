@@ -108,20 +108,20 @@ export class OrderStaffPerformanceService {
     if (!userId) return null;
 
     // Check if userId is direct employee id
-    const directEmp = await this.prisma.employee.findUnique({
+    const directEmp = await this.prisma.employee.findFirst({
       where: { id: userId },
       select: { id: true },
     });
     if (directEmp) return directEmp.id;
 
     // Check via UserProfile
-    const userProfile = await this.prisma.userProfile.findUnique({
+    const userProfile = await this.prisma.userProfile.findFirst({
       where: { id: userId },
       select: { betterAuthUserId: true },
     });
 
     const baId = userProfile?.betterAuthUserId ?? userId;
-    const emp = await this.prisma.employee.findUnique({
+    const emp = await this.prisma.employee.findFirst({
       where: { betterAuthUserId: baId },
       select: { id: true },
     });
@@ -140,13 +140,13 @@ export class OrderStaffPerformanceService {
    */
   async resolveUserIdByEmployeeId(employeeId: string): Promise<string | null> {
     if (!employeeId) return null;
-    const emp = await this.prisma.employee.findUnique({
+    const emp = await this.prisma.employee.findFirst({
       where: { id: employeeId },
       select: { betterAuthUserId: true },
     });
     if (!emp?.betterAuthUserId) return null;
 
-    const profile = await this.prisma.userProfile.findUnique({
+    const profile = await this.prisma.userProfile.findFirst({
       where: { betterAuthUserId: emp.betterAuthUserId },
       select: { id: true },
     });

@@ -37,12 +37,12 @@ export class CommissionsService {
   }
 
   async createRule(dto: CreateCommissionRuleDto, actorId?: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: dto.employeeId },
     });
     if (!employee) throw new NotFoundException('Employee not found');
     if (dto.triggerStatusId) {
-      const st = await this.prisma.orderStatus.findUnique({
+      const st = await this.prisma.orderStatus.findFirst({
         where: { id: dto.triggerStatusId },
       });
       if (!st) throw new NotFoundException('Trigger status not found');
@@ -63,18 +63,18 @@ export class CommissionsService {
   }
 
   async updateRule(id: string, dto: UpdateCommissionRuleDto) {
-    const existing = await this.prisma.commissionRule.findUnique({
+    const existing = await this.prisma.commissionRule.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Commission rule not found');
     if (dto.triggerStatusId) {
-      const st = await this.prisma.orderStatus.findUnique({
+      const st = await this.prisma.orderStatus.findFirst({
         where: { id: dto.triggerStatusId },
       });
       if (!st) throw new NotFoundException('Trigger status not found');
     }
     if (dto.employeeId) {
-      const emp = await this.prisma.employee.findUnique({
+      const emp = await this.prisma.employee.findFirst({
         where: { id: dto.employeeId },
       });
       if (!emp) throw new NotFoundException('Employee not found');
@@ -101,7 +101,7 @@ export class CommissionsService {
   }
 
   async setActive(id: string, isActive: boolean) {
-    const existing = await this.prisma.commissionRule.findUnique({
+    const existing = await this.prisma.commissionRule.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Commission rule not found');
@@ -112,7 +112,7 @@ export class CommissionsService {
   }
 
   async deleteRule(id: string) {
-    const existing = await this.prisma.commissionRule.findUnique({
+    const existing = await this.prisma.commissionRule.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Commission rule not found');
@@ -214,7 +214,7 @@ export class CommissionsService {
     if (!dto.reason?.trim()) {
       throw new BadRequestException('reason is required');
     }
-    const earning = await this.prisma.commissionEarning.findUnique({
+    const earning = await this.prisma.commissionEarning.findFirst({
       where: { id: earningId },
     });
     if (!earning) throw new NotFoundException('Commission earning not found');
@@ -246,7 +246,7 @@ export class CommissionsService {
       // Proportional reversal: refundedAmount / order total → same ratio of the
       // earning (capped at a full reversal). If the source order is missing
       // (manual earning), fall back to min(earning, refundedAmount).
-      const orderRow = await this.prisma.order.findUnique({
+      const orderRow = await this.prisma.order.findFirst({
         where: { id: earning.orderId },
         select: { total: true },
       });
@@ -353,7 +353,7 @@ export class CommissionsService {
   // Errors are swallowed (logged) so order hooks never break the order flow.
   async processOrderCommissions(orderId: string): Promise<number> {
     try {
-      const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+      const order = await this.prisma.order.findFirst({ where: { id: orderId } });
       if (!order || order.trashedAt) return 0;
 
       const confirmedId = await this.resolveConfirmedStatusId();

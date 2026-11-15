@@ -25,12 +25,12 @@ describe('StockService — physical reserve guard', () => {
     };
     tx = {
       product: {
-        findUnique: jest
+        findFirst: jest
           .fn()
           .mockResolvedValue({ availabilityMode: 'INVENTORY_CONTROLLED' }),
       },
       productVariant: {
-        findUnique: jest.fn().mockResolvedValue({ productId: 'prod-1' }),
+        findFirst: jest.fn().mockResolvedValue({ productId: 'prod-1' }),
         update: jest.fn().mockResolvedValue({}),
       },
       physicalInventory: {

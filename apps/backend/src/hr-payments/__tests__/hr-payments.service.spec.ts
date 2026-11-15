@@ -20,14 +20,14 @@ describe('HrPaymentsService', () => {
   const prismaMock = {
     $transaction: jest.fn((cb: any) => cb(prismaMock)),
     payslip: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
     payrollPayment: {
       aggregate: jest.fn(),
       create: jest.fn(),
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
   };
@@ -43,12 +43,12 @@ describe('HrPaymentsService', () => {
     service = module.get<HrPaymentsService>(HrPaymentsService);
     prisma = module.get<PrismaService>(PrismaService);
 
-    prismaMock.payslip.findUnique.mockReset();
+    prismaMock.payslip.findFirst.mockReset();
     prismaMock.payslip.update.mockReset();
     prismaMock.payrollPayment.aggregate.mockReset();
     prismaMock.payrollPayment.create.mockReset();
     prismaMock.payrollPayment.findMany.mockReset();
-    prismaMock.payrollPayment.findUnique.mockReset();
+    prismaMock.payrollPayment.findFirst.mockReset();
     prismaMock.payrollPayment.update.mockReset();
     delete (prismaMock as any).paymentGateway;
     delete (prismaMock as any).account;
@@ -56,7 +56,7 @@ describe('HrPaymentsService', () => {
 
   describe('createPayment', () => {
     it('rejects payment for a non-approved payslip', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('draft'));
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('draft'));
       await expect(
         service.createPayment(
           { payslipId: 'ps-1', amount: 1000 },
@@ -66,7 +66,7 @@ describe('HrPaymentsService', () => {
     });
 
     it('rejects payment that exceeds net pay', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('approved'));
       prismaMock.payrollPayment.aggregate.mockResolvedValue({
         _sum: { amount: null },
       });
@@ -79,7 +79,7 @@ describe('HrPaymentsService', () => {
     });
 
     it('marks the payslip paid when the full net pay is covered', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('approved'));
       prismaMock.payrollPayment.aggregate.mockResolvedValue({
         _sum: { amount: '0' },
       });
@@ -103,7 +103,7 @@ describe('HrPaymentsService', () => {
     });
 
     it('marks the payslip partially_paid for a partial payment', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('approved'));
       prismaMock.payrollPayment.aggregate.mockResolvedValue({
         _sum: { amount: '0' },
       });
@@ -127,14 +127,14 @@ describe('HrPaymentsService', () => {
     });
 
     it('throws NotFound when the payslip is missing', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(null);
+      prismaMock.payslip.findFirst.mockResolvedValue(null);
       await expect(
         service.createPayment({ payslipId: 'ps-x', amount: 1000 }, 'a'),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('excludes VOIDED payments from the paid-so-far sum', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('approved'));
       prismaMock.payrollPayment.aggregate.mockResolvedValue({
         _sum: { amount: '10000' },
       });
@@ -159,7 +159,7 @@ describe('HrPaymentsService', () => {
 
     it('stamps the configured gateway mapping as accountId', async () => {
       (prismaMock as any).paymentGateway = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'gw-bkash',
           code: 'bkash',
           name: 'bKash',
@@ -168,7 +168,7 @@ describe('HrPaymentsService', () => {
           accountId: 'acc-bkash',
         }),
       };
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('approved'));
       prismaMock.payrollPayment.aggregate.mockResolvedValue({
         _sum: { amount: '0' },
       });
@@ -191,9 +191,9 @@ describe('HrPaymentsService', () => {
 
     it('rejects an unknown payroll gateway', async () => {
       (prismaMock as any).paymentGateway = {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       };
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('approved'));
       prismaMock.payrollPayment.aggregate.mockResolvedValue({
         _sum: { amount: '0' },
       });
@@ -209,7 +209,7 @@ describe('HrPaymentsService', () => {
 
     it('rejects a payroll account that is not an eligible asset leaf', async () => {
       (prismaMock as any).account = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'acc-expense',
           code: '5001',
           name: 'Expense',
@@ -218,7 +218,7 @@ describe('HrPaymentsService', () => {
           isActive: true,
         }),
       };
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('approved'));
       prismaMock.payrollPayment.aggregate.mockResolvedValue({
         _sum: { amount: '0' },
       });
@@ -250,8 +250,8 @@ describe('HrPaymentsService', () => {
     });
 
     it('voids a payment and records reason + actor', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('paid'));
-      prismaMock.payrollPayment.findUnique.mockResolvedValue(payment());
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('paid'));
+      prismaMock.payrollPayment.findFirst.mockResolvedValue(payment());
       prismaMock.payrollPayment.update.mockResolvedValue({
         ...payment(),
         voidedAt: new Date(),
@@ -285,8 +285,8 @@ describe('HrPaymentsService', () => {
     });
 
     it('downgrades paid → partially_paid when some valid payment remains', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('paid'));
-      prismaMock.payrollPayment.findUnique.mockResolvedValue(payment());
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('paid'));
+      prismaMock.payrollPayment.findFirst.mockResolvedValue(payment());
       prismaMock.payrollPayment.aggregate.mockResolvedValue({
         _sum: { amount: '20000' },
       });
@@ -302,16 +302,16 @@ describe('HrPaymentsService', () => {
     });
 
     it('requires a reason (400)', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('paid'));
-      prismaMock.payrollPayment.findUnique.mockResolvedValue(payment());
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('paid'));
+      prismaMock.payrollPayment.findFirst.mockResolvedValue(payment());
       await expect(
         service.voidPayment('ps-1', 'pay-1', '  '),
       ).rejects.toThrow('reason is required to void a payment');
     });
 
     it('rejects a double void (400)', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('paid'));
-      prismaMock.payrollPayment.findUnique.mockResolvedValue(
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('paid'));
+      prismaMock.payrollPayment.findFirst.mockResolvedValue(
         payment({ voidedAt: new Date() }),
       );
       await expect(
@@ -320,13 +320,13 @@ describe('HrPaymentsService', () => {
     });
 
     it('throws NotFound for a missing payslip or foreign payment', async () => {
-      prismaMock.payslip.findUnique.mockResolvedValue(null);
+      prismaMock.payslip.findFirst.mockResolvedValue(null);
       await expect(
         service.voidPayment('ps-x', 'pay-1', 'why'),
       ).rejects.toThrow(NotFoundException);
 
-      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('paid'));
-      prismaMock.payrollPayment.findUnique.mockResolvedValue(null);
+      prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip('paid'));
+      prismaMock.payrollPayment.findFirst.mockResolvedValue(null);
       await expect(
         service.voidPayment('ps-1', 'pay-nope', 'why'),
       ).rejects.toThrow(NotFoundException);

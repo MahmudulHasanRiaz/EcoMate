@@ -53,7 +53,7 @@ describe('AccountsService', () => {
           useValue: {
             account: {
               findMany: jest.fn().mockResolvedValue([mockAccount]),
-              findUnique: jest.fn().mockImplementation(({ where }: any) => {
+              findFirst: jest.fn().mockImplementation(({ where }: any) => {
                 if (where.id === 'acc-1') return Promise.resolve(mockAccount);
                 if (where.id === 'acc-parent')
                   return Promise.resolve(mockParentAccount);

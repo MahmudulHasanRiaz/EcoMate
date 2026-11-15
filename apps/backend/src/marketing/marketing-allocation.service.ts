@@ -29,7 +29,7 @@ export class MarketingAllocationService {
    */
   private async resolveAllocationMode(): Promise<AllocationMode> {
     try {
-      const setting = await this.prisma.systemSetting.findUnique({
+      const setting = await this.prisma.systemSetting.findFirst({
         where: { key: ALLOCATION_MODE_SETTING },
       });
       const value = setting?.value as AllocationMode | undefined;
@@ -70,7 +70,7 @@ export class MarketingAllocationService {
     );
     if (candidates.length === 0) return { allocated: 0, orders: 0 };
 
-    const campaign = await this.prisma.marketingCampaign.findUnique({
+    const campaign = await this.prisma.marketingCampaign.findFirst({
       where: { id: entry.campaignId },
       select: { adAccount: { select: { currency: true } } },
     });

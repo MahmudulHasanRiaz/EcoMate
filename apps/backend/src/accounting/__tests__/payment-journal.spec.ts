@@ -102,14 +102,14 @@ class FakeDb {
 
   get systemSetting() {
     return {
-      findUnique: async ({ where }: any) =>
+      findFirst: async ({ where }: any) =>
         this.settings.find((s) => s.key === where.key) ?? null,
     };
   }
 
   get account() {
     return {
-      findUnique: async ({ where }: any) =>
+      findFirst: async ({ where }: any) =>
         this.accounts.find(this.matchAccount(where)) ?? null,
       findFirst: async ({ where }: any) =>
         this.accounts.find(this.matchAccount(where)) ?? null,
@@ -137,7 +137,7 @@ class FakeDb {
 
   get financialPeriod() {
     return {
-      findUnique: async ({ where }: any) =>
+      findFirst: async ({ where }: any) =>
         this.periods.find((p) => p.id === where.id) ?? null,
       findFirst: async ({ where }: any) =>
         this.periods.find((p) => {
@@ -204,7 +204,7 @@ class FakeDb {
         }
         return this.hydrateEntry(row);
       },
-      findUnique: async ({ where }: any) => {
+      findFirst: async ({ where }: any) => {
         const row = this.entries.find((e) => e.id === where.id);
         return row ? this.hydrateEntry(row) : null;
       },
@@ -217,7 +217,7 @@ class FakeDb {
 
   get payment() {
     return {
-      findUnique: async ({ where }: any) => {
+      findFirst: async ({ where }: any) => {
         const row = this.payments.find((p) => p.id === where.id);
         return row ? this.hydratePayment(row) : null;
       },
@@ -259,7 +259,7 @@ class FakeDb {
 
   get payrollPayment() {
     return {
-      findUnique: async ({ where }: any) => {
+      findFirst: async ({ where }: any) => {
         const row = this.payrollPayments.find((p) => p.id === where.id);
         if (!row) return null;
         return {
@@ -281,7 +281,7 @@ class FakeDb {
 
   get supplierPayment() {
     return {
-      findUnique: async ({ where }: any) => {
+      findFirst: async ({ where }: any) => {
         const row = this.supplierPayments.find((p) => p.id === where.id);
         if (!row) return null;
         return {
@@ -303,7 +303,7 @@ class FakeDb {
 
   get courierSettlementInvoice() {
     return {
-      findUnique: async ({ where }: any) =>
+      findFirst: async ({ where }: any) =>
         this.invoices.find((i) => i.id === where.id) ?? null,
       update: async ({ where, data }: any) => {
         const row = this.invoices.find((i) => i.id === where.id)!;

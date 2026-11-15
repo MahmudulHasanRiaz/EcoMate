@@ -229,7 +229,7 @@ describe('P0 Financial Architecture Integration', () => {
   describe('Scenario E — Default Payment Account', () => {
     it('auto-selects default payment account from ad account', async () => {
       // Ad account has defaultPaymentAccountId = testBusinessVisaId
-      const adAccount = await prisma.adAccount.findUnique({ where: { id: testAccountId } });
+      const adAccount = await prisma.adAccount.findFirst({ where: { id: testAccountId } });
       expect(adAccount?.defaultPaymentAccountId).toBe(testBusinessVisaId);
 
       // Create payment without explicit sourceAccountId
@@ -260,7 +260,7 @@ describe('P0 Financial Architecture Integration', () => {
 
       expect(override.sourceAccountId).toBe(testBankAccountId);
       // Default should still be the original
-      const stillDefault = await prisma.adAccount.findUnique({ where: { id: testAccountId } });
+      const stillDefault = await prisma.adAccount.findFirst({ where: { id: testAccountId } });
       expect(stillDefault?.defaultPaymentAccountId).toBe(testBusinessVisaId);
 
       // Cleanup
@@ -568,7 +568,7 @@ describe('P0 Financial Architecture Integration', () => {
 
       // Verify: payment has NO campaignId field (it's account-level)
       // Prisma MarketingPayment model has no campaignId field
-      const paymentRecord = await prisma.marketingPayment.findUnique({ where: { id: payment.id } });
+      const paymentRecord = await prisma.marketingPayment.findFirst({ where: { id: payment.id } });
       expect(paymentRecord).toBeDefined();
       // The schema proves payment is account-level: @@index([adAccountId]) not campaignId
 
@@ -763,7 +763,7 @@ describe('P0 Financial Architecture Integration', () => {
 });
 
 async function calculatePosition(adAccountId: string) {
-  const account = await prisma.adAccount.findUnique({
+  const account = await prisma.adAccount.findFirst({
     where: { id: adAccountId },
     include: {
       fundingLedger: true,

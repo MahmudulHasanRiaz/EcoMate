@@ -13,7 +13,7 @@ export class SizeChartsService {
   }
 
   async findOne(id: string) {
-    const chart = await this.prisma.sizeChart.findUnique({ where: { id } });
+    const chart = await this.prisma.sizeChart.findFirst({ where: { id } });
     if (!chart) throw new NotFoundException('Size chart not found');
     return chart;
   }
@@ -25,7 +25,7 @@ export class SizeChartsService {
   }
 
   async update(id: string, dto: UpdateSizeChartDto) {
-    const chart = await this.prisma.sizeChart.findUnique({ where: { id } });
+    const chart = await this.prisma.sizeChart.findFirst({ where: { id } });
     if (!chart) throw new NotFoundException('Size chart not found');
     return this.prisma.sizeChart.update({
       where: { id },
@@ -34,7 +34,7 @@ export class SizeChartsService {
   }
 
   async remove(id: string) {
-    const chart = await this.prisma.sizeChart.findUnique({ where: { id } });
+    const chart = await this.prisma.sizeChart.findFirst({ where: { id } });
     if (!chart) throw new NotFoundException('Size chart not found');
     await this.prisma.sizeChart.delete({ where: { id } });
     return { message: 'Size chart deleted' };
@@ -44,7 +44,7 @@ export class SizeChartsService {
   // Inactive charts behave as unassigned (admin "Hidden" toggle) — findOne
   // stays unfiltered so the admin panel can still manage inactive charts.
   async findByProductSlug(slug: string) {
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.product.findFirst({
       where: { slug },
       select: {
         sizeChartId: true,

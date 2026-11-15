@@ -85,20 +85,20 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
   beforeEach(() => {
     prisma = {
       courierCredentials: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+        findFirst: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve(credsFor(where.courier)),
         ),
       },
       order: {
         findMany: jest.fn().mockResolvedValue([order]),
-        findUnique: jest.fn().mockResolvedValue({ timeline: [] }),
+        findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
         findFirst: jest.fn().mockResolvedValue({ id: 'order-1' }),
         update: jest.fn().mockResolvedValue(order),
       },
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
         upsert: jest.fn().mockResolvedValue({}),
         update: jest.fn().mockResolvedValue({}),
@@ -106,7 +106,7 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
         create: jest.fn().mockResolvedValue({}),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
-      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+      systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     manager = new CourierManagerService(prisma as any, tokenStore as any);
     tokenStore.getAccessToken.mockClear();
@@ -175,7 +175,7 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
     });
 
     it('uses the production host in production mode', async () => {
-      prisma.courierCredentials.findUnique.mockImplementation(() =>
+      prisma.courierCredentials.findFirst.mockImplementation(() =>
         Promise.resolve(credsFor('carrybee', { mode: 'production' })),
       );
       mockFetchSequence([created201()]);
@@ -215,7 +215,7 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
     });
 
     it('missing storeId fails before any HTTP call (store_id is required)', async () => {
-      prisma.courierCredentials.findUnique.mockImplementation(() =>
+      prisma.courierCredentials.findFirst.mockImplementation(() =>
         Promise.resolve(credsFor('carrybee', { storeId: null })),
       );
       mockFetchSequence([created201()]);
@@ -270,7 +270,7 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
       const trackingPrisma: any = {
         ...prisma,
         isRestoreWriteBlocked: jest.fn().mockResolvedValue(true),
-        courierReportCache: { findUnique: jest.fn().mockResolvedValue(null) },
+        courierReportCache: { findFirst: jest.fn().mockResolvedValue(null) },
       };
       const tracking = new CourierTrackingService(
         trackingPrisma as any,
@@ -408,7 +408,7 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
 
     beforeEach(async () => {
       prisma.order.findFirst.mockResolvedValue(cbOrder);
-      prisma.order.findUnique.mockResolvedValue(cbOrder);
+      prisma.order.findFirst.mockResolvedValue(cbOrder);
       ordersService = { updateStatus: jest.fn().mockResolvedValue({}) };
       const module: TestingModule = await Test.createTestingModule({
         providers: [
@@ -472,12 +472,12 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
         status: { id: 'status-packed', name: 'Packed' },
         timeline: [],
       });
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         ...cbOrder,
         status: { id: 'status-packed', name: 'Packed' },
       });
       (prisma as any).orderStatus = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'status-shipping',
           name: 'Shipping',
         }),
@@ -512,7 +512,7 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
         .mockResolvedValueOnce(null) // courierConsignmentId miss
         .mockResolvedValueOnce(cbOrder); // merchant_order_id → displayId hit
       prisma.dispatch.findFirst.mockResolvedValue(null);
-      prisma.orderStatus = { findUnique: jest.fn().mockResolvedValue(null) };
+      prisma.orderStatus = { findFirst: jest.fn().mockResolvedValue(null) };
 
       const result = await webhook.handleCarrybee({
         event: 'order.delivered',

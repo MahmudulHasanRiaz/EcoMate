@@ -53,7 +53,7 @@ export class CourierSettlementFinalizeService {
 
   /** Reclaim a stale FINALIZING invoice (>15 min) — audited. */
   async reclaimStale(invoiceId: string, actor?: string | null): Promise<boolean> {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({ where: { id: invoiceId } });
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({ where: { id: invoiceId } });
     if (!invoice || invoice.state !== 'FINALIZING') return false;
     const started = invoice.finalizingStartedAt?.getTime() ?? 0;
     if (Date.now() - started < FINALIZING_STALE_MS) return false;
@@ -71,7 +71,7 @@ export class CourierSettlementFinalizeService {
   }
 
   async finalize(invoiceId: string, actor?: string | null): Promise<FinalizeResult> {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({ where: { id: invoiceId } });
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({ where: { id: invoiceId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
     if (invoice.state === 'FINALIZING') {
       throw new ConflictException('Invoice is already being finalized');
@@ -290,7 +290,7 @@ export class CourierSettlementFinalizeService {
    * a finalized invoice cannot be thrown away.
    */
   async discard(invoiceId: string, _actor?: string | null, _reason?: string) {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id: invoiceId },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
@@ -311,7 +311,7 @@ export class CourierSettlementFinalizeService {
    * linked entry rather than duplicating it.
    */
   async repairAccounting(invoiceId: string, actor?: string | null): Promise<FinalizeResult> {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({ where: { id: invoiceId } });
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({ where: { id: invoiceId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
     if (invoice.state !== 'ACCOUNTING_FAILED') {
       throw new ConflictException('Only an ACCOUNTING_FAILED invoice can be repaired');

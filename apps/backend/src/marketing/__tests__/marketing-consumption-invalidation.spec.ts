@@ -13,7 +13,7 @@ import { CacheService } from '../../cache/cache.service';
 describe('MarketingConsumptionService analytics invalidation', () => {
   let service: MarketingConsumptionService;
   const mockPrisma: any = {
-    marketingCampaign: { findUnique: jest.fn() },
+    marketingCampaign: { findFirst: jest.fn() },
     marketingFundingLedger: { findMany: jest.fn() },
   };
   const mockCache: any = {
@@ -31,7 +31,7 @@ describe('MarketingConsumptionService analytics invalidation', () => {
       ],
     }).compile();
     service = module.get(MarketingConsumptionService);
-    mockPrisma.marketingCampaign.findUnique.mockResolvedValue({
+    mockPrisma.marketingCampaign.findFirst.mockResolvedValue({
       id: 'c1',
       adAccountId: 'a1',
     });
@@ -46,7 +46,7 @@ describe('MarketingConsumptionService analytics invalidation', () => {
 
   it('skips invalidation when nothing is consumed (amount <= 0)', async () => {
     await service.consume('c1', 0);
-    expect(mockPrisma.marketingCampaign.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.marketingCampaign.findFirst).not.toHaveBeenCalled();
     expect(mockCache.invalidateByPrefix).not.toHaveBeenCalled();
   });
 });

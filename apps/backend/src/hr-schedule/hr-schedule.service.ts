@@ -11,7 +11,7 @@ export class HrScheduleService {
   constructor(private prisma: PrismaService) {}
 
   private async ensureEmployee(employeeId: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId },
     });
     if (!employee) throw new NotFoundException('Employee not found');

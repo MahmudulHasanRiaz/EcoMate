@@ -48,7 +48,7 @@ export class SalesChannelService {
    * configured APP_URL host so a deployment always has a real value.
    */
   async resolveWebsiteEntity(): Promise<string | null> {
-    const setting = await this.prisma.systemSetting.findUnique({
+    const setting = await this.prisma.systemSetting.findFirst({
       where: { key: 'storefront_url' },
     });
     const candidate =

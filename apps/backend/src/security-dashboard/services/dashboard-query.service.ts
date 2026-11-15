@@ -118,7 +118,7 @@ export class DashboardQueryService {
     if (filters?.category) where.category = filters.category;
     if (filters?.eventType) where.eventType = filters.eventType;
     if (cursor) {
-      const cursorEvent = await this.prisma.securityEvent.findUnique({
+      const cursorEvent = await this.prisma.securityEvent.findFirst({
         where: { id: cursor },
         select: { timestamp: true },
       });
@@ -321,7 +321,7 @@ export class DashboardQueryService {
   // ─── Event Detail ────────────────────────────────────────────────
 
   async getEventDetail(id: string): Promise<EventDetailResponse | null> {
-    const event = await this.prisma.securityEvent.findUnique({
+    const event = await this.prisma.securityEvent.findFirst({
       where: { id },
     });
     if (!event) return null;

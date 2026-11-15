@@ -37,7 +37,7 @@ describe('HrSelfServiceService', () => {
     commissionEarning: { findMany: jest.fn() },
     employeeEarning: { findMany: jest.fn() },
     payslip: { findFirst: jest.fn() },
-    leaveRequest: { findUnique: jest.fn(), count: jest.fn() },
+    leaveRequest: { findFirst: jest.fn(), count: jest.fn() },
   };
 
   const payrollMock = {
@@ -426,7 +426,7 @@ describe('HrSelfServiceService', () => {
     });
 
     it('cancelLeaveRequest returns 404 when request belongs to another employee', async () => {
-      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({
         id: 'lr-1',
         employeeId: 'emp-other',
       });
@@ -437,14 +437,14 @@ describe('HrSelfServiceService', () => {
     });
 
     it('cancelLeaveRequest returns 404 when request does not exist', async () => {
-      prismaMock.leaveRequest.findUnique.mockResolvedValue(null);
+      prismaMock.leaveRequest.findFirst.mockResolvedValue(null);
       await expect(
         service.cancelLeaveRequest(SESSION_USER, 'missing'),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('cancelLeaveRequest cancels own request', async () => {
-      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({
         id: 'lr-1',
         employeeId: 'emp-1',
       });

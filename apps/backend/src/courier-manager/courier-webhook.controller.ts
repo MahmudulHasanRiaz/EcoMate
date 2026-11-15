@@ -99,7 +99,7 @@ export class CourierWebhookController {
   }
 
   private async storedSecret(courier: string): Promise<string | undefined> {
-    const creds = await this.prisma.courierCredentials.findUnique({
+    const creds = await this.prisma.courierCredentials.findFirst({
       where: { courier },
     });
     const secret = creds?.webhookSecret?.trim();
@@ -546,7 +546,7 @@ export class CourierWebhookController {
     // echo before auth would disclose the custom secret to unauthenticated
     // callers who could then forge webhooks.
     if (auth.result === 'MATCHED' || auth.result === 'UNCONFIGURED') {
-      const creds = await this.prisma.courierCredentials.findUnique({
+      const creds = await this.prisma.courierCredentials.findFirst({
         where: { courier: 'pathao' },
       });
       res.header(
@@ -634,7 +634,7 @@ export class CourierWebhookController {
     // keeps response headers, so a pre-auth echo would disclose the secret
     // to anonymous callers and enable webhook forgery.
     if (auth.result === 'MATCHED' || auth.result === 'UNCONFIGURED') {
-      const creds = await this.prisma.courierCredentials.findUnique({
+      const creds = await this.prisma.courierCredentials.findFirst({
         where: { courier: 'carrybee' },
       });
       res.header('X-CB-Webhook-Integration-Header', creds?.webhookSecret || '');

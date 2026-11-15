@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   BadRequestException,
@@ -127,7 +128,7 @@ export class PosOrdersService {
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date_family: { date: dateStr, family: 'POS' } },
+        where: { tenantId_date_family: tenantCompound({   date: dateStr, family: 'POS'   }) },
         create: { date: dateStr, family: 'POS', seq: 1 },
         update: { seq: { increment: 1 } },
       });
@@ -435,7 +436,7 @@ export class PosOrdersService {
     for (const item of authItems) {
       const warehouseId = item.sourceWarehouseId || showroomId;
       if (item.comboId) {
-        const combo = await tx.combo.findUnique({
+        const combo = await tx.combo.findFirst({
           where: { id: item.comboId },
           include: { items: true },
         });
@@ -792,7 +793,7 @@ private async resolveCanonicalPos(
     cashierId: string,
     idempotencyKey?: string,
   ) {
-    const session = await this.prisma.posSession.findUnique({
+    const session = await this.prisma.posSession.findFirst({
       where: { id: sessionId },
       include: { showroom: true },
     });
@@ -1080,13 +1081,13 @@ private async resolveCanonicalPos(
         if (item.comboId) {
           // Combos: resolve each component's availability mode independently,
           // exactly like the order flow and shared delivery deduction service.
-          const combo = await tx.combo.findUnique({
+          const combo = await tx.combo.findFirst({
             where: { id: item.comboId },
             include: { items: true },
           });
           if (!combo) continue;
           for (const ci of combo.items) {
-            const compProduct = await tx.product.findUnique({
+            const compProduct = await tx.product.findFirst({
               where: { id: ci.productId },
               select: { availabilityMode: true, manageStock: true },
             });
@@ -1168,7 +1169,7 @@ private async resolveCanonicalPos(
         // Resolve per-product availability mode with the REAL IM flag so POS
         // honours both engines (managed stock + physical) just like the order flow.
         const product = item.productId
-          ? await tx.product.findUnique({
+          ? await tx.product.findFirst({
               where: { id: item.productId },
               select: { availabilityMode: true, manageStock: true },
             })
@@ -1279,7 +1280,7 @@ private async resolveCanonicalPos(
       // physical_store for Meta offline attribution. Wrapped so a capture-side
       // failure can never roll back the order.
       try {
-        const trackOrder = await tx.order.findUnique({
+        const trackOrder = await tx.order.findFirst({
           where: { id: order.id },
           include: {
             customer: true,
@@ -1459,7 +1460,7 @@ private async resolveCanonicalPos(
   }
 
   async getSessionShowroom(sessionId: string): Promise<{ showroomId: string }> {
-    const session = await this.prisma.posSession.findUnique({
+    const session = await this.prisma.posSession.findFirst({
       where: { id: sessionId },
       select: { showroomId: true },
     });
@@ -1860,7 +1861,7 @@ private async resolveCanonicalPos(
     // an INVENTORY_CONTROLLED product under IM-off reported its managed
     // counters (oversell) and a MANAGED_STOCK product under IM-on
     // reported physical rows from other warehouses as its "network".
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.product.findFirst({
       where: { id: productId },
       select: { availabilityMode: true },
     });
@@ -2029,7 +2030,7 @@ private async resolveCanonicalPos(
         );
       }
       if (!productTypes.has(item.productId)) {
-        const product = await this.prisma.product.findUnique({
+        const product = await this.prisma.product.findFirst({
           where: { id: item.productId },
           select: { type: true, name: true },
         });
@@ -2089,7 +2090,7 @@ private async resolveCanonicalPos(
           item.variantId,
         );
         if (availability.availableStock < item.quantity) {
-          const product = await this.prisma.product.findUnique({
+          const product = await this.prisma.product.findFirst({
             where: { id: item.productId },
             select: { name: true },
           });
@@ -2166,7 +2167,7 @@ private async resolveCanonicalPos(
         // in the notes so a request is legible without opening its items.
         const labels: string[] = [];
         for (const item of items) {
-          const product = await tx.product.findUnique({
+          const product = await tx.product.findFirst({
             where: { id: item.productId },
             select: { name: true },
           });

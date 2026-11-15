@@ -44,7 +44,7 @@ function makeFake(opts: {
         orders.push(created);
         return created;
       },
-      findUnique: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
+      findFirst: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
       update: async ({ where, data }: any) => {
         const t =
           orders.find((o) => o.id === where.id) ??
@@ -67,7 +67,7 @@ function makeFake(opts: {
         orderItems.find((i) => i.orderId === where.orderId) ?? null,
     },
     orderStatus: {
-      findUnique: async ({ where }: any) =>
+      findFirst: async ({ where }: any) =>
         statuses.find((s) => s.name === where.name) ?? null,
     },
     payment: {
@@ -94,9 +94,9 @@ function makeFake(opts: {
     $transaction: async (cb: any) => cb(tx),
     order: {
       ...tx.order,
-      findUnique: async ({ where }: any) => {
+      findFirst: async ({ where }: any) => {
         if (where.id === opts.order.id) return opts.order;
-        return tx.order.findUnique({ where });
+        return tx.order.findFirst({ where });
       },
     },
     refund: { findMany: async () => [] },

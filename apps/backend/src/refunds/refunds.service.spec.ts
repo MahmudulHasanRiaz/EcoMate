@@ -50,14 +50,14 @@ describe('RefundsService', () => {
     $transaction: jest.fn(),
     refund: {
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
       aggregate: jest.fn(),
     },
     order: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
     // Refunds are capped by what was actually PAID, so the service reads the
@@ -171,13 +171,13 @@ describe('RefundsService', () => {
 
   describe('findOne', () => {
     it('should return a refund by id', async () => {
-      (prisma.refund.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.refund.findFirst as jest.Mock).mockResolvedValue(
         mockRefundApproved,
       );
 
       const result = await service.findOne('refund-id-2');
 
-      expect(prisma.refund.findUnique).toHaveBeenCalledWith(
+      expect(prisma.refund.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'refund-id-2' } }),
       );
       expect(result).toEqual(mockRefundApproved);
@@ -185,7 +185,7 @@ describe('RefundsService', () => {
     });
 
     it('should throw NotFoundException if refund not found', async () => {
-      (prisma.refund.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.refund.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.findOne('nonexistent-id')).rejects.toThrow(
         NotFoundException,
@@ -203,7 +203,7 @@ describe('RefundsService', () => {
     };
 
     it('should create a refund successfully', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
         kind: 'SALE',
@@ -220,7 +220,7 @@ describe('RefundsService', () => {
 
       const result = await service.create(createDto);
 
-      expect(prisma.order.findUnique).toHaveBeenCalledWith({
+      expect(prisma.order.findFirst).toHaveBeenCalledWith({
         where: { id: createDto.orderId },
         select: { id: true, total: true, kind: true, timeline: true },
       });
@@ -240,7 +240,7 @@ describe('RefundsService', () => {
     });
 
     it('stamps the refund timeline entry with the actor EMAIL, never the staff:<id> tag (2026-10-31)', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
         kind: 'SALE',
@@ -274,7 +274,7 @@ describe('RefundsService', () => {
       (prisma as any).orderStatus = {
         findFirst: jest.fn().mockResolvedValue({ id: 'st-cancelled' }),
       };
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
         kind: 'SALE',
@@ -313,7 +313,7 @@ describe('RefundsService', () => {
     it('caps the refund by the amount actually PAID, not the order total', async () => {
       // Order worth 2000 but only 500 collected (COD). A refund of 1000 would
       // reverse revenue that was never recognised.
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
         kind: 'SALE',
@@ -335,7 +335,7 @@ describe('RefundsService', () => {
     });
 
     it('refuses a refund when nothing was ever paid', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
         kind: 'SALE',
@@ -354,7 +354,7 @@ describe('RefundsService', () => {
     });
 
     it('refuses a refund against a non-sale order (return/exchange)', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'rtn-1',
         total: 500,
         kind: 'RETURN',
@@ -367,7 +367,7 @@ describe('RefundsService', () => {
     });
 
     it('should throw NotFoundException if order does not exist', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.create(createDto)).rejects.toThrow(
         NotFoundException,
@@ -376,7 +376,7 @@ describe('RefundsService', () => {
     });
 
     it('should throw BadRequestException if amount exceeds order total', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 100,
       });
@@ -395,7 +395,7 @@ describe('RefundsService', () => {
         reason: 'Customer request',
       };
 
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 1000,
         kind: 'SALE',
@@ -422,7 +422,7 @@ describe('RefundsService', () => {
 
     it('mirrors the selected configured gateway + mapped account onto the negative ledger row', async () => {
       (prisma as any).paymentGateway = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'gw-bkash',
           code: 'bkash',
           name: 'bKash',
@@ -431,7 +431,7 @@ describe('RefundsService', () => {
           accountId: 'acc-bkash',
         }),
       };
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
         kind: 'SALE',
@@ -462,7 +462,7 @@ describe('RefundsService', () => {
 
     it('prefers an explicitly supplied eligible account over the gateway mapping', async () => {
       (prisma as any).paymentGateway = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'gw-bkash',
           code: 'bkash',
           name: 'bKash',
@@ -472,7 +472,7 @@ describe('RefundsService', () => {
         }),
       };
       (prisma as any).account = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'acc-custom',
           code: '1002',
           name: 'Bank',
@@ -481,7 +481,7 @@ describe('RefundsService', () => {
           isActive: true,
         }),
       };
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
         kind: 'SALE',
@@ -507,9 +507,9 @@ describe('RefundsService', () => {
 
     it('rejects an unknown gateway code on the refund write path', async () => {
       (prisma as any).paymentGateway = {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       };
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
         kind: 'SALE',
@@ -523,7 +523,7 @@ describe('RefundsService', () => {
 
     it('rejects a refund account that is not an eligible asset leaf', async () => {
       (prisma as any).paymentGateway = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'gw-bkash',
           code: 'bkash',
           name: 'bKash',
@@ -533,7 +533,7 @@ describe('RefundsService', () => {
         }),
       };
       (prisma as any).account = {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'acc-expense',
           code: '5001',
           name: 'Expense',
@@ -542,7 +542,7 @@ describe('RefundsService', () => {
           isActive: true,
         }),
       };
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
         kind: 'SALE',
@@ -560,7 +560,7 @@ describe('RefundsService', () => {
 
     describe('valid transitions', () => {
       it('should transition from pending to approved', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(mockRefund);
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(mockRefund);
         (prisma.refund.update as jest.Mock).mockResolvedValue(
           mockRefundApproved,
         );
@@ -581,7 +581,7 @@ describe('RefundsService', () => {
       });
 
       it('should transition from pending to rejected', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(mockRefund);
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(mockRefund);
         (prisma.refund.update as jest.Mock).mockResolvedValue(
           mockRefundRejected,
         );
@@ -596,13 +596,13 @@ describe('RefundsService', () => {
       });
 
       it('should transition from approved to completed', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(
           mockRefundApproved,
         );
         (prisma.refund.update as jest.Mock).mockResolvedValue(
           mockRefundCompleted,
         );
-        (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.order.findFirst as jest.Mock).mockResolvedValue({
           total: 1500,
         });
         (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
@@ -625,13 +625,13 @@ describe('RefundsService', () => {
       });
 
       it('should set PAYMENT status for partial refunds', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(
           mockRefundApproved,
         );
         (prisma.refund.update as jest.Mock).mockResolvedValue(
           mockRefundCompleted,
         );
-        (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        (prisma.order.findFirst as jest.Mock).mockResolvedValue({
           total: 2000,
         });
         (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
@@ -656,7 +656,7 @@ describe('RefundsService', () => {
       });
 
       it('should transition from approved to rejected', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(
           mockRefundApproved,
         );
         (prisma.refund.update as jest.Mock).mockResolvedValue({
@@ -676,7 +676,7 @@ describe('RefundsService', () => {
 
     describe('invalid transitions', () => {
       it('should throw BadRequestException when transitioning from completed', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(
           mockRefundCompleted,
         );
 
@@ -690,7 +690,7 @@ describe('RefundsService', () => {
       });
 
       it('should throw BadRequestException when transitioning from rejected', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(
           mockRefundRejected,
         );
 
@@ -704,7 +704,7 @@ describe('RefundsService', () => {
       });
 
       it('should throw BadRequestException when transitioning from pending to completed (skip approved)', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(mockRefund);
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(mockRefund);
 
         await expect(
           service.updateStatus(
@@ -716,7 +716,7 @@ describe('RefundsService', () => {
       });
 
       it('should include allowed transitions in error message', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(mockRefund);
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(mockRefund);
 
         try {
           await service.updateStatus(
@@ -737,7 +737,7 @@ describe('RefundsService', () => {
 
     describe('edge cases', () => {
       it('should throw NotFoundException if refund not found', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(null);
 
         await expect(
           service.updateStatus(
@@ -749,7 +749,7 @@ describe('RefundsService', () => {
       });
 
       it('should set processedAt when updating status', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(mockRefund);
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(mockRefund);
         (prisma.refund.update as jest.Mock).mockResolvedValue(
           mockRefundApproved,
         );
@@ -766,7 +766,7 @@ describe('RefundsService', () => {
       });
 
       it('should preserve notes when provided in update', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(mockRefund);
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(mockRefund);
         (prisma.refund.update as jest.Mock).mockResolvedValue(
           mockRefundApproved,
         );
@@ -782,7 +782,7 @@ describe('RefundsService', () => {
       });
 
       it('should keep existing notes when no new notes provided', async () => {
-        (prisma.refund.findUnique as jest.Mock).mockResolvedValue(mockRefund);
+        (prisma.refund.findFirst as jest.Mock).mockResolvedValue(mockRefund);
         (prisma.refund.update as jest.Mock).mockResolvedValue(
           mockRefundApproved,
         );

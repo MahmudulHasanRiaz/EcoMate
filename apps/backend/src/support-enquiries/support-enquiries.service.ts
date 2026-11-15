@@ -81,7 +81,7 @@ export class SupportEnquiriesService {
   }
 
   async findOne(id: string) {
-    const enquiry = await this.prisma.supportEnquiry.findUnique({
+    const enquiry = await this.prisma.supportEnquiry.findFirst({
       where: { id },
     });
     if (!enquiry) throw new NotFoundException('Support enquiry not found');

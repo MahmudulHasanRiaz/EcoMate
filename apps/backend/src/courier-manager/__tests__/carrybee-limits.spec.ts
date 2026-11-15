@@ -55,13 +55,13 @@ describe('Carrybee over-limit pre-flight rejections', () => {
   beforeEach(() => {
     prisma = {
       courierCredentials: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+        findFirst: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve(credsFor(where.courier)),
         ),
       },
       order: {
         findMany: jest.fn().mockResolvedValue([baseOrder]),
-        findUnique: jest.fn().mockResolvedValue({ timeline: [] }),
+        findFirst: jest.fn().mockResolvedValue({ timeline: [] }),
         findFirst: jest.fn().mockResolvedValue({ id: 'order-1' }),
         update: jest.fn().mockResolvedValue(baseOrder),
       },
@@ -71,7 +71,7 @@ describe('Carrybee over-limit pre-flight rejections', () => {
         create: jest.fn().mockResolvedValue({}),
       },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
-      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+      systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     service = new CourierManagerService(prisma as any, tokenStore as any);
     tokenStore.getAccessToken.mockClear();

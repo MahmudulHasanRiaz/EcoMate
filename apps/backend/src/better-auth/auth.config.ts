@@ -120,7 +120,7 @@ export const auth = betterAuth({
         // "admin = all". Superadmin stays all-open inside the computation.
         let employeeLink: { accessPresetId?: string | null; accessPreset?: { permissions: string[] } | null } | null = null;
         if (role !== 'customer') {
-          const emp = await baPrisma.employee.findUnique({
+          const emp = await baPrisma.employee.findFirst({
             where: { betterAuthUserId: user.id },
             include: { accessPreset: true },
           });
@@ -138,7 +138,7 @@ export const auth = betterAuth({
         });
 
         if (role === 'customer') {
-          const profile = await baPrisma.customerProfile.findUnique({
+          const profile = await baPrisma.customerProfile.findFirst({
             where: { betterAuthUserId: user.id },
           });
           if (profile) {

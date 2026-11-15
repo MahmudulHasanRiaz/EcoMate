@@ -69,7 +69,7 @@ export class ShipmentService {
   }
 
   async findByOrderId(orderId: string) {
-    const shipment = await this.prisma.shipment.findUnique({
+    const shipment = await this.prisma.shipment.findFirst({
       where: { orderId },
       include: { order: { include: orderInclude } },
     });
@@ -84,7 +84,7 @@ export class ShipmentService {
     });
     if (!order) throw new NotFoundException('Order not found');
 
-    const existing = await this.prisma.shipment.findUnique({
+    const existing = await this.prisma.shipment.findFirst({
       where: { orderId },
     });
 

@@ -21,7 +21,7 @@ describe('DesignationsService', () => {
     const prismaMock = {
       designation: {
         findMany: jest.fn().mockResolvedValue([mockDesignation]),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(mockDesignation),
         update: jest.fn().mockResolvedValue({
           ...mockDesignation,
@@ -64,7 +64,7 @@ describe('DesignationsService', () => {
     });
 
     it('should throw on duplicate name', async () => {
-      (prisma.designation.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.designation.findFirst as jest.Mock).mockResolvedValue(
         mockDesignation,
       );
       await expect(service.create({ name: 'Developer' })).rejects.toThrow(
@@ -88,7 +88,7 @@ describe('DesignationsService', () => {
 
   describe('findOne', () => {
     it('should return a designation', async () => {
-      (prisma.designation.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.designation.findFirst as jest.Mock).mockResolvedValue(
         mockDesignation,
       );
       expect(await service.findOne('desig-1')).toEqual(mockDesignation);
@@ -101,7 +101,7 @@ describe('DesignationsService', () => {
 
   describe('update', () => {
     it('should re-slug when name changes', async () => {
-      (prisma.designation.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.designation.findFirst as jest.Mock).mockResolvedValue(
         mockDesignation,
       );
       await service.update('desig-1', { name: 'Senior Developer' });
@@ -112,7 +112,7 @@ describe('DesignationsService', () => {
     });
 
     it('converts a concurrent P2002 race into 409 on update', async () => {
-      (prisma.designation.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.designation.findFirst as jest.Mock).mockResolvedValue(
         mockDesignation,
       );
       (prisma.designation.update as jest.Mock).mockRejectedValue({
@@ -127,7 +127,7 @@ describe('DesignationsService', () => {
 
   describe('remove', () => {
     it('should delete a designation with no employees', async () => {
-      (prisma.designation.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.designation.findFirst as jest.Mock).mockResolvedValue(
         mockDesignation,
       );
       const result = await service.remove('desig-1');
@@ -138,7 +138,7 @@ describe('DesignationsService', () => {
     });
 
     it('should throw when employees are assigned', async () => {
-      (prisma.designation.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.designation.findFirst as jest.Mock).mockResolvedValue(
         mockDesignation,
       );
       (prisma.employee.count as jest.Mock).mockResolvedValue(3);

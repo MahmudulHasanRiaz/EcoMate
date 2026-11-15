@@ -43,7 +43,7 @@ describe('DispatchCancelService', () => {
     prisma = {
       dispatch: {
         findMany: jest.fn().mockResolvedValue([dispatch()]),
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'dsp-1',
           orderId: 'order-1',
           courier: 'steadfast',
@@ -338,7 +338,7 @@ describe('DispatchCancelService', () => {
   });
 
   it('the marker cannot be cleared twice', async () => {
-    prisma.dispatch.findUnique.mockResolvedValue({
+    prisma.dispatch.findFirst.mockResolvedValue({
       id: 'dsp-1',
       orderId: 'order-1',
       courier: 'steadfast',
@@ -356,7 +356,7 @@ describe('DispatchCancelService', () => {
   });
 
   it('a dispatch without a MANUAL panel step cannot be confirmed', async () => {
-    prisma.dispatch.findUnique.mockResolvedValue({
+    prisma.dispatch.findFirst.mockResolvedValue({
       id: 'dsp-1',
       orderId: 'order-1',
       courier: 'carrybee',

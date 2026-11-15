@@ -141,7 +141,7 @@ export class PhysicalInventoryController {
 
     // Reject product-level adjustment for variable parent products
     if (!dto.variantId && dto.productId) {
-      const product = await this.prisma.product.findUnique({
+      const product = await this.prisma.product.findFirst({
         where: { id: dto.productId },
         select: { type: true },
       });
@@ -232,7 +232,7 @@ export class PhysicalInventoryController {
     // Reject product-level adjustment for variable parent products
     for (const item of dto.items) {
       if (!item.variantId && item.productId) {
-        const product = await this.prisma.product.findUnique({
+        const product = await this.prisma.product.findFirst({
           where: { id: item.productId },
           select: { type: true },
         });
@@ -347,7 +347,7 @@ export class PhysicalInventoryController {
     }
 
     // 2. Try managed stock reservation (OrderItem)
-    const orderItem = await this.prisma.orderItem.findUnique({
+    const orderItem = await this.prisma.orderItem.findFirst({
       where: { id },
       include: { order: true },
     });
@@ -371,7 +371,7 @@ export class PhysicalInventoryController {
     }
 
     // 3. Try managed stock reservation (OrderItemComboComponent)
-    const comp = await this.prisma.orderItemComboComponent.findUnique({
+    const comp = await this.prisma.orderItemComboComponent.findFirst({
       where: { id },
       include: { orderItem: { include: { order: true } } },
     });

@@ -33,15 +33,15 @@ describe('MarketingSyncService', () => {
   };
 
   const mockPrisma = () => ({
-    adAccount: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    adAccount: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     marketingCampaign: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       findMany: jest.fn(),
     },
-    marketingAdSet: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-    marketingAd: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    marketingAdSet: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
+    marketingAd: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     marketingCampaignInsight: { upsert: jest.fn() },
     marketingSyncStatus: { upsert: jest.fn() },
     marketingAuditLog: { create: jest.fn() },
@@ -79,11 +79,11 @@ describe('MarketingSyncService', () => {
   afterEach(() => jest.clearAllMocks());
 
   const setupHappyPath = () => {
-    (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(mockAdAccount);
+    (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(mockAdAccount);
     (provider.listCampaigns as jest.Mock).mockResolvedValue([
       { providerCampaignId: 'c-1', name: 'Launch', status: 'ACTIVE', objective: 'OUTCOME_SALES' },
     ]);
-    (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.marketingCampaign.create as jest.Mock).mockResolvedValue({ id: 'camp-local-1', adAccountId: 'acct-1' });
     (prisma.marketingCampaign.findMany as jest.Mock).mockResolvedValue([
       { id: 'camp-old', providerCampaignId: 'c-999-deleted', deletedFromProvider: false },
@@ -139,7 +139,7 @@ describe('MarketingSyncService', () => {
   });
 
   it('refuses to sync a disconnected ad account', async () => {
-    (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue({
       ...mockAdAccount,
       connection: { ...mockAdAccount.connection, status: 'disconnected' },
     });
@@ -147,7 +147,7 @@ describe('MarketingSyncService', () => {
   });
 
   it('throws NotFound for missing ad account', async () => {
-    (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(null);
     await expect(service.syncAdAccount('nope')).rejects.toBeInstanceOf(NotFoundException);
   });
 

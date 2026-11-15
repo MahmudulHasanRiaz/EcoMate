@@ -39,7 +39,7 @@ export class DualModeAuthGuard {
         const payload = await this.jwtService.verifyAsync(token, {
           secret: process.env['JWT_SECRET'],
         });
-        const user = await this.prisma.userProfile.findUnique({
+        const user = await this.prisma.userProfile.findFirst({
           where: { id: payload.sub },
         });
         if (user) {
@@ -99,7 +99,7 @@ export class DualModeAuthGuard {
           let username = baseUsername;
           let counter = 1;
           while (
-            await this.prisma.userProfile.findUnique({ where: { username } })
+            await this.prisma.userProfile.findFirst({ where: { username } })
           ) {
             username = `${baseUsername}${counter++}`;
           }
@@ -173,7 +173,7 @@ export class DualModeAuthGuard {
     if (!user.betterAuthUserId) {
       return getRoleDefaultPermissions(role);
     }
-    const baUser = await this.prisma.betterAuthUser.findUnique({
+    const baUser = await this.prisma.betterAuthUser.findFirst({
       where: { id: user.betterAuthUserId },
       select: {
         override_permissions: true,

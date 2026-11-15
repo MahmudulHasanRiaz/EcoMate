@@ -57,7 +57,7 @@ export class FinancialPeriodsService {
   }
 
   async findOne(id: string) {
-    const period = await this.prisma.financialPeriod.findUnique({
+    const period = await this.prisma.financialPeriod.findFirst({
       where: { id },
     });
 
@@ -70,7 +70,7 @@ export class FinancialPeriodsService {
 
   async closePeriod(id: string) {
     return this.prisma.$transaction(async (tx) => {
-      const period = await tx.financialPeriod.findUnique({
+      const period = await tx.financialPeriod.findFirst({
         where: { id },
       });
 
@@ -101,7 +101,7 @@ export class FinancialPeriodsService {
 
   async openPeriod(id: string) {
     return this.prisma.$transaction(async (tx) => {
-      const period = await tx.financialPeriod.findUnique({
+      const period = await tx.financialPeriod.findFirst({
         where: { id },
       });
 

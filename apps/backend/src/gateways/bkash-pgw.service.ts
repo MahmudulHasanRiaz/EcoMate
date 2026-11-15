@@ -8,7 +8,7 @@ export class BkashPgwService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async getCredentials() {
-    const config = await this.prisma.paymentGateway.findUnique({
+    const config = await this.prisma.paymentGateway.findFirst({
       where: { code: 'bkash_pgw' },
     });
     if (!config || !config.enabled)

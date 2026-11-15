@@ -215,7 +215,7 @@ export class WebhookAttemptService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getAttemptDetail(id: string): Promise<unknown> {
-    return this.prisma.webhookAttempt.findUnique({
+    return this.prisma.webhookAttempt.findFirst({
       where: { id },
       select: {
         id: true,

@@ -52,13 +52,13 @@ export class MarketingPaymentService {
    * The effective rate is derived automatically.
    */
   async createPayment(dto: CreatePaymentDto, userId?: string) {
-    const adAccount = await this.prisma.adAccount.findUnique({
+    const adAccount = await this.prisma.adAccount.findFirst({
       where: { id: dto.adAccountId },
     });
     if (!adAccount) throw new NotFoundException('Ad account not found');
 
     if (dto.providerPaymentId) {
-      const existing = await this.prisma.marketingPayment.findUnique({
+      const existing = await this.prisma.marketingPayment.findFirst({
         where: { providerPaymentId: dto.providerPaymentId },
       });
       if (existing) {
@@ -87,7 +87,7 @@ export class MarketingPaymentService {
    * Simple reconcile: user enters actual BDT cost, system derives FX rate.
    */
   async reconcileSimple(id: string, dto: ReconcilePaymentDto, userId?: string) {
-    const payment = await this.prisma.marketingPayment.findUnique({
+    const payment = await this.prisma.marketingPayment.findFirst({
       where: { id },
     });
     if (!payment) throw new NotFoundException('Payment not found');
@@ -132,7 +132,7 @@ export class MarketingPaymentService {
    * Marketing Prepaid is NEVER touched by threshold payments.
    */
   async postToAccounting(id: string, userId?: string) {
-    const payment = await this.prisma.marketingPayment.findUnique({
+    const payment = await this.prisma.marketingPayment.findFirst({
       where: { id },
       include: { adAccount: true },
     });
@@ -165,7 +165,7 @@ export class MarketingPaymentService {
 
     const marketingPayable = await this.ensureMarketingPayableAccount();
     const sourceAccount = payment.sourceAccountId
-      ? await this.prisma.account.findUnique({ where: { id: payment.sourceAccountId } })
+      ? await this.prisma.account.findFirst({ where: { id: payment.sourceAccountId } })
       : null;
     if (!sourceAccount) {
       throw new BadRequestException(
@@ -241,7 +241,7 @@ export class MarketingPaymentService {
   }
 
   async getById(id: string) {
-    const payment = await this.prisma.marketingPayment.findUnique({
+    const payment = await this.prisma.marketingPayment.findFirst({
       where: { id },
       include: { adAccount: true, sourceAccount: true, journalEntry: true },
     });

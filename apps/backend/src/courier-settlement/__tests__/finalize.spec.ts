@@ -80,7 +80,7 @@ async function makeService(o: Overrides = {}) {
 
   const prisma: any = {
     courierSettlementInvoice: {
-      findUnique: jest.fn().mockResolvedValue(state === null ? null : invoiceRow),
+      findFirst: jest.fn().mockResolvedValue(state === null ? null : invoiceRow),
       updateMany: jest.fn().mockImplementation(async (args: any) => {
         // CAS: only claim when the where-clause still matches the live state.
         const where = args.where ?? {};
@@ -291,7 +291,7 @@ describe('CourierSettlementFinalizeService.finalize (§5/§6/§7 — P6 gates)',
 describe('CourierSettlementFinalizeService.reclaimStale (§6)', () => {
   it('reclaims a stale FINALIZING invoice and audits it', async () => {
     const ctx = await makeService({ state: 'FINALIZING' });
-    ctx.prisma.courierSettlementInvoice.findUnique.mockResolvedValue({
+    ctx.prisma.courierSettlementInvoice.findFirst.mockResolvedValue({
       id: 'inv-1',
       displayId: 'CS-260927-0001',
       state: 'FINALIZING',
@@ -314,7 +314,7 @@ describe('CourierSettlementFinalizeService.reclaimStale (§6)', () => {
 
   it('never reclaims a fresh in-flight finalization', async () => {
     const ctx = await makeService({ state: 'FINALIZING' });
-    ctx.prisma.courierSettlementInvoice.findUnique.mockResolvedValue({
+    ctx.prisma.courierSettlementInvoice.findFirst.mockResolvedValue({
       id: 'inv-1',
       state: 'FINALIZING',
       finalizingStartedAt: new Date(),

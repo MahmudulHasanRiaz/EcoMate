@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   Logger,
@@ -83,7 +84,7 @@ export class MediaService {
   }
 
   async findOne(id: string) {
-    const media = await this.prisma.media.findUnique({
+    const media = await this.prisma.media.findFirst({
       where: { id },
       include: { attachments: true, _count: { select: { attachments: true } } },
     });
@@ -92,7 +93,7 @@ export class MediaService {
   }
 
   async updateMeta(id: string, dto: { alt?: string }) {
-    const media = await this.prisma.media.findUnique({ where: { id } });
+    const media = await this.prisma.media.findFirst({ where: { id } });
     if (!media) throw new NotFoundException('Media not found');
     return this.prisma.media.update({
       where: { id },
@@ -101,7 +102,7 @@ export class MediaService {
   }
 
   async getAttachments(id: string) {
-    const media = await this.prisma.media.findUnique({
+    const media = await this.prisma.media.findFirst({
       where: { id },
       include: { attachments: true },
     });
@@ -197,7 +198,7 @@ export class MediaService {
   }
 
   async remove(id: string, force = false) {
-    const media = await this.prisma.media.findUnique({
+    const media = await this.prisma.media.findFirst({
       where: { id },
       include: { _count: { select: { attachments: true } } },
     });
@@ -251,7 +252,7 @@ export class MediaService {
   }
 
   async attach(mediaId: string, entityType: string, entityId: string) {
-    const media = await this.prisma.media.findUnique({
+    const media = await this.prisma.media.findFirst({
       where: { id: mediaId },
       select: { id: true },
     });
@@ -851,7 +852,7 @@ export class MediaService {
     );
 
     // Storefront hero slides & secondary banner
-    const heroRow = await this.prisma.systemSetting.findUnique({
+    const heroRow = await this.prisma.systemSetting.findFirst({
       where: { key: 'hero_slides' },
     });
     if (heroRow?.value) {
@@ -871,7 +872,7 @@ export class MediaService {
         });
         if (changed) {
           await this.prisma.systemSetting.update({
-            where: { key: 'hero_slides' },
+            where: { tenantId_key: tenantCompound({  key: 'hero_slides'  }) },
             data: { value: JSON.stringify(nextSlides) },
           });
         }
@@ -883,7 +884,7 @@ export class MediaService {
         /* ignore malformed */
       }
     }
-    const sec = await this.prisma.systemSetting.findUnique({
+    const sec = await this.prisma.systemSetting.findFirst({
       where: { key: 'hero_secondary_banner' },
     });
     if (sec?.value) {
@@ -892,7 +893,7 @@ export class MediaService {
       if (r && r.url !== sec.value) {
         migrated++;
         await this.prisma.systemSetting.update({
-          where: { key: 'hero_secondary_banner' },
+          where: { tenantId_key: tenantCompound({  key: 'hero_secondary_banner'  }) },
           data: { value: r.url },
         });
       }
@@ -904,7 +905,7 @@ export class MediaService {
     }
 
     // Storefront store systems (logo images)
-    const sysRow = await this.prisma.systemSetting.findUnique({
+    const sysRow = await this.prisma.systemSetting.findFirst({
       where: { key: 'store_systems' },
     });
     if (sysRow?.value) {
@@ -923,7 +924,7 @@ export class MediaService {
         });
         if (changed) {
           await this.prisma.systemSetting.update({
-            where: { key: 'store_systems' },
+            where: { tenantId_key: tenantCompound({  key: 'store_systems'  }) },
             data: { value: JSON.stringify(nextSystems) },
           });
         }
@@ -942,7 +943,7 @@ export class MediaService {
       'storefront_favicon',
       'admin_favicon',
     ] as const) {
-      const row = await this.prisma.systemSetting.findUnique({
+      const row = await this.prisma.systemSetting.findFirst({
         where: { key },
       });
       if (row?.value) {
@@ -951,7 +952,7 @@ export class MediaService {
         if (r && r.url !== row.value) {
           migrated++;
           await this.prisma.systemSetting.update({
-            where: { key },
+            where: { tenantId_key: tenantCompound({  key  }) },
             data: { value: r.url },
           });
         }
@@ -997,7 +998,7 @@ export class MediaService {
   }
 
   async reprocess(mediaId: string): Promise<void> {
-    const media = await this.prisma.media.findUnique({
+    const media = await this.prisma.media.findFirst({
       where: { id: mediaId },
       select: { id: true, derivativeManifest: true },
     });

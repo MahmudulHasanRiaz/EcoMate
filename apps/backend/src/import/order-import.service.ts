@@ -283,7 +283,7 @@ export class OrderImportService {
   ): Promise<void> {
     // 1. Idempotency Check & Deterministic Display ID
     const displayId = `WC-${row.orderNumber || row.orderId}`;
-    const existingOrder = await this.prisma.order.findUnique({
+    const existingOrder = await this.prisma.order.findFirst({
       where: { displayId },
       select: { id: true },
     });

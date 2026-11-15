@@ -41,7 +41,7 @@ export class WarehousesService {
   }
 
   async findOne(id: string) {
-    const warehouse = await this.prisma.warehouse.findUnique({
+    const warehouse = await this.prisma.warehouse.findFirst({
       where: { id },
       include: {
         binLocations: { orderBy: { code: 'asc' } },
@@ -60,7 +60,7 @@ export class WarehousesService {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '');
-    const existing = await this.prisma.warehouse.findUnique({
+    const existing = await this.prisma.warehouse.findFirst({
       where: { slug },
     });
     if (existing) {
@@ -77,7 +77,7 @@ export class WarehousesService {
   async update(id: string, dto: UpdateWarehouseDto) {
     await this.findOne(id);
     if (dto.slug) {
-      const existing = await this.prisma.warehouse.findUnique({
+      const existing = await this.prisma.warehouse.findFirst({
         where: { slug: dto.slug },
       });
       if (existing && existing.id !== id) {
@@ -183,7 +183,7 @@ export class WarehousesService {
   }
 
   async updateBinLocation(binId: string, dto: UpdateBinLocationDto) {
-    const bin = await this.prisma.binLocation.findUnique({
+    const bin = await this.prisma.binLocation.findFirst({
       where: { id: binId },
     });
     if (!bin) throw new NotFoundException('Bin location not found');
@@ -198,7 +198,7 @@ export class WarehousesService {
     const moving = !!dto.warehouseId && dto.warehouseId !== bin.warehouseId;
     const targetWarehouseId = moving ? dto.warehouseId! : bin.warehouseId;
     if (moving) {
-      const target = await this.prisma.warehouse.findUnique({
+      const target = await this.prisma.warehouse.findFirst({
         where: { id: targetWarehouseId },
       });
       if (!target) throw new NotFoundException('Target warehouse not found');
@@ -231,7 +231,7 @@ export class WarehousesService {
       rackId = dto.rackId || null;
       shelfId = dto.shelfId || null;
       if (zoneId) {
-        const zone = await this.prisma.zone.findUnique({
+        const zone = await this.prisma.zone.findFirst({
           where: { id: zoneId },
           select: { warehouseId: true },
         });
@@ -240,7 +240,7 @@ export class WarehousesService {
         }
       }
       if (rackId) {
-        const rack = await this.prisma.rack.findUnique({
+        const rack = await this.prisma.rack.findFirst({
           where: { id: rackId },
           select: { zoneId: true, zone: { select: { warehouseId: true } } },
         });
@@ -252,7 +252,7 @@ export class WarehousesService {
         }
       }
       if (shelfId) {
-        const shelf = await this.prisma.shelf.findUnique({
+        const shelf = await this.prisma.shelf.findFirst({
           where: { id: shelfId },
           select: {
             rackId: true,
@@ -308,7 +308,7 @@ export class WarehousesService {
   }
 
   async deleteBinLocation(binId: string) {
-    const bin = await this.prisma.binLocation.findUnique({
+    const bin = await this.prisma.binLocation.findFirst({
       where: { id: binId },
       include: {
         physicalInventories: { select: { id: true }, take: 1 },
@@ -354,7 +354,7 @@ export class WarehousesService {
   }
 
   async updateZone(zoneId: string, dto: UpdateZoneDto) {
-    const zone = await this.prisma.zone.findUnique({ where: { id: zoneId } });
+    const zone = await this.prisma.zone.findFirst({ where: { id: zoneId } });
     if (!zone) throw new NotFoundException('Zone not found');
     if (dto.name && dto.name !== zone.name) {
       const dup = await this.prisma.zone.findUnique({
@@ -366,7 +366,7 @@ export class WarehousesService {
   }
 
   async deleteZone(zoneId: string) {
-    const zone = await this.prisma.zone.findUnique({
+    const zone = await this.prisma.zone.findFirst({
       where: { id: zoneId },
       include: {
         racks: { select: { id: true } },
@@ -394,7 +394,7 @@ export class WarehousesService {
   }
 
   async createRack(dto: CreateRackDto) {
-    const zone = await this.prisma.zone.findUnique({ where: { id: dto.zoneId! } });
+    const zone = await this.prisma.zone.findFirst({ where: { id: dto.zoneId! } });
     if (!zone) throw new NotFoundException('Zone not found');
     const existing = await this.prisma.rack.findUnique({
       where: { zoneId_name: { zoneId: dto.zoneId!, name: dto.name } },
@@ -406,7 +406,7 @@ export class WarehousesService {
   }
 
   async updateRack(rackId: string, dto: UpdateRackDto) {
-    const rack = await this.prisma.rack.findUnique({ where: { id: rackId } });
+    const rack = await this.prisma.rack.findFirst({ where: { id: rackId } });
     if (!rack) throw new NotFoundException('Rack not found');
     if (dto.name && dto.name !== rack.name) {
       const dup = await this.prisma.rack.findUnique({
@@ -422,7 +422,7 @@ export class WarehousesService {
   }
 
   async deleteRack(rackId: string) {
-    const rack = await this.prisma.rack.findUnique({
+    const rack = await this.prisma.rack.findFirst({
       where: { id: rackId },
       include: {
         shelves: { select: { id: true } },
@@ -450,7 +450,7 @@ export class WarehousesService {
   }
 
   async createShelf(dto: CreateShelfDto) {
-    const rack = await this.prisma.rack.findUnique({ where: { id: dto.rackId! } });
+    const rack = await this.prisma.rack.findFirst({ where: { id: dto.rackId! } });
     if (!rack) throw new NotFoundException('Rack not found');
     const existing = await this.prisma.shelf.findUnique({
       where: { rackId_name: { rackId: dto.rackId!, name: dto.name } },
@@ -462,7 +462,7 @@ export class WarehousesService {
   }
 
   async updateShelf(shelfId: string, dto: UpdateShelfDto) {
-    const shelf = await this.prisma.shelf.findUnique({ where: { id: shelfId } });
+    const shelf = await this.prisma.shelf.findFirst({ where: { id: shelfId } });
     if (!shelf) throw new NotFoundException('Shelf not found');
     if (dto.name && dto.name !== shelf.name) {
       const dup = await this.prisma.shelf.findUnique({
@@ -478,7 +478,7 @@ export class WarehousesService {
   }
 
   async deleteShelf(shelfId: string) {
-    const shelf = await this.prisma.shelf.findUnique({
+    const shelf = await this.prisma.shelf.findFirst({
       where: { id: shelfId },
       include: { bins: { select: { id: true } } },
     });

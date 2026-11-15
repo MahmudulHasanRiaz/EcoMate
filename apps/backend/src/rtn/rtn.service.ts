@@ -125,7 +125,7 @@ export class RtnService {
   }
 
   async findById(id: string) {
-    const rtn = await this.prisma.order.findUnique({
+    const rtn = await this.prisma.order.findFirst({
       where: { id },
       include: {
         status: true,
@@ -177,7 +177,7 @@ export class RtnService {
       }
     }
 
-    const original = await this.prisma.order.findUnique({
+    const original = await this.prisma.order.findFirst({
       where: { id: originalOrderId },
       include: {
         status: true,
@@ -279,7 +279,7 @@ export class RtnService {
       const rtn = await this.prisma.$transaction(async (tx) => {
         // Re-read inside the transaction: a concurrent creator must not slip
         // through the pre-check above.
-        const fresh = await tx.order.findUnique({
+        const fresh = await tx.order.findFirst({
           where: { id: originalOrderId },
           include: { status: true },
         });
@@ -300,8 +300,8 @@ export class RtnService {
         }
 
         const [returnPending, delivered] = await Promise.all([
-          tx.orderStatus.findUnique({ where: { name: 'Return Pending' } }),
-          tx.orderStatus.findUnique({ where: { name: 'Delivered' } }),
+          tx.orderStatus.findFirst({ where: { name: 'Return Pending' } }),
+          tx.orderStatus.findFirst({ where: { name: 'Delivered' } }),
         ]);
         if (!returnPending || !delivered) {
           throw new Error('Order status configuration is incomplete');
@@ -592,7 +592,7 @@ export class RtnService {
     actor: RtnActor,
     items?: DispatchDamageItem[],
   ): Promise<FinalizeReturnResult> {
-    const dispatch = await this.prisma.dispatch.findUnique({
+    const dispatch = await this.prisma.dispatch.findFirst({
       where: { id: dispatchId },
     });
     if (!dispatch) throw new NotFoundException('Dispatch not found.');
@@ -603,7 +603,7 @@ export class RtnService {
     }
     const dispatchOrderId: string = dispatch.orderId;
 
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: dispatchOrderId },
       include: { status: true },
     });
@@ -684,8 +684,8 @@ export class RtnService {
       if (claim.count === 0) {
         // Lost the race — another actor finalized concurrently. Reload and
         // report the settled state without mutating anything.
-        const current = await tx.dispatch.findUnique({ where: { id: dispatch.id } });
-        const freshOrder = await tx.order.findUnique({
+        const current = await tx.dispatch.findFirst({ where: { id: dispatch.id } });
+        const freshOrder = await tx.order.findFirst({
           where: { id: dispatchOrderId },
           include: { status: true },
         });
@@ -700,10 +700,10 @@ export class RtnService {
 
       if (partialResolved && rtn) {
         // ---- Partial return: RTN Return Pending → Returned + exact stock ----
-        const returned = await tx.orderStatus.findUnique({ where: { name: 'Returned' } });
+        const returned = await tx.orderStatus.findFirst({ where: { name: 'Returned' } });
         if (!returned) throw new Error('Order status configuration is incomplete');
 
-        const rtnFull = await tx.order.findUnique({
+        const rtnFull = await tx.order.findFirst({
           where: { id: rtn.id },
           include: {
             status: true,
@@ -763,7 +763,7 @@ export class RtnService {
         await appendOrderTimeline(tx, rtn.id, [rtnTimelineEntry]);
 
         // Audit entry on the ORIGINAL order — it stays Delivered.
-        const original = await tx.order.findUnique({ where: { id: order.id }, include: { status: true } });
+        const original = await tx.order.findFirst({ where: { id: order.id }, include: { status: true } });
         if (original) {
           await appendOrderTimeline(tx, order.id, [
             {
@@ -801,7 +801,7 @@ export class RtnService {
       }
 
       // ---- Full return: original → Returned + restoreForOrder ---------------
-      const returned = await tx.orderStatus.findUnique({ where: { name: 'Returned' } });
+      const returned = await tx.orderStatus.findFirst({ where: { name: 'Returned' } });
       if (!returned) throw new Error('Order status configuration is incomplete');
 
       // Heal path: order never reached Return Pending (dispatch advanced
@@ -809,7 +809,7 @@ export class RtnService {
       // the real path.
       let fromStatus = order.status.name;
       if (order.status.name !== 'Return Pending') {
-        const returnPending = await tx.orderStatus.findUnique({
+        const returnPending = await tx.orderStatus.findFirst({
           where: { name: 'Return Pending' },
         });
         if (!returnPending) throw new Error('Order status configuration is incomplete');

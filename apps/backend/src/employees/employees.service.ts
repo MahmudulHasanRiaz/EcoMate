@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   NotFoundException,
@@ -264,7 +265,7 @@ export class EmployeesService {
   }
 
   async findOne(id: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id },
       include: EMPLOYEE_DETAIL_INCLUDE,
     });
@@ -278,7 +279,7 @@ export class EmployeesService {
   // (singleton not seeded) — treat as APP, the schema default.
   private async validateAttendanceMethod(method?: AttendanceMethod) {
     if (!method) return;
-    const settings = await this.prisma.attendanceSettings.findUnique({
+    const settings = await this.prisma.attendanceSettings.findFirst({
       where: { id: 'global' },
     });
     const mode: AttendanceModeSetting = settings?.mode ?? 'APP';
@@ -295,7 +296,7 @@ export class EmployeesService {
   }
 
   private async ensureEmployeeExists(id: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id },
       select: { id: true },
     });
@@ -304,12 +305,12 @@ export class EmployeesService {
   }
 
   async create(dto: CreateEmployeeDto, actorId?: string, actorPermissions?: string[]) {
-    const baUser = await baPrisma.betterAuthUser.findUnique({
+    const baUser = await baPrisma.betterAuthUser.findFirst({
       where: { id: dto.betterAuthUserId },
     });
     if (!baUser) throw new BadRequestException('Better Auth user not found');
 
-    const existing = await this.prisma.employee.findUnique({
+    const existing = await this.prisma.employee.findFirst({
       where: { betterAuthUserId: dto.betterAuthUserId },
     });
     if (existing) throw new ConflictException('User is already an employee');
@@ -317,19 +318,19 @@ export class EmployeesService {
     await this.validateAttendanceMethod(dto.attendanceMethod);
 
     if (dto.departmentId) {
-      const dept = await this.prisma.department.findUnique({
+      const dept = await this.prisma.department.findFirst({
         where: { id: dto.departmentId },
       });
       if (!dept) throw new NotFoundException('Department not found');
     }
     if (dto.designationId) {
-      const desig = await this.prisma.designation.findUnique({
+      const desig = await this.prisma.designation.findFirst({
         where: { id: dto.designationId },
       });
       if (!desig) throw new NotFoundException('Designation not found');
     }
     if (dto.accessPresetId) {
-      const preset = await this.prisma.accessPreset.findUnique({
+      const preset = await this.prisma.accessPreset.findFirst({
         where: { id: dto.accessPresetId },
       });
       if (!preset) throw new NotFoundException('Access preset not found');
@@ -339,7 +340,7 @@ export class EmployeesService {
       assertNoEscalation(actorPermissions, preset.permissions, 'access preset');
     }
     if (dto.reportingToId) {
-      const manager = await this.prisma.employee.findUnique({
+      const manager = await this.prisma.employee.findFirst({
         where: { id: dto.reportingToId },
       });
       if (!manager) throw new NotFoundException('Employee not found');
@@ -356,7 +357,7 @@ export class EmployeesService {
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date_family: { date: this.dateStr(), family: 'EMP' } },
+        where: { tenantId_date_family: tenantCompound({   date: this.dateStr(), family: 'EMP'   }) },
         create: { date: this.dateStr(), family: 'EMP', seq: 1 },
         update: { seq: { increment: 1 } },
       });
@@ -502,7 +503,7 @@ export class EmployeesService {
           // An explicit empty array means "no days chosen" — only an absent
           // shiftDays falls back to the Sun-Thu default.
           const days = Array.isArray(dto.shiftDays) ? dto.shiftDays : [0, 1, 2, 3, 4];
-          const preset = await tx.shiftPreset.findUnique({ where: { id: dto.shiftPresetId } });
+          const preset = await tx.shiftPreset.findFirst({ where: { id: dto.shiftPresetId } });
           if (!preset) {
             throw new BadRequestException(
               `Shift preset ${dto.shiftPresetId} does not exist`,
@@ -536,7 +537,7 @@ export class EmployeesService {
           }
         } else if (dto.shiftRotations) {
           for (const item of dto.shiftRotations) {
-            const preset = await tx.shiftPreset.findUnique({ where: { id: item.shiftPresetId } });
+            const preset = await tx.shiftPreset.findFirst({ where: { id: item.shiftPresetId } });
             if (!preset) {
               throw new BadRequestException(
                 `Shift preset ${item.shiftPresetId} does not exist`,
@@ -581,7 +582,7 @@ export class EmployeesService {
       // preset. The previous code flipped only when the role was exactly
       // 'customer', which left a cashier hired as an employee still gated by
       // the cashier role instead of the preset HR chose.
-      const profile = await tx.userProfile.findUnique({
+      const profile = await tx.userProfile.findFirst({
         where: { betterAuthUserId: dto.betterAuthUserId },
         select: { id: true, role: true },
       });
@@ -618,7 +619,7 @@ export class EmployeesService {
   }
 
   async update(id: string, dto: UpdateEmployeeDto, actorId?: string, actorPermissions?: string[]) {
-    const current = await this.prisma.employee.findUnique({
+    const current = await this.prisma.employee.findFirst({
       where: { id },
       select: {
         id: true,
@@ -665,20 +666,20 @@ export class EmployeesService {
 
     let newDepartment: { id: string; name: string } | null = null;
     if (dto.departmentId !== undefined && dto.departmentId !== current.departmentId) {
-      newDepartment = await this.prisma.department.findUnique({
+      newDepartment = await this.prisma.department.findFirst({
         where: { id: dto.departmentId },
       });
       if (!newDepartment) throw new NotFoundException('Department not found');
     }
     let newDesignation: { id: string; name: string } | null = null;
     if (dto.designationId !== undefined && dto.designationId !== current.designationId) {
-      newDesignation = await this.prisma.designation.findUnique({
+      newDesignation = await this.prisma.designation.findFirst({
         where: { id: dto.designationId },
       });
       if (!newDesignation) throw new NotFoundException('Designation not found');
     }
     if (dto.accessPresetId !== undefined && dto.accessPresetId !== current.accessPresetId) {
-      const preset = await this.prisma.accessPreset.findUnique({
+      const preset = await this.prisma.accessPreset.findFirst({
         where: { id: dto.accessPresetId },
       });
       if (!preset) throw new NotFoundException('Access preset not found');
@@ -693,7 +694,7 @@ export class EmployeesService {
       if (dto.reportingToId === current.id) {
         throw new BadRequestException('Employee cannot report to themselves');
       }
-      newManager = await this.prisma.employee.findUnique({
+      newManager = await this.prisma.employee.findFirst({
         where: { id: dto.reportingToId },
         select: {
           id: true,
@@ -918,7 +919,7 @@ export class EmployeesService {
         const changedById = actorId ?? null;
         if (dto.shiftPresetId) {
           const days = Array.isArray(dto.shiftDays) ? dto.shiftDays : [0, 1, 2, 3, 4];
-          const preset = await tx.shiftPreset.findUnique({ where: { id: dto.shiftPresetId } });
+          const preset = await tx.shiftPreset.findFirst({ where: { id: dto.shiftPresetId } });
           if (!preset) {
             throw new BadRequestException(
               `Shift preset ${dto.shiftPresetId} does not exist`,
@@ -966,7 +967,7 @@ export class EmployeesService {
               where: { employeeId: id, dayOfWeek: item.dayOfWeek, effectiveTo: null },
               include: { shiftPreset: true },
             });
-            const preset = await tx.shiftPreset.findUnique({ where: { id: item.shiftPresetId } });
+            const preset = await tx.shiftPreset.findFirst({ where: { id: item.shiftPresetId } });
             if (!preset) {
               throw new BadRequestException(
                 `Shift preset ${item.shiftPresetId} does not exist`,
@@ -1065,7 +1066,7 @@ export class EmployeesService {
           'Employee has financial/history records — archive instead of deleting.',
         );
       }
-      const profile = await tx.userProfile.findUnique({
+      const profile = await tx.userProfile.findFirst({
         where: { betterAuthUserId: emp.betterAuthUserId },
         select: { id: true, role: true },
       });
@@ -1169,7 +1170,7 @@ export class EmployeesService {
     dto: UpdateBankAccountDto,
     actorId?: string,
   ) {
-    const account = await this.prisma.employeeBankAccount.findUnique({
+    const account = await this.prisma.employeeBankAccount.findFirst({
       where: { id },
     });
     if (!account) throw new NotFoundException('Bank account not found');
@@ -1234,7 +1235,7 @@ export class EmployeesService {
   }
 
   async setPrimaryBankAccount(id: string, actorId?: string) {
-    const account = await this.prisma.employeeBankAccount.findUnique({
+    const account = await this.prisma.employeeBankAccount.findFirst({
       where: { id },
     });
     if (!account) throw new NotFoundException('Bank account not found');
@@ -1271,7 +1272,7 @@ export class EmployeesService {
   }
 
   async deleteBankAccount(id: string, actorId?: string) {
-    const account = await this.prisma.employeeBankAccount.findUnique({
+    const account = await this.prisma.employeeBankAccount.findFirst({
       where: { id },
     });
     if (!account) throw new NotFoundException('Bank account not found');

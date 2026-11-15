@@ -396,7 +396,7 @@ export class ReturnPurpose implements ScanPurposeHandler {
       };
     }
 
-    const dispatch = await this.prisma.dispatch.findUnique({
+    const dispatch = await this.prisma.dispatch.findFirst({
       where: { id: params.dispatchId },
       select: { consignmentId: true, courier: true, status: true },
     });

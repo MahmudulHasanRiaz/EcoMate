@@ -97,7 +97,7 @@ describe('MarketingSnapshotService', () => {
 
       expect(first).toEqual(second);
       const where = (prisma.marketingDailyProductCost.upsert as jest.Mock).mock.calls[0][0].where;
-      expect(where).toEqual({ productId_date: { productId: 'p1', date: expect.any(Date) } });
+      expect(where).toEqual({  productId: 'p1', date: expect.any(Date)  });
       const args = (prisma.marketingDailyProductCost.upsert as jest.Mock).mock.calls[0][0];
       expect(args.update).toEqual(expect.objectContaining({ spend: 60 }));
     });

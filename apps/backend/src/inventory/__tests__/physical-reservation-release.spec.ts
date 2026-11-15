@@ -30,11 +30,11 @@ describe('PhysicalInventoryController — reservation release actor', () => {
     };
     prisma = {
       orderItem: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
       orderItemComboComponent: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
       // Run the callback against the same stub so tx.* resolves.
@@ -71,7 +71,7 @@ describe('PhysicalInventoryController — reservation release actor', () => {
   });
 
   it('stamps the acting user on the managed OrderItem release leg', async () => {
-    prisma.orderItem.findUnique.mockResolvedValue({
+    prisma.orderItem.findFirst.mockResolvedValue({
       id: 'oi-1',
       productId: 'p-1',
       variantId: null,
@@ -92,7 +92,7 @@ describe('PhysicalInventoryController — reservation release actor', () => {
   });
 
   it('stamps the acting user on the combo-component release leg', async () => {
-    prisma.orderItemComboComponent.findUnique.mockResolvedValue({
+    prisma.orderItemComboComponent.findFirst.mockResolvedValue({
       id: 'cc-1',
       productId: 'p-1',
       variantId: null,

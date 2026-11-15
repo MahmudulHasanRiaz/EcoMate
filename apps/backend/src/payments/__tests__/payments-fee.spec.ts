@@ -34,8 +34,8 @@ describe('VerifyPaymentDto feeAmount', () => {
 describe('PaymentsService.verify fee capture', () => {
   let service: PaymentsService;
   const txMocks: any = {
-    payment: { findUnique: jest.fn(), update: jest.fn(), aggregate: jest.fn() },
-    order: { findUnique: jest.fn(), update: jest.fn() },
+    payment: { findFirst: jest.fn(), update: jest.fn(), aggregate: jest.fn() },
+    order: { findFirst: jest.fn(), update: jest.fn() },
     $queryRawUnsafe: jest.fn(),
   };
   const mockPrisma: any = {
@@ -55,7 +55,7 @@ describe('PaymentsService.verify fee capture', () => {
       ],
     }).compile();
     service = module.get(PaymentsService);
-    txMocks.payment.findUnique.mockResolvedValue({
+    txMocks.payment.findFirst.mockResolvedValue({
       id: 'pay1',
       orderId: 'o1',
       notes: null,
@@ -65,7 +65,7 @@ describe('PaymentsService.verify fee capture', () => {
       ...args.data,
     }));
     txMocks.payment.aggregate.mockResolvedValue({ _sum: { amount: 100 } });
-    txMocks.order.findUnique.mockResolvedValue({ total: 100 });
+    txMocks.order.findFirst.mockResolvedValue({ total: 100 });
     txMocks.order.update.mockResolvedValue({});
   });
 

@@ -37,7 +37,7 @@ export class ExpenseCategoriesService {
   };
 
   async create(dto: CreateExpenseCategoryDto) {
-    const existing = await this.prisma.expenseCategory.findUnique({
+    const existing = await this.prisma.expenseCategory.findFirst({
       where: { slug: dto.slug },
     });
     if (existing)
@@ -46,7 +46,7 @@ export class ExpenseCategoriesService {
       );
 
     if (dto.accountId) {
-      const account = await this.prisma.account.findUnique({
+      const account = await this.prisma.account.findFirst({
         where: { id: dto.accountId },
       });
       if (!account)
@@ -74,7 +74,7 @@ export class ExpenseCategoriesService {
   }
 
   async findOne(id: string) {
-    const cat = await this.prisma.expenseCategory.findUnique({
+    const cat = await this.prisma.expenseCategory.findFirst({
       where: { id },
       include: this.include,
     });
@@ -88,7 +88,7 @@ export class ExpenseCategoriesService {
     }
     await this.findOne(id);
     if (dto.slug) {
-      const existing = await this.prisma.expenseCategory.findUnique({
+      const existing = await this.prisma.expenseCategory.findFirst({
         where: { slug: dto.slug },
       });
       if (existing && existing.id !== id) {
@@ -98,7 +98,7 @@ export class ExpenseCategoriesService {
       }
     }
     if (dto.accountId) {
-      const account = await this.prisma.account.findUnique({
+      const account = await this.prisma.account.findFirst({
         where: { id: dto.accountId },
       });
       if (!account)

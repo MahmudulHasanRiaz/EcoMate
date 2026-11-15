@@ -23,17 +23,17 @@ describe('OrderEditLockService', () => {
   const mockPrisma = () => ({
     orderEditLock: {
       create: jest.fn().mockResolvedValue(liveLock),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
       upsert: jest.fn(),
     },
     order: {
-      findUnique: jest.fn().mockResolvedValue({ id: 'order-1' }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'order-1' }),
       update: jest.fn().mockResolvedValue({}),
     },
     userProfile: {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         firstName: 'Ayesha',
         lastName: 'Khan',
       }),
@@ -52,7 +52,7 @@ describe('OrderEditLockService', () => {
   });
 
   it('acquires a free lock', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(null);
+    prisma.orderEditLock.findFirst.mockResolvedValue(null);
     prisma.orderEditLock.create.mockResolvedValue(liveLock);
 
     const result = await service.acquire('order-1', 'user-a');
@@ -61,7 +61,7 @@ describe('OrderEditLockService', () => {
   });
 
   it('re-acquires (refreshes) when the caller already owns the lock', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
+    prisma.orderEditLock.findFirst.mockResolvedValue(liveLock);
     prisma.orderEditLock.upsert.mockResolvedValue({
       ...liveLock,
       heartbeatAt: new Date(),
@@ -81,7 +81,7 @@ describe('OrderEditLockService', () => {
   });
 
   it('returns heldBy without throwing when another user holds a live lock', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
+    prisma.orderEditLock.findFirst.mockResolvedValue(liveLock);
 
     const result = await service.acquire('order-1', 'user-b');
     expect(result.acquired).toBe(false);
@@ -95,14 +95,14 @@ describe('OrderEditLockService', () => {
   });
 
   it('takes over an expired lock via upsert and audits the takeover', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(expiredLock);
+    prisma.orderEditLock.findFirst.mockResolvedValue(expiredLock);
     prisma.orderEditLock.upsert.mockResolvedValue({
       ...expiredLock,
       userId: 'user-b',
       heartbeatAt: new Date(),
       expiresAt: new Date(Date.now() + 60_000),
     });
-    prisma.order.findUnique.mockResolvedValue({
+    prisma.order.findFirst.mockResolvedValue({
       id: 'order-1',
       timeline: [],
     });
@@ -124,7 +124,7 @@ describe('OrderEditLockService', () => {
     // Read sees nothing; the create loses the unique race; the re-read sees
     // the other holder's live lock → conflict, and the benign race is never
     // logged as an error.
-    prisma.orderEditLock.findUnique
+    prisma.orderEditLock.findFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(liveLock);
     prisma.orderEditLock.create.mockRejectedValue(
@@ -145,7 +145,7 @@ describe('OrderEditLockService', () => {
   });
 
   it('recovers via upsert when the raced lock was released before the re-read', async () => {
-    prisma.orderEditLock.findUnique
+    prisma.orderEditLock.findFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
     prisma.orderEditLock.create.mockRejectedValue(
@@ -170,14 +170,14 @@ describe('OrderEditLockService', () => {
   });
 
   it('throws NotFound when the order does not exist', async () => {
-    prisma.order.findUnique.mockResolvedValue(null);
+    prisma.order.findFirst.mockResolvedValue(null);
     await expect(service.acquire('nope', 'user-a')).rejects.toThrow(
       NotFoundException,
     );
   });
 
   it('renews the TTL on heartbeat for the owner', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
+    prisma.orderEditLock.findFirst.mockResolvedValue(liveLock);
     prisma.orderEditLock.update.mockResolvedValue({
       ...liveLock,
       expiresAt: new Date(Date.now() + 60_000),
@@ -189,14 +189,14 @@ describe('OrderEditLockService', () => {
   });
 
   it('reports ownership loss on heartbeat from a non-holder', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
+    prisma.orderEditLock.findFirst.mockResolvedValue(liveLock);
     const result = await service.heartbeat('order-1', 'user-b');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.heldBy.userId).toBe('user-a');
   });
 
   it('release succeeds for the holder and deletes the row', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
+    prisma.orderEditLock.findFirst.mockResolvedValue(liveLock);
     prisma.orderEditLock.delete.mockResolvedValue(liveLock);
 
     const result = await service.release('order-1', 'user-a');
@@ -207,7 +207,7 @@ describe('OrderEditLockService', () => {
   });
 
   it('release refuses when another user holds the lock', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
+    prisma.orderEditLock.findFirst.mockResolvedValue(liveLock);
     await expect(service.release('order-1', 'user-b')).rejects.toThrow(
       ConflictException,
     );
@@ -215,11 +215,11 @@ describe('OrderEditLockService', () => {
   });
 
   it('override takes the lock regardless of the current holder', async () => {
-    prisma.order.findUnique.mockResolvedValue({
+    prisma.order.findFirst.mockResolvedValue({
       id: 'order-1',
       timeline: [],
     });
-    prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
+    prisma.orderEditLock.findFirst.mockResolvedValue(liveLock);
     prisma.orderEditLock.upsert.mockResolvedValue({
       ...liveLock,
       userId: 'user-b',
@@ -241,7 +241,7 @@ describe('OrderEditLockService', () => {
   });
 
   it('getLock returns null when the lock is expired', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(expiredLock);
+    prisma.orderEditLock.findFirst.mockResolvedValue(expiredLock);
     const lock = await service.getLock('order-1');
     expect(lock).toBeNull();
   });

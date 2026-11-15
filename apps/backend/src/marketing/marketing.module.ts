@@ -85,7 +85,7 @@ export class MarketingModule implements OnApplicationBootstrap {
     try {
       await this.platforms.ensureDefaults();
 
-      const setting = await this.prisma.systemSetting.findUnique({
+      const setting = await this.prisma.systemSetting.findFirst({
         where: { key: SYNC_INTERVAL_SETTING },
       });
       const hours = setting?.value ? parseInt(setting.value, 10) : DEFAULT_SYNC_INTERVAL_HOURS;

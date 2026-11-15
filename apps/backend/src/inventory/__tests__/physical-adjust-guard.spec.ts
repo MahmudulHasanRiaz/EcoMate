@@ -14,8 +14,8 @@ describe('PhysicalInventoryController — destructive adjustment guard', () => {
   let controller: PhysicalInventoryController;
   let prisma: {
     physicalInventory: { findMany: jest.Mock };
-    product: { findUnique: jest.Mock };
-    productVariant: { findUnique: jest.Mock };
+    product: { findFirst: jest.Mock };
+    productVariant: { findFirst: jest.Mock };
     $queryRaw: jest.Mock;
     $transaction: jest.Mock;
   };
@@ -46,8 +46,8 @@ describe('PhysicalInventoryController — destructive adjustment guard', () => {
     addPhysical = jest.fn().mockResolvedValue(undefined);
     prisma = {
       physicalInventory: { findMany: jest.fn() },
-      product: { findUnique: jest.fn().mockResolvedValue(null) },
-      productVariant: { findUnique: jest.fn().mockResolvedValue(null) },
+      product: { findFirst: jest.fn().mockResolvedValue(null) },
+      productVariant: { findFirst: jest.fn().mockResolvedValue(null) },
       // Guard + write share one transaction; the fake runs the callback
       // against the same stub so both see identical state.
       $queryRaw: jest.fn().mockResolvedValue([]),

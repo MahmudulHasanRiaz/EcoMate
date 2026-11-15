@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   NotFoundException,
@@ -522,7 +523,7 @@ export class OrdersService {
     },
   ) {
     if (!productId) return;
-    const product = await tx.product.findUnique({
+    const product = await tx.product.findFirst({
       where: { id: productId },
       select: {
         availabilityMode: true,
@@ -875,7 +876,7 @@ export class OrdersService {
     const prefix = `ORD-${dateStr}`;
 
     const counter = await tx.orderCounter.upsert({
-      where: { date_family: { date: dateStr, family: 'ORD' } },
+      where: { tenantId_date_family: tenantCompound({   date: dateStr, family: 'ORD'   }) },
       create: { date: dateStr, family: 'ORD', seq: 1 },
       update: { seq: { increment: 1 } },
     });
@@ -1293,7 +1294,7 @@ export class OrdersService {
       },
     } satisfies Prisma.OrderInclude;
 
-    let order = await this.prisma.order.findUnique({
+    let order = await this.prisma.order.findFirst({
       where: { id },
       include,
     });
@@ -1534,7 +1535,7 @@ export class OrdersService {
    * query makes that deterministic: ordered − Σ(dispatched, non-cancelled).
    */
   async getRemainingFulfillment(orderId: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { items: true, dispatches: true },
     });
@@ -1572,7 +1573,7 @@ export class OrdersService {
 
   private async getDefaultOfficeNote(): Promise<string | null> {
     try {
-      const s = await this.prisma.systemSetting.findUnique({
+      const s = await this.prisma.systemSetting.findFirst({
         where: { key: 'default_office_note' },
       });
       return s?.value || null;
@@ -1735,7 +1736,7 @@ export class OrdersService {
     } | null = null;
 
     if (dto.customerId) {
-      linkedCustomer = await this.prisma.userProfile.findUnique({
+      linkedCustomer = await this.prisma.userProfile.findFirst({
         where: { id: dto.customerId },
         select: {
           status: true,
@@ -1778,7 +1779,7 @@ export class OrdersService {
           });
           if (phoneOwner) phone = undefined; // conflict → keep existing profile phone
         }
-        const existingProfile = await this.prisma.customerProfile.findUnique({
+        const existingProfile = await this.prisma.customerProfile.findFirst({
           where: { id: dto.customerId },
           select: { id: true },
         });
@@ -2102,7 +2103,7 @@ export class OrdersService {
             const compQty = (sub.quantity ?? 1) * item.quantity;
             if (sub.product?.type === 'variable') {
               if (!compVariantId) continue;
-              const compVariant = await tx.productVariant.findUnique({
+              const compVariant = await tx.productVariant.findFirst({
                 where: { id: compVariantId },
                 select: {
                   id: true,
@@ -2253,11 +2254,11 @@ export class OrdersService {
         districtChargesSetting,
       ] = await Promise.all([
         tx.systemSetting
-          .findUnique({ where: { key: 'shipping_mode' } })
+          .findFirst({ where: { key: 'shipping_mode' } })
           .catch(() => null),
-        tx.systemSetting.findUnique({ where: { key: 'delivery_charge' } }),
-        tx.systemSetting.findUnique({ where: { key: 'free_delivery_min' } }),
-        tx.systemSetting.findUnique({ where: { key: 'district_charges' } }),
+        tx.systemSetting.findFirst({ where: { key: 'delivery_charge' } }),
+        tx.systemSetting.findFirst({ where: { key: 'free_delivery_min' } }),
+        tx.systemSetting.findFirst({ where: { key: 'district_charges' } }),
       ]);
 
       const shippingMode = shippingModeSetting?.value || 'auto_district';
@@ -2283,7 +2284,7 @@ export class OrdersService {
           if (!optionId) {
             throw new BadRequestException('A shipping option is required');
           }
-          const shippingOption = await tx.shippingOption.findUnique({
+          const shippingOption = await tx.shippingOption.findFirst({
             where: { id: optionId },
           });
           if (!shippingOption || !shippingOption.isActive) {
@@ -2636,7 +2637,7 @@ export class OrdersService {
 
       // Journey session for this ctxId, used ONLY as a fallback for signals the
       // order request did not carry itself (one indexed lookup, no join).
-      const sessionFallback = dto.trackingSessionId        ? await tx.marketingSession.findUnique({
+      const sessionFallback = dto.trackingSessionId        ? await tx.marketingSession.findFirst({
             where: { sessionToken: dto.trackingSessionId },
             select: {
               utmSource: true,
@@ -2657,7 +2658,7 @@ export class OrdersService {
 
       // Configured attribution window (days). Read once per order — a single
       // indexed settings lookup — and only ever recorded on the snapshot.
-      const windowSetting = await tx.systemSetting.findUnique({
+      const windowSetting = await tx.systemSetting.findFirst({
         where: { key: 'attribution_window_days' },
       });
       const attributionWindowDays = Number(windowSetting?.value) || null;
@@ -2868,7 +2869,7 @@ export class OrdersService {
         const phones: string[] = [];
         if (created.guestPhone) phones.push(created.guestPhone);
         if (created.customerId) {
-          const profile = await tx.customerProfile.findUnique({
+          const profile = await tx.customerProfile.findFirst({
             where: { id: created.customerId },
             select: { phone: true },
           });
@@ -2877,7 +2878,7 @@ export class OrdersService {
         const uniquePhones = Array.from(new Set(phones));
 
         // DECISION #2 — phone-fallback window (configurable, default 7 days).
-        const windowSetting = await tx.systemSetting.findUnique({
+        const windowSetting = await tx.systemSetting.findFirst({
           where: { key: 'checkout_lead_supersede_phone_window_days' },
         });
         const phoneWindowDays = Number(windowSetting?.value || 7);
@@ -3013,7 +3014,7 @@ export class OrdersService {
         });
 
         if (item.comboId && createdItem) {
-          const combo = await tx.combo.findUnique({
+          const combo = await tx.combo.findFirst({
             where: { id: item.comboId },
             include: { items: true },
           });
@@ -3168,7 +3169,7 @@ export class OrdersService {
       // Capture the purchase snapshot inside the same transaction as the order
       // insert (idempotent). DB errors propagate and roll back the entire
       // transaction — a committed order MUST have a durable Purchase intent.
-      const orderWithItems = await tx.order.findUnique({
+      const orderWithItems = await tx.order.findFirst({
         where: { id: created.id },
         include: {
           items: {
@@ -3360,7 +3361,7 @@ export class OrdersService {
     dto: UpdateOrderDto,
     opts?: { userId?: string; performedBy?: string },
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id },
       include: {
         status: { select: { name: true } },
@@ -3929,7 +3930,7 @@ export class OrdersService {
           const newItem = newItemQueues.get(key)?.shift();
 
           if (item.comboId && newItem) {
-            const combo = await tx.combo.findUnique({
+            const combo = await tx.combo.findFirst({
               where: { id: item.comboId },
               include: { items: true },
             });
@@ -3961,7 +3962,7 @@ export class OrdersService {
                 // variantId on combo components is a plain string (not an FK),
                 // so fetch the resolved variant for the managed-stock gate.
                 const compVariant = snapshot.variantId
-                  ? await tx.productVariant.findUnique({
+                  ? await tx.productVariant.findFirst({
                       where: { id: snapshot.variantId },
                       select: {
                         managedStockQuantity: true,
@@ -4184,7 +4185,7 @@ export class OrdersService {
             data.secondaryPhone = normalizedSecondary;
           }
           if (normalizedSecondary && order.customerId) {
-            const owner = await tx.customerPhone.findUnique({
+            const owner = await tx.customerPhone.findFirst({
               where: { phone: normalizedSecondary },
               select: { customerProfileId: true },
             });
@@ -4494,7 +4495,7 @@ export class OrdersService {
     userId: string,
     performedBy?: string,
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
     });
     if (!order || order.trashedAt)
@@ -4592,14 +4593,14 @@ export class OrdersService {
     tx?: Prisma.TransactionClient,
     internalOpts?: { allowStaffPartialToDelivered?: boolean; courier?: string },
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id },
       include: { status: true },
     });
     if (!order || order.trashedAt)
       throw new NotFoundException('Order not found');
 
-    const newStatus = await this.prisma.orderStatus.findUnique({
+    const newStatus = await this.prisma.orderStatus.findFirst({
       where: { id: dto.statusId },
     });
     if (!newStatus) throw new NotFoundException('Status not found');
@@ -4833,7 +4834,7 @@ export class OrdersService {
       // settings; the block is wrapped so a capture-side failure can never roll
       // back the status change.
       try {
-        const withItems = await client.order.findUnique({
+        const withItems = await client.order.findFirst({
           where: { id },
           include: {
             items: {
@@ -4987,7 +4988,7 @@ export class OrdersService {
     dto: { items: unknown; reason?: string; instantDelivery?: boolean },
     actor: { userId: string; email?: string },
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: {
         status: true,
@@ -5076,7 +5077,7 @@ export class OrdersService {
     const performedBy = actor.email ?? actor.userId;
     if (dto.instantDelivery) {
       if (statusName === 'Shipping') {
-        const delivered = await this.prisma.orderStatus.findUnique({
+        const delivered = await this.prisma.orderStatus.findFirst({
           where: { name: 'Delivered' },
         });
         if (!delivered) {
@@ -5106,7 +5107,7 @@ export class OrdersService {
     }
 
     if (statusName === 'Shipping') {
-      const partial = await this.prisma.orderStatus.findUnique({
+      const partial = await this.prisma.orderStatus.findFirst({
         where: { name: 'Partial' },
       });
       if (!partial) {
@@ -5167,7 +5168,7 @@ export class OrdersService {
     performedByEmail?: string,
     internalOpts?: { courier?: string },
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { status: true },
     });
@@ -5196,7 +5197,7 @@ export class OrdersService {
         'Partial → Delivered requires an open staff-created partial return.',
       );
     }
-    const delivered = await this.prisma.orderStatus.findUnique({
+    const delivered = await this.prisma.orderStatus.findFirst({
       where: { name: 'Delivered' },
     });
     if (!delivered) {
@@ -5292,7 +5293,7 @@ export class OrdersService {
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.returnCounter.upsert({
-        where: { date: dateStr },
+        where: { tenantId_date: tenantCompound({  date: dateStr  }) },
         create: { date: dateStr, seq: 1 },
         update: { seq: { increment: 1 } },
       });
@@ -5305,7 +5306,7 @@ export class OrdersService {
     proofData: { transactionId?: string; screenshot?: string },
     opts?: { userId?: string; token?: string },
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { status: true },
     });
@@ -5328,7 +5329,7 @@ export class OrdersService {
       );
     }
 
-    const paymentVerifyingStatus = await this.prisma.orderStatus.findUnique({
+    const paymentVerifyingStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Payment Verifying' },
     });
 
@@ -5372,7 +5373,7 @@ export class OrdersService {
 
   async verifyPayment(orderId: string, verified: boolean, note?: string, feeAmount?: number, userId?: string) {
     const updated = await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
+      const order = await tx.order.findFirst({
         where: { id: orderId },
         include: { status: true },
       });
@@ -5402,7 +5403,7 @@ export class OrdersService {
       }
 
       const targetStatusName = verified ? 'Confirmed' : 'Payment Pending';
-      const targetStatus = await tx.orderStatus.findUnique({
+      const targetStatus = await tx.orderStatus.findFirst({
         where: { name: targetStatusName },
       });
 
@@ -5443,7 +5444,7 @@ export class OrdersService {
         // `tracking_meta_validated_status`), so the event fires only when the
         // configured validated status matches the status actually reached.
         try {
-          const withItems = await tx.order.findUnique({
+          const withItems = await tx.order.findFirst({
             where: { id: orderId },
             include: {
               items: {
@@ -5504,7 +5505,7 @@ export class OrdersService {
             verificationSource: 'manual',
           },
         });
-        return tx.order.findUnique({
+        return tx.order.findFirst({
           where: { id: orderId },
           include: { status: true, payments: true },
         });
@@ -5543,7 +5544,7 @@ export class OrdersService {
     userId?: string,
     performedBy?: string,
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { items: true, status: { select: { name: true } } },
     });
@@ -5635,7 +5636,7 @@ export class OrdersService {
       reservedStock?: number | null;
     } | null = null;
     if (dto.productId) {
-      addedProduct = await this.prisma.product.findUnique({
+      addedProduct = await this.prisma.product.findFirst({
         where: { id: dto.productId },
         select: {
           availabilityMode: true,
@@ -5656,7 +5657,7 @@ export class OrdersService {
       // engine itself does not refuse an over-reservation. Variant lines
       // check the variant's counters, mirroring create.
       if (dto.variantId) {
-        const variant = await this.prisma.productVariant.findUnique({
+        const variant = await this.prisma.productVariant.findFirst({
           where: { id: dto.variantId },
           select: { managedStockQuantity: true, reservedStock: true },
         });
@@ -5791,7 +5792,7 @@ export class OrdersService {
     userId?: string,
     performedBy?: string,
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { items: true, status: { select: { name: true } } },
     });
@@ -5919,7 +5920,7 @@ export class OrdersService {
   }
 
   async bulkStatusChange(ids: string[], statusId: string, userId = 'system') {
-    const targetStatus = await this.prisma.orderStatus.findUnique({
+    const targetStatus = await this.prisma.orderStatus.findFirst({
       where: { id: statusId },
     });
     if (!targetStatus) throw new BadRequestException('Status not found');
@@ -6134,7 +6135,7 @@ export class OrdersService {
         for (const order of orders) {
           if (!validIds.includes(order.id)) continue;
           try {
-            const withItems = await tx.order.findUnique({
+            const withItems = await tx.order.findFirst({
               where: { id: order.id },
               include: {
                 items: {
@@ -6464,7 +6465,7 @@ export class OrdersService {
   }
 
   async rotateViewToken(orderId: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
     });
     if (!order || order.trashedAt)
@@ -6480,7 +6481,7 @@ export class OrdersService {
 
   async cancelByCustomer(orderId: string, token: string) {
     if (!token) throw new ForbiddenException('View token is required');
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { status: true },
     });
@@ -6523,7 +6524,7 @@ export class OrdersService {
       // fireRefundEvent self-gates on settings; the block is wrapped so a
       // capture-side failure can never roll back the cancellation.
       try {
-        const refundOrder = await tx.order.findUnique({
+        const refundOrder = await tx.order.findFirst({
           where: { id: orderId },
           include: {
             items: {
@@ -6593,7 +6594,7 @@ export class OrdersService {
   }
 
   async trash(orderId: string, performedBy?: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { status: true },
     });
@@ -6644,7 +6645,7 @@ export class OrdersService {
   }
 
   async restore(orderId: string, performedBy?: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { status: true },
     });
@@ -6719,7 +6720,7 @@ export class OrdersService {
     performedBy?: string,
   ) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
+      const order = await tx.order.findFirst({
         where: { id: orderId },
         include: {
           status: true,
@@ -6752,7 +6753,7 @@ export class OrdersService {
         );
       }
 
-      const targetStatus = await tx.orderStatus.findUnique({
+      const targetStatus = await tx.orderStatus.findFirst({
         where: { name: newStatus },
       });
       if (!targetStatus)
@@ -7127,7 +7128,7 @@ export class OrdersService {
   ): Promise<string | null> {
     if (!actor || isAutomatedActor(actor)) return null;
     if (actor.includes('@')) {
-      const user = await tx.userProfile.findUnique({
+      const user = await tx.userProfile.findFirst({
         where: { email: actor },
         select: { id: true },
       });
@@ -7140,7 +7141,7 @@ export class OrdersService {
     orderId: string,
     tx?: Prisma.TransactionClient,
   ) {
-    const order = await (tx || this.prisma).order.findUnique({
+    const order = await (tx || this.prisma).order.findFirst({
       where: { id: orderId },
       include: {
         items: {
@@ -7183,7 +7184,7 @@ export class OrdersService {
     orderId: string,
     tx: Prisma.TransactionClient,
   ) {
-    const order = await tx.order.findUnique({
+    const order = await tx.order.findFirst({
       where: { id: orderId },
       include: {
         items: {
@@ -7938,7 +7939,7 @@ export class OrdersService {
         return;
       }
 
-      const setting = await this.prisma.systemSetting.findUnique({
+      const setting = await this.prisma.systemSetting.findFirst({
         where: { key: 'tracking_refund_enabled' },
       });
       if (setting?.value === 'false') return;
@@ -7960,7 +7961,7 @@ export class OrdersService {
       // (`purchase_{order.id}` in orders/POS/checkout-leads), so one lookup
       // covers instant, validated, and offline captures.
       const client = (tx ?? this.prisma) as Prisma.TransactionClient;
-      const purchaseSnapshot = await client.trackingSnapshot.findUnique({
+      const purchaseSnapshot = await client.trackingSnapshot.findFirst({
         where: { eventId: `purchase_${order.id}` },
         select: { id: true },
       });
@@ -7970,7 +7971,7 @@ export class OrdersService {
         );
         return;
       }
-      const purchaseOutbox = await client.trackingOutbox.findUnique({
+      const purchaseOutbox = await client.trackingOutbox.findFirst({
         where: { snapshotId: purchaseSnapshot.id },
         select: { status: true },
       });

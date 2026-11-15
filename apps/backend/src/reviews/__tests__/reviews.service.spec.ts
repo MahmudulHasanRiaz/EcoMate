@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 describe('ReviewsService (mobile)', () => {
   let svc: ReviewsService;
   let prisma: {
-    product: { findUnique: jest.Mock };
+    product: { findFirst: jest.Mock };
     review: {
       findFirst: jest.Mock;
       findMany: jest.Mock;
@@ -16,7 +16,7 @@ describe('ReviewsService (mobile)', () => {
 
   beforeEach(async () => {
     prisma = {
-      product: { findUnique: jest.fn() },
+      product: { findFirst: jest.fn() },
       review: {
         findFirst: jest.fn(),
         findMany: jest.fn(),
@@ -34,7 +34,7 @@ describe('ReviewsService (mobile)', () => {
   });
 
   it('normalizes mobile and stores it on create', async () => {
-    prisma.product.findUnique.mockResolvedValue({ id: 'p1' });
+    prisma.product.findFirst.mockResolvedValue({ id: 'p1' });
     prisma.review.findFirst.mockResolvedValue(null);
     prisma.review.create.mockResolvedValue({ id: 'r1' });
 
@@ -53,7 +53,7 @@ describe('ReviewsService (mobile)', () => {
   });
 
   it('defaults missing name to Verified Buyer and missing rating to null (never an inflated 5)', async () => {
-    prisma.product.findUnique.mockResolvedValue({ id: 'p1' });
+    prisma.product.findFirst.mockResolvedValue({ id: 'p1' });
     prisma.review.findFirst.mockResolvedValue(null);
     prisma.review.create.mockResolvedValue({ id: 'r1' });
 
@@ -68,7 +68,7 @@ describe('ReviewsService (mobile)', () => {
   });
 
   it('stores a provided rating and rejects out-of-range ratings', async () => {
-    prisma.product.findUnique.mockResolvedValue({ id: 'p1' });
+    prisma.product.findFirst.mockResolvedValue({ id: 'p1' });
     prisma.review.findFirst.mockResolvedValue(null);
     prisma.review.create.mockResolvedValue({ id: 'r1' });
 
@@ -86,7 +86,7 @@ describe('ReviewsService (mobile)', () => {
   });
 
   it('throws already-reviewed on duplicate mobile for the same product', async () => {
-    prisma.product.findUnique.mockResolvedValue({ id: 'p1' });
+    prisma.product.findFirst.mockResolvedValue({ id: 'p1' });
     prisma.review.findFirst.mockResolvedValue({ id: 'r0' });
 
     await expect(
@@ -95,7 +95,7 @@ describe('ReviewsService (mobile)', () => {
   });
 
   it('public findByProductSlug never selects mobile', async () => {
-    prisma.product.findUnique.mockResolvedValue({ id: 'p1' });
+    prisma.product.findFirst.mockResolvedValue({ id: 'p1' });
     prisma.review.findMany.mockResolvedValue([]);
     prisma.review.count.mockResolvedValue(0);
 

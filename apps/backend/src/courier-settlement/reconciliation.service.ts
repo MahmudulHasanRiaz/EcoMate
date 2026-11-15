@@ -35,9 +35,9 @@ export class CourierSettlementReconciliationService {
   ) {}
 
   async manualMatch(rowId: string, orderId: string, reason: string | undefined, actor?: string | null) {
-    const row = await this.prisma.courierSettlementRow.findUnique({ where: { id: rowId } });
+    const row = await this.prisma.courierSettlementRow.findFirst({ where: { id: rowId } });
     if (!row) throw new NotFoundException('Row not found');
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: { id: true, displayId: true },
     });
@@ -64,7 +64,7 @@ export class CourierSettlementReconciliationService {
       detail: { rowNumber: row.rowNumber, orderId, manual: true, reason: reason ?? null },
     });
     await this.exceptions.refreshInvoiceState(row.invoiceId, actor);
-    return this.prisma.courierSettlementRow.findUnique({ where: { id: rowId } });
+    return this.prisma.courierSettlementRow.findFirst({ where: { id: rowId } });
   }
 
   /**
@@ -75,7 +75,7 @@ export class CourierSettlementReconciliationService {
    * derived, never assumed.
    */
   async rematchRow(rowId: string) {
-    const row = await this.prisma.courierSettlementRow.findUnique({
+    const row = await this.prisma.courierSettlementRow.findFirst({
       where: { id: rowId },
       include: { invoice: { select: { provider: true } } },
     });
@@ -173,7 +173,7 @@ export class CourierSettlementReconciliationService {
 
   /** Re-run the rule evaluation for a row against its current persisted state. */
   async revalidateRow(rowId: string) {
-    const row = await this.prisma.courierSettlementRow.findUnique({
+    const row = await this.prisma.courierSettlementRow.findFirst({
       where: { id: rowId },
       include: { invoice: { select: { provider: true } } },
     });

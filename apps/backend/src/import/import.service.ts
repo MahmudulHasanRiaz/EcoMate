@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   Logger,
@@ -433,7 +434,7 @@ export class ImportService {
     );
     if (!hasIcUnits) return null;
 
-    const setting = await this.prisma.systemSetting.findUnique({
+    const setting = await this.prisma.systemSetting.findFirst({
       where: { key: 'inventory_enabled' },
     });
     if (setting?.value !== 'true') return null;
@@ -550,7 +551,7 @@ export class ImportService {
     // Variation-only groups never ran updateProductCached, so resolve the
     // stored mode directly — variant updates need it for the same IC rule.
     if (existingProductId && existingMode === undefined) {
-      const modeRow = await this.prisma.product.findUnique({
+      const modeRow = await this.prisma.product.findFirst({
         where: { id: existingProductId },
         select: { availabilityMode: true },
       });
@@ -617,7 +618,7 @@ export class ImportService {
       if (isVariableParent && explicitParentPrice === undefined) {
         const lowestVariantPrice = this.lowestVariationPrice(variationRows);
         if (lowestVariantPrice !== undefined) {
-          const current = await this.prisma.product.findUnique({
+          const current = await this.prisma.product.findFirst({
             where: { id: productId },
             select: { basePrice: true },
           });
@@ -905,7 +906,7 @@ export class ImportService {
     // MANAGED_STOCK row, and must NOT flip an INVENTORY_CONTROLLED row's
     // flag (combo availability checks read manageStock independently of
     // mode). Unknown rows default to MANAGED_STOCK, matching the schema.
-    const existingModeRow = await this.prisma.product.findUnique({
+    const existingModeRow = await this.prisma.product.findFirst({
       where: { id: productId },
       select: { availabilityMode: true },
     });
@@ -1292,7 +1293,7 @@ export class ImportService {
     productId: string,
     intended: Record<string, unknown>,
   ): Promise<boolean> {
-    const current = await this.prisma.product.findUnique({
+    const current = await this.prisma.product.findFirst({
       where: { id: productId },
       select: {
         name: true,
@@ -1402,7 +1403,7 @@ export class ImportService {
     intended: Record<string, unknown>,
     productId: string,
   ): Promise<boolean> {
-    const current = await this.prisma.productVariant.findUnique({
+    const current = await this.prisma.productVariant.findFirst({
       where: { id: variantId },
       select: {
         price: true,
@@ -1555,7 +1556,7 @@ export class ImportService {
     if (cachedId) return cachedId;
 
     const upserted = await this.prisma.brand.upsert({
-      where: { slug },
+      where: { tenantId_slug: tenantCompound({  slug  }) },
       create: {
         name: brandName.trim(),
         slug,

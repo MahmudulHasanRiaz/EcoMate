@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   OnModuleInit,
@@ -106,12 +107,12 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
     const blockType = dto.blockType || 'order';
 
     if (dto.type === 'ip') {
-      const existing = await this.prisma.blockedIp.findUnique({
+      const existing = await this.prisma.blockedIp.findFirst({
         where: { ip: dto.value },
       });
       if (existing && existing.isActive) {
         return this.prisma.blockedIp.update({
-          where: { ip: dto.value },
+          where: { tenantId_ip: tenantCompound({  ip: dto.value  }) },
           data: {
             blockType: blockType === 'full' ? 'full' : existing.blockType,
             reason: dto.reason ?? existing.reason,
@@ -123,7 +124,7 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
         });
       }
       return this.prisma.blockedIp.upsert({
-        where: { ip: dto.value },
+        where: { tenantId_ip: tenantCompound({  ip: dto.value  }) },
         update: {
           blockType,
           reason: dto.reason,
@@ -141,12 +142,12 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
       });
     } else {
       const phone = normalizePhone(dto.value) || dto.value;
-      const existing = await this.prisma.blockedPhone.findUnique({
+      const existing = await this.prisma.blockedPhone.findFirst({
         where: { phone },
       });
       if (existing && existing.isActive) {
         return this.prisma.blockedPhone.update({
-          where: { phone },
+          where: { tenantId_phone: tenantCompound({  phone  }) },
           data: {
             reason: dto.reason ?? existing.reason,
             blockedBy: dto.blockedBy ?? existing.blockedBy,
@@ -156,7 +157,7 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
         });
       }
       return this.prisma.blockedPhone.upsert({
-        where: { phone },
+        where: { tenantId_phone: tenantCompound({  phone  }) },
         update: {
           reason: dto.reason,
           blockedBy: dto.blockedBy,
@@ -178,13 +179,13 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
     const expiresAt = new Date(Date.now() + durationMinutes * 60_000);
 
     if (type === 'ip') {
-      const existing = await this.prisma.blockedIp.findUnique({
+      const existing = await this.prisma.blockedIp.findFirst({
         where: { ip: value },
       });
       if (existing?.whitelisted) return null;
       if (existing && existing.isActive) {
         return this.prisma.blockedIp.update({
-          where: { ip: value },
+          where: { tenantId_ip: tenantCompound({  ip: value  }) },
           data: {
             blockType: blockType === 'full' ? 'full' : existing.blockType,
             autoBlocked: true,
@@ -195,7 +196,7 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
         });
       }
       return this.prisma.blockedIp.upsert({
-        where: { ip: value },
+        where: { tenantId_ip: tenantCompound({  ip: value  }) },
         update: {
           blockType,
           autoBlocked: true,
@@ -207,13 +208,13 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
       });
     } else {
       const phone = normalizePhone(value) || value;
-      const existing = await this.prisma.blockedPhone.findUnique({
+      const existing = await this.prisma.blockedPhone.findFirst({
         where: { phone },
       });
       if (existing?.whitelisted) return null;
       if (existing && existing.isActive) {
         return this.prisma.blockedPhone.update({
-          where: { phone },
+          where: { tenantId_phone: tenantCompound({  phone  }) },
           data: {
             autoBlocked: true,
             expiresAt,
@@ -223,7 +224,7 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
         });
       }
       return this.prisma.blockedPhone.upsert({
-        where: { phone },
+        where: { tenantId_phone: tenantCompound({  phone  }) },
         update: {
           autoBlocked: true,
           expiresAt,
@@ -237,14 +238,14 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
 
   async unblock(type: string, id: string) {
     if (type === 'ip') {
-      const entry = await this.prisma.blockedIp.findUnique({ where: { id } });
+      const entry = await this.prisma.blockedIp.findFirst({ where: { id } });
       if (!entry) throw new NotFoundException(`Blocked IP ${id} not found`);
       await this.prisma.blockedIp.update({
         where: { id },
         data: { isActive: false },
       });
     } else if (type === 'phone') {
-      const entry = await this.prisma.blockedPhone.findUnique({
+      const entry = await this.prisma.blockedPhone.findFirst({
         where: { id },
       });
       if (!entry) throw new NotFoundException(`Blocked phone ${id} not found`);
@@ -261,14 +262,14 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
 
   async toggleWhitelist(type: string, id: string) {
     if (type === 'ip') {
-      const entry = await this.prisma.blockedIp.findUnique({ where: { id } });
+      const entry = await this.prisma.blockedIp.findFirst({ where: { id } });
       if (!entry) throw new NotFoundException(`Blocked IP ${id} not found`);
       await this.prisma.blockedIp.update({
         where: { id },
         data: { whitelisted: !entry.whitelisted },
       });
     } else if (type === 'phone') {
-      const entry = await this.prisma.blockedPhone.findUnique({
+      const entry = await this.prisma.blockedPhone.findFirst({
         where: { id },
       });
       if (!entry) throw new NotFoundException(`Blocked phone ${id} not found`);

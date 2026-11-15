@@ -25,7 +25,7 @@ export async function assertEligibleAssetAccount(
   accountId: string,
   label = 'Account',
 ): Promise<EligibleAccount> {
-  const account = await db.account.findUnique({
+  const account = await db.account.findFirst({
     where: { id: accountId },
     select: {
       id: true,
@@ -182,7 +182,7 @@ export async function findConfiguredGateway(
   gatewayCode: string,
 ): Promise<ConfiguredGateway | null> {
   if (!db?.paymentGateway?.findUnique) return null;
-  return db.paymentGateway.findUnique({
+  return db.paymentGateway.findFirst({
     where: { code: gatewayCode },
     select: CONFIGURED_GATEWAY_SELECT,
   });
@@ -330,7 +330,7 @@ export async function ensureGatewaySettlementAccount(
     return { accountId: current, created: false, mapped: false };
   }
   const spec = gatewaySettlementAccountSpec(gateway);
-  let account = await db.account.findUnique({ where: { code: spec.code } });
+  let account = await db.account.findFirst({ where: { code: spec.code } });
   let created = false;
   if (!account) {
     try {
@@ -349,7 +349,7 @@ export async function ensureGatewaySettlementAccount(
     } catch (e: any) {
       // Unique-code race (concurrent bootstrap): re-read and continue.
       if (e?.code !== 'P2002') throw e;
-      account = await db.account.findUnique({ where: { code: spec.code } });
+      account = await db.account.findFirst({ where: { code: spec.code } });
       if (!account) throw e;
     }
   }

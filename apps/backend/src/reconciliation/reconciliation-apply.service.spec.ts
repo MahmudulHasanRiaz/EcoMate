@@ -128,7 +128,7 @@ function makeService(opts: any = {}) {
       update: jest.fn(async () => ({})),
     },
     return: {
-      findUnique: jest.fn(async () => ({
+      findFirst: jest.fn(async () => ({
         id: 'r1',
         orderId: 'o1',
         status: 'RESTOCKED',
@@ -138,7 +138,7 @@ function makeService(opts: any = {}) {
       create: jest.fn(async (args: any) => ({ id: 'ret-new-1', ...args.data })),
     },
     product: {
-      findUnique: jest.fn(async () =>
+      findFirst: jest.fn(async () =>
         opts.txProduct ?? {
           availabilityMode: 'MANAGED_STOCK',
           warehouseId: null,
@@ -148,12 +148,12 @@ function makeService(opts: any = {}) {
       update: jest.fn(async () => ({})),
     },
     productVariant: {
-      findUnique: jest.fn(async () => opts.txVariant ?? null),
+      findFirst: jest.fn(async () => opts.txVariant ?? null),
       update: jest.fn(async () => ({})),
     },
     // WS3: applyRow caps the restore at the ordered quantity via the order.
     order: {
-      findUnique: jest.fn(async () =>
+      findFirst: jest.fn(async () =>
         opts.txOrder ?? {
           items: [{ productId: 'p1', variantId: 'v1', quantity: 2 }],
         },
@@ -176,7 +176,7 @@ function makeService(opts: any = {}) {
     physicalReservation: { findMany: jest.fn(async () => []) },
     physicalInventory: {
       findFirst: jest.fn(async () => null),
-      findUnique: jest.fn(async () => null),
+      findFirst: jest.fn(async () => null),
       create: jest.fn(async () => ({ id: 'pi-1', quantity: 0, warehouseId: 'w1' })),
       update: jest.fn(async () => ({})),
     },

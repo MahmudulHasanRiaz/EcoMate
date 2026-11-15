@@ -33,7 +33,7 @@ export class DeliveryAreasController {
     if (cached) return cached;
 
     try {
-      const chargesRaw = await this.prisma.systemSetting.findUnique({
+      const chargesRaw = await this.prisma.systemSetting.findFirst({
         where: { key: 'district_charges' },
       });
       const charges: Record<string, number> = {};

@@ -65,7 +65,7 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
         update: jest.fn().mockResolvedValue({}),
       },
       order: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'order-1',
           items: [orderItem('item-a', managedProduct, 5), orderItem('item-b', keptProduct, 3)],
         }),
@@ -73,7 +73,7 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
       orderItem: { update: jest.fn().mockResolvedValue({}) },
       orderItemComboComponent: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
       physicalReservation: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.orderItemId_cycleId?.orderItemId === 'item-a') {
             return Promise.resolve({
               id: 'res-a',
@@ -96,17 +96,17 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
         update: jest.fn().mockResolvedValue({}),
       },
       comboComponentPhysicalReservation: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
       physicalInventory: {
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn().mockResolvedValue([{ quantity: 10, reservedQuantity: 2 }]),
-        findUnique: jest.fn().mockResolvedValue({ quantity: 10, reservedQuantity: 5 }),
+        findFirst: jest.fn().mockResolvedValue({ quantity: 10, reservedQuantity: 5 }),
       },
       product: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+        findFirst: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve(
             where.id === 'pp'
               ? {
@@ -374,7 +374,7 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
   });
 
   it('reports unrestored units when the physical reservation is missing (never silently RESTOCKED)', async () => {
-    tx.physicalReservation.findUnique.mockResolvedValue(null);
+    tx.physicalReservation.findFirst.mockResolvedValue(null);
     const res = await service.restoreForReturnItems({
       orderId: 'order-1',
       items: [{ productId: 'pa', quantity: 2 }],
@@ -388,7 +388,7 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
   });
 
   it('reports the shortfall when allocations cover fewer units than were deducted', async () => {
-    tx.physicalReservation.findUnique.mockImplementation(({ where }: any) => {
+    tx.physicalReservation.findFirst.mockImplementation(({ where }: any) => {
       if (where?.orderItemId_cycleId?.orderItemId === 'item-a') {
         return Promise.resolve({
           id: 'res-a',
@@ -416,11 +416,11 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
   it('ACTIVE reservation release is budget-capped across allocations (no per-allocation qty reuse)', async () => {
     // Audit item 5 (ACTIVE branch): allocations [3, 3], release qty 4 →
     // decrements must be 3 then 1 (the old code released 3 then 3).
-    tx.order.findUnique.mockResolvedValue({
+    tx.order.findFirst.mockResolvedValue({
       id: 'order-1',
       items: [orderItem('item-a', managedProduct, 4)],
     });
-    tx.physicalReservation.findUnique.mockResolvedValue({
+    tx.physicalReservation.findFirst.mockResolvedValue({
       id: 'res-active',
       status: 'ACTIVE',
       productId: 'pa',
@@ -652,11 +652,11 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
     }
 
     it('item-level return: physical restored, managed add NEVER happens, claim settled', async () => {
-      tx.order.findUnique.mockResolvedValue(movedOrder());
+      tx.order.findFirst.mockResolvedValue(movedOrder());
       // WS2 restores physical INTO the reservation's allocations; the
       // shared default mock (res-b, 3 units) belongs to another product —
       // this line's reservation covers the full 4 units.
-      tx.physicalReservation.findUnique.mockResolvedValue({
+      tx.physicalReservation.findFirst.mockResolvedValue({
         id: 'res-c',
         status: 'CONSUMED',
         productId: 'pc',
@@ -697,7 +697,7 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
     });
 
     it('blanket restoreForOrder: same rule — no managed add, flags cleared', async () => {
-      tx.order.findUnique.mockResolvedValue(movedOrder());
+      tx.order.findFirst.mockResolvedValue(movedOrder());
       tx.costingLotConsumption.findMany = jest.fn().mockResolvedValue([]);
 
       await service.restoreForOrder({
@@ -736,7 +736,7 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
         warehouseId: null,
         name: 'D',
       };
-      tx.order.findUnique.mockResolvedValue({
+      tx.order.findFirst.mockResolvedValue({
         id: 'order-1',
         items: [
           {
@@ -752,7 +752,7 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
           },
         ],
       });
-      tx.physicalReservation.findUnique.mockResolvedValue({
+      tx.physicalReservation.findFirst.mockResolvedValue({
         id: 'res-d',
         status: 'CONSUMED',
         productId: 'pd',

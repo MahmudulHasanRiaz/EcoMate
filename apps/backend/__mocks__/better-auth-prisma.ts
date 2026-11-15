@@ -2,7 +2,6 @@ import { PrismaClient } from '@prisma/client';
 
 const mockBetterAuthUser = {
   create: jest.fn().mockResolvedValue({ id: 'mock-ba-id', email: 'test@example.com' }),
-  findUnique: jest.fn().mockResolvedValue(null),
   findFirst: jest.fn().mockResolvedValue(null),
   update: jest.fn().mockResolvedValue({}),
   delete: jest.fn().mockResolvedValue({}),

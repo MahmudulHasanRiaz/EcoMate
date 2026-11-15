@@ -112,7 +112,7 @@ export class CourierSettlementExceptionsService {
    * are never touched by an exception refresh.
    */
   async refreshInvoiceState(invoiceId: string, actor?: string | null): Promise<string | null> {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id: invoiceId },
       select: { state: true },
     });

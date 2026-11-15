@@ -9,7 +9,7 @@ describe('AttendanceSettingsService', () => {
   beforeEach(async () => {
     prisma = {
       attendanceSettings: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         upsert: jest.fn(),
       },
     };
@@ -24,20 +24,20 @@ describe('AttendanceSettingsService', () => {
 
   describe('getSettings', () => {
     it('returns the seeded mode row', async () => {
-      prisma.attendanceSettings.findUnique.mockResolvedValue({
+      prisma.attendanceSettings.findFirst.mockResolvedValue({
         id: 'global',
         mode: 'MACHINE',
         updatedAt: new Date('2026-08-24T10:00:00.000Z'),
       });
       const res = await service.getSettings();
-      expect(prisma.attendanceSettings.findUnique).toHaveBeenCalledWith({
+      expect(prisma.attendanceSettings.findFirst).toHaveBeenCalledWith({
         where: { id: 'global' },
       });
       expect(res.mode).toBe('MACHINE');
     });
 
     it('defaults to APP when no row exists yet', async () => {
-      prisma.attendanceSettings.findUnique.mockResolvedValue(null);
+      prisma.attendanceSettings.findFirst.mockResolvedValue(null);
       const res = await service.getSettings();
       expect(res).toMatchObject({ id: 'global', mode: 'APP' });
     });

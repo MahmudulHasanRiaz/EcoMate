@@ -36,7 +36,7 @@ export class DepartmentsService {
   }
 
   async findOne(id: string) {
-    const department = await this.prisma.department.findUnique({
+    const department = await this.prisma.department.findFirst({
       where: { id },
     });
     if (!department) throw new NotFoundException('Department not found');
@@ -44,7 +44,7 @@ export class DepartmentsService {
   }
 
   async create(dto: CreateDepartmentDto) {
-    const existing = await this.prisma.department.findUnique({
+    const existing = await this.prisma.department.findFirst({
       where: { name: dto.name },
     });
     if (existing)
@@ -74,7 +74,7 @@ export class DepartmentsService {
     await this.findOne(id);
 
     if (dto.name) {
-      const existing = await this.prisma.department.findUnique({
+      const existing = await this.prisma.department.findFirst({
         where: { name: dto.name },
       });
       if (existing && existing.id !== id)

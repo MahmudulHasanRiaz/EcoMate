@@ -282,7 +282,7 @@ export class CostingLotService {
     tx?: Prisma.TransactionClient,
   ): Promise<number> {
     const client = tx ?? this.prisma;
-    const consumption = await client.costingLotConsumption.findUnique({
+    const consumption = await client.costingLotConsumption.findFirst({
       where: { id: consumptionId },
       include: { restorations: { select: { quantity: true } } },
     });

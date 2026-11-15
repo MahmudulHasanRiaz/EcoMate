@@ -51,7 +51,7 @@ describe('CachePurgeService', () => {
 
     prisma = {
       systemSetting: {
-        findUnique: jest.fn(async ({ where }: any) => {
+        findFirst: jest.fn(async ({ where }: any) => {
           if (where.key === 'cache_version')
             return { key: 'cache_version', value: String(versionCounter) };
           return null;
@@ -243,7 +243,7 @@ describe('CachePurgeService', () => {
   it('prefers the stored storefront_url setting over the env URL', async () => {
     process.env['STOREFRONT_URL'] = 'https://env.example.com';
     process.env['REVALIDATION_SECRET'] = 'reval-secret';
-    prisma.systemSetting.findUnique = jest.fn(async ({ where }: any) => {
+    prisma.systemSetting.findFirst = jest.fn(async ({ where }: any) => {
       if (where.key === 'storefront_url')
         return { key: 'storefront_url', value: 'https://settings.example.com' };
       if (where.key === 'cache_version')
@@ -284,7 +284,7 @@ describe('CachePurgeService', () => {
   });
 
   it('reports a version-bump read failure as a failed layer with an empty version', async () => {
-    prisma.systemSetting.findUnique = jest.fn(async ({ where }: any) => {
+    prisma.systemSetting.findFirst = jest.fn(async ({ where }: any) => {
       if (where.key === 'cache_version')
         throw new Error('DB down');
       return null;
@@ -302,7 +302,7 @@ describe('CachePurgeService', () => {
     await expect(service.getCacheVersion()).resolves.toEqual({
       version: '1000',
     });
-    prisma.systemSetting.findUnique = jest.fn(async () => null);
+    prisma.systemSetting.findFirst = jest.fn(async () => null);
     await expect(service.getCacheVersion()).resolves.toEqual({ version: null });
   });
 });

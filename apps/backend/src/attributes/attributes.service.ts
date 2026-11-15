@@ -88,7 +88,7 @@ export class AttributesService {
   }
 
   async findOne(id: string) {
-    const attr = await this.prisma.attribute.findUnique({
+    const attr = await this.prisma.attribute.findFirst({
       where: { id },
       include: { values: { orderBy: { sortOrder: 'asc' } } },
     });
@@ -97,7 +97,7 @@ export class AttributesService {
   }
 
   async create(dto: CreateAttributeDto) {
-    const existing = await this.prisma.attribute.findUnique({
+    const existing = await this.prisma.attribute.findFirst({
       where: { name: dto.name },
     });
     if (existing) throw new ConflictException('Attribute already exists');
@@ -122,7 +122,7 @@ export class AttributesService {
   }
 
   async update(id: string, dto: UpdateAttributeDto) {
-    const attr = await this.prisma.attribute.findUnique({ where: { id } });
+    const attr = await this.prisma.attribute.findFirst({ where: { id } });
     if (!attr) throw new NotFoundException('Attribute not found');
     if (dto.swatchFit !== undefined && !['cover', 'contain'].includes(dto.swatchFit)) {
       throw new BadRequestException('swatchFit must be cover or contain');
@@ -136,7 +136,7 @@ export class AttributesService {
   }
 
   async addValue(attributeId: string, dto: CreateAttributeValueDto) {
-    const attr = await this.prisma.attribute.findUnique({
+    const attr = await this.prisma.attribute.findFirst({
       where: { id: attributeId },
       select: { id: true },
     });
@@ -160,7 +160,7 @@ export class AttributesService {
   }
 
   async updateValue(valueId: string, dto: UpdateAttributeValueDto) {
-    const existing = await this.prisma.attributeValue.findUnique({
+    const existing = await this.prisma.attributeValue.findFirst({
       where: { id: valueId },
     });
     if (!existing) throw new NotFoundException('Attribute value not found');

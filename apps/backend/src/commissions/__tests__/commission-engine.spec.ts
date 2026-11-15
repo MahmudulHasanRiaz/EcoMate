@@ -55,16 +55,16 @@ describe('CommissionEngineService', () => {
       reverseCompensationExpense: jest.fn().mockResolvedValue(undefined),
     };
     prisma = {
-      userProfile: { findUnique: jest.fn() },
+      userProfile: { findFirst: jest.fn() },
       employee: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
-      order: { findUnique: jest.fn().mockResolvedValue(ORDER) },
+      order: { findFirst: jest.fn().mockResolvedValue(ORDER) },
       orderStatusTransition: {
         findFirstOrThrow: jest.fn(),
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         create: jest.fn(),
       },
       commissionRuleV2: { findMany: jest.fn().mockResolvedValue([]) },
@@ -95,8 +95,8 @@ describe('CommissionEngineService', () => {
 
   /** Make the actor resolve to a given employee. */
   function actorIs(employeeId: string) {
-    prisma.userProfile.findUnique.mockResolvedValue({ betterAuthUserId: `ba-${employeeId}` });
-    prisma.employee.findUnique.mockImplementation((args: any) => {
+    prisma.userProfile.findFirst.mockResolvedValue({ betterAuthUserId: `ba-${employeeId}` });
+    prisma.employee.findFirst.mockImplementation((args: any) => {
       if (args?.where?.betterAuthUserId === `ba-${employeeId}`) {
         return Promise.resolve({ id: employeeId });
       }
@@ -289,7 +289,7 @@ describe('CommissionEngineService', () => {
   describe('actor resolution', () => {
     it('credits nothing when the actor has no employee record', async () => {
       actorIs('emp-a');
-      prisma.employee.findUnique.mockResolvedValue(null);
+      prisma.employee.findFirst.mockResolvedValue(null);
       prisma.orderStatusTransition.findFirstOrThrow.mockResolvedValue({
         id: 'tx-1',
         isFirstForStatus: true,
@@ -511,7 +511,7 @@ describe('CommissionEngineService', () => {
   describe('trashed orders', () => {
     it('credits nothing for a trashed order', async () => {
       actorIs('emp-a');
-      prisma.order.findUnique.mockResolvedValue({ ...ORDER, trashedAt: new Date() });
+      prisma.order.findFirst.mockResolvedValue({ ...ORDER, trashedAt: new Date() });
       prisma.commissionRuleV2.findMany.mockResolvedValue([fixedRule()]);
       prisma.orderStatusTransition.findFirstOrThrow.mockResolvedValue({
         id: 'tx-1', isFirstForStatus: true,

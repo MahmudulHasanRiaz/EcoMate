@@ -112,7 +112,7 @@ function makePrisma(opts?: { existingSettlementTxns?: string[] }) {
     $transaction: async (fn: (t: any) => Promise<any>) => fn(tx),
     courierSettlementInvoice: {
       findFirst: async () => null,
-      findUnique: async ({ where }: any) => {
+      findFirst: async ({ where }: any) => {
         const inv = invoices.find((i) => i.id === where.id);
         return inv ? { ...inv } : null;
       },

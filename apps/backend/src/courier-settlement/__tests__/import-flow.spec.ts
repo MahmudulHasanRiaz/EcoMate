@@ -102,7 +102,7 @@ function makePrisma() {
           ) ?? null
         );
       },
-      findUnique: async ({ where }: any) => {
+      findFirst: async ({ where }: any) => {
         const inv = invoices.find((i) => i.id === where.id);
         // Prisma returns a fresh row — never the live array element (commitOrSchedule
         // reads state BEFORE updateMany mutates the stored invoice).

@@ -170,7 +170,7 @@ export class CommissionReportsService {
    * the money was actually calculated from.
    */
   async earningDetail(ledgerId: string) {
-    const row = await this.prisma.commissionLedgerV2.findUnique({
+    const row = await this.prisma.commissionLedgerV2.findFirst({
       where: { id: ledgerId },
       include: {
         employee: {
@@ -208,7 +208,7 @@ export class CommissionReportsService {
 
     if (!row) return null;
 
-    const rule = await this.prisma.commissionRuleV2.findUnique({
+    const rule = await this.prisma.commissionRuleV2.findFirst({
       where: { id: row.ruleId },
       select: { id: true, name: true, amount: true, amountType: true, isActive: true },
     });

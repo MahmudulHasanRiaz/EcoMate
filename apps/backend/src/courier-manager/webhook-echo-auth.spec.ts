@@ -34,7 +34,7 @@ describe('Webhook echo-auth security blockers (TDD RED)', () => {
       completeAttempt: jest.fn().mockResolvedValue(undefined),
       logAttempt: jest.fn().mockResolvedValue('att-1'),
     };
-    prisma = { courierCredentials: { findUnique: jest.fn() } };
+    prisma = { courierCredentials: { findFirst: jest.fn() } };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CourierWebhookController],
@@ -76,7 +76,7 @@ describe('Webhook echo-auth security blockers (TDD RED)', () => {
 
   describe('Carrybee HIGH: X-CB echo must not leak to unauthenticated callers', () => {
     beforeEach(() => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: CARRYBEE_SECRET });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: CARRYBEE_SECRET });
     });
 
     it('anon POST with no signature → 401 AND no secret echo header', async () => {
@@ -128,7 +128,7 @@ describe('Webhook echo-auth security blockers (TDD RED)', () => {
 
   describe('Pathao MEDIUM: integration-secret echo only after auth', () => {
     beforeEach(() => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({
+      prisma.courierCredentials.findFirst.mockResolvedValue({
         webhookSecret: PATHAO_SECRET,
         pathaoIntegrationSecret: PATHAO_CUSTOM_ECHO,
       });
@@ -214,7 +214,7 @@ describe('Webhook echo-auth security blockers (TDD RED)', () => {
 
   describe('404-race: behavior unchanged (404 + loud log)', () => {
     it('unknown order → 404 ORDER_NOT_FOUND (no retry; steadfast explicit, others assumed)', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: 's-token-xyz' });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: 's-token-xyz' });
       const rawBody = '{"consignment_id":"CG-404"}';
       const sig = require('node:crypto')
         .createHmac('sha256', 's-token-xyz')

@@ -82,8 +82,8 @@ export class CourierSettlementMappingService {
   /** Candidate mapping (active=false) unless `alwaysUse` explicitly declares it. */
   async propose(dto: MappingDto, actor?: string | null) {
     this.validate(dto);
-    const existing = await this.prisma.courierSettlementColumnAlias.findUnique({
-      where: { courier_sourceHeader: { courier: dto.courier, sourceHeader: dto.sourceHeader } },
+    const existing = await this.prisma.courierSettlementColumnAlias.findFirst({
+      where: {  courier: dto.courier, sourceHeader: dto.sourceHeader  },
     });
 
     // Competing active columns for the same field ⇒ ambiguity, fail closed.
@@ -134,7 +134,7 @@ export class CourierSettlementMappingService {
 
   /** Explicit confirmation: this column IS this field for this courier. */
   async activate(id: string, dto: { reason?: string; invoiceId?: string }, actor?: string | null) {
-    const alias = await this.prisma.courierSettlementColumnAlias.findUnique({ where: { id } });
+    const alias = await this.prisma.courierSettlementColumnAlias.findFirst({ where: { id } });
     if (!alias) throw new NotFoundException('Mapping not found');
 
     const rival = await this.prisma.courierSettlementColumnAlias.findFirst({
@@ -175,7 +175,7 @@ export class CourierSettlementMappingService {
   }
 
   async deactivate(id: string, dto: { reason?: string; invoiceId?: string }, actor?: string | null) {
-    const alias = await this.prisma.courierSettlementColumnAlias.findUnique({ where: { id } });
+    const alias = await this.prisma.courierSettlementColumnAlias.findFirst({ where: { id } });
     if (!alias) throw new NotFoundException('Mapping not found');
     const updated = await this.prisma.courierSettlementColumnAlias.update({
       where: { id },

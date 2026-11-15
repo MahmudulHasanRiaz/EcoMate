@@ -47,11 +47,11 @@ describe('DispatchService.syncStatusFromCourier — return-status trigger (Task 
       },
       order: {
         findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
-      orderStatus: { findUnique: jest.fn().mockResolvedValue(null) },
+      orderStatus: { findFirst: jest.fn().mockResolvedValue(null) },
       courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
     };
     tracking = { getDispatchTracking: jest.fn().mockResolvedValue(null) };

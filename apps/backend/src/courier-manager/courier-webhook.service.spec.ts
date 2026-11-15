@@ -35,16 +35,16 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue(order),
+        findFirst: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
-        findUnique: jest.fn().mockResolvedValue(partialStatus),
+        findFirst: jest.fn().mockResolvedValue(partialStatus),
       },
       dispatch: {
         upsert: jest.fn().mockResolvedValue({}),
         findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
@@ -74,7 +74,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
 
   describe('Rule A — PARTIAL from any courier advances the order to Partial', () => {
     it('Steadfast partial_delivered → dispatch PARTIAL → order Partial', async () => {
-      prisma.orderStatus.findUnique.mockResolvedValue(partialStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(partialStatus);
 
       const result = await service.handleSteadfast({
         notification_type: 'status_change',
@@ -99,7 +99,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     });
 
     it('Steadfast partial_delivered_approval_pending → dispatch PARTIAL too (official docs)', async () => {
-      prisma.orderStatus.findUnique.mockResolvedValue(partialStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(partialStatus);
 
       const result = await service.handleSteadfast({
         notification_type: 'delivery_status',
@@ -151,7 +151,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     });
 
     it('Pathao order.partial-delivery → dispatch PARTIAL → order Partial', async () => {
-      prisma.orderStatus.findUnique.mockResolvedValue(partialStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(partialStatus);
 
       await service.handlePathao({
         event: 'order.partial-delivery',
@@ -174,7 +174,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     });
 
     it('RedX delivered + partial-delivery delivery type → dispatch PARTIAL → order Partial', async () => {
-      prisma.orderStatus.findUnique.mockResolvedValue(partialStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(partialStatus);
 
       await service.handleRedx({
         tracking_number: 'TN-1',
@@ -200,7 +200,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     });
 
     it('RedX raw partial status → dispatch PARTIAL → order Partial', async () => {
-      prisma.orderStatus.findUnique.mockResolvedValue(partialStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(partialStatus);
 
       await service.handleRedx({
         tracking_number: 'TN-1',
@@ -223,7 +223,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     });
 
     it('Carrybee order.partial-delivery → dispatch PARTIAL → order Partial', async () => {
-      prisma.orderStatus.findUnique.mockResolvedValue(partialStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(partialStatus);
 
       await service.handleCarrybee({
         event: 'order.partial-delivery',
@@ -277,8 +277,8 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.dispatch.findFirst.mockResolvedValueOnce({
         orderId: 'order-1',
       });
-      prisma.order.findUnique.mockResolvedValueOnce(order);
-      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      prisma.order.findFirst.mockResolvedValueOnce(order);
+      prisma.orderStatus.findFirst.mockResolvedValue(deliveredStatus);
 
       const result = await service.handleSteadfast({
         notification_type: 'delivery_status',
@@ -307,7 +307,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         .mockResolvedValueOnce(null) // order.courierConsignmentId miss
         .mockResolvedValueOnce(order); // invoice → displayId hit
       prisma.dispatch.findFirst.mockResolvedValue(null); // no dispatch row
-      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(deliveredStatus);
 
       const result = await service.handleSteadfast({
         notification_type: 'delivery_status',
@@ -382,7 +382,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     it('primary lookup by order.courierConsignmentId still wins', async () => {
       prisma.order.findFirst.mockResolvedValue(pathaoOrder);
       prisma.dispatch.findFirst.mockResolvedValue(null);
-      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(deliveredStatus);
 
       const result = await service.handlePathao({
         event: 'order.delivered',
@@ -412,8 +412,8 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.dispatch.findFirst.mockResolvedValueOnce({
         orderId: 'order-1',
       });
-      prisma.order.findUnique.mockResolvedValueOnce(order);
-      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      prisma.order.findFirst.mockResolvedValueOnce(order);
+      prisma.orderStatus.findFirst.mockResolvedValue(deliveredStatus);
 
       const result = await service.handlePathao({
         event: 'order.delivered',
@@ -441,7 +441,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         .mockResolvedValueOnce(null) // order.courierConsignmentId miss
         .mockResolvedValueOnce(pathaoOrder); // merchant_order_id → displayId hit
       prisma.dispatch.findFirst.mockResolvedValue(null); // no dispatch row
-      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(deliveredStatus);
 
       const result = await service.handlePathao({
         event: 'order.delivered',
@@ -505,7 +505,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.order.findFirst.mockImplementation((args: any) =>
         args?.where?.displayId ? original : null,
       );
-      prisma.order.findUnique.mockResolvedValue(original);
+      prisma.order.findFirst.mockResolvedValue(original);
       prisma.order.findMany.mockResolvedValue([exchange]);
       prisma.dispatch.findFirst.mockResolvedValue(null);
       // Original already has its own pathao dispatch; the exchange has none.
@@ -542,7 +542,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.order.findFirst.mockImplementation((args: any) =>
         args?.where?.displayId ? original : null,
       );
-      prisma.order.findUnique.mockResolvedValue(original);
+      prisma.order.findFirst.mockResolvedValue(original);
       prisma.order.findMany.mockResolvedValue([
         { ...original, id: 'ex-1', displayId: 'Ex-200', kind: 'EXCHANGE' },
       ]);
@@ -584,11 +584,11 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         status: { id: 'status-packed', name: 'Packed' },
         timeline: [],
       });
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         ...order,
         status: { id: 'status-packed', name: 'Packed' },
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-shipping',
         name: 'Shipping',
       });
@@ -658,7 +658,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     beforeEach(() => {
       // Order behind the courier: webhook (or pickup event) missed, order
       // still Packed while the courier already has the parcel.
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         ...order,
         status: { id: 'status-packed', name: 'Packed' },
       });
@@ -667,7 +667,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         status: { id: 'status-packed', name: 'Packed' },
         timeline: [],
       });
-      prisma.orderStatus.findUnique.mockResolvedValue({
+      prisma.orderStatus.findFirst.mockResolvedValue({
         id: 'status-shipping',
         name: 'Shipping',
       });
@@ -815,7 +815,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         ...order,
         status: { id: 'status-partial', name: 'Partial' },
       });
-      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(deliveredStatus);
       ordersService.updateStatus.mockRejectedValue(
         new BadRequestException(
           'Order is Partial: automated processes cannot change its status. It must be changed manually.',
@@ -895,7 +895,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         ...order,
         status: { id: 'status-partial', name: 'Partial' },
       });
-      prisma.orderStatus.findUnique.mockResolvedValue(partialStatus);
+      prisma.orderStatus.findFirst.mockResolvedValue(partialStatus);
       ordersService.updateStatus.mockRejectedValue(
         new BadRequestException('lock'),
       );
@@ -931,8 +931,8 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.order.findFirst.mockImplementation((args: any) =>
         args?.where?.displayId ? manualOrder : null,
       );
-      prisma.order.findUnique.mockResolvedValue(manualOrder);
-      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      prisma.order.findFirst.mockResolvedValue(manualOrder);
+      prisma.orderStatus.findFirst.mockResolvedValue(deliveredStatus);
       // Registry has no consignment row; exactly one NULL-identifier manual row.
       prisma.dispatch.findFirst.mockImplementation((args: any) =>
         args?.where?.orderId
@@ -970,8 +970,8 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.order.findFirst.mockImplementation((args: any) =>
         args?.where?.displayId ? manualOrder : null,
       );
-      prisma.order.findUnique.mockResolvedValue(manualOrder);
-      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      prisma.order.findFirst.mockResolvedValue(manualOrder);
+      prisma.orderStatus.findFirst.mockResolvedValue(deliveredStatus);
       // Registry has no consignment row; exactly one NULL-identifier manual row.
       prisma.dispatch.findFirst.mockImplementation((args: any) =>
         args?.where?.orderId
@@ -1009,8 +1009,8 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.order.findFirst.mockImplementation((args: any) =>
         args?.where?.displayId ? manualOrder : null,
       );
-      prisma.order.findUnique.mockResolvedValue(manualOrder);
-      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      prisma.order.findFirst.mockResolvedValue(manualOrder);
+      prisma.orderStatus.findFirst.mockResolvedValue(deliveredStatus);
       // Registry has no consignment row; exactly one NULL-identifier manual row.
       prisma.dispatch.findFirst.mockImplementation((args: any) =>
         args?.where?.orderId

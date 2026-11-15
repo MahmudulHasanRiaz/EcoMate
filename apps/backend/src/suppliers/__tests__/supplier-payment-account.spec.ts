@@ -7,14 +7,14 @@ describe('SuppliersService — Part 5 payment destination', () => {
   let service: SuppliersService;
   const prisma: any = {
     supplier: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
     paymentGateway: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     account: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     supplierPaymentInvoice: {
       findFirst: jest.fn(),
@@ -27,11 +27,11 @@ describe('SuppliersService — Part 5 payment destination', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    prisma.supplier.findUnique.mockResolvedValue({
+    prisma.supplier.findFirst.mockResolvedValue({
       id: 'sup-1',
       balance: 5000,
     });
-    prisma.paymentGateway.findUnique.mockResolvedValue({
+    prisma.paymentGateway.findFirst.mockResolvedValue({
       id: 'gw-bkash',
       code: 'bkash',
       name: 'bKash',
@@ -69,7 +69,7 @@ describe('SuppliersService — Part 5 payment destination', () => {
   });
 
   it('rejects an unknown supplier-payment gateway code', async () => {
-    prisma.paymentGateway.findUnique.mockResolvedValue(null);
+    prisma.paymentGateway.findFirst.mockResolvedValue(null);
 
     await expect(
       service.createPayment('sup-1', {
@@ -81,7 +81,7 @@ describe('SuppliersService — Part 5 payment destination', () => {
   });
 
   it('rejects a supplier-payment account that is not an eligible asset leaf', async () => {
-    prisma.account.findUnique.mockResolvedValue({
+    prisma.account.findFirst.mockResolvedValue({
       id: 'acc-expense',
       code: '5001',
       name: 'Expense',

@@ -422,7 +422,7 @@ export class HrSelfServiceService {
 
   async cancelLeaveRequest(user: SelfUser, id: string) {
     const employee = await this.resolveEmployee(user);
-    const request = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    const request = await this.prisma.leaveRequest.findFirst({ where: { id } });
     if (!request || request.employeeId !== employee.id) {
       throw new NotFoundException('Leave request not found');
     }

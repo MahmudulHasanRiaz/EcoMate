@@ -83,7 +83,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
   beforeEach(async () => {
     tx = {
       order: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         update: jest.fn().mockImplementation(async (args: any) => ({
           ...makeOrder(partialStatus),
           statusId: args?.data?.statusId,
@@ -98,12 +98,12 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     };
     prisma = {
       order: {
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(async ({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(async ({ where }: any) => {
           const all = [
             shippingStatus,
             partialStatus,
@@ -190,8 +190,8 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
 
   describe('createStaffPartialReturn', () => {
     it('staff-from-Shipping → creates Return(PARTIAL/STAFF) + order → Partial, dispatch UNCHANGED', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
-      tx.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
+      tx.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
 
       const result = await (service as any).createStaffPartialReturn(
         'order-1',
@@ -219,7 +219,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('staff-from-Partial (already Partial) → Return created, status kept, dispatch UNCHANGED', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(partialStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(partialStatus));
 
       const result = await (service as any).createStaffPartialReturn(
         'order-1',
@@ -239,8 +239,8 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('instantDelivery from Shipping → Return created + order Delivered at creation', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
-      tx.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
+      tx.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
 
       const result = await (service as any).createStaffPartialReturn(
         'order-1',
@@ -256,8 +256,8 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('instantDelivery on an already-Partial order → Delivered via the 15.4 path', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(partialStatus));
-      tx.order.findUnique.mockResolvedValue(makeOrder(partialStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(partialStatus));
+      tx.order.findFirst.mockResolvedValue(makeOrder(partialStatus));
       // The Return created above satisfies the 15.4 staff-Return check.
       prisma.return.findFirst.mockResolvedValue({
         id: 'ret-1',
@@ -280,7 +280,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     it.each(['Delivered', 'Confirmed', 'Return Pending', 'Returned', 'Cancelled'])(
       'rejects creation from %s status (Shipping AND Partial only)',
       async (statusName) => {
-        prisma.order.findUnique.mockResolvedValue(
+        prisma.order.findFirst.mockResolvedValue(
           makeOrder({ id: `st-${statusName}`, name: statusName }),
         );
         await expect(
@@ -291,7 +291,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     );
 
     it('rejects a Return-kind order', async () => {
-      prisma.order.findUnique.mockResolvedValue(
+      prisma.order.findFirst.mockResolvedValue(
         makeOrder(shippingStatus, { kind: 'RETURN' }),
       );
       await expect(
@@ -301,7 +301,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('hardening (1): an active FULL return blocks a second staff partial', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       prisma.return.findMany.mockResolvedValue([
         {
           id: 'ret-full',
@@ -320,7 +320,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('hardening (1): requested qty is capped at ordered − already-returned', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       prisma.return.findMany.mockResolvedValue([
         {
           id: 'ret-p1',
@@ -344,7 +344,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('rejects empty items', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       await expect(
         (service as any).createStaffPartialReturn('order-1', { items: [] }, actor),
       ).rejects.toThrow(/at least one/i);
@@ -352,7 +352,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('rejects an item not on the original order', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       await expect(
         (service as any).createStaffPartialReturn(
           'order-1',
@@ -364,7 +364,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('rejects a quantity exceeding the ordered quantity', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       await expect(
         (service as any).createStaffPartialReturn(
           'order-1',
@@ -376,7 +376,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('404s on a missing order', async () => {
-      prisma.order.findUnique.mockResolvedValue(null);
+      prisma.order.findFirst.mockResolvedValue(null);
       await expect(
         (service as any).createStaffPartialReturn('order-1', { items }, actor),
       ).rejects.toThrow(NotFoundException);
@@ -385,7 +385,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
 
   describe('confirmStaffPartialDelivered (15.4 exception)', () => {
     it('promotes Partial → Delivered when an open staff PARTIAL Return exists', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(partialStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(partialStatus));
       prisma.return.findFirst.mockResolvedValue({
         id: 'ret-1',
         displayId: 'RTN-261014-0007',
@@ -393,7 +393,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
         type: 'PARTIAL',
         status: 'REQUESTED',
       });
-      tx.order.findUnique.mockResolvedValue(makeOrder(partialStatus));
+      tx.order.findFirst.mockResolvedValue(makeOrder(partialStatus));
 
       const result = await (service as any).confirmStaffPartialDelivered(
         'order-1',
@@ -411,7 +411,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('fail-closed: throws when NO staff Return exists (generic Partial stays locked)', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(partialStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(partialStatus));
       prisma.return.findFirst.mockResolvedValue(null);
 
       await expect(
@@ -420,7 +420,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('fail-closed: throws when the order is not Partial', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       await expect(
         (service as any).confirmStaffPartialDelivered('order-1', 'system'),
       ).rejects.toThrow(/only a Partial order/i);
@@ -429,7 +429,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
 
   describe('Automated Delivered blocked while a Return is open (owner directive 2026-10-23)', () => {
     it('rejects an automated Shipping → Delivered when a non-CLOSED Return exists', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       prisma.return.findFirst.mockResolvedValue({
         id: 'ret-9',
         displayId: 'RTN-261023-0009',
@@ -444,9 +444,9 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('allows an automated Shipping → Delivered when NO Return exists', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       prisma.return.findFirst.mockResolvedValue(null);
-      tx.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      tx.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       const result = await service.updateStatus(
         'order-1',
         { statusId: 'status-delivered' },
@@ -456,14 +456,14 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
 
     it('staff actors are unaffected by an open Return', async () => {
-      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       prisma.return.findFirst.mockResolvedValue({
         id: 'ret-9',
         source: 'COURIER',
         type: 'FULL',
         status: 'RECEIVED',
       });
-      tx.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      tx.order.findFirst.mockResolvedValue(makeOrder(shippingStatus));
       const result = await service.updateStatus(
         'order-1',
         { statusId: 'status-delivered' },
@@ -478,8 +478,8 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     it.each(['staff-1', 'system', 'webhook', 'reconcile'])(
       'updateStatus rejects Delivered → Partial for actor %s (lock is actor-independent)',
       async (actorId) => {
-        prisma.order.findUnique.mockResolvedValue(makeOrder(deliveredStatus));
-        prisma.orderStatus.findUnique.mockImplementation(async ({ where }: any) => {
+        prisma.order.findFirst.mockResolvedValue(makeOrder(deliveredStatus));
+        prisma.orderStatus.findFirst.mockImplementation(async ({ where }: any) => {
           if (where?.id === 'status-partial') return partialStatus;
           if (where?.name === 'Partial') return partialStatus;
           return null;

@@ -26,7 +26,7 @@ describe('RefundsService — cancel-with-refund releases stock exactly like canc
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
       $executeRaw: jest.fn().mockResolvedValue(1),
       order: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'order-1',
           total: 2000,
           kind: 'SALE',
@@ -38,7 +38,7 @@ describe('RefundsService — cancel-with-refund releases stock exactly like canc
         findFirst: jest
           .fn()
           .mockResolvedValue({ id: 'status-cancelled', name: 'Cancelled' }),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       refund: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
@@ -96,7 +96,7 @@ describe('RefundsService — cancel-with-refund releases stock exactly like canc
   });
 
   it('a targetStatusId of Cancelled (without cancelToo) also releases', async () => {
-    prisma.orderStatus.findUnique.mockResolvedValue({
+    prisma.orderStatus.findFirst.mockResolvedValue({
       id: 'status-cancelled',
       name: 'Cancelled',
     });

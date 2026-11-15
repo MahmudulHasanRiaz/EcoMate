@@ -59,7 +59,7 @@ export class MarketingSyncService {
   }
 
   private async doSync(adAccountId: string, forceInsights: boolean) {
-    const adAccount = await this.prisma.adAccount.findUnique({
+    const adAccount = await this.prisma.adAccount.findFirst({
       where: { id: adAccountId },
       include: { connection: { include: { platform: true } } },
     });
@@ -100,7 +100,7 @@ export class MarketingSyncService {
       let updated = 0;
 
       for (const c of campaigns) {
-        const existing = await this.prisma.marketingCampaign.findUnique({
+        const existing = await this.prisma.marketingCampaign.findFirst({
           where: { providerCampaignId: c.providerCampaignId },
         });
         if (existing) {
@@ -155,7 +155,7 @@ export class MarketingSyncService {
       for (const s of adSets) {
         const target = campaignMap.get(s.providerCampaignId);
         if (!target) continue;
-        const existing = await this.prisma.marketingAdSet.findUnique({
+        const existing = await this.prisma.marketingAdSet.findFirst({
           where: { providerAdSetId: s.providerAdSetId },
         });
         if (existing) {
@@ -193,7 +193,7 @@ export class MarketingSyncService {
       for (const ad of ads) {
         const targetSetId = adSetMap.get(ad.providerAdSetId);
         if (!targetSetId) continue;
-        const existing = await this.prisma.marketingAd.findUnique({
+        const existing = await this.prisma.marketingAd.findFirst({
           where: { providerAdId: ad.providerAdId },
         });
         if (existing) {

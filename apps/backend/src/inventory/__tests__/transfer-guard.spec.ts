@@ -51,11 +51,11 @@ describe('InventoryService — transfer guards', () => {
         {
           provide: PrismaService,
           useValue: {
-            product: { findUnique: jest.fn(), findFirst: jest.fn() },
-            productVariant: { findUnique: jest.fn(), update: jest.fn() },
-            warehouse: { findUnique: jest.fn().mockResolvedValue({ id: 'w1', name: 'Warehouse' }) },
+            product: { findFirst: jest.fn(), findFirst: jest.fn() },
+            productVariant: { findFirst: jest.fn(), update: jest.fn() },
+            warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'w1', name: 'Warehouse' }) },
             physicalInventory: { findFirst: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
-            stockTransfer: { findUnique: jest.fn(), create: jest.fn(), findMany: jest.fn() },
+            stockTransfer: { findFirst: jest.fn(), create: jest.fn(), findMany: jest.fn() },
             costingLot: { findFirst: jest.fn(), findMany: jest.fn() },
             // The real service runs its body inside $transaction; a mock that
             // never invokes the callback is enough to prove the guard let the
@@ -76,7 +76,7 @@ describe('InventoryService — transfer guards', () => {
   });
 
   it('refuses a product-level transfer of a VARIABLE product', async () => {
-    (prisma.product.findUnique as jest.Mock).mockResolvedValue(variableProduct);
+    (prisma.product.findFirst as jest.Mock).mockResolvedValue(variableProduct);
 
     await expect(service.transfer({ ...baseDto } as any)).rejects.toBeInstanceOf(
       BadRequestException,
@@ -87,7 +87,7 @@ describe('InventoryService — transfer guards', () => {
   });
 
   it('never reaches the write path for a variable product — no orphan rows', async () => {
-    (prisma.product.findUnique as jest.Mock).mockResolvedValue(variableProduct);
+    (prisma.product.findFirst as jest.Mock).mockResolvedValue(variableProduct);
 
     await expect(service.transfer({ ...baseDto } as any)).rejects.toThrow();
 
@@ -98,12 +98,12 @@ describe('InventoryService — transfer guards', () => {
   });
 
   it('allows the same transfer once a variantId is supplied', async () => {
-    (prisma.product.findUnique as jest.Mock).mockResolvedValue(variableProduct);
-    (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.product.findFirst as jest.Mock).mockResolvedValue(variableProduct);
+    (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue({
       id: 'var-1',
       productId: 'prod-shirt',
     });
-    (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.stockTransfer.findFirst as jest.Mock).mockResolvedValue(null);
 
     // Reaching the transaction proves the variant guard let it through. Any
     // failure after that point belongs to the movement itself, not the guard.
@@ -118,8 +118,8 @@ describe('InventoryService — transfer guards', () => {
   });
 
   it('refuses a variantId that belongs to a different product', async () => {
-    (prisma.product.findUnique as jest.Mock).mockResolvedValue(variableProduct);
-    (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.product.findFirst as jest.Mock).mockResolvedValue(variableProduct);
+    (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue({
       id: 'var-other',
       productId: 'prod-other',
       sku: 'OTHER-1',
@@ -132,7 +132,7 @@ describe('InventoryService — transfer guards', () => {
   });
 
   it('refuses a transfer whose source and destination are the same warehouse', async () => {
-    (prisma.product.findUnique as jest.Mock).mockResolvedValue(simpleProduct);
+    (prisma.product.findFirst as jest.Mock).mockResolvedValue(simpleProduct);
 
     await expect(
       service.transfer({
@@ -142,13 +142,13 @@ describe('InventoryService — transfer guards', () => {
       } as any),
     ).rejects.toThrow(/different/i);
     // Rejected before any idempotency lookup or write.
-    expect(prisma.stockTransfer.findUnique).not.toHaveBeenCalled();
+    expect(prisma.stockTransfer.findFirst).not.toHaveBeenCalled();
     expect(prisma.stockTransfer.create).not.toHaveBeenCalled();
   });
 
   it('generates an idempotency key when the caller supplies none', async () => {
-    (prisma.product.findUnique as jest.Mock).mockResolvedValue(simpleProduct);
-    (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.product.findFirst as jest.Mock).mockResolvedValue(simpleProduct);
+    (prisma.stockTransfer.findFirst as jest.Mock).mockResolvedValue(null);
 
     const { idempotencyKey: _omit, ...keyless } = baseDto as any;
     // The movement itself fails later against these stubs — what matters is
@@ -158,14 +158,14 @@ describe('InventoryService — transfer guards', () => {
       .transfer({ ...keyless, productId: 'prod-mug' } as any)
       .catch(() => undefined);
 
-    const arg = (prisma.stockTransfer.findUnique as jest.Mock).mock.calls[0][0];
+    const arg = (prisma.stockTransfer.findFirst as jest.Mock).mock.calls[0][0];
     expect(typeof arg.where.idempotencyKey).toBe('string');
     expect(arg.where.idempotencyKey.length).toBeGreaterThan(0);
   });
 
   it('still allows a product-level transfer for a SIMPLE product', async () => {
-    (prisma.product.findUnique as jest.Mock).mockResolvedValue(simpleProduct);
-    (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.product.findFirst as jest.Mock).mockResolvedValue(simpleProduct);
+    (prisma.stockTransfer.findFirst as jest.Mock).mockResolvedValue(null);
 
     let err: unknown = null;
     await service

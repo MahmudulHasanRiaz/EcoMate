@@ -40,7 +40,7 @@ export class CmsPagesService implements OnModuleInit {
    */
   async ensureTemplatePages() {
     for (const def of templatePages) {
-      const existing = await this.prisma.cmsPage.findUnique({
+      const existing = await this.prisma.cmsPage.findFirst({
         where: { slug: def.slug },
       });
       if (existing) continue;
@@ -117,13 +117,13 @@ export class CmsPagesService implements OnModuleInit {
   }
 
   async findOne(id: string) {
-    const page = await this.prisma.cmsPage.findUnique({ where: { id } });
+    const page = await this.prisma.cmsPage.findFirst({ where: { id } });
     if (!page) throw new NotFoundException('Page not found');
     return page;
   }
 
   async findBySlug(slug: string) {
-    const page = await this.prisma.cmsPage.findUnique({ where: { slug } });
+    const page = await this.prisma.cmsPage.findFirst({ where: { slug } });
     if (!page) throw new NotFoundException('Page not found');
     if (!page.isActive) throw new NotFoundException('Page is not active');
     // Public read path ONLY: embedded <img> tags pointing at original
@@ -187,7 +187,7 @@ export class CmsPagesService implements OnModuleInit {
   }
 
   async create(dto: CreateCmsPageDto) {
-    const existing = await this.prisma.cmsPage.findUnique({
+    const existing = await this.prisma.cmsPage.findFirst({
       where: { slug: dto.slug },
     });
     if (existing) throw new ConflictException('Slug already exists');
@@ -195,11 +195,11 @@ export class CmsPagesService implements OnModuleInit {
   }
 
   async update(id: string, dto: UpdateCmsPageDto) {
-    const page = await this.prisma.cmsPage.findUnique({ where: { id } });
+    const page = await this.prisma.cmsPage.findFirst({ where: { id } });
     if (!page) throw new NotFoundException('Page not found');
 
     if (dto.slug && dto.slug !== page.slug) {
-      const exist = await this.prisma.cmsPage.findUnique({
+      const exist = await this.prisma.cmsPage.findFirst({
         where: { slug: dto.slug },
       });
       if (exist) throw new ConflictException('Slug already exists');
@@ -212,7 +212,7 @@ export class CmsPagesService implements OnModuleInit {
   }
 
   async remove(id: string) {
-    const page = await this.prisma.cmsPage.findUnique({ where: { id } });
+    const page = await this.prisma.cmsPage.findFirst({ where: { id } });
     if (!page) throw new NotFoundException('Page not found');
     await this.prisma.cmsPage.delete({ where: { id } });
     return { message: 'Page deleted' };

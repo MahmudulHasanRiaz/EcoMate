@@ -21,7 +21,7 @@ export class SessionsService {
       );
     }
 
-    const showroom = await this.prisma.warehouse.findUnique({
+    const showroom = await this.prisma.warehouse.findFirst({
       where: { id: dto.showroomId },
     });
     if (!showroom || showroom.type !== 'showroom') {

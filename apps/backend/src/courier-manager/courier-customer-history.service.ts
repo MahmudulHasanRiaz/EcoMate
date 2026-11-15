@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
@@ -194,7 +195,7 @@ export class CourierCustomerHistoryService {
   }
 
   private async getCreds(courier: string) {
-    return this.prisma.courierCredentials.findUnique({ where: { courier } });
+    return this.prisma.courierCredentials.findFirst({ where: { courier } });
   }
 
   private async getBaseUrl(courier: string): Promise<string> {
@@ -209,8 +210,8 @@ export class CourierCustomerHistoryService {
     opts: { force?: boolean } = {},
   ): Promise<{ report: CourierReport | null; cached: boolean; fresh: boolean; fetchedAt: Date | null }> {
     const phone = this.normalizePhone(rawPhone);
-    const cachedRow = await this.prisma.courierReportCache.findUnique({
-      where: { courier_phone: { courier, phone } },
+    const cachedRow = await this.prisma.courierReportCache.findFirst({
+      where: {  courier, phone  },
     });
 
     const now = Date.now();
@@ -275,7 +276,7 @@ export class CourierCustomerHistoryService {
       schemaVersion: REPORT_SCHEMA_VERSION,
     };
     await this.prisma.courierReportCache.upsert({
-      where: { courier_phone: { courier, phone } },
+      where: { tenantId_courier_phone: tenantCompound({   courier, phone   }) },
       create: { courier, phone, report: payload as any, courierStatus: status, fetchedAt: now, expiresAt },
       update: { report: payload as any, courierStatus: status, fetchedAt: now, expiresAt },
     });
@@ -506,7 +507,7 @@ export class CourierCustomerHistoryService {
 
   private async getCalibration(): Promise<Record<Exclude<PathaoRatingLevel, 'new'>, number>> {
     try {
-      const setting = await this.prisma.systemSetting.findUnique({
+      const setting = await this.prisma.systemSetting.findFirst({
         where: { key: CALIBRATION_KEY },
       });
       if (!setting?.value) return { ...DEFAULT_CALIBRATION };

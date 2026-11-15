@@ -17,16 +17,16 @@ describe('Promotional Credit Accounting', () => {
 
   const mockPrisma = () => ({
     adAccount: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
     },
     marketingCampaign: {
-      findUnique: jest.fn().mockResolvedValue({ id: mockCampaignId, adAccountId: mockAdAccountId }),
+      findFirst: jest.fn().mockResolvedValue({ id: mockCampaignId, adAccountId: mockAdAccountId }),
       findMany: jest.fn().mockResolvedValue([{ id: mockCampaignId, adAccountId: mockAdAccountId }]),
     },
     marketingFundingEntry: {
       create: jest.fn().mockImplementation((d) => Promise.resolve({ id: `entry-${Date.now()}`, ...d.data })),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn().mockImplementation((d) => Promise.resolve({ id: d.where.id, ...d.data })),
       count: jest.fn().mockResolvedValue(0),
       findMany: jest.fn().mockResolvedValue([]),
@@ -34,7 +34,7 @@ describe('Promotional Credit Accounting', () => {
     marketingFundingLedger: {
       create: jest.fn().mockImplementation((d) => Promise.resolve({ id: `ledger-${Date.now()}`, ...d.data })),
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn().mockImplementation((d) => Promise.resolve({ id: d.where.id, ...d.data })),
       aggregate: jest.fn().mockResolvedValue({ _sum: { receivedAmount: 0, remainingAmount: 0, consumedAmount: 0 } }),
       groupBy: jest.fn().mockResolvedValue([]),
@@ -43,7 +43,7 @@ describe('Promotional Credit Accounting', () => {
       create: jest.fn().mockImplementation((d) => Promise.resolve({ id: `cons-${Date.now()}`, ...d.data })),
     },
     marketingPayment: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockImplementation((d) => Promise.resolve({ id: `pay-${Date.now()}`, ...d.data })),
       update: jest.fn().mockImplementation((d) => Promise.resolve({ id: d.where.id, ...d.data })),
@@ -55,7 +55,7 @@ describe('Promotional Credit Accounting', () => {
     marketingAuditLog: { create: jest.fn().mockResolvedValue({}) },
     account: {
       findFirst: jest.fn().mockResolvedValue({ id: 'acct-expense', code: 'marketing-expense', name: 'Marketing Expenses' }),
-      findUnique: jest.fn().mockResolvedValue({ id: 'acct-funding', name: 'Business Visa', isGroup: false }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'acct-funding', name: 'Business Visa', isGroup: false }),
       create: jest.fn(),
     },
     journalEntryLine: {
@@ -73,7 +73,7 @@ describe('Promotional Credit Accounting', () => {
         },
         marketingFundingLedger: {
           create: jest.fn().mockImplementation((d) => Promise.resolve({ id: `ledger-${Date.now()}`, ...d.data })),
-          findUnique: jest.fn().mockImplementation((d: any) => {
+          findFirst: jest.fn().mockImplementation((d: any) => {
             return Promise.resolve(ledgerRows[d.where.id] ?? null);
           }),
           update: jest.fn().mockImplementation((d) => Promise.resolve({ id: d.where.id, ...d.data })),
@@ -108,7 +108,7 @@ describe('Promotional Credit Accounting', () => {
 
   describe('Promotional credit — no cash outflow', () => {
     it('addFunding with promotional type creates entry with fundingType=promotional', async () => {
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue({
         id: mockAdAccountId,
         currency: 'USD',
         connection: { platform: { slug: 'facebook' } },
@@ -127,7 +127,7 @@ describe('Promotional Credit Accounting', () => {
     });
 
     it('promotional funding post() does NOT create a journal entry', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue({
         id: 'entry-promo-1',
         status: 'confirmed',
         fundingType: 'promotional',
@@ -156,7 +156,7 @@ describe('Promotional Credit Accounting', () => {
       }];
 
       (prisma.marketingFundingLedger.findMany as jest.Mock).mockResolvedValue(ledgerRows);
-      (prisma.marketingFundingLedger.findUnique as jest.Mock).mockResolvedValue({ ...ledgerRows[0], remainingAmount: 100 });
+      (prisma.marketingFundingLedger.findFirst as jest.Mock).mockResolvedValue({ ...ledgerRows[0], remainingAmount: 100 });
 
       const result = await consumptionService.consume(mockCampaignId, 40, 'spend_sync', new Date('2026-08-01'));
 
@@ -169,7 +169,7 @@ describe('Promotional Credit Accounting', () => {
 
   describe('Paid credit — proper cash flow', () => {
     it('paid funding post() creates journal entry', async () => {
-      (prisma.marketingFundingEntry.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.marketingFundingEntry.findFirst as jest.Mock).mockResolvedValue({
         id: 'entry-paid-1',
         status: 'confirmed',
         fundingType: 'paid',
@@ -179,7 +179,7 @@ describe('Promotional Credit Accounting', () => {
         adAccount: { name: 'Test Account' },
         reference: 'REF-001',
       });
-      (prisma.account.findUnique as jest.Mock).mockResolvedValue({ id: 'acct-funding', name: 'Business Visa', isGroup: false });
+      (prisma.account.findFirst as jest.Mock).mockResolvedValue({ id: 'acct-funding', name: 'Business Visa', isGroup: false });
 
       const result = await fundingService.post('entry-paid-1', { fundingAccountId: 'acct-funding' });
 
@@ -200,7 +200,7 @@ describe('Promotional Credit Accounting', () => {
       }];
 
       (prisma.marketingFundingLedger.findMany as jest.Mock).mockResolvedValue(ledgerRows);
-      (prisma.marketingFundingLedger.findUnique as jest.Mock).mockResolvedValue({ ...ledgerRows[0], remainingAmount: 100 });
+      (prisma.marketingFundingLedger.findFirst as jest.Mock).mockResolvedValue({ ...ledgerRows[0], remainingAmount: 100 });
 
       await consumptionService.consume(mockCampaignId, 40, 'spend_sync', new Date('2026-08-01'));
 
@@ -243,7 +243,7 @@ describe('Promotional Credit Accounting', () => {
       });
 
       // Consume 50 from promotional (all of it)
-      (prisma.marketingFundingLedger.findUnique as jest.Mock)
+      (prisma.marketingFundingLedger.findFirst as jest.Mock)
         .mockResolvedValueOnce({ ...ledgerRows[0], remainingAmount: 50 });
 
       const result1 = await consumptionService.consume(mockCampaignId, 50, 'spend_sync', new Date('2026-08-01'));
@@ -253,7 +253,7 @@ describe('Promotional Credit Accounting', () => {
 
       // Now consume 30 more — this must come from paid
       (prisma.marketingFundingLedger.findMany as jest.Mock).mockResolvedValue([ledgerRows[1]]);
-      (prisma.marketingFundingLedger.findUnique as jest.Mock)
+      (prisma.marketingFundingLedger.findFirst as jest.Mock)
         .mockResolvedValueOnce({ ...ledgerRows[1], remainingAmount: 100 });
 
       const result2 = await consumptionService.consume(mockCampaignId, 30, 'spend_sync', new Date('2026-08-01'));

@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CourierTokenService } from './courier-token.service';
@@ -285,7 +286,7 @@ export class CourierManagerService {
   }
 
   private async getCreds(courier: string) {
-    const c = await this.prisma.courierCredentials.findUnique({
+    const c = await this.prisma.courierCredentials.findFirst({
       where: { courier },
     });
     if (!c || !c.enabled)
@@ -413,7 +414,7 @@ export class CourierManagerService {
     const note = this.courierNameNote(sent, raw);
     if (!note) return;
     try {
-      const current = await this.prisma.order.findUnique({
+      const current = await this.prisma.order.findFirst({
         where: { id: orderId },
         select: { timeline: true },
       });
@@ -443,7 +444,7 @@ export class CourierManagerService {
     message: string,
   ): Promise<void> {
     try {
-      const current = await this.prisma.order.findUnique({
+      const current = await this.prisma.order.findFirst({
         where: { id: orderId },
         select: { timeline: true },
       });
@@ -783,9 +784,7 @@ export class CourierManagerService {
               },
             });
             await this.prisma.dispatch.upsert({
-              where: {
-                courier_consignmentId: { courier: 'steadfast', consignmentId },
-              },
+              where: { tenantId_courier_consignmentId: tenantCompound({ courier: 'steadfast', consignmentId } as const) },
               update: { trackingCode, trackingUrl, status: 'DISPATCHED' },
               create: {
                 orderId: order.id,
@@ -1150,9 +1149,7 @@ export class CourierManagerService {
               data: { courierService: 'pathao', courierConsignmentId: cId },
             });
             await this.prisma.dispatch.upsert({
-              where: {
-                courier_consignmentId: { courier: 'pathao', consignmentId: cId },
-              },
+              where: { tenantId_courier_consignmentId: tenantCompound({ courier: 'pathao', consignmentId: cId } as const) },
               update: { trackingCode: cId, trackingUrl, status: 'DISPATCHED' },
               create: {
                 orderId: order.id,
@@ -1811,7 +1808,7 @@ export class CourierManagerService {
                 : {}),
             },
           });
-          const currentOrder = await this.prisma.order.findUnique({
+          const currentOrder = await this.prisma.order.findFirst({
             where: { id: order.id },
             select: { timeline: true },
           });
@@ -2849,9 +2846,7 @@ export class CourierManagerService {
             });
 
             await this.prisma.dispatch.upsert({
-              where: {
-                courier_consignmentId: { courier: 'steadfast', consignmentId },
-              },
+              where: { tenantId_courier_consignmentId: tenantCompound({ courier: 'steadfast', consignmentId } as const) },
               update: { trackingCode, trackingUrl, status: 'DISPATCHED' },
               create: {
                 orderId: order.id,
@@ -3154,11 +3149,11 @@ export class CourierManagerService {
   private async enabledGeoCourier(): Promise<
     { courier: 'pathao' | 'carrybee'; creds: any } | { courier: null; creds: null }
   > {
-    const pathao = await this.prisma.courierCredentials.findUnique({
+    const pathao = await this.prisma.courierCredentials.findFirst({
       where: { courier: 'pathao' },
     });
     if (pathao?.enabled) return { courier: 'pathao', creds: pathao };
-    const carrybee = await this.prisma.courierCredentials.findUnique({
+    const carrybee = await this.prisma.courierCredentials.findFirst({
       where: { courier: 'carrybee' },
     });
     if (carrybee?.enabled) return { courier: 'carrybee', creds: carrybee };

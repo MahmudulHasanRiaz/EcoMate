@@ -190,7 +190,7 @@ export class CombosService {
   }
 
   async findOne(id: string) {
-    const combo = await this.prisma.combo.findUnique({
+    const combo = await this.prisma.combo.findFirst({
       where: { id },
       include: {
         category: true,
@@ -358,7 +358,7 @@ export class CombosService {
   }
 
   async create(dto: CreateComboDto) {
-    const existing = await this.prisma.combo.findUnique({
+    const existing = await this.prisma.combo.findFirst({
       where: { slug: dto.slug },
     });
     if (existing) throw new ConflictException('Slug already exists');
@@ -439,11 +439,11 @@ export class CombosService {
   }
 
   async update(id: string, dto: UpdateComboDto) {
-    const combo = await this.prisma.combo.findUnique({ where: { id } });
+    const combo = await this.prisma.combo.findFirst({ where: { id } });
     if (!combo) throw new NotFoundException('Combo not found');
 
     if (dto.slug && dto.slug !== combo.slug) {
-      const exist = await this.prisma.combo.findUnique({
+      const exist = await this.prisma.combo.findFirst({
         where: { slug: dto.slug },
       });
       if (exist) throw new ConflictException('Slug already exists');
@@ -498,7 +498,7 @@ export class CombosService {
   }
 
   async remove(id: string) {
-    await this.prisma.combo.findUniqueOrThrow({ where: { id } });
+    await this.prisma.combo.findFirstOrThrow({ where: { id } });
     await this.media.detachAll('combo', id);
     try {
       await this.prisma.combo.delete({ where: { id } });

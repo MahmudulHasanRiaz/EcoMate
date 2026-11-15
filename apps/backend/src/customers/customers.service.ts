@@ -140,7 +140,7 @@ export class CustomersService {
   }
 
   async findOne(id: string) {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id },
       select: {
         id: true,
@@ -233,7 +233,7 @@ export class CustomersService {
       }
     };
     for (const r of ipRows) touchIp(r.ipAddress, r.createdAt, r.displayId);
-    const profileIps = await this.prisma.customerProfile.findUnique({
+    const profileIps = await this.prisma.customerProfile.findFirst({
       where: { id: user.id },
       select: { lastOrderIp: true },
     }).catch(() => null);
@@ -367,7 +367,7 @@ export class CustomersService {
     const normalized = [...new Set(phones.map((p) => (p ? normalizePhone(p) : null)).filter(Boolean))] as string[];
     const linked: string[] = [];
     for (const phone of normalized) {
-      const existing = await client.customerPhone.findUnique({
+      const existing = await client.customerPhone.findFirst({
         where: { phone },
         select: { customerProfileId: true },
       });
@@ -393,7 +393,7 @@ export class CustomersService {
     Array<{ phone: string; source: string; isPrimary: boolean }>
   > {
     const [profile, rows] = await Promise.all([
-      this.prisma.customerProfile.findUnique({
+      this.prisma.customerProfile.findFirst({
         where: { id: customerProfileId },
         select: { phone: true },
       }),
@@ -423,7 +423,7 @@ export class CustomersService {
   }
 
   async blockPhone(id: string): Promise<void> {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id },
       select: { id: true, role: true },
     });
@@ -437,7 +437,7 @@ export class CustomersService {
   }
 
   async unblockPhone(id: string): Promise<void> {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id },
       select: { id: true, role: true },
     });
@@ -474,7 +474,7 @@ export class CustomersService {
     // customer: the link table is checked before the primary column.
     const linked = await this.resolveCustomerIdByPhones([normalized]);
     if (linked.customerId && !linked.conflicted) {
-      const owner = await this.prisma.customerProfile.findUnique({
+      const owner = await this.prisma.customerProfile.findFirst({
         where: { id: linked.customerId },
         select: { id: true, email: true, phone: true },
       });
@@ -492,7 +492,7 @@ export class CustomersService {
     }
 
     // First, check if a CustomerProfile exists for this phone
-    const existingProfile = await this.prisma.customerProfile.findUnique({
+    const existingProfile = await this.prisma.customerProfile.findFirst({
       where: { phone: normalized },
     });
 

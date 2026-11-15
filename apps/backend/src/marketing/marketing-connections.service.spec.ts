@@ -33,22 +33,22 @@ describe('MarketingConnectionsService', () => {
   };
 
   const mockPrisma = () => ({
-    marketingPlatform: { findUnique: jest.fn() },
+    marketingPlatform: { findFirst: jest.fn() },
     marketingConnection: {
       create: jest.fn(),
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     },
     marketingAuditLog: { create: jest.fn() },
-    systemSetting: { findUnique: jest.fn() },
-    marketingCampaign: { findUnique: jest.fn(), update: jest.fn() },
+    systemSetting: { findFirst: jest.fn() },
+    marketingCampaign: { findFirst: jest.fn(), update: jest.fn() },
     adAccount: {
       findMany: jest.fn(),
       count: jest.fn(),
       create: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     },
@@ -71,7 +71,7 @@ describe('MarketingConnectionsService', () => {
   });
 
   it('stores tokens ENCRYPTED at rest and sanitizes them on every response', async () => {
-    (prisma.marketingPlatform.findUnique as jest.Mock).mockResolvedValue(mockPlatform);
+    (prisma.marketingPlatform.findFirst as jest.Mock).mockResolvedValue(mockPlatform);
     mockAdapter.validateConnection.mockResolvedValue({ providerUserId: 'user-123' });
     (prisma.marketingConnection.create as jest.Mock).mockImplementation(async ({ data }: any) => ({
       id: 'conn-1',
@@ -94,7 +94,7 @@ describe('MarketingConnectionsService', () => {
   });
 
   it('validates the token with provider before persisting', async () => {
-    (prisma.marketingPlatform.findUnique as jest.Mock).mockResolvedValue(mockPlatform);
+    (prisma.marketingPlatform.findFirst as jest.Mock).mockResolvedValue(mockPlatform);
     mockAdapter.validateConnection.mockRejectedValue(new Error('Invalid OAuth 2.0 Access Token'));
     await expect(
       service.create({ provider: 'facebook', accessToken: 'bad-token' }, 'user-1'),
@@ -103,14 +103,14 @@ describe('MarketingConnectionsService', () => {
   });
 
   it('rejects unsupported providers', async () => {
-    (prisma.marketingPlatform.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.marketingPlatform.findFirst as jest.Mock).mockResolvedValue(null);
     await expect(
       service.create({ provider: 'snapchat', accessToken: 'x' }, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('disconnect keeps the connection row (history preserved), just flips status', async () => {
-    (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.marketingConnection.findFirst as jest.Mock).mockResolvedValue({
       id: 'conn-1',
       status: 'connected',
       platform: mockPlatform,
@@ -140,7 +140,7 @@ describe('MarketingConnectionsService', () => {
 
   describe('refreshLongLivedToken', () => {
     const mockSettings = () => {
-      (prisma.systemSetting.findUnique as jest.Mock).mockImplementation(({ where }: any) => {
+      (prisma.systemSetting.findFirst as jest.Mock).mockImplementation(({ where }: any) => {
         const values: any = {
           marketing_app_id: { key: 'marketing_app_id', value: 'app-123' },
           marketing_app_secret: { key: 'marketing_app_secret', value: 'secret-456' },
@@ -156,8 +156,8 @@ describe('MarketingConnectionsService', () => {
     };
 
     it('returns null without touching provider when app id or secret settings are missing', async () => {
-      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(mockConnection);
-      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingConnection.findFirst as jest.Mock).mockResolvedValue(mockConnection);
+      (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue(null);
 
       const res = await service.refreshLongLivedToken('conn-1');
 
@@ -167,12 +167,12 @@ describe('MarketingConnectionsService', () => {
     });
 
     it('returns null for a missing connection', async () => {
-      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingConnection.findFirst as jest.Mock).mockResolvedValue(null);
       expect(await service.refreshLongLivedToken('conn-nope')).toBeNull();
     });
 
     it('exchanges the token, encrypts the new one and updates the row', async () => {
-      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(mockConnection);
+      (prisma.marketingConnection.findFirst as jest.Mock).mockResolvedValue(mockConnection);
       mockSettings();
       mockAdapter.refreshToken.mockResolvedValue({
         accessToken: 'EAAG-new-token',
@@ -213,7 +213,7 @@ describe('MarketingConnectionsService', () => {
     });
 
     it('returns null when the provider call fails instead of throwing', async () => {
-      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(mockConnection);
+      (prisma.marketingConnection.findFirst as jest.Mock).mockResolvedValue(mockConnection);
       mockSettings();
       mockAdapter.refreshToken.mockRejectedValue(new Error('Rate limit hit'));
 
@@ -224,7 +224,7 @@ describe('MarketingConnectionsService', () => {
     });
 
     it('returns null when provider responds without access token', async () => {
-      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(mockConnection);
+      (prisma.marketingConnection.findFirst as jest.Mock).mockResolvedValue(mockConnection);
       mockSettings();
       mockAdapter.refreshToken.mockResolvedValue({ accessToken: null, expiresIn: 0 });
 
@@ -250,7 +250,7 @@ describe('MarketingConnectionsService', () => {
     };
 
     it('PAUSEs the campaign on provider and mirrors the status locally', async () => {
-      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(campaignWithConnection);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(campaignWithConnection);
       mockAdapter.pauseCampaign.mockResolvedValue(undefined);
       (prisma.marketingCampaign.update as jest.Mock).mockResolvedValue({
         id: 'camp-1',
@@ -274,7 +274,7 @@ describe('MarketingConnectionsService', () => {
     });
 
     it('resumes an ACTIVE campaign on provider and mirrors the status locally', async () => {
-      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(campaignWithConnection);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(campaignWithConnection);
       mockAdapter.resumeCampaign.mockResolvedValue(undefined);
       (prisma.marketingCampaign.update as jest.Mock).mockResolvedValue({
         id: 'camp-1',
@@ -289,14 +289,14 @@ describe('MarketingConnectionsService', () => {
     });
 
     it('rejects with BadRequest when the campaign does not exist', async () => {
-      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(service.pauseCampaign('nope')).rejects.toBeInstanceOf(BadRequestException);
       await expect(service.resumeCampaign('nope')).rejects.toBeInstanceOf(BadRequestException);
       expect(mockAdapter.pauseCampaign).not.toHaveBeenCalled();
     });
 
     it('rejects with BadRequest when provider rejects the status change', async () => {
-      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(campaignWithConnection);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(campaignWithConnection);
       mockAdapter.pauseCampaign.mockRejectedValue(new Error('Not permitted'));
       await expect(service.pauseCampaign('camp-1')).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.marketingCampaign.update).not.toHaveBeenCalled();
@@ -311,7 +311,7 @@ describe('MarketingConnectionsService', () => {
     };
 
     beforeEach(() => {
-      (prisma.marketingConnection.findUnique as jest.Mock).mockResolvedValue(connWithPlatform);
+      (prisma.marketingConnection.findFirst as jest.Mock).mockResolvedValue(connWithPlatform);
       mockAdapter.withTokenRefresh.mockImplementation((_conn: any, _decrypt: any, _refresh: any, fn: any) => fn('EAAG-xyz'));
     });
 
@@ -319,7 +319,7 @@ describe('MarketingConnectionsService', () => {
       mockAdapter.listAdAccounts.mockResolvedValue([
         { id: 'act_111', name: 'Main Account', currency: 'BDT', timezone_name: 'Asia/Dhaka', account_status: 1 },
       ]);
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.adAccount.create as jest.Mock).mockImplementation(async ({ data }: any) => ({ id: 'acc-1', ...data }));
 
       const res = await service.discoverAdAccounts({ connectionId: 'conn-1' });
@@ -332,7 +332,7 @@ describe('MarketingConnectionsService', () => {
       mockAdapter.listAdAccounts.mockResolvedValue([
         { id: 'act_no-currency', name: 'Test Account', currency: undefined, timezone_name: 'UTC', account_status: 1 },
       ]);
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(null);
 
       const res = await service.discoverAdAccounts({ connectionId: 'conn-1' });
 
@@ -345,7 +345,7 @@ describe('MarketingConnectionsService', () => {
         { id: 'act_bad', name: 'Bad', currency: undefined, timezone_name: 'UTC', account_status: 1 },
         { id: 'act_good', name: 'Good', currency: 'USD', timezone_name: 'America/New_York', account_status: 1 },
       ]);
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.adAccount.create as jest.Mock).mockImplementation(async ({ data }: any) => ({ id: 'acc-1', ...data }));
 
       const res = await service.discoverAdAccounts({ connectionId: 'conn-1' });
@@ -359,7 +359,7 @@ describe('MarketingConnectionsService', () => {
       mockAdapter.listAdAccounts.mockResolvedValue([
         { id: 'act_111', name: 'Updated', currency: 'USD', timezone_name: 'UTC', account_status: 1 },
       ]);
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue({ id: 'acc-existing', providerAccountId: 'act_111' });
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue({ id: 'acc-existing', providerAccountId: 'act_111' });
       (prisma.adAccount.update as jest.Mock).mockImplementation(async ({ data }: any) => ({ id: 'acc-existing', ...data }));
 
       const res = await service.discoverAdAccounts({ connectionId: 'conn-1' });

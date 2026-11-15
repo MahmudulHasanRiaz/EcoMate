@@ -14,7 +14,7 @@ describe('WebhookAttemptService', () => {
         update: jest.fn(),
         findFirst: jest.fn(),
         findMany: jest.fn(),
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         deleteMany: jest.fn(),
       },
     };
@@ -175,7 +175,7 @@ describe('WebhookAttemptService', () => {
 
   describe('getAttemptDetail', () => {
     it('returns full attempt details', async () => {
-      prisma.webhookAttempt.findUnique.mockResolvedValue({
+      prisma.webhookAttempt.findFirst.mockResolvedValue({
         id: 'att-1',
         courier: 'steadfast',
         outcome: 'SUCCESS',
@@ -184,7 +184,7 @@ describe('WebhookAttemptService', () => {
       const result = await service.getAttemptDetail('att-1');
 
       expect(result).toBeDefined();
-      expect(prisma.webhookAttempt.findUnique).toHaveBeenCalledWith({
+      expect(prisma.webhookAttempt.findFirst).toHaveBeenCalledWith({
         where: { id: 'att-1' },
         select: expect.any(Object),
       });

@@ -66,7 +66,7 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
           if (where.exchangeOfOrderId) return [];
           return [order()];
         }),
-        findUnique: jest.fn(async ({ where }: any) =>
+        findFirst: jest.fn(async ({ where }: any) =>
           where.id === 'o1' ? order() : null,
         ),
       },
@@ -77,7 +77,7 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
       product: { findMany: jest.fn().mockResolvedValue([]) },
       productVariant: { findMany: jest.fn().mockResolvedValue([]) },
       dispatch: {
-        findUnique: jest.fn(async () => ({
+        findFirst: jest.fn(async () => ({
           consignmentId: 'CONS-1',
           courier: 'pathao',
           status: 'RETURN_PENDING',
@@ -457,7 +457,7 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
       }
       return [order()];
     });
-    prisma.order.findUnique.mockImplementation(async ({ where }: any) => {
+    prisma.order.findFirst.mockImplementation(async ({ where }: any) => {
       if (where.id === 'o1') return order();
       if (where.id === 'o1-ex') {
         return {
@@ -613,7 +613,7 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
       };
     });
     prisma.return.findMany.mockResolvedValue([]);
-    prisma.order.findUnique.mockImplementation(async ({ where }: any) => {
+    prisma.order.findFirst.mockImplementation(async ({ where }: any) => {
       if (where.id === 'o1-rtn') {
         return { id: 'o1-rtn', displayId: 'RTN-260930-0001', returnOfOrderId: 'o1' };
       }

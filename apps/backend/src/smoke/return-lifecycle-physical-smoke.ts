@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 /**
  * Physical-engine E2E smoke: courier RETURNED → Return Pending (physical
  * reservation HOLD) → manual Returned (physical quantity restored + hold
@@ -112,8 +113,8 @@ async function main() {
     warehouseId: string,
   ): Promise<Snapshot> => {
     const [product, order, pi, cycle] = await Promise.all([
-      prisma.product.findUnique({ where: { id: productId } }),
-      prisma.order.findUnique({
+      prisma.product.findFirst({ where: { id: productId } }),
+      prisma.order.findFirst({
         where: { id: orderId },
         include: { status: true },
       }),
@@ -157,31 +158,31 @@ async function main() {
 
   try {
     console.log('\n== step 0: ensure IM setting + lookup seeds ==');
-    const setting = await prisma.systemSetting.findUnique({
+    const setting = await prisma.systemSetting.findFirst({
       where: { key: 'inventory_enabled' },
     });
     if (setting) previousSetting = setting.value;
     await prisma.systemSetting.upsert({
-      where: { key: 'inventory_enabled' },
+      where: { tenantId_key: tenantCompound({  key: 'inventory_enabled'  }) },
       update: { value: 'true' },
       create: { key: 'inventory_enabled', value: 'true' },
     });
 
-    let codOption = await prisma.paymentOption.findUnique({ where: { type: 'CASH_ON_DELIVERY' } });
+    let codOption = await prisma.paymentOption.findFirst({ where: { type: 'CASH_ON_DELIVERY' } });
     if (!codOption) {
       codOption = await prisma.paymentOption.create({
         data: { type: 'CASH_ON_DELIVERY', name: 'Cash on Delivery', sortOrder: 3 },
       });
     }
 
-    const previousProduct = await prisma.product.findUnique({ where: { slug: SMOKE_SLUG } });
+    const previousProduct = await prisma.product.findFirst({ where: { slug: SMOKE_SLUG } });
     if (previousProduct) {
       await prisma.managedStockLedger.deleteMany({ where: { productId: previousProduct.id } });
       await prisma.physicalInventoryLedger.deleteMany({ where: { productId: previousProduct.id } });
       await prisma.physicalInventory.deleteMany({ where: { productId: previousProduct.id } });
       await prisma.product.delete({ where: { id: previousProduct.id } });
     }
-    const prevWh = await prisma.warehouse.findUnique({ where: { slug: SMOKE_WAREHOUSE_SLUG } });
+    const prevWh = await prisma.warehouse.findFirst({ where: { slug: SMOKE_WAREHOUSE_SLUG } });
     if (prevWh) await prisma.warehouse.delete({ where: { id: prevWh.id } });
 
     console.log('\n== step 1: physical inventory setup ==');
@@ -226,7 +227,7 @@ async function main() {
 
     let snapA = await snapshot(orderId, productId, warehouseId);
     if (!snapA.piReserved) {
-      const confirmed = await prisma.orderStatus.findUnique({ where: { name: 'Confirmed' } });
+      const confirmed = await prisma.orderStatus.findFirst({ where: { name: 'Confirmed' } });
       if (confirmed) {
         await ordersService.updateStatus(
           orderId,
@@ -291,7 +292,7 @@ async function main() {
     assert('4d. no physical restoration rows yet', snapB.piReturnLedgerRows === 0, `rows=${snapB.piReturnLedgerRows}`);
 
     console.log('\n== step 5: manual admin → Returned (restore both engines) ==');
-    const returned = await prisma.orderStatus.findUnique({ where: { name: 'Returned' } });
+    const returned = await prisma.orderStatus.findFirst({ where: { name: 'Returned' } });
     if (!returned) throw new Error('Returned status not seeded');
     await ordersService.updateStatus(
       orderId,
@@ -339,7 +340,7 @@ async function main() {
       `reTransition=${reResult} (guard rejects) heal=${healOutcome} pi qty=${snapD.piQuantity} reserved=${snapD.piReserved} rows ${snapC.piReturnLedgerRows}->${snapD.piReturnLedgerRows}`,
     );
 
-    const freshDispatch = await prisma.dispatch.findUnique({ where: { id: dispatch.id } });
+    const freshDispatch = await prisma.dispatch.findFirst({ where: { id: dispatch.id } });
     if (freshDispatch && freshDispatch.status !== 'RETURNED') {
       await dispatchService.updateStatus(dispatch.id, 'RETURNED', 'courier_webhook');
     }
@@ -389,11 +390,11 @@ async function main() {
       if (warehouseId) {
         await prisma.warehouse.deleteMany({ where: { id: warehouseId } });
       }
-      const setting = await prisma.systemSetting.findUnique({ where: { key: 'inventory_enabled' } });
+      const setting = await prisma.systemSetting.findFirst({ where: { key: 'inventory_enabled' } });
       if (previousSetting === null) {
         await prisma.systemSetting.deleteMany({ where: { key: 'inventory_enabled' } });
       } else {
-        await prisma.systemSetting.update({ where: { key: 'inventory_enabled' }, data: { value: previousSetting } });
+        await prisma.systemSetting.update({ where: { tenantId_key: tenantCompound({ key: 'inventory_enabled' }) }, data: { value: previousSetting } });
       }
     } catch {
       /* cleanup is best-effort for the smoke DB */

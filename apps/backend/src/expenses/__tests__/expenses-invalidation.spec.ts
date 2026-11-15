@@ -14,13 +14,13 @@ describe('ExpensesService analytics invalidation', () => {
   let service: ExpensesService;
   const mockPrisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(mockPrisma)),
-    expenseCategory: { findUnique: jest.fn() },
+    expenseCategory: { findFirst: jest.fn() },
     expense: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     },
-    account: { findUnique: jest.fn() },
+    account: { findFirst: jest.fn() },
     journalEntry: { update: jest.fn() },
     journalEntryLine: { findMany: jest.fn().mockResolvedValue([]) },
   };

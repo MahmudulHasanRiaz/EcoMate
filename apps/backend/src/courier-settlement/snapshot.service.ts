@@ -137,7 +137,7 @@ export class CourierSettlementSnapshotService {
 
   /** Current effective state: superseded excluded, adjustments applied. */
   async getEffective(invoiceId: string) {
-    const invoice = await this.prisma.courierSettlementInvoice.findUnique({
+    const invoice = await this.prisma.courierSettlementInvoice.findFirst({
       where: { id: invoiceId },
       select: { state: true, accountingStatus: true },
     });

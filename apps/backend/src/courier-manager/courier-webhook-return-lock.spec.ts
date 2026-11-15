@@ -39,16 +39,16 @@ describe('CourierWebhookService — return lock on Delivered (2026-10-23)', () =
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(shippingOrder),
-        findUnique: jest.fn().mockResolvedValue(shippingOrder),
+        findFirst: jest.fn().mockResolvedValue(shippingOrder),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
-        findUnique: jest.fn().mockResolvedValue(deliveredStatus),
+        findFirst: jest.fn().mockResolvedValue(deliveredStatus),
       },
       dispatch: {
         upsert: jest.fn().mockResolvedValue({}),
         findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       return: {
@@ -112,9 +112,9 @@ describe('CourierWebhookService — return lock on Delivered (2026-10-23)', () =
 
   it('dispatch sticky: a RETURN_PENDING dispatch is NOT rewritten to DELIVERED and gets no deliveredAt stamp', async () => {
     prisma.order.findFirst.mockResolvedValue(returnedOrder);
-    prisma.order.findUnique.mockResolvedValue(returnedOrder);
+    prisma.order.findFirst.mockResolvedValue(returnedOrder);
     prisma.return.findFirst.mockResolvedValue({ id: 'ret-1' });
-    prisma.dispatch.findUnique.mockResolvedValue({ status: 'RETURN_PENDING' });
+    prisma.dispatch.findFirst.mockResolvedValue({ status: 'RETURN_PENDING' });
 
     const result = await service.handleSteadfast(deliveredBody);
     expect(result.status).toBe('success');

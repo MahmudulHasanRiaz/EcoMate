@@ -54,11 +54,11 @@ describe('Courier Task A — mapping corrections batch', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(shippingOrder),
-        findUnique: jest.fn().mockResolvedValue(shippingOrder),
+        findFirst: jest.fn().mockResolvedValue(shippingOrder),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.name === 'Partial') return Promise.resolve(partialStatus);
           if (where?.name === 'Return Pending') return Promise.resolve(returnPendingStatus);
           if (where?.name === 'Delivered') return Promise.resolve(deliveredStatus);
@@ -222,7 +222,7 @@ describe('Courier Task A — mapping corrections batch', () => {
         ...shippingOrder,
         status: { id: 'status-packed', name: 'Packed' },
       });
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         ...shippingOrder,
         status: { id: 'status-packed', name: 'Packed' },
       });
@@ -356,7 +356,7 @@ describe('Courier Task A — mapping corrections batch', () => {
 
   describe('extras (a) — PICKED_UP marks HANDOVER stage complete in timeline', () => {
     it('pathao picked timeline carries the HANDOVER marker', async () => {
-      prisma.order.findUnique.mockResolvedValue({
+      prisma.order.findFirst.mockResolvedValue({
         ...shippingOrder,
         status: { id: 'status-packed', name: 'Packed' },
       });

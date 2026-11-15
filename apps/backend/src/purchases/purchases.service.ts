@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   NotFoundException,
@@ -60,7 +61,7 @@ export class PurchasesService {
     // The legacy findFirst-based path is kept only when no tx is available.
     if (tx) {
       const counter = await tx.purchaseCounter.upsert({
-        where: { date: `${yy}${mm}${dd}` },
+        where: { tenantId_date: tenantCompound({  date: `${yy}${mm}${dd}`  }) },
         create: { date: `${yy}${mm}${dd}`, seq: 1 },
         update: { seq: { increment: 1 } },
       });
@@ -110,7 +111,7 @@ export class PurchasesService {
     supplierId: string,
     tx: Prisma.TransactionClient,
   ) {
-    const supplier = await tx.supplier.findUnique({
+    const supplier = await tx.supplier.findFirst({
       where: { id: supplierId },
       select: { id: true },
     });
@@ -136,7 +137,7 @@ export class PurchasesService {
       // only be bought through one of its variants — a product-level line on
       // a variable product would post stock to the wrong level (F2).
       for (const item of dto.items) {
-        const product = await tx.product.findUnique({
+        const product = await tx.product.findFirst({
           where: { id: item.productId },
           select: { id: true, type: true },
         });
@@ -146,7 +147,7 @@ export class PurchasesService {
           );
         }
         if (item.variantId) {
-          const variant = await tx.productVariant.findUnique({
+          const variant = await tx.productVariant.findFirst({
             where: { id: item.variantId },
             select: { id: true, productId: true },
           });
@@ -261,7 +262,7 @@ export class PurchasesService {
   }
 
   async findOne(id: string) {
-    const purchase = await this.prisma.purchase.findUnique({
+    const purchase = await this.prisma.purchase.findFirst({
       where: { id },
       include: {
         supplier: true,
@@ -293,7 +294,7 @@ export class PurchasesService {
   }
 
   async update(id: string, dto: UpdatePurchaseDto) {
-    const purchase = await this.prisma.purchase.findUnique({
+    const purchase = await this.prisma.purchase.findFirst({
       where: { id },
       select: { id: true, status: true },
     });
@@ -344,7 +345,7 @@ export class PurchasesService {
           throw new BadRequestException('At least one item is required');
         }
         for (const item of dto.items) {
-          const product = await tx.product.findUnique({
+          const product = await tx.product.findFirst({
             where: { id: item.productId },
             select: { id: true, type: true },
           });
@@ -354,7 +355,7 @@ export class PurchasesService {
             );
           }
           if (item.variantId) {
-            const variant = await tx.productVariant.findUnique({
+            const variant = await tx.productVariant.findFirst({
               where: { id: item.variantId },
               select: { id: true, productId: true },
             });
@@ -411,7 +412,7 @@ export class PurchasesService {
   }
 
   async remove(id: string) {
-    const purchase = await this.prisma.purchase.findUnique({
+    const purchase = await this.prisma.purchase.findFirst({
       where: { id },
       select: { id: true },
     });
@@ -433,7 +434,7 @@ export class PurchasesService {
   }
 
   async createGrn(purchaseId: string, dto: CreateGrnDto, userId?: string, idempotencyKey?: string) {
-    const purchase = await this.prisma.purchase.findUnique({
+    const purchase = await this.prisma.purchase.findFirst({
       where: { id: purchaseId },
       include: { items: true },
     });
@@ -449,7 +450,7 @@ export class PurchasesService {
     // Idempotent replay: same key returns the original GRN, never re-posts.
     const key = idempotencyKey?.trim() || undefined;
     if (key) {
-      const existing = await this.prisma.goodsReceiptNote.findUnique({
+      const existing = await this.prisma.goodsReceiptNote.findFirst({
         where: { clientKey: key },
         include: { items: true },
       });
@@ -480,7 +481,7 @@ export class PurchasesService {
           error.code === 'P2002'
         ) {
           // Lost the clientKey race: the winner's GRN is the truth.
-          const winner = await this.prisma.goodsReceiptNote.findUnique({
+          const winner = await this.prisma.goodsReceiptNote.findFirst({
             where: { clientKey: key },
             include: { items: true },
           });
@@ -507,7 +508,7 @@ export class PurchasesService {
         ),
       );
       for (const wid of warehouseIds) {
-        const wh = await tx.warehouse.findUnique({
+        const wh = await tx.warehouse.findFirst({
           where: { id: wid },
           select: { id: true },
         });
@@ -602,7 +603,7 @@ export class PurchasesService {
         // on a foreign product's variant.
         const effProductId = pi.productId || d.productId!;
         if (d.variantId && d.variantId !== pi.variantId) {
-          const variant = await tx.productVariant.findUnique({
+          const variant = await tx.productVariant.findFirst({
             where: { id: d.variantId },
             select: { id: true, productId: true },
           });
@@ -806,7 +807,7 @@ export class PurchasesService {
   }
 
   async shortClose(purchaseId: string, dto: ShortClosePurchaseDto, userId?: string) {
-    const purchase = await this.prisma.purchase.findUnique({
+    const purchase = await this.prisma.purchase.findFirst({
       where: { id: purchaseId },
       select: { id: true, status: true, referenceNo: true },
     });
@@ -888,7 +889,7 @@ export class PurchasesService {
   }
 
   async cancel(purchaseId: string, dto: CancelPurchaseDto, userId?: string) {
-    const purchase = await this.prisma.purchase.findUnique({
+    const purchase = await this.prisma.purchase.findFirst({
       where: { id: purchaseId },
       include: { items: true },
     });
@@ -992,7 +993,7 @@ export class PurchasesService {
   }
 
   private async findOneTx(tx: Prisma.TransactionClient, id: string) {
-    const purchase = await tx.purchase.findUnique({
+    const purchase = await tx.purchase.findFirst({
       where: { id },
       include: {
         supplier: true,
@@ -1077,7 +1078,7 @@ export class PurchasesService {
   }
 
   async getGrns(purchaseId: string) {
-    const purchase = await this.prisma.purchase.findUnique({
+    const purchase = await this.prisma.purchase.findFirst({
       where: { id: purchaseId },
       select: { id: true },
     });
@@ -1098,7 +1099,7 @@ export class PurchasesService {
   }
 
   async getGrn(grnId: string) {
-    const grn = await this.prisma.goodsReceiptNote.findUnique({
+    const grn = await this.prisma.goodsReceiptNote.findFirst({
       where: { id: grnId },
       include: {
         items: true,

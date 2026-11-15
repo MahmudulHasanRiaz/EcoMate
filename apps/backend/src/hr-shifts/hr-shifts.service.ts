@@ -69,7 +69,7 @@ export class ShiftService {
   }
 
   async getPreset(id: string) {
-    const preset = await this.prisma.shiftPreset.findUnique({
+    const preset = await this.prisma.shiftPreset.findFirst({
       where: { id },
       include: { assignments: { where: { effectiveTo: null } } },
     });
@@ -103,7 +103,7 @@ export class ShiftService {
   }
 
   async updatePreset(id: string, dto: UpdateShiftPresetDto) {
-    const existing = await this.prisma.shiftPreset.findUnique({ where: { id } });
+    const existing = await this.prisma.shiftPreset.findFirst({ where: { id } });
     if (!existing) throw new NotFoundException('Shift preset not found');
 
     const startTime = dto.startTime ?? existing.startTime;
@@ -186,7 +186,7 @@ export class ShiftService {
     let code = `CUSTOM_${sClean}_${eClean}`;
 
     let counter = 1;
-    while (await this.prisma.shiftPreset.findUnique({ where: { code } })) {
+    while (await this.prisma.shiftPreset.findFirst({ where: { code } })) {
       code = `CUSTOM_${sClean}_${eClean}_${counter++}`;
     }
 
@@ -226,7 +226,7 @@ export class ShiftService {
   // ── Rotation ──────────────────────────────────────────────────────────
 
   private async ensureEmployee(employeeId: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId },
       select: { id: true },
     });
@@ -265,7 +265,7 @@ export class ShiftService {
     actorId?: string | null,
   ) {
     await this.ensureEmployee(employeeId);
-    const preset = await this.prisma.shiftPreset.findUnique({
+    const preset = await this.prisma.shiftPreset.findFirst({
       where: { id: shiftPresetId },
     });
     if (!preset) throw new NotFoundException('Shift preset not found');
@@ -403,7 +403,7 @@ export class ShiftService {
           continue; // No change
         }
 
-        const preset = await tx.shiftPreset.findUnique({
+        const preset = await tx.shiftPreset.findFirst({
           where: { id: shiftPresetId },
         });
         if (!preset || !preset.isActive) {

@@ -35,7 +35,7 @@ export class StoreLocationsService {
 
   /** Admin single location, regardless of isActive. */
   async findOneAdmin(id: string) {
-    const location = await this.prisma.storeLocation.findUnique({
+    const location = await this.prisma.storeLocation.findFirst({
       where: { id },
     });
     if (!location) throw new NotFoundException('Store location not found');
@@ -49,7 +49,7 @@ export class StoreLocationsService {
   }
 
   async update(id: string, dto: UpdateStoreLocationDto) {
-    const existing = await this.prisma.storeLocation.findUnique({
+    const existing = await this.prisma.storeLocation.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Store location not found');
@@ -67,7 +67,7 @@ export class StoreLocationsService {
    * `{ message }` shape as the CMS delete.
    */
   async remove(id: string) {
-    const existing = await this.prisma.storeLocation.findUnique({
+    const existing = await this.prisma.storeLocation.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Store location not found');

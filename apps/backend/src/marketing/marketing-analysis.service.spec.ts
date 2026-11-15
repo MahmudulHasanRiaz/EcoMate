@@ -12,7 +12,7 @@ describe('MarketingAnalysisService', () => {
     marketingCampaignInsight: { aggregate: jest.fn(), groupBy: jest.fn(), findMany: jest.fn() },
     orderAttribution: { findMany: jest.fn() },
     marketingCostAllocation: { aggregate: jest.fn(), findMany: jest.fn() },
-    marketingCampaign: { findUnique: jest.fn(), findMany: jest.fn() },
+    marketingCampaign: { findFirst: jest.fn(), findMany: jest.fn() },
     marketingConsumption: { aggregate: jest.fn() },
     marketingDailySummary: { deleteMany: jest.fn(), upsert: jest.fn(), findMany: jest.fn(), aggregate: jest.fn() },
     journalEntry: { findMany: jest.fn() },
@@ -72,12 +72,12 @@ describe('MarketingAnalysisService', () => {
 
   describe('campaignPerformance', () => {
     it('throws NotFound for unknown campaign', async () => {
-      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
       await expect(service.campaignPerformance('nope')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('computes store-side ROAS from consumed (BDT) cost, not raw spend', async () => {
-      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue({
         id: 'camp-1',
         name: 'Launch',
         status: 'ACTIVE',

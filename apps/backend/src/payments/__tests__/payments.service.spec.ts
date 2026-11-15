@@ -12,26 +12,26 @@ describe('PaymentsService', () => {
     $transaction: jest.fn(),
     $queryRawUnsafe: jest.fn(),
     order: {
-      findUniqueOrThrow: jest.fn(),
-      findUnique: jest.fn(),
+      findFirstOrThrow: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       aggregate: jest.fn(),
     },
     payment: {
       create: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       aggregate: jest.fn(),
     },
     paymentGateway: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     account: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     systemSetting: {
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
   };
 
@@ -39,7 +39,7 @@ describe('PaymentsService', () => {
     jest.clearAllMocks();
     // Task 5 ledger defaults: unknown gateway codes resolve as manual,
     // settings absent → S1 ON / S2 OFF code defaults.
-    mockPrisma.paymentGateway.findUnique.mockResolvedValue(null);
+    mockPrisma.paymentGateway.findFirst.mockResolvedValue(null);
     mockPrisma.systemSetting.findMany.mockResolvedValue([]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -66,7 +66,7 @@ describe('PaymentsService', () => {
     it('rejects without ownership (no userId, no token)', async () => {
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
         mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-        mockPrisma.order.findUniqueOrThrow.mockResolvedValue(mockOrder);
+        mockPrisma.order.findFirstOrThrow.mockResolvedValue(mockOrder);
         return fn(mockPrisma);
       });
 
@@ -78,7 +78,7 @@ describe('PaymentsService', () => {
     it('accepts with matching userId (owns the order)', async () => {
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
         mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-        mockPrisma.order.findUniqueOrThrow.mockResolvedValue(mockOrder);
+        mockPrisma.order.findFirstOrThrow.mockResolvedValue(mockOrder);
         mockPrisma.payment.create.mockResolvedValue({ id: 'pay-1', ...dto, status: 'PENDING' });
         return fn(mockPrisma);
       });
@@ -91,7 +91,7 @@ describe('PaymentsService', () => {
     it('accepts with valid viewToken', async () => {
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
         mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-        mockPrisma.order.findUniqueOrThrow.mockResolvedValue(mockOrder);
+        mockPrisma.order.findFirstOrThrow.mockResolvedValue(mockOrder);
         mockPrisma.payment.create.mockResolvedValue({ id: 'pay-1', ...dto, status: 'PENDING' });
         return fn(mockPrisma);
       });
@@ -103,7 +103,7 @@ describe('PaymentsService', () => {
     it('rejects with wrong viewToken', async () => {
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
         mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-        mockPrisma.order.findUniqueOrThrow.mockResolvedValue(mockOrder);
+        mockPrisma.order.findFirstOrThrow.mockResolvedValue(mockOrder);
         return fn(mockPrisma);
       });
 
@@ -115,7 +115,7 @@ describe('PaymentsService', () => {
     it('rejects with foreign customerId (different userId than customerId)', async () => {
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
         mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-        mockPrisma.order.findUniqueOrThrow.mockResolvedValue(mockOrder);
+        mockPrisma.order.findFirstOrThrow.mockResolvedValue(mockOrder);
         return fn(mockPrisma);
       });
 
@@ -127,7 +127,7 @@ describe('PaymentsService', () => {
     it('accepts with different user if matching viewToken also provided', async () => {
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
         mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-        mockPrisma.order.findUniqueOrThrow.mockResolvedValue(mockOrder);
+        mockPrisma.order.findFirstOrThrow.mockResolvedValue(mockOrder);
         mockPrisma.payment.create.mockResolvedValue({ id: 'pay-1', ...dto, status: 'PENDING' });
         return fn(mockPrisma);
       });
@@ -151,7 +151,7 @@ describe('PaymentsService', () => {
     function mockTxForCreate() {
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
         mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-        mockPrisma.order.findUniqueOrThrow.mockResolvedValue(codOrder);
+        mockPrisma.order.findFirstOrThrow.mockResolvedValue(codOrder);
         mockPrisma.payment.create.mockResolvedValue({ id: 'pay-9', ...codDto, status: 'PENDING' });
         return fn(mockPrisma);
       });
@@ -184,10 +184,10 @@ describe('PaymentsService', () => {
       const stored = { id: 'pay-9', orderId: 'order-1', notes: null };
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
         mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-        mockPrisma.payment.findUnique.mockResolvedValue(stored);
+        mockPrisma.payment.findFirst.mockResolvedValue(stored);
         mockPrisma.payment.update.mockResolvedValue({ ...stored, orderId: 'order-1', status: 'PAID' });
         mockPrisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 1500 } });
-        mockPrisma.order.findUnique.mockResolvedValue({ total: 1500 });
+        mockPrisma.order.findFirst.mockResolvedValue({ total: 1500 });
         mockPrisma.order.update.mockResolvedValue({});
         return fn(mockPrisma);
       });
@@ -223,14 +223,14 @@ describe('PaymentsService', () => {
     function mockStaffTx() {
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
         mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-        mockPrisma.order.findUniqueOrThrow.mockResolvedValue(mockOrder);
+        mockPrisma.order.findFirstOrThrow.mockResolvedValue(mockOrder);
         mockPrisma.payment.create.mockResolvedValue({ id: 'pay-1', status: 'PENDING' });
         return fn(mockPrisma);
       });
     }
 
     it('rejects an unknown gateway code on a staff write (no silent manual fallback)', async () => {
-      mockPrisma.paymentGateway.findUnique.mockResolvedValue(null);
+      mockPrisma.paymentGateway.findFirst.mockResolvedValue(null);
       mockStaffTx();
 
       await expect(
@@ -244,7 +244,7 @@ describe('PaymentsService', () => {
     });
 
     it('stamps the gateway mapped settlement account when the client sends none', async () => {
-      mockPrisma.paymentGateway.findUnique.mockResolvedValue({
+      mockPrisma.paymentGateway.findFirst.mockResolvedValue({
         id: 'gw-bkash',
         code: 'bkash',
         name: 'bKash',
@@ -271,7 +271,7 @@ describe('PaymentsService', () => {
     });
 
     it('uses an explicitly supplied eligible account instead of the mapping', async () => {
-      mockPrisma.paymentGateway.findUnique.mockResolvedValue({
+      mockPrisma.paymentGateway.findFirst.mockResolvedValue({
         id: 'gw-bkash',
         code: 'bkash',
         name: 'bKash',
@@ -279,7 +279,7 @@ describe('PaymentsService', () => {
         type: 'manual',
         accountId: 'acc-mapped',
       });
-      mockPrisma.account.findUnique.mockResolvedValue({
+      mockPrisma.account.findFirst.mockResolvedValue({
         id: 'acc-custom',
         code: '1002',
         name: 'Bank',
@@ -308,7 +308,7 @@ describe('PaymentsService', () => {
     });
 
     it('rejects a supplied account that is not an eligible asset leaf', async () => {
-      mockPrisma.paymentGateway.findUnique.mockResolvedValue({
+      mockPrisma.paymentGateway.findFirst.mockResolvedValue({
         id: 'gw-bkash',
         code: 'bkash',
         name: 'bKash',
@@ -316,7 +316,7 @@ describe('PaymentsService', () => {
         type: 'manual',
         accountId: 'acc-mapped',
       });
-      mockPrisma.account.findUnique.mockResolvedValue({
+      mockPrisma.account.findFirst.mockResolvedValue({
         id: 'acc-expense',
         code: '5001',
         name: 'Expense',

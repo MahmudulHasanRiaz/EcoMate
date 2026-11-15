@@ -33,7 +33,7 @@ describe('AuthController — me() permission fallback', () => {
       if (!user.betterAuthUserId) {
         return getRoleDefaultPermissions(role);
       }
-      const baUser = await prisma!.betterAuthUser.findUnique({
+      const baUser = await prisma!.betterAuthUser.findFirst({
         where: { id: user.betterAuthUserId },
         select: {
           override_permissions: true,
@@ -63,7 +63,7 @@ describe('AuthController — me() permission fallback', () => {
         { provide: SecurityService, useValue: mockSecurity },
         {
           provide: PrismaService,
-          useValue: { betterAuthUser: { findUnique: jest.fn() } },
+          useValue: { betterAuthUser: { findFirst: jest.fn() } },
         },
       ],
     }).compile();
@@ -78,7 +78,7 @@ describe('AuthController — me() permission fallback', () => {
       permissions: ['view_orders'],
     });
     expect(result.permissions).toEqual(['view_orders']);
-    expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
+    expect(prisma.betterAuthUser.findFirst).not.toHaveBeenCalled();
   });
 
   it('superadmin without permissions → ALL registered keys, no BA query', async () => {
@@ -88,7 +88,7 @@ describe('AuthController — me() permission fallback', () => {
       betterAuthUserId: 'ba-1',
     });
     expect(result.permissions).toEqual(getAllPermissions());
-    expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
+    expect(prisma.betterAuthUser.findFirst).not.toHaveBeenCalled();
   });
 
   it('admin without permissions → ALL registered keys, no BA query', async () => {
@@ -98,11 +98,11 @@ describe('AuthController — me() permission fallback', () => {
       betterAuthUserId: 'ba-1',
     });
     expect(result.permissions).toEqual(getAllPermissions());
-    expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
+    expect(prisma.betterAuthUser.findFirst).not.toHaveBeenCalled();
   });
 
   it('employee without permissions + BA row with preset & override → union', async () => {
-    (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: ['view_orders'],
       employee: { accessPreset: { permissions: ['view_customers'] } },
     });
@@ -112,7 +112,7 @@ describe('AuthController — me() permission fallback', () => {
       betterAuthUserId: 'ba-1',
     });
     expect(result.permissions).toEqual(['view_customers', 'view_orders']);
-    expect(prisma.betterAuthUser.findUnique).toHaveBeenCalledWith({
+    expect(prisma.betterAuthUser.findFirst).toHaveBeenCalledWith({
       where: { id: 'ba-1' },
       select: {
         override_permissions: true,
@@ -122,7 +122,7 @@ describe('AuthController — me() permission fallback', () => {
   });
 
   it('employee with BA row but no employee link → employee role defaults (no preset in use)', async () => {
-    (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: [],
       employee: null,
     });
@@ -148,7 +148,7 @@ describe('AuthController — me() permission fallback', () => {
       betterAuthUserId: 'ba-1',
     });
     expect(result.permissions).toEqual([]);
-    expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
+    expect(prisma.betterAuthUser.findFirst).not.toHaveBeenCalled();
   });
 
   it('non-admin with null betterAuthUserId → employee role defaults without BA query (no throw)', async () => {
@@ -165,7 +165,7 @@ describe('AuthController — me() permission fallback', () => {
       'approve_customer_reviews',
       'view_cod_mismatch',
     ]);
-    expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
+    expect(prisma.betterAuthUser.findFirst).not.toHaveBeenCalled();
   });
 
   it('profile data preserved alongside permissions', async () => {

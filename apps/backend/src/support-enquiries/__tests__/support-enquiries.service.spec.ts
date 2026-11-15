@@ -13,7 +13,7 @@ describe('SupportEnquiriesService', () => {
         })),
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
         update: jest.fn().mockImplementation(async ({ where, data }: any) => ({
           id: where.id,
           ...data,
@@ -100,14 +100,14 @@ describe('SupportEnquiriesService', () => {
 
   it('findOne throws 404 for an unknown id', async () => {
     const prisma = mockPrisma();
-    prisma.supportEnquiry.findUnique.mockResolvedValue(null);
+    prisma.supportEnquiry.findFirst.mockResolvedValue(null);
     const svc = new SupportEnquiriesService(prisma as any);
     await expect(svc.findOne('nope')).rejects.toThrow(NotFoundException);
   });
 
   it('marking REPLIED stamps repliedById/repliedAt', async () => {
     const prisma = mockPrisma();
-    prisma.supportEnquiry.findUnique.mockResolvedValue({ id: 'e1', status: 'NEW' });
+    prisma.supportEnquiry.findFirst.mockResolvedValue({ id: 'e1', status: 'NEW' });
     const svc = new SupportEnquiriesService(prisma as any);
     const before = Date.now();
     const updated = await svc.updateStatus('e1', 'REPLIED', 'user-9');
@@ -121,7 +121,7 @@ describe('SupportEnquiriesService', () => {
 
   it('reopening to NEW clears the reply stamps', async () => {
     const prisma = mockPrisma();
-    prisma.supportEnquiry.findUnique.mockResolvedValue({ id: 'e1', status: 'REPLIED' });
+    prisma.supportEnquiry.findFirst.mockResolvedValue({ id: 'e1', status: 'REPLIED' });
     const svc = new SupportEnquiriesService(prisma as any);
     await svc.updateStatus('e1', 'NEW', 'user-9');
     expect(prisma.supportEnquiry.update).toHaveBeenCalledWith({
@@ -132,7 +132,7 @@ describe('SupportEnquiriesService', () => {
 
   it('updateStatus throws 404 for an unknown id', async () => {
     const prisma = mockPrisma();
-    prisma.supportEnquiry.findUnique.mockResolvedValue(null);
+    prisma.supportEnquiry.findFirst.mockResolvedValue(null);
     const svc = new SupportEnquiriesService(prisma as any);
     await expect(svc.updateStatus('nope', 'REPLIED', 'u1')).rejects.toThrow(
       NotFoundException,

@@ -38,7 +38,7 @@ export class OrderEditLockService {
 
   /** Resolve a user's display name (one extra query). */
   private async displayNameFor(userId: string): Promise<string | null> {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id: userId },
       select: { firstName: true, lastName: true },
     });
@@ -84,7 +84,7 @@ export class OrderEditLockService {
   ): Promise<
     { acquired: true; lock: OrderLockInfo } | { acquired: false; heldBy: OrderLockInfo }
   > {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: { id: true },
     });
@@ -93,7 +93,7 @@ export class OrderEditLockService {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + LOCK_TTL_MS);
 
-    const existing = await this.prisma.orderEditLock.findUnique({
+    const existing = await this.prisma.orderEditLock.findFirst({
       where: { orderId },
     });
     if (existing && existing.expiresAt > now && existing.userId !== userId) {
@@ -134,7 +134,7 @@ export class OrderEditLockService {
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
-        const raced = await this.prisma.orderEditLock.findUnique({
+        const raced = await this.prisma.orderEditLock.findFirst({
           where: { orderId },
         });
         if (!raced) {
@@ -187,14 +187,14 @@ export class OrderEditLockService {
 
   /** Force takeover regardless of the current holder. */
   async override(orderId: string, userId: string): Promise<OrderLockInfo> {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: { id: true, timeline: true },
     });
     if (!order) throw new NotFoundException('Order not found');
     const now = new Date();
     const expiresAt = new Date(now.getTime() + LOCK_TTL_MS);
-    const existing = await this.prisma.orderEditLock.findUnique({
+    const existing = await this.prisma.orderEditLock.findFirst({
       where: { orderId },
     });
     const lock = await this.prisma.orderEditLock.upsert({
@@ -225,7 +225,7 @@ export class OrderEditLockService {
     entry: Record<string, unknown>,
   ) {
     try {
-      const order = await this.prisma.order.findUnique({
+      const order = await this.prisma.order.findFirst({
         where: { id: orderId },
         select: { timeline: true },
       });
@@ -251,7 +251,7 @@ export class OrderEditLockService {
     orderId: string,
     userId: string,
   ): Promise<{ ok: true } | { ok: false; heldBy: OrderLockInfo }> {
-    const existing = await this.prisma.orderEditLock.findUnique({
+    const existing = await this.prisma.orderEditLock.findFirst({
       where: { orderId },
     });
     if (!existing || existing.expiresAt <= new Date()) {
@@ -271,7 +271,7 @@ export class OrderEditLockService {
 
   /** Release the lock. Only the current holder can release. */
   async release(orderId: string, userId: string): Promise<{ released: boolean }> {
-    const existing = await this.prisma.orderEditLock.findUnique({
+    const existing = await this.prisma.orderEditLock.findFirst({
       where: { orderId },
     });
     if (!existing) return { released: false };
@@ -286,7 +286,7 @@ export class OrderEditLockService {
 
   /** Read current live lock (null when none/expired) — one query. */
   async getLock(orderId: string): Promise<OrderLockInfo | null> {
-    const lock = await this.prisma.orderEditLock.findUnique({
+    const lock = await this.prisma.orderEditLock.findFirst({
       where: { orderId },
     });
     if (!lock || lock.expiresAt <= new Date()) return null;

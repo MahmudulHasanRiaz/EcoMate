@@ -15,7 +15,7 @@ describe('SourcePlatformsService', () => {
       sourcePlatform: {
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
     };
     const moduleRef = await Test.createTestingModule({
@@ -48,7 +48,7 @@ describe('SourcePlatformsService', () => {
           return { count: inserted };
         }),
         findMany: jest.fn(async () => rows),
-        findUnique: jest.fn(async ({ where }: any) =>
+        findFirst: jest.fn(async ({ where }: any) =>
           rows.find((r) => r.slug === where.slug) ?? null),
       };
     }
@@ -185,14 +185,14 @@ describe('SourcePlatformsService', () => {
     });
 
     it('capabilitiesFor returns null for a disabled platform', async () => {
-      prisma.sourcePlatform.findUnique.mockResolvedValue({
+      prisma.sourcePlatform.findFirst.mockResolvedValue({
         capabilities: ['MESSAGING'], enabled: false,
       });
       expect(await service.capabilitiesFor('facebook')).toBeNull();
     });
 
     it('capabilitiesFor returns null for an unknown platform', async () => {
-      prisma.sourcePlatform.findUnique.mockResolvedValue(null);
+      prisma.sourcePlatform.findFirst.mockResolvedValue(null);
       expect(await service.capabilitiesFor('nope')).toBeNull();
     });
   });

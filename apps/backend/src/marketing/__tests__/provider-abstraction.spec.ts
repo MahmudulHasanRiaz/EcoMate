@@ -62,20 +62,20 @@ function createFakeProviderAdapter(): AdProviderAdapter & {
 }
 
 const mockPrisma = () => ({
-  adAccount: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+  adAccount: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   marketingCampaign: {
-    findUnique: jest.fn().mockResolvedValue(null),
+    findFirst: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockImplementation((d) => Promise.resolve({ id: `camp-${Date.now()}`, ...d })),
     update: jest.fn().mockResolvedValue({}),
     findMany: jest.fn().mockResolvedValue([]),
   },
   marketingAdSet: {
-    findUnique: jest.fn().mockResolvedValue(null),
+    findFirst: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockImplementation((d) => Promise.resolve({ id: `adset-${Date.now()}`, ...d })),
     update: jest.fn().mockResolvedValue({}),
   },
   marketingAd: {
-    findUnique: jest.fn().mockResolvedValue(null),
+    findFirst: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockImplementation((d) => Promise.resolve({ id: `ad-${Date.now()}`, ...d })),
     update: jest.fn().mockResolvedValue({}),
   },
@@ -122,7 +122,7 @@ describe('Provider Abstraction (Tests A-D)', () => {
 
       const service = module.get(MarketingSyncService);
       const prisma = module.get(PrismaService);
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue(mockAdAccount);
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue(mockAdAccount);
 
       const res = await service.syncAdAccount('acct-1');
       expect(res).toMatchObject({ adAccountId: 'acct-1', skipped: false });
@@ -334,7 +334,7 @@ describe('Provider Abstraction (Tests A-D)', () => {
 
       const service = module.get(MarketingSyncService);
       const prisma = module.get(PrismaService);
-      (prisma.adAccount.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.adAccount.findFirst as jest.Mock).mockResolvedValue({
         ...mockAdAccount,
         connection: { ...mockAdAccount.connection, platform: { slug: 'tiktok' } },
       });

@@ -66,7 +66,7 @@ export class JobApplicationsService {
       return { message: 'Application received. Thank you!' };
     }
 
-    const posting = await this.prisma.jobPosting.findUnique({
+    const posting = await this.prisma.jobPosting.findFirst({
       where: { slug },
       select: { id: true, status: true, deadline: true },
     });
@@ -155,7 +155,7 @@ export class JobApplicationsService {
 
   async findAdmin(id: string) {
     assertCareersFeature(this.featureFlags);
-    const application = await this.prisma.jobApplication.findUnique({
+    const application = await this.prisma.jobApplication.findFirst({
       where: { id },
       include: {
         jobPosting: {
@@ -175,7 +175,7 @@ export class JobApplicationsService {
 
   async update(id: string, dto: UpdateJobApplicationDto, reviewerId?: string) {
     assertCareersFeature(this.featureFlags);
-    const existing = await this.prisma.jobApplication.findUnique({
+    const existing = await this.prisma.jobApplication.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Application not found');
@@ -212,7 +212,7 @@ export class JobApplicationsService {
    */
   async deleteCv(id: string, deletedById?: string) {
     assertCareersFeature(this.featureFlags);
-    const existing = await this.prisma.jobApplication.findUnique({
+    const existing = await this.prisma.jobApplication.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException('Application not found');
@@ -250,7 +250,7 @@ export class JobApplicationsService {
     mimeType: string;
   }> {
     assertCareersFeature(this.featureFlags);
-    const application = await this.prisma.jobApplication.findUnique({
+    const application = await this.prisma.jobApplication.findFirst({
       where: { id },
       select: { cvUrl: true, cvOriginalName: true },
     });

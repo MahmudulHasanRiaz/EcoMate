@@ -115,7 +115,7 @@ export class TrackingEligibilityGate {
     }
 
     // Fetch order metadata for source classification
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: {
         id: true,

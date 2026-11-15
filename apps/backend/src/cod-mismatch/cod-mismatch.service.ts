@@ -18,7 +18,7 @@ export class CodMismatchService {
    * from every collectable-affecting mutation (Task 4). Returns alerts
    * raised/refreshed in this run. */
   async recompute(orderId: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: {
         payments: true,
@@ -155,7 +155,7 @@ export class CodMismatchService {
 
   private async writeTimeline(orderId: string, text: string) {
     // Timeline is Order.timeline Json (schema.prisma) — append, never a separate model.
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: { timeline: true },
     });

@@ -49,11 +49,11 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
   const archiveFindUnique = jest.fn();
 
   const prisma = {
-    trackingSnapshot: { findUnique: snapshotFindUnique },
-    trackingReplayArchive: { findUnique: archiveFindUnique },
-    trackingOutbox: { findUnique: outboxFindUnique, update: outboxUpdate },
+    trackingSnapshot: { findFirst: snapshotFindUnique },
+    trackingReplayArchive: { findFirst: archiveFindUnique },
+    trackingOutbox: { findFirst: outboxFindUnique, update: outboxUpdate },
     trackingDispatch: {
-      findUnique: dispatchFindUnique,
+      findFirst: dispatchFindUnique,
       create: dispatchCreate,
       update: dispatchUpdate,
     },

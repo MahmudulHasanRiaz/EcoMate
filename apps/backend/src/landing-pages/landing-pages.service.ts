@@ -51,19 +51,19 @@ export class LandingPagesService {
   }
 
   async findById(id: string) {
-    const page = await this.prisma.landingPage.findUnique({ where: { id } });
+    const page = await this.prisma.landingPage.findFirst({ where: { id } });
     if (!page) throw new NotFoundException('Landing page not found');
     return page;
   }
 
   async findBySlug(slug: string) {
-    const page = await this.prisma.landingPage.findUnique({ where: { slug } });
+    const page = await this.prisma.landingPage.findFirst({ where: { slug } });
     if (!page) throw new NotFoundException('Landing page not found');
     return page;
   }
 
   async findPublishedBySlug(slug: string) {
-    const page = await this.prisma.landingPage.findUnique({
+    const page = await this.prisma.landingPage.findFirst({
       where: { slug, isActive: true, isDraft: false },
     });
     if (!page) throw new NotFoundException('Landing page not found');

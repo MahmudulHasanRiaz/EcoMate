@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable, Logger, Inject, forwardRef, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -576,7 +577,7 @@ export class CourierWebhookService {
     // Address change → merge into the order-owned shippingAddress snapshot.
     const addressKey = changed.find((k) => ['cus_address', 'recipient_address', 'address'].includes(k));
     if (addressKey && values[addressKey] != null) {
-      const full = await this.prisma.order.findUnique({ where: { id: (order as any).id } });
+      const full = await this.prisma.order.findFirst({ where: { id: (order as any).id } });
       const existingAddr = (full as any)?.shippingAddress;
       const base =
         typeof existingAddr === 'object' && existingAddr !== null ? existingAddr : {};
@@ -1023,7 +1024,7 @@ export class CourierWebhookService {
       select: { orderId: true },
     });
     if (dispatch?.orderId) {
-      const viaDispatch = await this.prisma.order.findUnique({
+      const viaDispatch = await this.prisma.order.findFirst({
         where: { id: dispatch.orderId },
       });
       if (viaDispatch && !viaDispatch.trashedAt) return viaDispatch;
@@ -1219,9 +1220,9 @@ export class CourierWebhookService {
     // asymmetry is deliberate and deterministic.
     const existing =
       typeof this.prisma.dispatch.findUnique === 'function'
-        ? await this.prisma.dispatch.findUnique({
+        ? await this.prisma.dispatch.findFirst({
             where: {
-              courier_consignmentId: { courier: courier as any, consignmentId },
+               courier: courier as any, consignmentId ,
             },
             select: { status: true },
           })
@@ -1232,9 +1233,9 @@ export class CourierWebhookService {
       (status === 'DELIVERED' || status === 'PARTIAL');
     const effectiveStatus = returnSticky ? (existing!.status as string) : status;
     await this.prisma.dispatch.upsert({
-      where: {
-        courier_consignmentId: { courier: courier as any, consignmentId },
-      },
+      where: { tenantId_courier_consignmentId: tenantCompound({
+         courier: courier as any, consignmentId ,
+       }) },
       update: {
         status: effectiveStatus as any,
         trackingCode,
@@ -1281,7 +1282,7 @@ export class CourierWebhookService {
     targetName: string,
     opts?: { confirmedPartial?: boolean; courier?: string },
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: { status: true },
     });
@@ -1364,7 +1365,7 @@ export class CourierWebhookService {
     if (currentIdx < 0 || targetIdx < 0) return;
     if (currentIdx >= targetIdx) return;
 
-    const targetStatus = await this.prisma.orderStatus.findUnique({
+    const targetStatus = await this.prisma.orderStatus.findFirst({
       where: { name: targetName },
     });
     if (!targetStatus) return;
@@ -1405,12 +1406,12 @@ export class CourierWebhookService {
 
     const path = this.findTransitionPath(order.status.name, targetName);
     for (const step of path) {
-      const current = await this.prisma.order.findUnique({
+      const current = await this.prisma.order.findFirst({
         where: { id: orderId },
         include: { status: true },
       });
       if (!current || current.status.name === targetName) break;
-      const stepStatus = await this.prisma.orderStatus.findUnique({
+      const stepStatus = await this.prisma.orderStatus.findFirst({
         where: { name: step },
       });
       if (!stepStatus) continue;
@@ -1714,7 +1715,7 @@ export class CourierWebhookService {
       select: { orderId: true },
     });
     if (dispatch?.orderId) {
-      const viaDispatch = await this.prisma.order.findUnique({
+      const viaDispatch = await this.prisma.order.findFirst({
         where: { id: dispatch.orderId },
       });
       if (viaDispatch && !viaDispatch.trashedAt) return viaDispatch;
@@ -2204,7 +2205,7 @@ export class CourierWebhookService {
       select: { orderId: true },
     });
     if (dispatch?.orderId) {
-      const viaDispatch = await this.prisma.order.findUnique({
+      const viaDispatch = await this.prisma.order.findFirst({
         where: { id: dispatch.orderId },
       });
       if (viaDispatch && !viaDispatch.trashedAt) return viaDispatch;

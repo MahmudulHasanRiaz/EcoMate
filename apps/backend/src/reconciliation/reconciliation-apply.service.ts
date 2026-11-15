@@ -322,7 +322,7 @@ export class ReconciliationApplyService {
     }
     const returnId = row.returnId;
     return this.prisma.$transaction(async (tx) => {
-      const ret = await tx.return.findUnique({
+      const ret = await tx.return.findFirst({
         where: { id: returnId },
         select: { id: true, orderId: true, items: true, status: true },
       });
@@ -346,7 +346,7 @@ export class ReconciliationApplyService {
       const good = Math.max(0, item.quantity - (item.damagedQuantity ?? 0));
       if (good <= 0) return { applied: false, reason: 'No good quantity to restore.' };
 
-      const product = await tx.product.findUnique({
+      const product = await tx.product.findFirst({
         where: { id: row.productId },
         select: { availabilityMode: true, warehouseId: true, manageStock: true },
       });
@@ -355,7 +355,7 @@ export class ReconciliationApplyService {
 
       // Ordered quantity caps every restore (a return can never restore
       // more than the order line sold).
-      const order = await tx.order.findUnique({
+      const order = await tx.order.findFirst({
         where: { id: ret.orderId },
         select: {
           items: { select: { productId: true, variantId: true, quantity: true } },
@@ -502,7 +502,7 @@ export class ReconciliationApplyService {
           reason: 'A Return record now exists for this order — already normalized.',
         };
       }
-      const order = await tx.order.findUnique({
+      const order = await tx.order.findFirst({
         where: { id: row.orderId },
         select: {
           id: true,
@@ -630,13 +630,13 @@ export class ReconciliationApplyService {
         if (managedExpected) {
           const current = it.variantId
             ? ((
-                await tx.productVariant.findUnique({
+                await tx.productVariant.findFirst({
                   where: { id: it.variantId },
                   select: { managedStockQuantity: true },
                 })
               )?.managedStockQuantity ?? 0)
             : ((
-                await tx.product.findUnique({
+                await tx.product.findFirst({
                   where: { id: it.productId },
                   select: { managedStockQuantity: true },
                 })
@@ -713,7 +713,7 @@ export class ReconciliationApplyService {
     performedBy: string,
   ): Promise<{ applied: true } | { applied: false; reason: string }> {
     return this.prisma.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({
+      const product = await tx.product.findFirst({
         where: { id: row.productId },
         select: { availabilityMode: true, type: true, managedStockQuantity: true },
       });
@@ -729,7 +729,7 @@ export class ReconciliationApplyService {
 
       let qty: number;
       if (row.variantId) {
-        const variant = await tx.productVariant.findUnique({
+        const variant = await tx.productVariant.findFirst({
           where: { id: row.variantId },
           select: { managedStockQuantity: true },
         });
@@ -872,7 +872,7 @@ export class ReconciliationApplyService {
       { quantity: number; reservedQuantity: number; warehouseId: string }
     >();
     for (const step of plan) {
-      const pi = await tx.physicalInventory.findUnique({
+      const pi = await tx.physicalInventory.findFirst({
         where: { id: step.physicalInventoryId },
         select: { quantity: true, reservedQuantity: true, warehouseId: true },
       });

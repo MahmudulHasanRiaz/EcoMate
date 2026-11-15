@@ -39,7 +39,7 @@ export class CouponsService {
   }
 
   async findOne(id: string) {
-    const coupon = await this.prisma.coupon.findUnique({
+    const coupon = await this.prisma.coupon.findFirst({
       where: { id },
       include: { _count: { select: { usages: true } } },
     });
@@ -48,7 +48,7 @@ export class CouponsService {
   }
 
   async validate(code: string, userId?: string, phone?: string) {
-    const coupon = await this.prisma.coupon.findUnique({ where: { code } });
+    const coupon = await this.prisma.coupon.findFirst({ where: { code } });
     if (!coupon) return { valid: false, message: 'Coupon not found' };
     if (!coupon.isActive)
       return { valid: false, message: 'Coupon is no longer active' };
@@ -138,7 +138,7 @@ export class CouponsService {
   }
 
   async create(dto: CreateCouponDto) {
-    const existing = await this.prisma.coupon.findUnique({
+    const existing = await this.prisma.coupon.findFirst({
       where: { code: dto.code },
     });
     if (existing) throw new ConflictException('Coupon code already exists');
@@ -161,7 +161,7 @@ export class CouponsService {
   async update(id: string, dto: UpdateCouponDto) {
     await this.findOne(id);
     if (dto.code) {
-      const existing = await this.prisma.coupon.findUnique({
+      const existing = await this.prisma.coupon.findFirst({
         where: { code: dto.code },
       });
       if (existing && existing.id !== id)

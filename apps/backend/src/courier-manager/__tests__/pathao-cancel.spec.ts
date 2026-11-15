@@ -30,7 +30,7 @@ describe('CourierManagerService — cancelPathaoOrder', () => {
 
   beforeEach(() => {
     prisma = {
-      courierCredentials: { findUnique: jest.fn().mockResolvedValue(creds) },
+      courierCredentials: { findFirst: jest.fn().mockResolvedValue(creds) },
     };
     tokenStore = { getAccessToken: jest.fn().mockResolvedValue('TOK') };
     service = new CourierManagerService(prisma, tokenStore);

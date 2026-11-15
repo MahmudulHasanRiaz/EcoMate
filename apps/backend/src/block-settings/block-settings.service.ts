@@ -48,7 +48,7 @@ export class BlockSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getSettings() {
-    let settings = await this.prisma.blockSettings.findUnique({
+    let settings = await this.prisma.blockSettings.findFirst({
       where: { id: 'singleton' },
     });
     if (!settings) {

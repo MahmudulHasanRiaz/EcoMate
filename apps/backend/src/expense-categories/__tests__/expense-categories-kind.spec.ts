@@ -38,13 +38,13 @@ describe('ExpenseCategoriesService expenseKind', () => {
   let service: ExpenseCategoriesService;
   const mockPrisma: any = {
     expenseCategory: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       findMany: jest.fn(),
     },
     expense: { count: jest.fn() },
-    account: { findUnique: jest.fn() },
+    account: { findFirst: jest.fn() },
   };
   const mockCache: any = {
     invalidateByPrefix: jest.fn().mockResolvedValue(undefined),
@@ -63,7 +63,7 @@ describe('ExpenseCategoriesService expenseKind', () => {
   });
 
   it('persists an explicit expenseKind on create', async () => {
-    mockPrisma.expenseCategory.findUnique.mockResolvedValue(null);
+    mockPrisma.expenseCategory.findFirst.mockResolvedValue(null);
     mockPrisma.expenseCategory.create.mockImplementation(async (args: any) => args.data);
     const created = await service.create({
       name: 'Rent',
@@ -78,7 +78,7 @@ describe('ExpenseCategoriesService expenseKind', () => {
   });
 
   it('persists expenseKind changes on update', async () => {
-    mockPrisma.expenseCategory.findUnique.mockResolvedValue({
+    mockPrisma.expenseCategory.findFirst.mockResolvedValue({
       id: 'c1',
       slug: 'rent',
     });
@@ -94,7 +94,7 @@ describe('ExpenseCategoriesService expenseKind', () => {
   });
 
   it('drops analytics:* after create (P2 §6)', async () => {
-    mockPrisma.expenseCategory.findUnique.mockResolvedValue(null);
+    mockPrisma.expenseCategory.findFirst.mockResolvedValue(null);
     mockPrisma.expenseCategory.create.mockImplementation(
       async (args: any) => args.data,
     );

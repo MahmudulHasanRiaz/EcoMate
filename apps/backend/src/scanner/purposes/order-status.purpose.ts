@@ -74,7 +74,7 @@ export class OrderStatusPurpose implements ScanPurposeHandler {
       let succeeded = 0;
       let failed = 0;
       for (const orderId of params.orderIds) {
-        const order = await this.prisma.order.findUnique({
+        const order = await this.prisma.order.findFirst({
           where: { id: orderId },
           include: { status: true },
         });
@@ -141,7 +141,7 @@ export class OrderStatusPurpose implements ScanPurposeHandler {
       };
     }
 
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: params.orderId },
       include: { status: true },
     });

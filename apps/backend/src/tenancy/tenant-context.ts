@@ -34,3 +34,22 @@ export function requireTenant(): TenantContext {
 export function requireTenantId(): string {
   return requireTenant().tenantId;
 }
+
+/**
+ * Build the tenant-composite unique-key payload:
+ *   tenantCompound({ key }) -> { tenantId: <current>, key }
+ * Used for update/delete/upsert where clauses whose old unique key is now
+ * [tenantId, ...fields].
+ */
+export function tenantCompound<T extends Record<string, unknown>>(
+  fields: T,
+): T & { tenantId: string } {
+  // Transitional bridge while the request middleware/proxy is being wired:
+  // unit tests and the single-tenant dev runtime use DEFAULT_TENANT_ID.
+  // Once the tenant middleware is enabled, this fallback is removed.
+  const tenantId =
+    getTenantContext()?.tenantId ||
+    process.env.DEFAULT_TENANT_ID ||
+    '00000000-0000-4000-8000-000000000000';
+  return { tenantId, ...fields };
+}

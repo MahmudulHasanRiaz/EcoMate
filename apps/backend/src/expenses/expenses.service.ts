@@ -47,7 +47,7 @@ export class ExpensesService {
   };
 
   async create(createExpenseDto: CreateExpenseDto, userId?: string) {
-    const cat = await this.prisma.expenseCategory.findUnique({
+    const cat = await this.prisma.expenseCategory.findFirst({
       where: { id: createExpenseDto.categoryId },
     });
     if (!cat)
@@ -57,7 +57,7 @@ export class ExpensesService {
 
     // Validate paymentAccountId is asset-type if provided
     if (createExpenseDto.paymentAccountId) {
-      const acct = await this.prisma.account.findUnique({
+      const acct = await this.prisma.account.findFirst({
         where: { id: createExpenseDto.paymentAccountId },
       });
       if (!acct)
@@ -130,7 +130,7 @@ export class ExpensesService {
       return exp;
     });
 
-    const created = await this.prisma.expense.findUnique({
+    const created = await this.prisma.expense.findFirst({
       where: { id: expense.id },
       include: this.expenseInclude,
     });
@@ -188,7 +188,7 @@ export class ExpensesService {
   }
 
   async findOne(id: string) {
-    const expense = await this.prisma.expense.findUnique({
+    const expense = await this.prisma.expense.findFirst({
       where: { id },
       include: this.expenseInclude,
     });
@@ -205,7 +205,7 @@ export class ExpensesService {
     const existing = await this.findOne(id);
 
     if (updateExpenseDto.categoryId) {
-      const cat = await this.prisma.expenseCategory.findUnique({
+      const cat = await this.prisma.expenseCategory.findFirst({
         where: { id: updateExpenseDto.categoryId },
       });
       if (!cat)
@@ -215,7 +215,7 @@ export class ExpensesService {
     }
 
     if (updateExpenseDto.paymentAccountId) {
-      const acct = await this.prisma.account.findUnique({
+      const acct = await this.prisma.account.findFirst({
         where: { id: updateExpenseDto.paymentAccountId },
       });
       if (!acct)
@@ -265,7 +265,7 @@ export class ExpensesService {
         );
         const newTotal = newAmount + newTaxAmount;
 
-        const cat = await tx.expenseCategory.findUnique({
+        const cat = await tx.expenseCategory.findFirst({
           where: { id: updateExpenseDto.categoryId || existing.categoryId },
         });
         const paymentAccountId =
@@ -396,7 +396,7 @@ export class ExpensesService {
 
   private async isAccountingEnabled(): Promise<boolean> {
     try {
-      const setting = await this.prisma.systemSetting.findUnique({
+      const setting = await this.prisma.systemSetting.findFirst({
         where: { key: 'accounting_enabled' },
       });
       return setting?.value === 'true';
@@ -447,7 +447,7 @@ export class ExpensesService {
     const { year, month, day } = dhakaDateParts(expenseDate);
     const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
     const counter = await tx.orderCounter.upsert({
-      where: { date_family: { date: dateStr, family: 'EXP-JE' } },
+      where: {  date: dateStr, family: 'EXP-JE'  },
       update: { seq: { increment: 1 } },
       create: { date: dateStr, family: 'EXP-JE', seq: 1 },
     });

@@ -35,16 +35,16 @@ describe('StockReconciliationService', () => {
       order: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue({ status: { name: 'Delivered' } }),
+        findFirst: jest.fn().mockResolvedValue({ status: { name: 'Delivered' } }),
       },
       orderItem: {
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
       orderItemComboComponent: {
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
       comboComponentPhysicalReservation: {
@@ -61,11 +61,11 @@ describe('StockReconciliationService', () => {
       orderStockCycle: { findMany: jest.fn().mockResolvedValue([]) },
       productVariant: {
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       product: {
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue({ manageStock: true, managedStockQuantity: 0 }),
+        findFirst: jest.fn().mockResolvedValue({ manageStock: true, managedStockQuantity: 0 }),
       },
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
     };
@@ -124,7 +124,7 @@ describe('StockReconciliationService', () => {
 
   it('deducts stock for Delivered orders when managed on-hand is sufficient', async () => {
     prisma.orderItem.findMany.mockResolvedValue([item()]);
-    prisma.product.findUnique.mockImplementation(
+    prisma.product.findFirst.mockImplementation(
       manageMock('product-1', null, 10),
     );
 
@@ -141,8 +141,8 @@ describe('StockReconciliationService', () => {
   it('releases orphaned managed reservation when on-hand is insufficient', async () => {
     const it = item();
     prisma.orderItem.findMany.mockResolvedValue([it]);
-    prisma.product.findUnique.mockImplementation(manageMock('product-1', null, 1));
-    prisma.orderItem.findUnique.mockResolvedValue(it);
+    prisma.product.findFirst.mockImplementation(manageMock('product-1', null, 1));
+    prisma.orderItem.findFirst.mockResolvedValue(it);
 
     const result = await service.healOrder('order-1', 'Delivered');
 
@@ -162,7 +162,7 @@ describe('StockReconciliationService', () => {
 
   it('does not release when managed on-hand exactly matches quantity', async () => {
     prisma.orderItem.findMany.mockResolvedValue([item()]);
-    prisma.product.findUnique.mockImplementation(manageMock('product-1', null, 3));
+    prisma.product.findFirst.mockImplementation(manageMock('product-1', null, 3));
 
     const result = await service.healOrder('order-1', 'Delivered');
 
@@ -196,8 +196,8 @@ describe('StockReconciliationService', () => {
       ],
     });
     prisma.orderItem.findMany.mockResolvedValue([comboItem]);
-    prisma.product.findUnique.mockImplementation(manageMock('product-1', null, 1));
-    prisma.orderItemComboComponent.findUnique.mockResolvedValue(comboItem.comboComponents[0]);
+    prisma.product.findFirst.mockImplementation(manageMock('product-1', null, 1));
+    prisma.orderItemComboComponent.findFirst.mockResolvedValue(comboItem.comboComponents[0]);
 
     const result = await service.healOrder('order-1', 'Delivered');
 
@@ -237,7 +237,7 @@ describe('StockReconciliationService', () => {
   it('releases a held reservation but only for a not-yet-deducted unit', async () => {
     const it = item({ managedStockDeducted: true });
     prisma.orderItem.findMany.mockResolvedValue([it]);
-    prisma.product.findUnique.mockImplementation(manageMock('product-1', null, 1));
+    prisma.product.findFirst.mockImplementation(manageMock('product-1', null, 1));
 
     const result = await service.healOrder('order-1', 'Delivered');
 
@@ -251,8 +251,8 @@ describe('StockReconciliationService', () => {
   it('skips deduction release for units that never held a reservation', async () => {
     const it = item({ managedStockReserved: false });
     prisma.orderItem.findMany.mockResolvedValue([it]);
-    prisma.product.findUnique.mockImplementation(manageMock('product-1', null, 0));
-    prisma.orderItem.findUnique.mockResolvedValue(it);
+    prisma.product.findFirst.mockImplementation(manageMock('product-1', null, 0));
+    prisma.orderItem.findFirst.mockResolvedValue(it);
 
     const result = await service.healOrder('order-1', 'Delivered');
 
@@ -363,8 +363,8 @@ describe('StockReconciliationService', () => {
     ]);
     prisma.order.findFirst.mockResolvedValue({ status: { name: 'Delivered' } });
     prisma.orderItem.findMany.mockResolvedValue([item()]);
-    prisma.orderItem.findUnique.mockResolvedValue(item());
-    prisma.product.findUnique.mockImplementation(manageMock('product-1', null, 0));
+    prisma.orderItem.findFirst.mockResolvedValue(item());
+    prisma.product.findFirst.mockImplementation(manageMock('product-1', null, 0));
     prisma.orderItemComboComponent.findMany.mockResolvedValue([]);
 
     const result = await service.healAll();
@@ -529,7 +529,7 @@ describe('StockReconciliationService', () => {
           ],
     );
     prisma.order.findFirst.mockResolvedValue({ status: { name: 'Cancelled' } });
-    prisma.order.findUnique.mockResolvedValue({ status: { name: 'Cancelled' } });
+    prisma.order.findFirst.mockResolvedValue({ status: { name: 'Cancelled' } });
     // healOrder's pending-work probe reads the order's items: the scanned
     // order carries a deducted unit, so the first heal has work to do.
     prisma.orderItem.findMany.mockResolvedValue([

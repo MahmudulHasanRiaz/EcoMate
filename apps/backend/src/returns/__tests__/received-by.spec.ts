@@ -36,7 +36,7 @@ describe('ReturnsService — who received the return', () => {
   beforeEach(async () => {
     tx = {
       return: {
-        findUnique: jest.fn().mockResolvedValue({ ...storedRow }),
+        findFirst: jest.fn().mockResolvedValue({ ...storedRow }),
         update: jest.fn().mockImplementation(({ data }: any) =>
           Promise.resolve({ id: 'ret-1', ...data }),
         ),
@@ -44,12 +44,12 @@ describe('ReturnsService — who received the return', () => {
       orderItem: { findMany: jest.fn().mockResolvedValue([]) },
       // The staff actor resolves to a UserProfile id (like Refund.processedBy).
       userProfile: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'staff-profile-1' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'staff-profile-1' }),
       },
     };
     prisma = {
       return: {
-        findUnique: jest.fn().mockResolvedValue({ ...storedRow }),
+        findFirst: jest.fn().mockResolvedValue({ ...storedRow }),
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockImplementation(({ data }: any) =>
@@ -57,7 +57,7 @@ describe('ReturnsService — who received the return', () => {
         ),
       },
       order: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'order-1',
           displayId: 'ORD-1',
           trashedAt: null,
@@ -67,7 +67,7 @@ describe('ReturnsService — who received the return', () => {
       },
       dispatch: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       userProfile: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'staff-profile-1' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'staff-profile-1' }),
       },
       $transaction: jest.fn((cb: any) => cb(tx)),
     };
@@ -106,11 +106,11 @@ describe('ReturnsService — who received the return', () => {
     const writes = tx.return.update.mock.calls.map((c: any[]) => c[0].data);
     expect(writes[writes.length - 1].receivedById).toBeNull();
     // The automated actor is not even looked up as a staff profile.
-    expect(tx.userProfile.findUnique).not.toHaveBeenCalled();
+    expect(tx.userProfile.findFirst).not.toHaveBeenCalled();
   });
 
   it('a staff member without a staff profile still receives (actor null, date kept)', async () => {
-    tx.userProfile.findUnique.mockResolvedValue(null);
+    tx.userProfile.findFirst.mockResolvedValue(null);
     await service.markReceived('ret-1', { performedBy: 'unknown@ecomate.com' });
     const writes = tx.return.update.mock.calls.map((c: any[]) => c[0].data);
     expect(writes[writes.length - 1].receivedById).toBeNull();
@@ -133,7 +133,7 @@ describe('ReturnsService — who received the return', () => {
   });
 
   it('the parcel-back signal never regresses a staff-received Return', async () => {
-    prisma.return.findUnique.mockResolvedValue({ ...storedRow, status: 'RESTOCKED' });
+    prisma.return.findFirst.mockResolvedValue({ ...storedRow, status: 'RESTOCKED' });
     await service.recordCourierParcelBack('ret-1', 'cancelled_return_received');
     const data = prisma.return.update.mock.calls[0][0].data;
     expect(data).toEqual({ courierStatus: 'cancelled_return_received' });

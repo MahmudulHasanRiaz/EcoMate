@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -78,7 +79,7 @@ export class MarketingSnapshotService {
         const revenue = Math.round(s.revenue * 100) / 100;
         const cost = Math.round(s.cost * 100) / 100;
         await this.prisma.marketingDailyProductCost.upsert({
-          where: { productId_date: { productId, date: day } },
+          where: { tenantId_productId_date: tenantCompound({   productId, date: day   }) },
           update: {
             spend: Math.round(s.spend * 10000) / 10000,
             revenue,

@@ -25,7 +25,7 @@ describe('FinancialPeriodsService', () => {
     const prismaMock = {
       financialPeriod: {
         findMany: jest.fn().mockResolvedValue([mockPeriod]),
-        findUnique: jest.fn().mockResolvedValue(mockPeriod),
+        findFirst: jest.fn().mockResolvedValue(mockPeriod),
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(mockPeriod),
         update: jest.fn().mockResolvedValue({ ...mockPeriod, isClosed: true }),

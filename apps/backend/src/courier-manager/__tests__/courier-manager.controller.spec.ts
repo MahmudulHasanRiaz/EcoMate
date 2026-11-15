@@ -32,7 +32,7 @@ describe('CourierManagerController', () => {
       const prisma = {
         order: { findMany: jest.fn().mockResolvedValue([]) },
         courierCredentials: {
-          findUnique: jest.fn().mockResolvedValue(row),
+          findFirst: jest.fn().mockResolvedValue(row),
           findMany: jest.fn().mockResolvedValue(row ? [row] : []),
           create: jest.fn().mockResolvedValue({}),
         },

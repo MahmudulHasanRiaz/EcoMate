@@ -13,26 +13,26 @@ describe('CommissionsService', () => {
 
   const prismaMock = {
     employee: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     orderStatus: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findFirst: jest.fn().mockResolvedValue({ id: confirmedId }),
     },
     order: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     commissionRule: {
       create: jest.fn(),
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     },
     commissionEarning: {
       createMany: jest.fn().mockResolvedValue({ count: 1 }),
       findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'earning-1',
         employeeId: 'emp-1',
         ruleId: 'rule-1',
@@ -75,12 +75,12 @@ describe('CommissionsService', () => {
     prisma = module.get<PrismaService>(PrismaService);
     jest.clearAllMocks();
     prismaMock.orderStatus.findFirst.mockResolvedValue({ id: confirmedId });
-    prismaMock.employee.findUnique.mockResolvedValue({
+    prismaMock.employee.findFirst.mockResolvedValue({
       id: 'emp-1',
       employeeId: 'EMP-1',
     });
     prismaMock.commissionEarning.createMany.mockResolvedValue({ count: 1 });
-    prismaMock.commissionEarning.findUnique.mockResolvedValue({
+    prismaMock.commissionEarning.findFirst.mockResolvedValue({
       id: 'earning-1',
       employeeId: 'emp-1',
       ruleId: 'rule-1',
@@ -129,7 +129,7 @@ describe('CommissionsService', () => {
     });
 
     it('createRule validates employee existence', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue(null);
       await expect(
         service.createRule({
           employeeId: 'nope',
@@ -140,7 +140,7 @@ describe('CommissionsService', () => {
     });
 
     it('createRule validates triggerStatusId', async () => {
-      prismaMock.orderStatus.findUnique.mockResolvedValue(null);
+      prismaMock.orderStatus.findFirst.mockResolvedValue(null);
       await expect(
         service.createRule({
           employeeId: 'emp-1',
@@ -152,7 +152,7 @@ describe('CommissionsService', () => {
     });
 
     it('updateRule updates only provided fields', async () => {
-      prismaMock.commissionRule.findUnique.mockResolvedValue({
+      prismaMock.commissionRule.findFirst.mockResolvedValue({
         id: 'rule-1',
         employeeId: 'emp-1',
       });
@@ -165,14 +165,14 @@ describe('CommissionsService', () => {
     });
 
     it('updateRule throws for missing rule', async () => {
-      prismaMock.commissionRule.findUnique.mockResolvedValue(null);
+      prismaMock.commissionRule.findFirst.mockResolvedValue(null);
       await expect(
         service.updateRule('rule-1', { amount: 7 }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('setActive toggles isActive', async () => {
-      prismaMock.commissionRule.findUnique.mockResolvedValue({
+      prismaMock.commissionRule.findFirst.mockResolvedValue({
         id: 'rule-1',
       });
       prismaMock.commissionRule.update.mockResolvedValue({ id: 'rule-1' });
@@ -184,7 +184,7 @@ describe('CommissionsService', () => {
     });
 
     it('deleteRule removes the rule', async () => {
-      prismaMock.commissionRule.findUnique.mockResolvedValue({
+      prismaMock.commissionRule.findFirst.mockResolvedValue({
         id: 'rule-1',
       });
       prismaMock.commissionRule.delete.mockResolvedValue({ id: 'rule-1' });
@@ -202,7 +202,7 @@ describe('CommissionsService', () => {
     });
 
     const runHook = (order: any, rules: any[]) => {
-      prismaMock.order.findUnique.mockResolvedValue(order);
+      prismaMock.order.findFirst.mockResolvedValue(order);
       prismaMock.commissionRule.findMany.mockResolvedValue(rules);
       return service.processOrderCommissions('order-1');
     };
@@ -414,7 +414,7 @@ describe('CommissionsService', () => {
       );
 
       expect(result.id).toBe('rev-1');
-      expect(prismaMock.commissionEarning.findUnique).toHaveBeenCalledWith({
+      expect(prismaMock.commissionEarning.findFirst).toHaveBeenCalledWith({
         where: { id: 'earning-1' },
       });
       expect(prismaMock.commissionReversal.create).toHaveBeenCalledWith({
@@ -448,7 +448,7 @@ describe('CommissionsService', () => {
     });
 
     it('reverses a proportional share of the earning (order 1000, refund 250 → 25%)', async () => {
-      prismaMock.order.findUnique.mockResolvedValue({ total: 1000 });
+      prismaMock.order.findFirst.mockResolvedValue({ total: 1000 });
       prismaMock.commissionReversal.create.mockResolvedValue({
         id: 'rev-partial',
         amount: '25',
@@ -469,7 +469,7 @@ describe('CommissionsService', () => {
     });
 
     it('caps a refund larger than the order at a full reversal (ratio > 1 → 1)', async () => {
-      prismaMock.order.findUnique.mockResolvedValue({ total: 100 });
+      prismaMock.order.findFirst.mockResolvedValue({ total: 100 });
       const result = await service.reverseEarning(
         'earning-1',
         { orderId: 'order-1', reason: 'Oversized refund', refundedAmount: 500 },
@@ -482,7 +482,7 @@ describe('CommissionsService', () => {
     });
 
     it('falls back to min(earning, refundedAmount) when the order row is missing', async () => {
-      prismaMock.order.findUnique.mockResolvedValue(null);
+      prismaMock.order.findFirst.mockResolvedValue(null);
       await service.reverseEarning(
         'earning-1',
         { orderId: 'order-1', reason: 'Missing order', refundedAmount: 40 },
@@ -517,14 +517,14 @@ describe('CommissionsService', () => {
     });
 
     it('throws 404 when the earning is missing', async () => {
-      prismaMock.commissionEarning.findUnique.mockResolvedValue(null);
+      prismaMock.commissionEarning.findFirst.mockResolvedValue(null);
       await expect(
         service.reverseEarning('earning-nope', { reason: 'why' }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('rejects reversing a DRAFT earning (400)', async () => {
-      prismaMock.commissionEarning.findUnique.mockResolvedValue({
+      prismaMock.commissionEarning.findFirst.mockResolvedValue({
         id: 'earning-2',
         status: 'draft',
         amount: '50',

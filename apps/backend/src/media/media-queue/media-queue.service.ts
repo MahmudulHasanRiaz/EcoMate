@@ -159,7 +159,7 @@ export class MediaQueueService implements OnModuleInit {
     const manifestValue =
       manifestSnapshot === undefined
         ? (
-            await this.prisma.media.findUnique({
+            await this.prisma.media.findFirst({
               where: { id: mediaId },
               select: { derivativeManifest: true },
             })
@@ -193,7 +193,7 @@ export class MediaQueueService implements OnModuleInit {
 
   private async getR2PublicBase(): Promise<string | null> {
     try {
-      const row = await this.prisma.systemSetting.findUnique({
+      const row = await this.prisma.systemSetting.findFirst({
         where: { key: 'storage_r2_public_url' },
       });
       if (row?.value) return row.value.replace(/\/$/, '') + '/';

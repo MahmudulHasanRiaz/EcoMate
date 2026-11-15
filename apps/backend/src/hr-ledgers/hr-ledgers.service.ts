@@ -13,7 +13,7 @@ export class HrLedgersService {
   constructor(private prisma: PrismaService) {}
 
   private async ensureEmployee(employeeId: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId },
     });
     if (!employee) throw new NotFoundException('Employee not found');
@@ -70,7 +70,7 @@ export class HrLedgersService {
   }
 
   async approveEarning(id: string, actorId?: string) {
-    const row = await this.prisma.employeeEarning.findUnique({ where: { id } });
+    const row = await this.prisma.employeeEarning.findFirst({ where: { id } });
     if (!row) throw new NotFoundException('Earning not found');
     if (row.status !== LedgerStatus.draft)
       throw new BadRequestException(
@@ -126,7 +126,7 @@ export class HrLedgersService {
   }
 
   async approveDeduction(id: string, actorId?: string) {
-    const row = await this.prisma.employeeDeduction.findUnique({
+    const row = await this.prisma.employeeDeduction.findFirst({
       where: { id },
     });
     if (!row) throw new NotFoundException('Deduction not found');

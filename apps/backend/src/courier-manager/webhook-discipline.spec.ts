@@ -50,7 +50,7 @@ describe('CourierWebhookController — Task 4 discipline', () => {
       completeAttempt: jest.fn().mockResolvedValue(undefined),
       logAttempt: jest.fn().mockResolvedValue('dupe-1'),
     };
-    prisma = { courierCredentials: { findUnique: jest.fn() } };
+    prisma = { courierCredentials: { findFirst: jest.fn() } };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CourierWebhookController],
@@ -112,7 +112,7 @@ describe('CourierWebhookController — Task 4 discipline', () => {
     const rawBody = '{"status":"delivered","consignment_id":12345,"notification_type":"delivery_status"}';
 
     beforeEach(() => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
     });
 
     it('bad signature → 401, handler never runs', async () => {
@@ -197,7 +197,7 @@ describe('CourierWebhookController — Task 4 discipline', () => {
     });
 
     it('no token configured → ACCEPT + warning recorded (never silent)', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue(null);
+      prisma.courierCredentials.findFirst.mockResolvedValue(null);
       const result = await controller.steadfast(body, makeReq('steadfast', {}, { rawBody }));
       expect(result).toEqual({ status: 'success', message: 'ok' });
       expect(webhookSvc.handleSteadfast).toHaveBeenCalled();
@@ -212,7 +212,7 @@ describe('CourierWebhookController — Task 4 discipline', () => {
     const body = { event: 'order.delivered', consignment_id: 'P-1' };
 
     beforeEach(() => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({
+      prisma.courierCredentials.findFirst.mockResolvedValue({
         webhookSecret: PATHAO_SECRET,
         pathaoIntegrationSecret: null,
       });
@@ -248,7 +248,7 @@ describe('CourierWebhookController — Task 4 discipline', () => {
     });
 
     it('no secret configured → ACCEPT + warning recorded', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: null });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: null });
       const result = await controller.pathao(body, makeReq('pathao', {}), makeRes());
       expect(result).toEqual({ status: 'success', message: 'ok' });
       expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
@@ -263,7 +263,7 @@ describe('CourierWebhookController — Task 4 discipline', () => {
     const rawBody = '{"status":"delivered","tracking_number":"RX-1"}';
 
     beforeEach(() => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: REDX_SECRET });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: REDX_SECRET });
     });
 
     it('bad HMAC → 401 even though the body parses', async () => {
@@ -324,7 +324,7 @@ describe('CourierWebhookController — Task 4 discipline', () => {
     });
 
     it('no secret anywhere → ACCEPT + warning recorded', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue(null);
+      prisma.courierCredentials.findFirst.mockResolvedValue(null);
       const result = await controller.redx(body, makeReq('redx', {}, { rawBody }));
       expect(result).toEqual({ status: 'success', message: 'ok' });
       expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
@@ -338,7 +338,7 @@ describe('CourierWebhookController — Task 4 discipline', () => {
     const body = { event: 'order.delivered', consignment_id: 'CB-1' };
 
     beforeEach(() => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: CARRYBEE_SECRET });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: CARRYBEE_SECRET });
     });
 
     it('wrong signature → 401, handler never runs', async () => {
@@ -403,7 +403,7 @@ describe('CourierWebhookController — Task 4 discipline', () => {
     });
 
     it('no secret configured → ACCEPT + warning recorded', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: null });
+      prisma.courierCredentials.findFirst.mockResolvedValue({ webhookSecret: null });
       const result = await controller.carrybee(body, makeReq('carrybee', {}), makeRes());
       expect(result).toEqual({ status: 'success', message: 'ok' });
       expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(

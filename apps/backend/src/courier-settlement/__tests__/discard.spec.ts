@@ -16,7 +16,7 @@ import { CourierSettlementActivityService } from '../activity.service';
 async function makeService(state?: string | null) {
   const prisma: any = {
     courierSettlementInvoice: {
-      findUnique: jest.fn().mockResolvedValue(
+      findFirst: jest.fn().mockResolvedValue(
         state === undefined
           ? { id: 'inv-1', displayId: 'CS-260927-0001', state: 'READY_FOR_REVIEW' }
           : state === null

@@ -32,11 +32,11 @@ describe('P0 Financial Model Corrections', () => {
 
   const mockPrisma = () => ({
     adAccount: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
     },
     marketingCampaign: {
-      findUnique: jest.fn().mockResolvedValue({ id: mockCampaignId, adAccountId: mockAdAccountId }),
+      findFirst: jest.fn().mockResolvedValue({ id: mockCampaignId, adAccountId: mockAdAccountId }),
       findMany: jest.fn().mockResolvedValue([{ id: mockCampaignId, adAccountId: mockAdAccountId }]),
     },
     marketingFundingEntry: {
@@ -44,7 +44,7 @@ describe('P0 Financial Model Corrections', () => {
     },
     marketingFundingLedger: {
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn().mockImplementation((d) => Promise.resolve({ id: d.where.id, ...d.data })),
     },
     marketingConsumption: {
@@ -52,7 +52,7 @@ describe('P0 Financial Model Corrections', () => {
       aggregate: jest.fn().mockResolvedValue({ _sum: { consumedAmount: 0, calculatedCost: 0 } }),
     },
     marketingPayment: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockImplementation((d) => Promise.resolve({ id: d.where.id, ...d.data })),
     },
@@ -64,7 +64,7 @@ describe('P0 Financial Model Corrections', () => {
     },
     account: {
       findFirst: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
     },
     $transaction: jest.fn(),
@@ -109,7 +109,7 @@ describe('P0 Financial Model Corrections', () => {
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
         const tx = {
           marketingFundingLedger: {
-            findUnique: jest.fn().mockResolvedValue({ ...ledgerRow, remainingAmount: 100 }),
+            findFirst: jest.fn().mockResolvedValue({ ...ledgerRow, remainingAmount: 100 }),
             update: jest.fn().mockImplementation((d: any) => Promise.resolve({ id: d.where.id, ...d.data })),
           },
           marketingConsumption: {
@@ -153,7 +153,7 @@ describe('P0 Financial Model Corrections', () => {
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
         const tx = {
           marketingFundingLedger: {
-            findUnique: jest.fn().mockResolvedValue({ ...ledgerRow, remainingAmount: 40 }),
+            findFirst: jest.fn().mockResolvedValue({ ...ledgerRow, remainingAmount: 40 }),
             update: jest.fn().mockImplementation((d: any) => Promise.resolve({ id: d.where.id, ...d.data })),
           },
           marketingConsumption: {
@@ -188,7 +188,7 @@ describe('P0 Financial Model Corrections', () => {
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
         const tx = {
           marketingFundingLedger: {
-            findUnique: jest.fn().mockResolvedValue({ ...promoRow, remainingAmount: 30 }),
+            findFirst: jest.fn().mockResolvedValue({ ...promoRow, remainingAmount: 30 }),
             update: jest.fn().mockImplementation((d: any) => Promise.resolve({ id: d.where.id, ...d.data })),
           },
           marketingConsumption: {
@@ -215,7 +215,7 @@ describe('P0 Financial Model Corrections', () => {
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
         const tx = {
           marketingFundingLedger: {
-            findUnique: jest.fn().mockImplementation(({ where }: any) => {
+            findFirst: jest.fn().mockImplementation(({ where }: any) => {
               if (where.id === 'ledger-e1') return Promise.resolve({ ...promoRow, remainingAmount: 15 });
               return Promise.resolve({ ...paidRow, remainingAmount: 40 });
             }),
@@ -311,8 +311,8 @@ describe('P0 Financial Model Corrections', () => {
         sourceAccount: null,
         journalEntry: null,
       };
-      (prisma.marketingPayment.findUnique as jest.Mock).mockResolvedValue(payment);
-      (prisma.account.findUnique as jest.Mock).mockResolvedValue({ id: 'acct-bank', name: 'Business Bank', isGroup: false });
+      (prisma.marketingPayment.findFirst as jest.Mock).mockResolvedValue(payment);
+      (prisma.account.findFirst as jest.Mock).mockResolvedValue({ id: 'acct-bank', name: 'Business Bank', isGroup: false });
 
       const result = await paymentService.postToAccounting('pay-test-1', 'user-1');
 

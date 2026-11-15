@@ -29,13 +29,13 @@ function makePrisma() {
     categories,
     expense: {
       create,
-      findUnique: jest.fn(async ({ where }: any) => {
+      findFirst: jest.fn(async ({ where }: any) => {
         const k = where.sourceType_sourceId;
         return rows.get(`${k.sourceType}|${k.sourceId}`) ?? null;
       }),
     },
     expenseCategory: {
-      findUnique: jest.fn(async ({ where }: any) => categories.get(where.slug) ?? null),
+      findFirst: jest.fn(async ({ where }: any) => categories.get(where.slug) ?? null),
       create: jest.fn(async ({ data }: any) => {
         categories.set(data.slug, data);
         return data;

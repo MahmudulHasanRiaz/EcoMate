@@ -27,7 +27,7 @@ describe('StoreLocationsService', () => {
             storeLocation: {
               findMany: jest.fn().mockResolvedValue([active]),
               findFirst: jest.fn().mockResolvedValue(active),
-              findUnique: jest.fn().mockResolvedValue(active),
+              findFirst: jest.fn().mockResolvedValue(active),
               create: jest
                 .fn()
                 .mockImplementation(({ data }) => Promise.resolve({ id: 'new', ...data })),
@@ -105,7 +105,7 @@ describe('StoreLocationsService', () => {
 
   describe('update', () => {
     it('404s for an unknown id', async () => {
-      prisma.storeLocation.findUnique.mockResolvedValueOnce(null);
+      prisma.storeLocation.findFirst.mockResolvedValueOnce(null);
       await expect(
         service.update('nope', { name: 'X' }),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -123,7 +123,7 @@ describe('StoreLocationsService', () => {
     });
 
     it('404s for an unknown id', async () => {
-      prisma.storeLocation.findUnique.mockResolvedValueOnce(null);
+      prisma.storeLocation.findFirst.mockResolvedValueOnce(null);
       await expect(service.remove('nope')).rejects.toBeInstanceOf(
         NotFoundException,
       );

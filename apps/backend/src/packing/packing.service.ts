@@ -144,10 +144,10 @@ export class PackingService {
 
   async getQueue(search?: string) {
     await this.pruneExpiredLocks();
-    const confirmedStatus = await this.prisma.orderStatus.findUnique({
+    const confirmedStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Confirmed' },
     });
-    const holdStatus = await this.prisma.orderStatus.findUnique({
+    const holdStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Packing Hold' },
     });
     if (!confirmedStatus || !holdStatus)
@@ -326,8 +326,8 @@ export class PackingService {
    */
   async getOrderDetail(orderId: string) {
     const [confirmedStatus, holdStatus] = await Promise.all([
-      this.prisma.orderStatus.findUnique({ where: { name: 'Confirmed' } }),
-      this.prisma.orderStatus.findUnique({ where: { name: 'Packing Hold' } }),
+      this.prisma.orderStatus.findFirst({ where: { name: 'Confirmed' } }),
+      this.prisma.orderStatus.findFirst({ where: { name: 'Packing Hold' } }),
     ]);
     if (!confirmedStatus || !holdStatus)
       throw new NotFoundException('Required statuses not found');
@@ -393,8 +393,8 @@ export class PackingService {
    */
   private async getPackableStatusIds() {
     const [confirmed, hold] = await Promise.all([
-      this.prisma.orderStatus.findUnique({ where: { name: 'Confirmed' } }),
-      this.prisma.orderStatus.findUnique({ where: { name: 'Packing Hold' } }),
+      this.prisma.orderStatus.findFirst({ where: { name: 'Confirmed' } }),
+      this.prisma.orderStatus.findFirst({ where: { name: 'Packing Hold' } }),
     ]);
     if (!confirmed || !hold) {
       throw new NotFoundException('Required statuses not found');
@@ -453,14 +453,14 @@ export class PackingService {
   }
 
   async markDone(orderId: string, packerId: string, verificationMode: string) {
-    const lock = await this.prisma.packingLock.findUnique({
+    const lock = await this.prisma.packingLock.findFirst({
       where: { orderId },
     });
     if (!lock) throw new BadRequestException('Order is not opened for packing');
     if (lock.packerId !== packerId)
       throw new ConflictException('Order is locked by another packer');
 
-    const packedStatus = await this.prisma.orderStatus.findUnique({
+    const packedStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Packed' },
     });
     if (!packedStatus) throw new NotFoundException('Packed status not found');
@@ -468,7 +468,7 @@ export class PackingService {
     const { confirmed, hold } = await this.getPackableStatusIds();
     const allowedStatusIds = [confirmed.id, hold.id];
 
-    const packer = await this.prisma.userProfile.findUnique({
+    const packer = await this.prisma.userProfile.findFirst({
       where: { id: packerId },
       select: { firstName: true, lastName: true },
     });
@@ -504,14 +504,14 @@ export class PackingService {
     reason: string,
     notes?: string,
   ) {
-    const lock = await this.prisma.packingLock.findUnique({
+    const lock = await this.prisma.packingLock.findFirst({
       where: { orderId },
     });
     if (!lock) throw new BadRequestException('Order is not opened for packing');
     if (lock.packerId !== packerId)
       throw new ConflictException('Order is locked by another packer');
 
-    const holdStatus = await this.prisma.orderStatus.findUnique({
+    const holdStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Packing Hold' },
     });
     if (!holdStatus)
@@ -520,7 +520,7 @@ export class PackingService {
     const { confirmed, hold } = await this.getPackableStatusIds();
     const allowedStatusIds = [confirmed.id, hold.id];
 
-    const packer = await this.prisma.userProfile.findUnique({
+    const packer = await this.prisma.userProfile.findFirst({
       where: { id: packerId },
       select: { firstName: true, lastName: true },
     });
@@ -559,7 +559,7 @@ export class PackingService {
   }
 
   async releaseLock(orderId: string, packerId: string) {
-    const lock = await this.prisma.packingLock.findUnique({
+    const lock = await this.prisma.packingLock.findFirst({
       where: { orderId },
     });
     if (!lock) return { success: true };
@@ -589,13 +589,13 @@ export class PackingService {
   }
 
   async getStats(packerId?: string) {
-    const packedStatus = await this.prisma.orderStatus.findUnique({
+    const packedStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Packed' },
     });
-    const holdStatus = await this.prisma.orderStatus.findUnique({
+    const holdStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Packing Hold' },
     });
-    const confirmedStatus = await this.prisma.orderStatus.findUnique({
+    const confirmedStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Confirmed' },
     });
     if (!packedStatus || !holdStatus || !confirmedStatus) {
@@ -634,10 +634,10 @@ export class PackingService {
   }
 
   async getHistory(packerId?: string) {
-    const packedStatus = await this.prisma.orderStatus.findUnique({
+    const packedStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Packed' },
     });
-    const holdStatus = await this.prisma.orderStatus.findUnique({
+    const holdStatus = await this.prisma.orderStatus.findFirst({
       where: { name: 'Packing Hold' },
     });
     if (!packedStatus || !holdStatus) {

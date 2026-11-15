@@ -71,7 +71,7 @@ export class CancelReturnStockService {
     });
     if (already) return;
 
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       include: {
         items: {
@@ -288,7 +288,7 @@ export class CancelReturnStockService {
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
 
     // 2. Load order items with product info
-    const order = await tx.order.findUnique({
+    const order = await tx.order.findFirst({
       where: { id: orderId },
       include: {
         items: {
@@ -464,7 +464,7 @@ export class CancelReturnStockService {
 
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
 
-    const order = await tx.order.findUnique({
+    const order = await tx.order.findFirst({
       where: { id: orderId },
       include: {
         items: {
@@ -786,7 +786,7 @@ export class CancelReturnStockService {
     if (!(quantity > 0)) {
       throw new BadRequestException('Damage quantity must be positive');
     }
-    const product = await tx.product.findUnique({
+    const product = await tx.product.findFirst({
       where: { id: productId },
       select: {
         id: true,
@@ -801,7 +801,7 @@ export class CancelReturnStockService {
 
     if ((product as any).availabilityMode === 'MANAGED_STOCK' && (product as any).manageStock) {
       const holder = variantId
-        ? await tx.productVariant.findUnique({
+        ? await tx.productVariant.findFirst({
             where: { id: variantId },
             select: { managedStockQuantity: true, reservedStock: true },
           })
@@ -1355,7 +1355,7 @@ export class CancelReturnStockService {
           where: { id: (alloc as any).physicalInventoryId, reservedQuantity: { gte: take } },
           data: { reservedQuantity: { decrement: take } },
         });
-        const pi = await tx.physicalInventory.findUnique({
+        const pi = await tx.physicalInventory.findFirst({
           where: { id: (alloc as any).physicalInventoryId },
           select: { quantity: true, reservedQuantity: true },
         });
@@ -1464,7 +1464,7 @@ export class CancelReturnStockService {
   }> {
     const { rtnOrderId, performedBy, tx, damageByKey } = params;
 
-    const rtn = await tx.order.findUnique({
+    const rtn = await tx.order.findFirst({
       where: { id: rtnOrderId },
       include: {
         status: true,
@@ -1496,7 +1496,7 @@ export class CancelReturnStockService {
     // The ORIGINAL order's stock cycle — reservations and consumptions for
     // the returned lines live there (ACTIVE first, else the earliest).
     const original = rtn.returnOfOrderId
-      ? await tx.order.findUnique({ where: { id: rtn.returnOfOrderId } })
+      ? await tx.order.findFirst({ where: { id: rtn.returnOfOrderId } })
       : null;
     const cycle = original
       ? ((await tx.orderStockCycle.findFirst({
@@ -1522,7 +1522,7 @@ export class CancelReturnStockService {
       // RtnService.releaseHoldsForRemovedLine), so a missing line means
       // the units had been deducted.
       const origLine = item.sourceOrderItemId
-        ? await tx.orderItem.findUnique({
+        ? await tx.orderItem.findFirst({
             where: { id: item.sourceOrderItemId },
           })
         : null;
@@ -2340,7 +2340,7 @@ export class CancelReturnStockService {
           },
           data: { reservedQuantity: { decrement: take } },
         });
-        const pi = await tx.physicalInventory.findUnique({
+        const pi = await tx.physicalInventory.findFirst({
           where: { id: alloc.physicalInventoryId },
           select: { quantity: true, reservedQuantity: true },
         });
@@ -2456,7 +2456,7 @@ export class CancelReturnStockService {
           where: { id: alloc.physicalInventoryId },
           data: { quantity: { increment: take } },
         });
-        const pi = await tx.physicalInventory.findUnique({
+        const pi = await tx.physicalInventory.findFirst({
           where: { id: alloc.physicalInventoryId },
           select: { quantity: true, reservedQuantity: true },
         });

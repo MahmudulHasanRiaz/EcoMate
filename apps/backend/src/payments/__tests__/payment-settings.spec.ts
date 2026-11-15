@@ -46,7 +46,7 @@ describe('payment-settings — effective resolution (D)', () => {
         { key: 'payments.staffAutoVerified', value: 'false' },
         { key: 'payments.editAllowed', value: 'true' },
       ]),
-      paymentGateway: { findUnique: jest.fn() },
+      paymentGateway: { findFirst: jest.fn() },
     };
 
     const eff = await resolveEffectivePaymentSettings(db, null);
@@ -62,14 +62,14 @@ describe('payment-settings — effective resolution (D)', () => {
       editAllowed: true,
       staffRefundsAllowed: true,
     });
-    expect(db.paymentGateway.findUnique).not.toHaveBeenCalled();
+    expect(db.paymentGateway.findFirst).not.toHaveBeenCalled();
   });
 
   it('gateway with NULL overrides → use-global (behavior-neutral migration)', async () => {
     const db = {
       ...settingsRows([{ key: 'payments.staffAutoVerified', value: 'true' }]),
       paymentGateway: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           staffAutoVerifiedOverride: null,
           editAllowedOverride: null,
         }),
@@ -93,7 +93,7 @@ describe('payment-settings — effective resolution (D)', () => {
         { key: 'payments.editAllowed', value: 'false' },
       ]),
       paymentGateway: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           staffAutoVerifiedOverride: false, // override OFF beats global ON
           editAllowedOverride: true, // override ON beats global OFF
         }),
@@ -115,7 +115,7 @@ describe('payment-settings — effective resolution (D)', () => {
     const db = {
       ...settingsRows([{ key: 'payments.staffAutoVerified', value: 'false' }]),
       paymentGateway: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           staffAutoVerifiedOverride: true,
           editAllowedOverride: null,
         }),
@@ -131,7 +131,7 @@ describe('payment-settings — effective resolution (D)', () => {
   it('missing gateway row → global values, overrides null', async () => {
     const db = {
       ...settingsRows([]),
-      paymentGateway: { findUnique: jest.fn().mockResolvedValue(null) },
+      paymentGateway: { findFirst: jest.fn().mockResolvedValue(null) },
     };
 
     const eff = await resolveEffectivePaymentSettings(db, 'ghost-gateway');
@@ -146,7 +146,7 @@ describe('payment-settings — effective resolution (D)', () => {
     const db = {
       ...settingsRows([]),
       paymentGateway: {
-        findUnique: jest.fn().mockRejectedValue(new Error('db down')),
+        findFirst: jest.fn().mockRejectedValue(new Error('db down')),
       },
     };
 

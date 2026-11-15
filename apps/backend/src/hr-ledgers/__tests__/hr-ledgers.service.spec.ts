@@ -40,13 +40,13 @@ describe('HrLedgersService', () => {
 
   const prismaMock = {
     employee: {
-      findUnique: jest.fn().mockResolvedValue(mockEmployee),
+      findFirst: jest.fn().mockResolvedValue(mockEmployee),
     },
     employeeEarning: {
       create: jest.fn().mockResolvedValue(mockEarning),
       findMany: jest.fn().mockResolvedValue([mockEarning]),
       count: jest.fn().mockResolvedValue(1),
-      findUnique: jest.fn().mockResolvedValue(mockEarning),
+      findFirst: jest.fn().mockResolvedValue(mockEarning),
       update: jest.fn().mockResolvedValue({
         ...mockEarning,
         status: 'approved',
@@ -58,7 +58,7 @@ describe('HrLedgersService', () => {
       create: jest.fn().mockResolvedValue(mockDeduction),
       findMany: jest.fn().mockResolvedValue([mockDeduction]),
       count: jest.fn().mockResolvedValue(1),
-      findUnique: jest.fn().mockResolvedValue(mockDeduction),
+      findFirst: jest.fn().mockResolvedValue(mockDeduction),
       update: jest.fn().mockResolvedValue({
         ...mockDeduction,
         status: 'approved',
@@ -78,7 +78,7 @@ describe('HrLedgersService', () => {
     service = module.get<HrLedgersService>(HrLedgersService);
     prisma = module.get<PrismaService>(PrismaService);
     jest.clearAllMocks();
-    prismaMock.employee.findUnique.mockResolvedValue(mockEmployee);
+    prismaMock.employee.findFirst.mockResolvedValue(mockEmployee);
   });
 
   describe('earnings', () => {
@@ -104,7 +104,7 @@ describe('HrLedgersService', () => {
     });
 
     it('createEarning throws NotFound for missing employee', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue(null);
       await expect(
         service.createEarning({
           employeeId: 'nope',
@@ -150,14 +150,14 @@ describe('HrLedgersService', () => {
     });
 
     it('approveEarning throws NotFound for missing row', async () => {
-      prismaMock.employeeEarning.findUnique.mockResolvedValue(null);
+      prismaMock.employeeEarning.findFirst.mockResolvedValue(null);
       await expect(service.approveEarning('missing')).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('approveEarning throws BadRequest for non-draft status', async () => {
-      prismaMock.employeeEarning.findUnique.mockResolvedValue({
+      prismaMock.employeeEarning.findFirst.mockResolvedValue({
         ...mockEarning,
         status: 'approved',
       });
@@ -190,7 +190,7 @@ describe('HrLedgersService', () => {
     });
 
     it('createDeduction throws NotFound for missing employee', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue(null);
       await expect(
         service.createDeduction({
           employeeId: 'nope',
@@ -213,14 +213,14 @@ describe('HrLedgersService', () => {
     });
 
     it('approveDeduction throws NotFound for missing row', async () => {
-      prismaMock.employeeDeduction.findUnique.mockResolvedValue(null);
+      prismaMock.employeeDeduction.findFirst.mockResolvedValue(null);
       await expect(service.approveDeduction('missing')).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('approveDeduction throws BadRequest for non-draft status', async () => {
-      prismaMock.employeeDeduction.findUnique.mockResolvedValue({
+      prismaMock.employeeDeduction.findFirst.mockResolvedValue({
         ...mockDeduction,
         status: 'approved',
       });

@@ -52,7 +52,7 @@ function makeFake(opts: {
         orders.push(created);
         return created;
       },
-      findUnique: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
+      findFirst: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
       update: async ({ where, data }: any) => {
         // The ORIGINAL lives outside the created-exchange array, so look in
         // both — the service updates the exchange AND the original in one tx.
@@ -87,7 +87,7 @@ function makeFake(opts: {
         orderItems.find((i) => i.orderId === where.orderId) ?? null,
     },
     orderStatus: {
-      findUnique: async ({ where }: any) =>
+      findFirst: async ({ where }: any) =>
         statuses.find((s) => s.name === where.name) ?? null,
     },
     payment: {
@@ -114,9 +114,9 @@ function makeFake(opts: {
     $transaction: async (cb: any) => cb(tx),
     order: {
       ...tx.order,
-      findUnique: async ({ where, select }: any) => {
+      findFirst: async ({ where, select }: any) => {
         if (where.id === opts.order.id) return opts.order;
-        return tx.order.findUnique({ where, select });
+        return tx.order.findFirst({ where, select });
       },
     },
     refund: {
@@ -516,7 +516,7 @@ describe('ExchangeService — displayId minting (counter split P1.4)', () => {
     const { year, month, day } = dhakaDateParts();
     const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
     expect(upsert).toHaveBeenCalledWith({
-      where: { date_family: { date: dateStr, family: 'Ex' } },
+      where: {  date: dateStr, family: 'Ex'  },
       create: { date: dateStr, family: 'Ex', seq: 1 },
       update: { seq: { increment: 1 } },
     });

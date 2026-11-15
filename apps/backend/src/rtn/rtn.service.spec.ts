@@ -66,7 +66,7 @@ function makePrismaFake(state: {
 
   const tx = {
     order: {
-      findUnique: async ({ where }: any) => {
+      findFirst: async ({ where }: any) => {
         const found =
           where.id === original.id ? original : orders.find((o) => o.id === where.id) ?? null;
         return found ? withItems(found) : null;
@@ -154,7 +154,7 @@ function makePrismaFake(state: {
       },
     },
     orderStatus: {
-      findUnique: async ({ where }: any) => {
+      findFirst: async ({ where }: any) => {
         if (where.name === 'Return Pending')
           return { id: 'status-return-pending', name: 'Return Pending' };
         if (where.name === 'Delivered')
@@ -168,7 +168,7 @@ function makePrismaFake(state: {
       findFirst: async () => ({ id: 'cycle-1', orderId: original.id, status: 'ACTIVE' }),
     },
     dispatch: {
-      findUnique: async ({ where }: any) => dispatches.find((d) => d.id === where.id) ?? null,
+      findFirst: async ({ where }: any) => dispatches.find((d) => d.id === where.id) ?? null,
       updateMany: async ({ where, data }: any) => {
         const target = dispatches.find((d) => d.id === where.id);
         if (!target || target.status !== where.status) return { count: 0 };

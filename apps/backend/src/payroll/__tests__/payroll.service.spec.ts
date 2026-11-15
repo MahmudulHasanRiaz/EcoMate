@@ -91,7 +91,7 @@ describe('PayrollService', () => {
   const prismaMock = {
     $transaction: jest.fn((cb: any) => cb(prismaMock)),
     employee: {
-      findUnique: jest.fn().mockResolvedValue(mockEmployee),
+      findFirst: jest.fn().mockResolvedValue(mockEmployee),
       update: jest.fn().mockResolvedValue({ ...mockEmployee, salary: '47000' }),
     },
     salaryStructure: {
@@ -103,7 +103,7 @@ describe('PayrollService', () => {
     },
     payslip: {
       findMany: jest.fn().mockResolvedValue([mockPayslip]),
-      findUnique: jest.fn().mockResolvedValue(mockPayslip),
+      findFirst: jest.fn().mockResolvedValue(mockPayslip),
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(mockPayslip),
       update: jest.fn().mockResolvedValue({
@@ -173,7 +173,7 @@ describe('PayrollService', () => {
     service = module.get<PayrollService>(PayrollService);
     prisma = module.get<PrismaService>(PrismaService);
 
-    prismaMock.employee.findUnique.mockResolvedValue(mockEmployee);
+    prismaMock.employee.findFirst.mockResolvedValue(mockEmployee);
     prismaMock.employee.update.mockResolvedValue({
       ...mockEmployee,
       salary: '47000',
@@ -186,7 +186,7 @@ describe('PayrollService', () => {
     prismaMock.salaryStructure.update.mockResolvedValue(mockSalaryStructure);
     prismaMock.salaryStructure.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.payslip.findMany.mockResolvedValue([mockPayslip]);
-    prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip);
+    prismaMock.payslip.findFirst.mockResolvedValue(mockPayslip);
     prismaMock.payslip.findFirst.mockResolvedValue(null);
     prismaMock.payslip.create.mockResolvedValue(mockPayslip);
     prismaMock.payslip.update.mockResolvedValue({
@@ -374,7 +374,7 @@ describe('PayrollService', () => {
       const tx = {
         payslip: {
           create: txCreate,
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             ...mockPayslip,
             status: 'draft',
             reviewedAt: null,
@@ -546,7 +546,7 @@ describe('PayrollService', () => {
       const tx = {
         payslip: {
           create: txCreate,
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             ...mockPayslip,
             status: 'draft',
             periodKey: '2025-06',
@@ -604,7 +604,7 @@ describe('PayrollService', () => {
       const tx = {
         payslip: {
           create: txCreate,
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             ...mockPayslip,
             status: 'draft',
             periodKey: '2025-06',
@@ -638,7 +638,7 @@ describe('PayrollService', () => {
       const tx = {
         payslip: {
           create: txCreate,
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             ...mockPayslip,
             status: 'draft',
             periodKey: '2025-06',
@@ -696,7 +696,7 @@ describe('PayrollService', () => {
           create: jest
             .fn()
             .mockRejectedValue({ code: 'P2002', meta: { target: ['employeeId', 'periodKey'] } }),
-          findUnique: jest.fn(),
+          findFirst: jest.fn(),
         },
         payslipItem: { createMany: jest.fn() },
       };
@@ -724,7 +724,7 @@ describe('PayrollService', () => {
       const tx = {
         payslip: {
           create: jest.fn().mockRejectedValue(new Error('boom')),
-          findUnique: jest.fn(),
+          findFirst: jest.fn(),
         },
         payslipItem: { createMany: jest.fn() },
       };
@@ -807,7 +807,7 @@ describe('PayrollService', () => {
       const tx = {
         payslip: {
           create: jest.fn().mockReturnValue({ id: 'ps-win' }),
-          findUnique: jest
+          findFirst: jest
             .fn()
             .mockResolvedValue({ ...mockPayslip, status: 'draft' }),
         },
@@ -864,7 +864,7 @@ describe('PayrollService', () => {
       const tx = {
         payslip: {
           create: jest.fn().mockReturnValue({ id: 'ps-win' }),
-          findUnique: jest
+          findFirst: jest
             .fn()
             .mockResolvedValue({ ...mockPayslip, status: 'draft' }),
         },
@@ -923,7 +923,7 @@ describe('PayrollService', () => {
       const tx = {
         payslip: {
           create: jest.fn().mockReturnValue({ id: 'ps-joining' }),
-          findUnique: jest.fn().mockResolvedValue({
+          findFirst: jest.fn().mockResolvedValue({
             ...mockPayslip,
             status: 'draft',
             periodKey: '2026-10',
@@ -1129,7 +1129,7 @@ describe('PayrollService', () => {
     const txFor = (createResult = { id: 'ps-com' }) => ({
       payslip: {
         create: jest.fn().mockReturnValue(createResult),
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           ...mockPayslip,
           status: 'draft',
           periodKey: '2025-06',

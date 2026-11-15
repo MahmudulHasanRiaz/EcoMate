@@ -7,7 +7,7 @@ describe('CodMismatchService', () => {
 
   const mockPrisma = {
     order: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
     codMismatchAlert: {
@@ -27,7 +27,7 @@ describe('CodMismatchService', () => {
     items?: any[];
     statusName?: string;
   }) {
-    mockPrisma.order.findUnique.mockResolvedValue({
+    mockPrisma.order.findFirst.mockResolvedValue({
       id: 'order-1',
       total: opts.total ?? 1500,
       payments: opts.payments ?? [],
@@ -352,7 +352,7 @@ describe('CodMismatchService', () => {
     });
 
     it('returns [] for unknown order', async () => {
-      mockPrisma.order.findUnique.mockResolvedValue(null);
+      mockPrisma.order.findFirst.mockResolvedValue(null);
 
       await expect(service.recompute('ghost')).resolves.toEqual([]);
       expect(mockPrisma.codMismatchAlert.create).not.toHaveBeenCalled();
@@ -369,7 +369,7 @@ describe('CodMismatchService', () => {
         resolvedBy: 'user-9',
         resolvedAt: new Date(),
       });
-      mockPrisma.order.findUnique.mockResolvedValue({ timeline: [] });
+      mockPrisma.order.findFirst.mockResolvedValue({ timeline: [] });
 
       const row = await service.resolve('alert-1', 'user-9');
 
@@ -397,7 +397,7 @@ describe('CodMismatchService', () => {
         resolvedBy: 'user-9',
         resolvedAt: new Date(),
       });
-      mockPrisma.order.findUnique.mockResolvedValue({ timeline: [] });
+      mockPrisma.order.findFirst.mockResolvedValue({ timeline: [] });
 
       const row = await service.resolve('alert-1', 'user-9', 'order-1');
 

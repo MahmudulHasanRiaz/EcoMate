@@ -7,7 +7,7 @@ describe('TrackingCaptureService', () => {
   const outboxCreateMany = jest.fn();
   const dispatchEventCreate = jest.fn();
   const tx = {
-    trackingSnapshot: { createMany: snapshotCreateMany, findUnique: snapshotFindUnique },
+    trackingSnapshot: { createMany: snapshotCreateMany, findFirst: snapshotFindUnique },
     trackingOutbox: { createMany: outboxCreateMany },
     trackingDispatchEvent: { create: dispatchEventCreate },
   };
@@ -131,9 +131,9 @@ describe('TrackingCaptureService', () => {
     const svc = new TrackingCaptureService({} as any);
     // ensureValidatedDispatch reads this.prisma directly (not via $transaction)
     svc.prisma = {
-      trackingSnapshot: { findUnique: snapshotFind },
-      trackingOutbox: { findUnique: outboxFind, update: outboxUpdate },
-      trackingDispatch: { findUnique: dispatchFind, update: dispatchUpdate, create: dispatchCreate },
+      trackingSnapshot: { findFirst: snapshotFind },
+      trackingOutbox: { findFirst: outboxFind, update: outboxUpdate },
+      trackingDispatch: { findFirst: dispatchFind, update: dispatchUpdate, create: dispatchCreate },
       trackingDispatchEvent: { create: dispatchEventCreate2 },
     } as any;
 

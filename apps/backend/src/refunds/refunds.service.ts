@@ -106,7 +106,7 @@ export class RefundsService {
   }
 
   async findOne(id: string) {
-    const refund = await this.prisma.refund.findUnique({
+    const refund = await this.prisma.refund.findFirst({
       where: { id },
       include: {
         order: { select: { displayId: true } },
@@ -118,7 +118,7 @@ export class RefundsService {
   }
 
   async create(dto: CreateRefundDto, recordedBy?: string, actorEmail?: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: dto.orderId },
       select: { id: true, total: true, kind: true, timeline: true },
     });
@@ -277,7 +277,7 @@ export class RefundsService {
       !allocations &&
       sourcePaymentId &&
       typeof this.prisma.payment.findUnique === 'function'
-        ? await this.prisma.payment.findUnique({
+        ? await this.prisma.payment.findFirst({
             where: { id: sourcePaymentId },
             select: { gatewayCode: true, accountId: true, account: true },
           })
@@ -441,7 +441,7 @@ export class RefundsService {
     });
 
     if (dto.targetStatusId && !dto.cancelToo) {
-      const targetStatus = await this.prisma.orderStatus.findUnique({
+      const targetStatus = await this.prisma.orderStatus.findFirst({
         where: { id: dto.targetStatusId },
       });
       if (!targetStatus) throw new BadRequestException('Invalid target status');
@@ -616,7 +616,7 @@ export class RefundsService {
     processedBy: string,
     performedBy?: string,
   ) {
-    const refund = await this.prisma.refund.findUnique({ where: { id } });
+    const refund = await this.prisma.refund.findFirst({ where: { id } });
     if (!refund) throw new NotFoundException('Refund not found');
 
     if (dto.status === 'completed') {
@@ -647,7 +647,7 @@ export class RefundsService {
 
       if (dto.status === 'completed') {
         const [orderData, refundSum] = await Promise.all([
-          tx.order.findUnique({
+          tx.order.findFirst({
             where: { id: updated.order.id },
             select: { total: true },
           }),

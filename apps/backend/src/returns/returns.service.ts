@@ -150,7 +150,7 @@ export class ReturnsService {
       order: { findUnique: (...args: any[]) => Promise<any> };
       orderStatus: { findUnique: (...args: any[]) => Promise<any> };
     };
-    const order = await db.order.findUnique({
+    const order = await db.order.findFirst({
       where: { id: dto.orderId },
       include: {
         status: true,
@@ -351,7 +351,7 @@ export class ReturnsService {
       };
     }
 
-    const delivered = await db.orderStatus.findUnique({ where: { name: 'Delivered' } });
+    const delivered = await db.orderStatus.findFirst({ where: { name: 'Delivered' } });
     if (!delivered) {
       throw new BadRequestException('Order status configuration is incomplete');
     }
@@ -451,7 +451,7 @@ export class ReturnsService {
   // -------------------------------------------------------------------- read
 
   async get(id: string) {
-    const ret = await this.prisma.return.findUnique({
+    const ret = await this.prisma.return.findFirst({
       where: { id },
       // Deep include (return detail page): the original order carries the
       // customer snapshot AND line-item snapshots (name/sku/images/price +
@@ -512,7 +512,7 @@ export class ReturnsService {
     let exchangeOrder: { id: string; displayId: string } | null = null;
     const exchangeOrderId = (ret as any).exchangeOrderId as string | null;
     if (exchangeOrderId) {
-      const ex = await this.prisma.order.findUnique({
+      const ex = await this.prisma.order.findFirst({
         where: { id: exchangeOrderId },
         select: { id: true, displayId: true },
       });
@@ -521,7 +521,7 @@ export class ReturnsService {
     let refund: unknown = null;
     const refundId = (ret as any).refundId as string | null;
     if (refundId) {
-      const rf = await this.prisma.refund.findUnique({ where: { id: refundId } });
+      const rf = await this.prisma.refund.findFirst({ where: { id: refundId } });
       if (rf) refund = rf;
     }
     return { ...ret, exchangeOrder, refund };
@@ -829,7 +829,7 @@ export class ReturnsService {
         data: { items: rows as unknown as any },
       });
 
-      const order = await tx.order.findUnique({
+      const order = await tx.order.findFirst({
         where: { id: (ret as any).orderId },
         select: { status: { select: { name: true } } },
       });
@@ -900,7 +900,7 @@ export class ReturnsService {
 
   async linkRefund(id: string, dto: { refundId: string }) {
     await this.load(id);
-    const refund = await this.prisma.refund.findUnique({ where: { id: dto.refundId } });
+    const refund = await this.prisma.refund.findFirst({ where: { id: dto.refundId } });
     if (!refund) throw new NotFoundException(`Refund not found: ${dto.refundId}`);
     return this.prisma.return.update({ where: { id }, data: { refundId: dto.refundId } });
   }
@@ -963,7 +963,7 @@ export class ReturnsService {
    */
   async upsertCourierReturn(input: UpsertCourierReturnInput): Promise<any | null> {
     void COURIER_GUARD_SKIP_REASON;
-    const order = await this.prisma.order.findUnique({ where: { id: input.orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: input.orderId } });
     if (!order || (order as any).trashedAt) {
       throw new NotFoundException(`Order not found: ${input.orderId}`);
     }
@@ -1071,7 +1071,7 @@ export class ReturnsService {
       const sourceId = (current as any).exchangeOfOrderId as string | null | undefined;
       if (!sourceId || seen.has(sourceId)) break;
       seen.add(sourceId);
-      const source = await this.prisma.order.findUnique({ where: { id: sourceId } });
+      const source = await this.prisma.order.findFirst({ where: { id: sourceId } });
       if (!source || (source as any).trashedAt) break;
       if ((source as any).kind !== 'EXCHANGE') {
         return { orderId: (source as any).id, isExchange: true };
@@ -1147,7 +1147,7 @@ export class ReturnsService {
   }
 
   private async load(id: string) {
-    const ret = await this.prisma.return.findUnique({ where: { id } });
+    const ret = await this.prisma.return.findFirst({ where: { id } });
     if (!ret) throw new NotFoundException(`Return not found: ${id}`);
     return ret;
   }

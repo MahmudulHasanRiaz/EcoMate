@@ -27,7 +27,7 @@ export class OrderStatusController {
   @Permissions('edit_orders')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
-    const existing = await this.prisma.orderStatus.findUnique({
+    const existing = await this.prisma.orderStatus.findFirst({
       where: { id },
     });
     if (!existing) throw new NotFoundException(`Order status ${id} not found`);

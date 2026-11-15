@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CaptureSessionDto } from './dto/marketing.dto';
@@ -55,7 +56,7 @@ export class MarketingAttributionService {
   ): Promise<{ id: string; created: boolean }> {
     const campaign = await this.matchCampaign(dto.utmCampaign);
 
-    const existing = await this.prisma.marketingSession.findUnique({
+    const existing = await this.prisma.marketingSession.findFirst({
       where: { sessionToken: dto.sessionToken },
     });
 
@@ -117,7 +118,7 @@ export class MarketingAttributionService {
     orderId: string,
     input: AttributionInput,
   ): Promise<any | null> {
-    const existing = await this.prisma.orderAttribution.findUnique({
+    const existing = await this.prisma.orderAttribution.findFirst({
       where: { orderId },
     });
     if (existing) return null;
@@ -146,7 +147,7 @@ export class MarketingAttributionService {
       null;
 
     if (sessionToken) {
-      const session = await this.prisma.marketingSession.findUnique({
+      const session = await this.prisma.marketingSession.findFirst({
         where: { sessionToken },
       });
       if (session) {
@@ -478,7 +479,7 @@ export class MarketingAttributionService {
 
   /** Raw alias map: lowercased utm/source value → campaign id. */
   private async campaignAliases(): Promise<Record<string, string>> {
-    const setting = await this.prisma.systemSetting.findUnique({
+    const setting = await this.prisma.systemSetting.findFirst({
       where: { key: MarketingAttributionService.CAMPAIGN_ALIAS_KEY },
     });
     if (!setting?.value) return {};
@@ -533,7 +534,7 @@ export class MarketingAttributionService {
       .filter((a) => a.utmValue && a.campaignId);
 
     for (const alias of cleaned) {
-      const exists = await this.prisma.marketingCampaign.findUnique({
+      const exists = await this.prisma.marketingCampaign.findFirst({
         where: { id: alias.campaignId },
         select: { id: true },
       });
@@ -548,7 +549,7 @@ export class MarketingAttributionService {
     for (const alias of cleaned) map[alias.utmValue.toLowerCase()] = alias.campaignId;
 
     await this.prisma.systemSetting.upsert({
-      where: { key: MarketingAttributionService.CAMPAIGN_ALIAS_KEY },
+      where: { tenantId_key: tenantCompound({  key: MarketingAttributionService.CAMPAIGN_ALIAS_KEY  }) },
       create: {
         key: MarketingAttributionService.CAMPAIGN_ALIAS_KEY,
         value: JSON.stringify(map),

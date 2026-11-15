@@ -64,7 +64,7 @@ describe('Purchase exactly-once concurrency', () => {
     dispatchEventCreate = jest.fn().mockResolvedValue({});
 
     const tx = {
-      trackingSnapshot: { createMany: snapshotCreateMany, findUnique: snapshotFindUnique },
+      trackingSnapshot: { createMany: snapshotCreateMany, findFirst: snapshotFindUnique },
       trackingOutbox: { createMany: outboxCreateMany },
       trackingDispatchEvent: { create: dispatchEventCreate },
     };

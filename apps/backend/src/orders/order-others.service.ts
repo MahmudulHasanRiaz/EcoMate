@@ -93,7 +93,7 @@ export class OrderOthersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getForOrder(orderId: string): Promise<Record<string, unknown>> {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.order.findFirst({
       where: { id: orderId },
       select: {
         id: true, displayId: true, createdAt: true, customerId: true,
@@ -226,7 +226,7 @@ export class OrderOthersService {
 
   // ── 2. Current customer profile (customer-owned) ──────────────────────────
   private async buildCustomerProfile(customerProfileId: string) {
-    const profile = await this.prisma.customerProfile.findUnique({
+    const profile = await this.prisma.customerProfile.findFirst({
       where: { id: customerProfileId },
       select: {
         id: true, name: true, phone: true, email: true,
@@ -355,7 +355,7 @@ export class OrderOthersService {
     const resolved = (raw?.resolved ?? null) as Record<string, any> | null;
     const touch = (raw?.touch ?? null) as Record<string, any> | null;
 
-    const orderAttribution = await this.prisma.orderAttribution.findUnique({
+    const orderAttribution = await this.prisma.orderAttribution.findFirst({
       where: { orderId: displayId },
       select: {
         method: true, confidence: true, explanation: true,
@@ -419,7 +419,7 @@ export class OrderOthersService {
 
   // ── 7. Purchase events + delivery metrics ────────────────────────────────
   private async buildEvent(snapshotId: string, transitionLogAvailable: boolean) {
-    const snapshot = await this.prisma.trackingSnapshot.findUnique({
+    const snapshot = await this.prisma.trackingSnapshot.findFirst({
       where: { id: snapshotId },
       select: {
         id: true, eventId: true, eventType: true, eventTime: true,

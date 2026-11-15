@@ -62,11 +62,11 @@ describe('Courier Task 1 — paid means delivered + money recording', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(shippingOrder),
-        findUnique: jest.fn().mockResolvedValue(shippingOrder),
+        findFirst: jest.fn().mockResolvedValue(shippingOrder),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.name === 'Delivered') return Promise.resolve(deliveredStatus);
           return Promise.resolve(null);
         }),

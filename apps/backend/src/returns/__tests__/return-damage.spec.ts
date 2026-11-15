@@ -39,13 +39,13 @@ describe('ReturnsService — damaged after receive', () => {
         ),
       },
       order: {
-        findUnique: jest.fn().mockResolvedValue({ status: { name: 'Delivered' } }),
+        findFirst: jest.fn().mockResolvedValue({ status: { name: 'Delivered' } }),
       },
       $executeRaw: jest.fn().mockResolvedValue(1),
     };
     prisma = {
       order: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'order-1',
           displayId: 'ORD-260101-0001',
           status: { name: 'Delivered' },
@@ -53,7 +53,7 @@ describe('ReturnsService — damaged after receive', () => {
         }),
       },
       return: {
-        findUnique: jest.fn().mockResolvedValue({ ...restocked }),
+        findFirst: jest.fn().mockResolvedValue({ ...restocked }),
         update: tx.return.update,
       },
       $transaction: jest.fn((cb: any) => cb(tx)),
@@ -105,7 +105,7 @@ describe('ReturnsService — damaged after receive', () => {
   });
 
   it('rejects damage on a line whose only unit arrived damaged (0 restocked good)', async () => {
-    prisma.return.findUnique.mockResolvedValue({
+    prisma.return.findFirst.mockResolvedValue({
       ...restocked,
       items: [
         {
@@ -134,7 +134,7 @@ describe('ReturnsService — damaged after receive', () => {
   });
 
   it('refuses damage before the return is received', async () => {
-    prisma.return.findUnique.mockResolvedValue({
+    prisma.return.findFirst.mockResolvedValue({
       ...restocked,
       status: 'REQUESTED',
       stockReconciled: false,
@@ -145,7 +145,7 @@ describe('ReturnsService — damaged after receive', () => {
   });
 
   it('refuses a CLOSED return', async () => {
-    prisma.return.findUnique.mockResolvedValue({
+    prisma.return.findFirst.mockResolvedValue({
       ...restocked,
       status: 'CLOSED',
     });

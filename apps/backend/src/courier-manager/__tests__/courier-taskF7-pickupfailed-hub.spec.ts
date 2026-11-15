@@ -45,11 +45,11 @@ describe('Courier Task 3 — PICKUP_FAILED + ASSIGNED_TO_HUB states', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(packedOrder),
-        findUnique: jest.fn().mockResolvedValue(packedOrder),
+        findFirst: jest.fn().mockResolvedValue(packedOrder),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.name === 'Shipping') return Promise.resolve(shippingStatus);
           return Promise.resolve(null);
         }),
@@ -222,7 +222,7 @@ describe('Courier Task 3 — PICKUP_FAILED + ASSIGNED_TO_HUB states', () => {
         }
         return Promise.resolve(null);
       });
-      prisma.orderStatus.findUnique.mockImplementation(({ where }: any) => {
+      prisma.orderStatus.findFirst.mockImplementation(({ where }: any) => {
         if (where?.name === 'Shipping') return Promise.resolve(shippingStatus);
         if (where?.name === 'Return Pending')
           return Promise.resolve({ id: 'status-rp', name: 'Return Pending' });
@@ -276,7 +276,7 @@ describe('Courier Task 3 — manual-board transitions + sync order mapping', () 
   let ordersService: any;
 
   function mockClaimed(fromStatus: string) {
-    prisma.dispatch.findUnique.mockResolvedValueOnce({
+    prisma.dispatch.findFirst.mockResolvedValueOnce({
       id: 'd-1',
       status: fromStatus,
       orderId: 'order-1',
@@ -285,7 +285,7 @@ describe('Courier Task 3 — manual-board transitions + sync order mapping', () 
       deliveredAt: null,
     });
     prisma.dispatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
-    prisma.dispatch.findUnique.mockResolvedValueOnce({
+    prisma.dispatch.findFirst.mockResolvedValueOnce({
       id: 'd-1',
       orderId: 'order-1',
       status: 'IGNORED',
@@ -295,7 +295,7 @@ describe('Courier Task 3 — manual-board transitions + sync order mapping', () 
     });
     prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
     prisma.order = {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'order-1',
         trashedAt: null,
         status: { name: 'Packed' },
@@ -304,7 +304,7 @@ describe('Courier Task 3 — manual-board transitions + sync order mapping', () 
       update: jest.fn().mockResolvedValue({}),
     };
     prisma.orderStatus = {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'status-shipping',
         name: 'Shipping',
       }),
@@ -315,7 +315,7 @@ describe('Courier Task 3 — manual-board transitions + sync order mapping', () 
     prisma = {
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'd-1' }),
         update: jest.fn().mockResolvedValue({ id: 'd-1' }),
@@ -324,13 +324,13 @@ describe('Courier Task 3 — manual-board transitions + sync order mapping', () 
         groupBy: jest.fn().mockResolvedValue([]),
       },
       order: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       orderStatus: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       courierDispatchLog: {
         create: jest.fn().mockResolvedValue({}),

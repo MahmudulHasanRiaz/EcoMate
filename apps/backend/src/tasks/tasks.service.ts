@@ -112,7 +112,7 @@ export class TasksService {
   }
 
   async findOne(id: string) {
-    const task = await this.prisma.task.findUnique({
+    const task = await this.prisma.task.findFirst({
       where: { id },
       include: {
         ...TASK_INCLUDE,
@@ -157,7 +157,7 @@ export class TasksService {
   }
 
   async update(id: string, dto: UpdateTaskDto) {
-    const task = await this.prisma.task.findUnique({ where: { id } });
+    const task = await this.prisma.task.findFirst({ where: { id } });
     if (!task) throw new NotFoundException('Task not found');
 
     const data: any = {};
@@ -175,7 +175,7 @@ export class TasksService {
   }
 
   async remove(id: string) {
-    const task = await this.prisma.task.findUnique({ where: { id } });
+    const task = await this.prisma.task.findFirst({ where: { id } });
     if (!task) throw new NotFoundException('Task not found');
     await this.prisma.task.delete({ where: { id } });
     return { message: 'Task deleted successfully' };
@@ -198,7 +198,7 @@ export class TasksService {
 
   /** Start a new timer session for an employee on a task */
   async startTimer(taskId: string, dto: StartTaskTimerDto) {
-    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    const task = await this.prisma.task.findFirst({ where: { id: taskId } });
     if (!task) throw new NotFoundException('Task not found');
 
     // Only one active entry per employee+task at a time.
@@ -340,7 +340,7 @@ export class TasksService {
 
   /** Manually log time for a task */
   async logTime(taskId: string, dto: LogTaskTimeDto) {
-    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    const task = await this.prisma.task.findFirst({ where: { id: taskId } });
     if (!task) throw new NotFoundException('Task not found');
 
     const durationSec = dto.durationMinutes * 60;
@@ -366,7 +366,7 @@ export class TasksService {
 
   /** Get time entries for a task */
   async getTimeEntries(taskId: string, page = 1, perPage = 20) {
-    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    const task = await this.prisma.task.findFirst({ where: { id: taskId } });
     if (!task) throw new NotFoundException('Task not found');
 
     const [entries, total] = await Promise.all([

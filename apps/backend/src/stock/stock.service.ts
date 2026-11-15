@@ -101,7 +101,7 @@ export class StockService {
     comboSelection: Record<string, string> | undefined,
     tx: Prisma.TransactionClient,
   ): Promise<StockTarget[]> {
-    const combo = await tx.combo.findUnique({
+    const combo = await tx.combo.findFirst({
       where: { id: comboId },
       include: { items: true },
     });
@@ -151,7 +151,7 @@ export class StockService {
       );
     }
     if (params.variantId) {
-      const v = await tx.productVariant.findUnique({
+      const v = await tx.productVariant.findFirst({
         where: { id: params.variantId },
         select: { productId: true },
       });
@@ -398,7 +398,7 @@ export class StockService {
     for (const t of targets) {
       let warehouseId = params.warehouseId ?? null;
       if (!warehouseId) {
-        const product = await tx.product.findUnique({
+        const product = await tx.product.findFirst({
           where: { id: t.productId },
           select: { warehouseId: true },
         });
@@ -545,14 +545,14 @@ export class StockService {
       let currentStock = 0;
       let currentReserved = 0;
       if (t.variantId) {
-        const v = await tx.productVariant.findUnique({
+        const v = await tx.productVariant.findFirst({
           where: { id: t.variantId },
           select: { managedStockQuantity: true, reservedStock: true },
         });
         currentStock = v?.managedStockQuantity ?? 0;
         currentReserved = v?.reservedStock ?? 0;
       } else {
-        const p = await tx.product.findUnique({
+        const p = await tx.product.findFirst({
           where: { id: t.productId },
           select: { managedStockQuantity: true, reservedStock: true },
         });
@@ -807,7 +807,7 @@ export class StockService {
       }
 
       for (const t of targets) {
-        const product = await tx.product.findUnique({
+        const product = await tx.product.findFirst({
           where: { id: t.productId },
           select: { availabilityMode: true },
         });
@@ -1017,7 +1017,7 @@ export class StockService {
           tx,
         );
         for (const t of movedTargets) {
-          const p = await tx.product.findUnique({
+          const p = await tx.product.findFirst({
             where: { id: t.productId },
             select: { availabilityMode: true, managedStockQuantity: true, reservedStock: true },
           });
@@ -1025,7 +1025,7 @@ export class StockService {
             let currentStock = 0;
             let currentReserved = 0;
             if (t.variantId) {
-              const v = await tx.productVariant.findUnique({
+              const v = await tx.productVariant.findFirst({
                 where: { id: t.variantId },
                 select: { managedStockQuantity: true, reservedStock: true },
               });
@@ -1075,7 +1075,7 @@ export class StockService {
           tx,
         );
         for (const t of movedTargets) {
-          const p = await tx.product.findUnique({
+          const p = await tx.product.findFirst({
             where: { id: t.productId },
             select: { availabilityMode: true, managedStockQuantity: true, reservedStock: true },
           });
@@ -1083,7 +1083,7 @@ export class StockService {
             let currentStock = 0;
             let currentReserved = 0;
             if (t.variantId) {
-              const v = await tx.productVariant.findUnique({
+              const v = await tx.productVariant.findFirst({
                 where: { id: t.variantId },
                 select: { managedStockQuantity: true, reservedStock: true },
               });
@@ -1248,7 +1248,7 @@ export class StockService {
 
   async getAvailableStock(productId: string, variantId?: string) {
     if (variantId) {
-      const v = await this.prisma.productVariant.findUnique({
+      const v = await this.prisma.productVariant.findFirst({
         where: { id: variantId },
         select: { managedStockQuantity: true, reservedStock: true },
       });
@@ -1259,7 +1259,7 @@ export class StockService {
         available: v.managedStockQuantity - v.reservedStock,
       };
     }
-    const p = await this.prisma.product.findUnique({
+    const p = await this.prisma.product.findFirst({
       where: { id: productId },
       select: { managedStockQuantity: true, reservedStock: true },
     });
@@ -1632,7 +1632,7 @@ export class StockService {
       });
 
       // Write ledger entry
-      const pi = await client.physicalInventory.findUnique({
+      const pi = await client.physicalInventory.findFirst({
         where: { id: alloc.physicalInventoryId },
         select: { quantity: true, reservedQuantity: true },
       });
@@ -1778,7 +1778,7 @@ export class StockService {
         }
 
         for (const t of finalTargets) {
-          const product = await tx.product.findUnique({
+          const product = await tx.product.findFirst({
             where: { id: t.productId },
             select: { availabilityMode: true },
           });
@@ -2140,7 +2140,7 @@ export class StockService {
   }
 
   async getPhysicalRecord(id: string) {
-    return this.prisma.physicalInventory.findUnique({
+    return this.prisma.physicalInventory.findFirst({
       where: { id },
       include: { product: { select: { id: true, name: true, sku: true, images: true } }, warehouse: true },
     });

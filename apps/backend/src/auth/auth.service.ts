@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   UnauthorizedException,
@@ -166,7 +167,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { email: dto.email },
     });
 
@@ -294,7 +295,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const profile = await this.prisma.userProfile.findUnique({
+    const profile = await this.prisma.userProfile.findFirst({
       where: { id: result.user.id },
     });
     const permissions = profile
@@ -331,7 +332,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     if (!user.betterAuthUserId) {
       return getRoleDefaultPermissions(role);
     }
-    const baUser = await this.prisma.betterAuthUser.findUnique({
+    const baUser = await this.prisma.betterAuthUser.findFirst({
       where: { id: user.betterAuthUserId },
       select: {
         override_permissions: true,
@@ -358,7 +359,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id: userId },
     });
 
@@ -396,7 +397,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async me(userId: string) {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id: userId },
       select: {
         id: true,
@@ -433,7 +434,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     if (dto.firstName !== undefined) data.firstName = dto.firstName;
     if (dto.lastName !== undefined) data.lastName = dto.lastName;
     if (dto.email !== undefined) {
-      const existing = await this.prisma.userProfile.findUnique({
+      const existing = await this.prisma.userProfile.findFirst({
         where: { email: dto.email },
         select: { id: true },
       });
@@ -448,7 +449,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       data.phoneNumber = normalized;
     }
 
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id: userId },
       select: {
         id: true,
@@ -510,7 +511,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id: userId },
     });
 
@@ -556,7 +557,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async forgotPassword(email: string) {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { email },
       select: { id: true },
     });
@@ -652,7 +653,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    const tokenRecord = await this.prisma.verificationToken.findUnique({
+    const tokenRecord = await this.prisma.verificationToken.findFirst({
       where: { id: payload.sub },
     });
 
@@ -666,7 +667,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     const hashedPassword = await bcrypt.hash(password, 12);
     const updatedUser = await this.prisma.userProfile.update({
-      where: { email: payload.email },
+      where: { tenantId_email: tenantCompound({  email: payload.email  }) },
       data: { password: hashedPassword },
     });
 
@@ -699,7 +700,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async sendVerificationEmail(userId: string) {
-    const user = await this.prisma.userProfile.findUnique({
+    const user = await this.prisma.userProfile.findFirst({
       where: { id: userId },
       select: { emailVerified: true, email: true },
     });
@@ -740,7 +741,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
 
     const updatedUser = await this.prisma.userProfile.update({
-      where: { email: matched.email },
+      where: { tenantId_email: tenantCompound({  email: matched.email  }) },
       data: { emailVerified: true },
     });
 

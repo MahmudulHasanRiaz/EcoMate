@@ -23,7 +23,7 @@ describe('PhysicalInventoryController — no syncManagedStock mirror (2026-11-11
     prisma = {
       product: {
         // Even a MANAGED_STOCK + sync=ON product must not be mirrored.
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           type: 'simple',
           availabilityMode: 'MANAGED_STOCK',
           syncManagedStock: true,
@@ -31,7 +31,7 @@ describe('PhysicalInventoryController — no syncManagedStock mirror (2026-11-11
         update: jest.fn().mockResolvedValue({}),
       },
       productVariant: {
-        findUnique: jest.fn().mockResolvedValue({ productId: 'p1' }),
+        findFirst: jest.fn().mockResolvedValue({ productId: 'p1' }),
         update: jest.fn().mockResolvedValue({}),
       },
       physicalInventory: {

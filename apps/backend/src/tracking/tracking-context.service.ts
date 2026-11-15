@@ -78,6 +78,6 @@ export class TrackingContextService {
   }
 
   async getByCtxId(ctxId: string) {
-    return this.prisma.trackingContext.findUnique({ where: { ctxId } });
+    return this.prisma.trackingContext.findFirst({ where: { ctxId } });
   }
 }

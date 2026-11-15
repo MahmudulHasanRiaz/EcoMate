@@ -50,7 +50,7 @@ export class MarketingConsumptionService {
   ): Promise<{ consumedRows: number; shortfall: number }> {
     if (amount <= 0) return { consumedRows: 0, shortfall: 0 };
 
-    const campaign = await this.prisma.marketingCampaign.findUnique({
+    const campaign = await this.prisma.marketingCampaign.findFirst({
       where: { id: campaignId },
     });
     if (!campaign) throw new BadRequestException('Campaign not found');
@@ -80,7 +80,7 @@ export class MarketingConsumptionService {
 
       try {
         await this.prisma.$transaction(async (tx) => {
-          const current = await tx.marketingFundingLedger.findUnique({
+          const current = await tx.marketingFundingLedger.findFirst({
             where: { id: row.id },
           });
           if (!current || Number(current.remainingAmount) < take - 1e-9) {

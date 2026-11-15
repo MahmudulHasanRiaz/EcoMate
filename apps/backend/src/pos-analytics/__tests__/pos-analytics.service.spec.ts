@@ -76,7 +76,7 @@ describe('PosAnalyticsService', () => {
         {
           provide: PrismaService,
           useValue: {
-            posSession: { findUnique: jest.fn() },
+            posSession: { findFirst: jest.fn() },
             order: { findMany: jest.fn() },
           },
         },
@@ -84,7 +84,7 @@ describe('PosAnalyticsService', () => {
     }).compile();
     svc = module.get(PosAnalyticsService);
     prisma = module.get(PrismaService);
-    (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(sessionRow());
+    (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(sessionRow());
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -116,14 +116,14 @@ describe('PosAnalyticsService', () => {
     });
 
     it('rejects closed sessions with 400', async () => {
-      (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
         sessionRow({ status: 'closed' }),
       );
       await expect(svc.getOverview(req())).rejects.toThrow(BadRequestException);
     });
 
     it('rejects sessions on non-showroom warehouses with 400', async () => {
-      (prisma.posSession.findUnique as jest.Mock).mockResolvedValue(
+      (prisma.posSession.findFirst as jest.Mock).mockResolvedValue(
         sessionRow({ showroom: { id: 'w-1', name: 'Main', slug: 'main', type: 'main' } }),
       );
       await expect(svc.getOverview(req())).rejects.toThrow(BadRequestException);

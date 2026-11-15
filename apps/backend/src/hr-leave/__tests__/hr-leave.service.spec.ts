@@ -11,7 +11,7 @@ describe('HrLeaveService', () => {
     leaveType: {
       create: jest.fn(),
       findMany: jest.fn(),
-      findUnique: jest.fn().mockResolvedValue({ id: 'lt-1' }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'lt-1' }),
       update: jest.fn(),
       delete: jest.fn(),
     },
@@ -19,13 +19,13 @@ describe('HrLeaveService', () => {
       create: jest.fn(),
       findMany: jest.fn(),
       findFirst: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
       aggregate: jest.fn(),
     },
     employee: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
   };
 
@@ -43,7 +43,7 @@ describe('HrLeaveService', () => {
 
   describe('leave type CRUD', () => {
     it('createType persists with defaults', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValue(null);
+      prismaMock.leaveType.findFirst.mockResolvedValue(null);
       prismaMock.leaveType.create.mockResolvedValue({ id: 'lt-1' });
       const res = await service.createType({
         name: 'Casual Leave',
@@ -63,22 +63,22 @@ describe('HrLeaveService', () => {
     });
 
     it('createType rejects a duplicate name', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValueOnce({ id: 'lt-x' });
+      prismaMock.leaveType.findFirst.mockResolvedValueOnce({ id: 'lt-x' });
       await expect(
         service.createType({ name: 'Casual Leave', code: 'x', daysPerYear: 1 }),
       ).rejects.toThrow(ConflictException);
     });
 
     it('createType rejects a duplicate code', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValueOnce(null);
-      prismaMock.leaveType.findUnique.mockResolvedValueOnce({ id: 'lt-x' });
+      prismaMock.leaveType.findFirst.mockResolvedValueOnce(null);
+      prismaMock.leaveType.findFirst.mockResolvedValueOnce({ id: 'lt-x' });
       await expect(
         service.createType({ name: 'New Leave', code: 'casual', daysPerYear: 1 }),
       ).rejects.toThrow(ConflictException);
     });
 
     it('converts a concurrent P2002 race on name/code into 409', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValue(null);
+      prismaMock.leaveType.findFirst.mockResolvedValue(null);
       prismaMock.leaveType.create.mockRejectedValue({
         code: 'P2002',
         meta: { target: ['name'] },
@@ -92,22 +92,22 @@ describe('HrLeaveService', () => {
     });
 
     it('updateType rejects moving onto another type name/code', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValueOnce({ id: 'lt-1', name: 'A', code: 'a' });
-      prismaMock.leaveType.findUnique.mockResolvedValueOnce({ id: 'lt-2', name: 'Casual Leave' });
+      prismaMock.leaveType.findFirst.mockResolvedValueOnce({ id: 'lt-1', name: 'A', code: 'a' });
+      prismaMock.leaveType.findFirst.mockResolvedValueOnce({ id: 'lt-2', name: 'Casual Leave' });
       await expect(
         service.updateType('lt-1', { name: 'Casual Leave' }),
       ).rejects.toThrow(ConflictException);
     });
 
     it('deleteType rejects a type that has leave requests', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.leaveType.findFirst.mockResolvedValue({ id: 'lt-1' });
       prismaMock.leaveRequest.count.mockResolvedValue(2);
       await expect(service.deleteType('lt-1')).rejects.toThrow(ConflictException);
       expect(prismaMock.leaveType.delete).not.toHaveBeenCalled();
     });
 
     it('deleteType converts a concurrent P2003 FK-restrict into 409', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.leaveType.findFirst.mockResolvedValue({ id: 'lt-1' });
       prismaMock.leaveRequest.count.mockResolvedValue(0);
       prismaMock.leaveType.delete.mockRejectedValue({
         code: 'P2003',
@@ -126,7 +126,7 @@ describe('HrLeaveService', () => {
     });
 
     it('updateType updates only provided fields', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.leaveType.findFirst.mockResolvedValue({ id: 'lt-1' });
       prismaMock.leaveType.update.mockResolvedValue({ id: 'lt-1' });
       await service.updateType('lt-1', { daysPerYear: 12 });
       expect(prismaMock.leaveType.update).toHaveBeenCalledWith({
@@ -136,21 +136,21 @@ describe('HrLeaveService', () => {
     });
 
     it('updateType throws for missing type', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValue(null);
+      prismaMock.leaveType.findFirst.mockResolvedValue(null);
       await expect(service.updateType('x', { daysPerYear: 1 })).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('deleteType throws for missing type', async () => {
-      prismaMock.leaveType.findUnique.mockResolvedValue(null);
+      prismaMock.leaveType.findFirst.mockResolvedValue(null);
       await expect(service.deleteType('x')).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('leave requests', () => {
     it('createRequest validates employee exists', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue(null);
       await expect(
         service.createRequest({
           employeeId: 'emp-1',
@@ -163,8 +163,8 @@ describe('HrLeaveService', () => {
     });
 
     it('createRequest validates type exists', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
-      prismaMock.leaveType.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findFirst.mockResolvedValue(null);
       await expect(
         service.createRequest({
           employeeId: 'emp-1',
@@ -177,8 +177,8 @@ describe('HrLeaveService', () => {
     });
 
     it('createRequest computes inclusive day count when days omitted', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
-      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findFirst.mockResolvedValue({ id: 'lt-1' });
       prismaMock.leaveRequest.create.mockResolvedValue({ id: 'lr-1', days: 3 });
       const res = await service.createRequest(
         {
@@ -201,8 +201,8 @@ describe('HrLeaveService', () => {
     });
 
     it('createRequest rejects endDate before startDate', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
-      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findFirst.mockResolvedValue({ id: 'lt-1' });
       await expect(
         service.createRequest({
           employeeId: 'emp-1',
@@ -215,7 +215,7 @@ describe('HrLeaveService', () => {
     });
 
     it('approveRequest rejects non-pending request', async () => {
-      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({
         id: 'lr-1',
         status: 'approved',
       });
@@ -225,7 +225,7 @@ describe('HrLeaveService', () => {
     });
 
     it('rejectRequest requires decisionNote', async () => {
-      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({
         id: 'lr-1',
         status: 'pending',
       });
@@ -235,7 +235,7 @@ describe('HrLeaveService', () => {
     });
 
     it('cancelRequest only allows pending/approved', async () => {
-      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({
         id: 'lr-1',
         status: 'rejected',
       });
@@ -255,8 +255,8 @@ describe('HrLeaveService', () => {
     };
 
     it('blocks a create that overlaps an existing pending/approved request (409) and queries exactly the overlap statuses', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
-      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findFirst.mockResolvedValue({ id: 'lt-1' });
       prismaMock.leaveRequest.findFirst.mockResolvedValue({ id: 'lr-existing' });
 
       await expect(service.createRequest(reqDto)).rejects.toThrow(
@@ -275,8 +275,8 @@ describe('HrLeaveService', () => {
     });
 
     it('blocks a create that overlaps an approved request too (status filter covers approved)', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
-      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findFirst.mockResolvedValue({ id: 'lt-1' });
       prismaMock.leaveRequest.findFirst.mockResolvedValue({ id: 'lr-approved' });
 
       await expect(service.createRequest(reqDto)).rejects.toThrow(
@@ -285,8 +285,8 @@ describe('HrLeaveService', () => {
     });
 
     it('allows a create adjacent to an existing request (end +1 day, no overlap)', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
-      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findFirst.mockResolvedValue({ id: 'lt-1' });
       prismaMock.leaveRequest.findFirst.mockResolvedValue(null);
       prismaMock.leaveRequest.create.mockResolvedValue({ id: 'lr-new' });
 
@@ -300,7 +300,7 @@ describe('HrLeaveService', () => {
     });
 
     it('blocks approving a pending request that overlaps another approved one (re-check, excluding itself)', async () => {
-      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({
         id: 'lr-2',
         status: 'pending',
         employeeId: 'emp-1',
@@ -326,7 +326,7 @@ describe('HrLeaveService', () => {
     });
 
     it('approves when no overlapping pending/approved request exists', async () => {
-      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({
         id: 'lr-2',
         status: 'pending',
         employeeId: 'emp-1',
@@ -342,7 +342,7 @@ describe('HrLeaveService', () => {
     });
 
     it('cancelling an approved request restores the balance (cancelled excluded from derived balance)', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
       prismaMock.leaveType.findMany.mockResolvedValue([
         { id: 'lt-1', name: 'Casual Leave', isPaid: true, daysPerYear: 10 },
       ]);
@@ -353,7 +353,7 @@ describe('HrLeaveService', () => {
       expect(before[0].remaining).toBe(5);
 
       // Cancel the approved request (status → cancelled).
-      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({
         id: 'lr-1',
         status: 'approved',
         createdById: 'actor-1',
@@ -378,7 +378,7 @@ describe('HrLeaveService', () => {
 
   describe('leave balances', () => {
     it('computes remaining = entitlement - used for current year', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.employee.findFirst.mockResolvedValue({ id: 'emp-1' });
       prismaMock.leaveType.findMany.mockResolvedValue([
         { id: 'lt-1', name: 'Casual Leave', isPaid: true, daysPerYear: 10 },
         { id: 'lt-2', name: 'Sick Leave', isPaid: true, daysPerYear: 14 },
@@ -408,7 +408,7 @@ describe('HrLeaveService', () => {
     });
 
     it('throws when employee missing', async () => {
-      prismaMock.employee.findUnique.mockResolvedValue(null);
+      prismaMock.employee.findFirst.mockResolvedValue(null);
       await expect(service.leaveBalances('missing')).rejects.toThrow(
         NotFoundException,
       );

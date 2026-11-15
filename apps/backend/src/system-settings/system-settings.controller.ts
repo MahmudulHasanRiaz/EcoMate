@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Controller,
   Get,
@@ -874,7 +875,7 @@ export class SystemSettingsController {
   @Public()
   @Get('inventory-enabled')
   async getInventoryEnabled() {
-    const setting = await this.prisma.systemSetting.findUnique({
+    const setting = await this.prisma.systemSetting.findFirst({
       where: { key: 'inventory_enabled' },
     });
     return { enabled: setting?.value === 'true' };
@@ -928,7 +929,7 @@ export class SystemSettingsController {
       (key === 'tracking_meta_access_token' ||
         key === 'tracking_tiktok_access_token')
     ) {
-      const stored = await this.prisma.systemSetting.findUnique({
+      const stored = await this.prisma.systemSetting.findFirst({
         where: { key },
       });
       if (stored?.value) value = stored.value;
@@ -963,7 +964,7 @@ export class SystemSettingsController {
           );
         }
 
-        const stored = await this.prisma.systemSetting.findUnique({
+        const stored = await this.prisma.systemSetting.findFirst({
           where: { key },
         });
         const storedDestinations = stored?.value
@@ -1072,11 +1073,11 @@ export class SystemSettingsController {
     // with the same parseCanonicalDomain() that validates saves (so an
     // invalid/legacy stored value counts as not saved).
     if (key === 'search_engine_indexing' && value === 'true') {
-      const stored = await this.prisma.systemSetting.findUnique({
+      const stored = await this.prisma.systemSetting.findFirst({
         where: { key: 'search_engine_indexing' },
       });
       if (stored?.value === 'false') {
-        const savedDomain = await this.prisma.systemSetting.findUnique({
+        const savedDomain = await this.prisma.systemSetting.findFirst({
           where: { key: 'canonical_domain' },
         });
         const parsed = parseCanonicalDomain(savedDomain?.value || '');
@@ -1089,7 +1090,7 @@ export class SystemSettingsController {
     }
 
     await this.prisma.systemSetting.upsert({
-      where: { key },
+      where: { tenantId_key: tenantCompound({  key  }) },
       create: { key, value },
       update: { value },
     });
@@ -1149,7 +1150,7 @@ export class SystemSettingsController {
     for (const key of allowedKeys) {
       if (body[key] !== undefined) {
         await this.prisma.systemSetting.upsert({
-          where: { key },
+          where: { tenantId_key: tenantCompound({  key  }) },
           create: { key, value: body[key] },
           update: { value: body[key] },
         });

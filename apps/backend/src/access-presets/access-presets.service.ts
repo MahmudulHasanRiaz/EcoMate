@@ -50,7 +50,7 @@ export class AccessPresetsService {
   }
 
   async findOne(id: string) {
-    const preset = await this.prisma.accessPreset.findUnique({
+    const preset = await this.prisma.accessPreset.findFirst({
       where: { id },
     });
     if (!preset) throw new NotFoundException('Access preset not found');
@@ -58,7 +58,7 @@ export class AccessPresetsService {
   }
 
   async create(dto: CreateAccessPresetDto) {
-    const existing = await this.prisma.accessPreset.findUnique({
+    const existing = await this.prisma.accessPreset.findFirst({
       where: { name: dto.name },
     });
     if (existing)
@@ -82,7 +82,7 @@ export class AccessPresetsService {
     const current = await this.findOne(id);
 
     if (dto.name) {
-      const existing = await this.prisma.accessPreset.findUnique({
+      const existing = await this.prisma.accessPreset.findFirst({
         where: { name: dto.name },
       });
       if (existing && existing.id !== id)

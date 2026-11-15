@@ -46,7 +46,7 @@ export class TagsService {
   }
 
   async findOne(id: string) {
-    const tag = await this.prisma.tag.findUnique({
+    const tag = await this.prisma.tag.findFirst({
       where: { id },
       include: { _count: { select: { products: true } } },
     });
@@ -55,7 +55,7 @@ export class TagsService {
   }
 
   async create(dto: { name: string; slug: string }) {
-    const existing = await this.prisma.tag.findUnique({
+    const existing = await this.prisma.tag.findFirst({
       where: { slug: dto.slug },
     });
     if (existing) throw new ConflictException('Tag slug already exists');
@@ -63,10 +63,10 @@ export class TagsService {
   }
 
   async update(id: string, dto: { name?: string; slug?: string }) {
-    const tag = await this.prisma.tag.findUnique({ where: { id } });
+    const tag = await this.prisma.tag.findFirst({ where: { id } });
     if (!tag) throw new NotFoundException('Tag not found');
     if (dto.slug) {
-      const existing = await this.prisma.tag.findUnique({
+      const existing = await this.prisma.tag.findFirst({
         where: { slug: dto.slug },
       });
       if (existing && existing.id !== id)
@@ -76,7 +76,7 @@ export class TagsService {
   }
 
   async remove(id: string) {
-    const tag = await this.prisma.tag.findUnique({ where: { id } });
+    const tag = await this.prisma.tag.findFirst({ where: { id } });
     if (!tag) throw new NotFoundException('Tag not found');
     await this.prisma.tag.delete({ where: { id } });
     return { message: 'Tag deleted' };
@@ -95,8 +95,8 @@ export class TagsService {
     }
 
     const [keepTag, removeTag] = await Promise.all([
-      this.prisma.tag.findUnique({ where: { id: keepId } }),
-      this.prisma.tag.findUnique({ where: { id: removeId } }),
+      this.prisma.tag.findFirst({ where: { id: keepId } }),
+      this.prisma.tag.findFirst({ where: { id: removeId } }),
     ]);
     if (!keepTag) throw new NotFoundException('Keep tag not found');
     if (!removeTag) throw new NotFoundException('Remove tag not found');

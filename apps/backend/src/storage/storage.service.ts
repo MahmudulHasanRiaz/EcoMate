@@ -269,7 +269,7 @@ export class StorageService {
 
   async legacyBackupProviders(): Promise<LegacyBackupProvider[]> {
     const currentProvider = (
-      await this.prisma.systemSetting.findUnique({
+      await this.prisma.systemSetting.findFirst({
         where: { key: 'storage_provider' },
         select: { value: true },
       })

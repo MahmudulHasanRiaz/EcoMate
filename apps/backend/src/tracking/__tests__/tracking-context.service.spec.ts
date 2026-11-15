@@ -56,10 +56,10 @@ describe('TrackingContextService', () => {
   });
 
   it('getByCtxId returns the row or null', async () => {
-    // This test is calling the real service method, which uses this.prisma.trackingContext.findUnique
+    // This test is calling the real service method, which uses this.prisma.trackingContext.findFirst
     // We need to mock the service's prisma.trackingContext
     const findUniqueForGetByCtxId = jest.fn().mockResolvedValue(null);
-    service.prisma = { trackingContext: { findUnique: findUniqueForGetByCtxId } } as any;
+    service.prisma = { trackingContext: { findFirst: findUniqueForGetByCtxId } } as any;
     await expect(service.getByCtxId('nope')).resolves.toBeNull();
     expect(findUniqueForGetByCtxId).toHaveBeenCalledWith({ where: { ctxId: 'nope' } });
   });

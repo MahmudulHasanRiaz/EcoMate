@@ -29,7 +29,7 @@ function makePrismaFake(opts: {
   const prisma = {
     orderStatus: { findMany: async () => statuses },
     order: {
-      findUnique: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
+      findFirst: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
       findFirst: async ({ where }: any) => {
         const found =
           orders.find((o) => o.displayId.toLowerCase() === where.displayId.equals.toLowerCase()) ?? null;
@@ -45,7 +45,7 @@ function makePrismaFake(opts: {
           return ids.some((id) => id === core || id.includes(core));
         });
       },
-      findUnique: async ({ where }: any) => dispatches.find((d) => d.id === where.id) ?? null,
+      findFirst: async ({ where }: any) => dispatches.find((d) => d.id === where.id) ?? null,
     },
   };
   return { prisma: prisma as unknown as PrismaService, store: { orders, dispatches } };
@@ -608,7 +608,7 @@ describe('Scanner batch execution', () => {
     ]
     const prisma = {
       order: {
-        findUnique: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
+        findFirst: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
       },
     }
     const updateStatus = jest.fn().mockImplementation(async (id: string) => ({
@@ -648,7 +648,7 @@ describe('Scanner batch execution', () => {
     ]
     const prisma = {
       order: {
-        findUnique: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
+        findFirst: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
       },
     }
     const updateStatus = jest.fn().mockImplementation(async (id: string) => {
@@ -681,7 +681,7 @@ describe('Scanner batch execution', () => {
     ]
     const prisma = {
       order: {
-        findUnique: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
+        findFirst: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
       },
     }
     const updateStatus = jest.fn()
@@ -707,7 +707,7 @@ describe('Scanner batch execution', () => {
     const dispatch = { id: 'd1', consignmentId: 'CONS-1', courier: 'pathao', status: 'DISPATCHED' }
     const prisma = {
       dispatch: {
-        findUnique: async ({ where }: any) => (where.id === 'd1' ? dispatch : null),
+        findFirst: async ({ where }: any) => (where.id === 'd1' ? dispatch : null),
       },
     }
     const updateStatus = jest.fn().mockResolvedValue(dispatch)

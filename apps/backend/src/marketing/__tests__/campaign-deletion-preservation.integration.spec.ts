@@ -145,7 +145,7 @@ describe('Campaign Deletion Preservation (Integration)', () => {
     });
 
     // ── Step 5: Verify all local data exists pre-deletion ──────────
-    const preCampaign = await prisma.marketingCampaign.findUnique({ where: { id: campaign.id } });
+    const preCampaign = await prisma.marketingCampaign.findFirst({ where: { id: campaign.id } });
     expect(preCampaign).not.toBeNull();
     expect(preCampaign!.deletedFromProvider).toBe(false);
 
@@ -167,7 +167,7 @@ describe('Campaign Deletion Preservation (Integration)', () => {
     });
 
     // ── Step 7: Verify campaign still exists (soft deleted) ────────
-    const postCampaign = await prisma.marketingCampaign.findUnique({ where: { id: campaign.id } });
+    const postCampaign = await prisma.marketingCampaign.findFirst({ where: { id: campaign.id } });
     expect(postCampaign).not.toBeNull();
     expect(postCampaign!.deletedFromProvider).toBe(true);
     expect(postCampaign!.isArchived).toBe(true);
@@ -192,7 +192,7 @@ describe('Campaign Deletion Preservation (Integration)', () => {
     expect(Number(postAllocations[0].allocatedCost)).toBe(200);
 
     // ── Step 11: Verify the order itself is intact ─────────────────
-    const postOrder = await prisma.order.findUnique({ where: { id: order.id } });
+    const postOrder = await prisma.order.findFirst({ where: { id: order.id } });
     expect(postOrder).not.toBeNull();
     expect(Number(postOrder!.total)).toBe(1500);
   });

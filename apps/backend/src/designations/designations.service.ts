@@ -18,7 +18,7 @@ export class DesignationsService {
   }
 
   async findOne(id: string) {
-    const designation = await this.prisma.designation.findUnique({
+    const designation = await this.prisma.designation.findFirst({
       where: { id },
     });
     if (!designation) throw new NotFoundException('Designation not found');
@@ -28,7 +28,7 @@ export class DesignationsService {
   async create(dto: CreateDesignationDto) {
     const slug = dto.name.toLowerCase().replace(/\s+/g, '-');
 
-    const existing = await this.prisma.designation.findUnique({
+    const existing = await this.prisma.designation.findFirst({
       where: { name: dto.name },
     });
     if (existing)
@@ -57,7 +57,7 @@ export class DesignationsService {
     await this.findOne(id);
 
     if (dto.name) {
-      const existing = await this.prisma.designation.findUnique({
+      const existing = await this.prisma.designation.findFirst({
         where: { name: dto.name },
       });
       if (existing && existing.id !== id)

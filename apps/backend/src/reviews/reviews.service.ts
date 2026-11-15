@@ -25,7 +25,7 @@ export class ReviewsService {
   async findByProductSlug(slug: string, page: number = 1, limit: number = 10) {
     page = Math.max(1, page);
     limit = Math.max(1, Math.min(100, limit));
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.product.findFirst({
       where: { slug },
       select: { id: true },
     });
@@ -98,7 +98,7 @@ export class ReviewsService {
         'Please enter a valid Bangladeshi mobile number.',
       );
     }
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.product.findFirst({
       where: { id: dto.productId },
     });
     if (!product) throw new NotFoundException('Product not found');
@@ -127,7 +127,7 @@ export class ReviewsService {
   }
 
   async approve(id: string) {
-    const review = await this.prisma.review.findUnique({ where: { id } });
+    const review = await this.prisma.review.findFirst({ where: { id } });
     if (!review) throw new NotFoundException('Review not found');
     return this.prisma.review.update({
       where: { id },
@@ -148,7 +148,7 @@ export class ReviewsService {
   }
 
   async remove(id: string) {
-    const review = await this.prisma.review.findUnique({ where: { id } });
+    const review = await this.prisma.review.findFirst({ where: { id } });
     if (!review) throw new NotFoundException('Review not found');
     return this.prisma.review.delete({ where: { id } });
   }

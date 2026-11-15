@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   NotFoundException,
@@ -118,7 +119,7 @@ export class CheckoutLeadsService {
   }
 
   async findOne(id: string) {
-    const lead = await this.prisma.checkoutLead.findUnique({
+    const lead = await this.prisma.checkoutLead.findFirst({
       where: { id },
       include: {
         assignedTo: { select: { id: true, firstName: true, lastName: true } },
@@ -129,7 +130,7 @@ export class CheckoutLeadsService {
     if (!lead) throw new NotFoundException('Checkout lead not found');
     let convertedOrder: { id: string; displayId: string } | null = null;
     if (lead.convertedOrderId) {
-      const order = await this.prisma.order.findUnique({
+      const order = await this.prisma.order.findFirst({
         where: { id: lead.convertedOrderId },
         select: { id: true, displayId: true },
       });
@@ -423,7 +424,7 @@ private async resolveCanonicalLead(
     tx: Prisma.TransactionClient,
     item: { productId: string; variantId?: string | null; quantity: number },
   ): Promise<void> {
-    const product = await tx.product.findUnique({
+    const product = await tx.product.findFirst({
       where: { id: item.productId },
       select: {
         name: true,
@@ -442,7 +443,7 @@ private async resolveCanonicalLead(
     let managedStockQuantity = product.managedStockQuantity ?? 0;
     let reservedStock = product.reservedStock ?? 0;
     if (item.variantId) {
-      const variant = await tx.productVariant.findUnique({
+      const variant = await tx.productVariant.findFirst({
         where: { id: item.variantId },
         select: { managedStockQuantity: true, reservedStock: true },
       });
@@ -495,7 +496,7 @@ private async resolveCanonicalLead(
 
     const displayId = await this.generateOrderDisplayId();
 
-    const userData = await this.prisma.userProfile.findUnique({
+    const userData = await this.prisma.userProfile.findFirst({
       where: { id: userId },
       select: { firstName: true, lastName: true },
     });
@@ -561,7 +562,7 @@ private async resolveCanonicalLead(
     // this, a converted lead lost every trace of which ad/search produced it.
     const leadPayload = (lead.payload as Record<string, any>) ?? {};
     const sessionFallback = lead.ctxId
-      ? await this.prisma.marketingSession.findUnique({
+      ? await this.prisma.marketingSession.findFirst({
           where: { sessionToken: lead.ctxId },
           select: {
             utmSource: true,
@@ -797,7 +798,7 @@ private async resolveCanonicalLead(
       // manual-only). DECISION #2: the phone fallback is time-bounded
       // (configurable window, default 7 days).
       if (guestPhone || lead.ctxId) {
-        const windowSetting = await tx.systemSetting.findUnique({
+        const windowSetting = await tx.systemSetting.findFirst({
           where: { key: 'checkout_lead_supersede_phone_window_days' },
         });
         const phoneWindowDays = Number(windowSetting?.value || 7);
@@ -824,7 +825,7 @@ private async resolveCanonicalLead(
         });
       }
 
-      fullOrder = await tx.order.findUnique({
+      fullOrder = await tx.order.findFirst({
         where: { id: order.id },
         include: {
           customer: true,
@@ -1027,7 +1028,7 @@ private async resolveCanonicalLead(
         // LEAD-YYMMDD is already a namespaced date key (never the shared
         // order row); family 'ORD' is the default — the compound PK
         // (date, family) requires the full key in `where`.
-        where: { date_family: { date: `LEAD-${dateStr}`, family: 'ORD' } },
+        where: { tenantId_date_family: tenantCompound({   date: `LEAD-${dateStr}`, family: 'ORD'   }) },
         create: { date: `LEAD-${dateStr}`, family: 'ORD', seq: 1 },
         update: { seq: { increment: 1 } },
       });
@@ -1045,7 +1046,7 @@ private async resolveCanonicalLead(
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date_family: { date: dateStr, family: 'ORD' } },
+        where: { tenantId_date_family: tenantCompound({   date: dateStr, family: 'ORD'   }) },
         create: { date: dateStr, family: 'ORD', seq: 1 },
         update: { seq: { increment: 1 } },
       });

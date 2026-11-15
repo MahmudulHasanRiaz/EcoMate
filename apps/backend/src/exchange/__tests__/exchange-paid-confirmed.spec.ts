@@ -72,7 +72,7 @@ describe('ExchangeService — paidConfirmed + transfer rows (hardening 4)', () =
           orders.push(created);
           return created;
         },
-        findUnique: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
+        findFirst: async ({ where }: any) => orders.find((o) => o.id === where.id) ?? null,
         update: async ({ where, data }: any) => {
           const t = orders.find((o) => o.id === where.id) ?? (order.id === where.id ? order : undefined);
           if (!t) throw new Error(`order ${where.id} not found`);
@@ -96,7 +96,7 @@ describe('ExchangeService — paidConfirmed + transfer rows (hardening 4)', () =
         findFirst: async ({ where }: any) => orderItems.find((i) => i.orderId === where.orderId) ?? null,
       },
       orderStatus: {
-        findUnique: async ({ where }: any) => statuses.find((s) => s.name === where.name) ?? null,
+        findFirst: async ({ where }: any) => statuses.find((s) => s.name === where.name) ?? null,
       },
       payment: {
         aggregate: async () => ({ _sum: { amount: paidAmount } }),
@@ -124,7 +124,7 @@ describe('ExchangeService — paidConfirmed + transfer rows (hardening 4)', () =
       $transaction: async (cb: any) => cb(tx),
       order: {
         ...tx.order,
-        findUnique: async ({ where }: any) => (where.id === order.id ? order : tx.order.findUnique({ where })),
+        findFirst: async ({ where }: any) => (where.id === order.id ? order : tx.order.findFirst({ where })),
       },
       payment: { aggregate: async () => ({ _sum: { amount: paidAmount } }) },
       product: { findMany: async () => [product()] },

@@ -663,7 +663,7 @@ describe('CourierWebhookController redx (real instance)', () => {
   beforeEach(() => {
     handleRedxMock = jest.fn().mockResolvedValue({ success: true });
     const mockSvc = { handleRedx: handleRedxMock } as unknown as CourierWebhookService;
-    const mockPrisma = { courierCredentials: { findUnique: jest.fn() } } as unknown as PrismaService;
+    const mockPrisma = { courierCredentials: { findFirst: jest.fn() } } as unknown as PrismaService;
 
     mockAttemptSvc = {
       startAttempt: jest.fn().mockResolvedValue({ id: 'att-test', receivedAt: new Date() }),

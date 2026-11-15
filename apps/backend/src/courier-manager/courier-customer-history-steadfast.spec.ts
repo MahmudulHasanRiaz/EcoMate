@@ -9,7 +9,7 @@ import {
 const PHONE = '01712345678';
 
 function steadfastCreds(prisma: any) {
-  prisma.courierCredentials.findUnique.mockResolvedValue({
+  prisma.courierCredentials.findFirst.mockResolvedValue({
     courier: 'steadfast',
     enabled: true,
     apiKey: 'k',
@@ -50,15 +50,15 @@ describe('CourierCustomerHistoryService — Steadfast fraud-check score endpoint
 
     prisma = {
       courierReportCache: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         upsert: jest.fn().mockResolvedValue({}),
       },
       courierCredentials: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       systemSetting: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
     };
   });
@@ -291,7 +291,7 @@ describe('CourierCustomerHistoryService — Steadfast fraud-check score endpoint
         fraudCategories: { no_response: 2 },
       },
     };
-    prisma.courierReportCache.findUnique.mockResolvedValue({
+    prisma.courierReportCache.findFirst.mockResolvedValue({
       courier: 'steadfast',
       phone: PHONE,
       report: stored,

@@ -164,7 +164,7 @@ describe('CourierSettlementSnapshotService', () => {
   it('getEffective reports current vs superseded rows and recomputed totals', async () => {
     const svc = await service({
       courierSettlementInvoice: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'inv-1',
           state: 'ADJUSTED',
           accountingStatus: 'posted',
@@ -200,7 +200,7 @@ describe('CourierSettlementSnapshotService', () => {
 
   it('getEffective throws NotFoundException for a missing invoice', async () => {
     const svc = await service({
-      courierSettlementInvoice: { findUnique: jest.fn().mockResolvedValue(null) },
+      courierSettlementInvoice: { findFirst: jest.fn().mockResolvedValue(null) },
     });
     await expect(svc.getEffective('nope')).rejects.toBeInstanceOf(
       NotFoundException,
@@ -218,7 +218,7 @@ describe('CourierSettlementSnapshotService', () => {
     const svcHistorical = await service(historical);
     const svcEffective = await service({
       courierSettlementInvoice: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'inv-1',
           state: 'RECONCILED',
           accountingStatus: 'posted',

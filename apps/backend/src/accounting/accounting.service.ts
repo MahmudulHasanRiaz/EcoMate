@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   BadRequestException,
@@ -36,7 +37,7 @@ export class AccountingService {
       throw new BadRequestException('Total debit must equal total credit');
     }
 
-    const period = await this.prisma.financialPeriod.findUnique({
+    const period = await this.prisma.financialPeriod.findFirst({
       where: { id: dto.periodId },
     });
     if (!period) {
@@ -83,7 +84,7 @@ export class AccountingService {
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date_family: { date: dateStr, family: 'JE' } },
+        where: { tenantId_date_family: tenantCompound({   date: dateStr, family: 'JE'   }) },
         update: { seq: { increment: 1 } },
         create: { date: dateStr, family: 'JE', seq: 1 },
       });
@@ -145,7 +146,7 @@ export class AccountingService {
   }
 
   async getEntry(id: string) {
-    const entry = await this.prisma.journalEntry.findUnique({
+    const entry = await this.prisma.journalEntry.findFirst({
       where: { id },
       include: {
         lines: { include: { account: true } },
@@ -158,12 +159,12 @@ export class AccountingService {
   }
 
   async deleteEntry(id: string) {
-    const entry = await this.prisma.journalEntry.findUnique({ where: { id } });
+    const entry = await this.prisma.journalEntry.findFirst({ where: { id } });
     if (!entry)
       throw new NotFoundException(`Journal entry with ID ${id} not found`);
 
     // Check if linked to an expense
-    const linkedExpense = await this.prisma.expense.findUnique({
+    const linkedExpense = await this.prisma.expense.findFirst({
       where: { journalEntryId: id },
     });
     if (linkedExpense) {
@@ -305,7 +306,7 @@ export class AccountingService {
   }
 
   async accountLedger(accountId: string, periodId?: string) {
-    const account = await this.prisma.account.findUnique({
+    const account = await this.prisma.account.findFirst({
       where: { id: accountId },
     });
     if (!account)

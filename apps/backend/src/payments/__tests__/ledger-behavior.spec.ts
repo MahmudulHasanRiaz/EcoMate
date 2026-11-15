@@ -17,22 +17,22 @@ describe('PaymentsService append-only ledger (Task 5)', () => {
     $transaction: jest.fn(),
     $queryRawUnsafe: jest.fn(),
     order: {
-      findUniqueOrThrow: jest.fn(),
-      findUnique: jest.fn(),
+      findFirstOrThrow: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
     payment: {
       create: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       aggregate: jest.fn(),
     },
     paymentGateway: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     systemSetting: {
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
   };
 
@@ -54,10 +54,10 @@ describe('PaymentsService append-only ledger (Task 5)', () => {
   }) {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-      mockPrisma.order.findUniqueOrThrow.mockResolvedValue(
+      mockPrisma.order.findFirstOrThrow.mockResolvedValue(
         opts?.order ?? baseOrder,
       );
-      mockPrisma.paymentGateway.findUnique.mockResolvedValue(
+      mockPrisma.paymentGateway.findFirst.mockResolvedValue(
         opts?.gateway ?? null,
       );
       mockPrisma.systemSetting.findMany.mockResolvedValue(
@@ -355,7 +355,7 @@ describe('PaymentsService append-only ledger (Task 5)', () => {
     };
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
-      mockPrisma.payment.findUnique.mockResolvedValue(pendingRow);
+      mockPrisma.payment.findFirst.mockResolvedValue(pendingRow);
       mockPrisma.payment.update.mockImplementation(async (args: any) => ({
         ...pendingRow,
         ...args.data,
@@ -363,7 +363,7 @@ describe('PaymentsService append-only ledger (Task 5)', () => {
       mockPrisma.payment.aggregate.mockResolvedValue({
         _sum: { amount: 100 },
       });
-      mockPrisma.order.findUnique.mockResolvedValue({
+      mockPrisma.order.findFirst.mockResolvedValue({
         total: 100,
         customerId: 'customer-1',
       });

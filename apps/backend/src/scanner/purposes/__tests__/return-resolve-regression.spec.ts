@@ -79,7 +79,7 @@ describe('ReturnPurpose — DISPATCH_RETURN resolve (real query shapes)', () => 
           if (where.exchangeOfOrderId) return [];
           return [order()];
         }),
-        findUnique: jest.fn(async ({ where }: any) =>
+        findFirst: jest.fn(async ({ where }: any) =>
           where.id === 'o1' ? order() : null,
         ),
       },
@@ -87,7 +87,7 @@ describe('ReturnPurpose — DISPATCH_RETURN resolve (real query shapes)', () => 
       product: { findMany: jest.fn().mockResolvedValue([]) },
       productVariant: { findMany: jest.fn().mockResolvedValue([]) },
       dispatch: {
-        findUnique: jest.fn(async () => ({
+        findFirst: jest.fn(async () => ({
           consignmentId: 'CONS-1',
           courier: 'pathao',
           status: 'RETURN_PENDING',

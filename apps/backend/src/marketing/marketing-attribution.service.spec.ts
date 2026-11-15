@@ -7,14 +7,14 @@ describe('MarketingAttributionService', () => {
   let prisma: PrismaService;
 
   const mockPrisma = () => ({
-    marketingSession: { findUnique: jest.fn(), findFirst: jest.fn(), upsert: jest.fn(), create: jest.fn(), update: jest.fn() },
-    marketingCampaign: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
+    marketingSession: { findFirst: jest.fn(), findFirst: jest.fn(), upsert: jest.fn(), create: jest.fn(), update: jest.fn() },
+    marketingCampaign: { findFirst: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
     marketingAd: { findFirst: jest.fn().mockResolvedValue(null) },
     marketingAdSet: { findFirst: jest.fn().mockResolvedValue(null) },
-    orderAttribution: { findUnique: jest.fn(), create: jest.fn(), findMany: jest.fn() },
+    orderAttribution: { findFirst: jest.fn(), create: jest.fn(), findMany: jest.fn() },
     order: { findMany: jest.fn() },
     // Campaign aliases live in SystemSetting; absent by default.
-    systemSetting: { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn() },
+    systemSetting: { findFirst: jest.fn().mockResolvedValue(null), upsert: jest.fn() },
   });
 
   beforeEach(async () => {
@@ -41,21 +41,21 @@ describe('MarketingAttributionService', () => {
 
   describe('resolveFromOrder — determinism', () => {
     it('never overwrites an existing attribution (one record per order)', async () => {
-      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue({
         id: 'attr-existing',
         orderId: 'order-1',
       });
       const res = await service.resolveFromOrder('order-1', input());
       expect(res).toBeNull();
       expect(prisma.orderAttribution.create).not.toHaveBeenCalled();
-      expect(prisma.marketingSession.findUnique).not.toHaveBeenCalled();
+      expect(prisma.marketingSession.findFirst).not.toHaveBeenCalled();
     });
 
     it('returns null when nothing matches (no session, no fbclid session, no campaign)', async () => {
-      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
-      (prisma.marketingSession.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue(null);
-      (prisma.marketingCampaign.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
 
       const res = await service.resolveFromOrder('order-1', {
         sourcePlatform: 'website',
@@ -68,8 +68,8 @@ describe('MarketingAttributionService', () => {
     });
 
     it('prefers a session-matched campaign over fbclid (first match wins)', async () => {
-      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
-      (prisma.marketingSession.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue({
         id: 'session-1',
         sessionToken: 'ctx-abc',
         campaignId: 'camp-1',
@@ -89,8 +89,8 @@ describe('MarketingAttributionService', () => {
     });
 
     it('falls back to click_id when the session exists but has no campaign', async () => {
-      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
-      (prisma.marketingSession.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue({
         id: 'session-1',
         campaignId: null,
       });
@@ -110,8 +110,8 @@ describe('MarketingAttributionService', () => {
     });
 
     it('falls back to UTM campaign match when no session or fbclid resolves', async () => {
-      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
-      (prisma.marketingSession.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue({
         id: 'camp-utm-1',
@@ -131,7 +131,7 @@ describe('MarketingAttributionService', () => {
 
   describe('captureSession', () => {
     it('creates a session when none exists and links the matched campaign', async () => {
-      (prisma.marketingSession.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue({ id: 'camp-1', name: 'launch' });
       (prisma.marketingSession.create as jest.Mock).mockResolvedValue({ id: 'session-1' });
       await service.captureSession({
@@ -149,7 +149,7 @@ describe('MarketingAttributionService', () => {
     });
 
     it('updates an existing session with new signals, keeping old ones when omitted', async () => {
-      (prisma.marketingSession.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.marketingSession.findFirst as jest.Mock).mockResolvedValue({
         id: 'session-1',
         fbclid: 'fb-old',
         campaignId: 'camp-1',
@@ -196,7 +196,7 @@ describe('MarketingAttributionService', () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ id: 'camp-3', name: 'Eid Campaign' });
-      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue({
         key: 'marketing_campaign_aliases',
         value: JSON.stringify({ fb_eid_2: 'camp-3' }),
       });
@@ -207,7 +207,7 @@ describe('MarketingAttributionService', () => {
 
     it('ignores a malformed alias setting instead of throwing', async () => {
       (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
-      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.systemSetting.findFirst as jest.Mock).mockResolvedValue({
         key: 'marketing_campaign_aliases',
         value: 'not-json{',
       });
@@ -232,7 +232,7 @@ describe('MarketingAttributionService', () => {
     };
 
     it('links the ad and its campaign when utm_content carries a provider ad id', async () => {
-      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue({
         id: 'camp-9',
         name: 'Brand',
@@ -257,7 +257,7 @@ describe('MarketingAttributionService', () => {
     });
 
     it('attributes through the ad even when the campaign name does not match', async () => {
-      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingAd.findFirst as jest.Mock).mockResolvedValue({
         id: 'ad-row-2',
@@ -278,7 +278,7 @@ describe('MarketingAttributionService', () => {
     });
 
     it('resolves the ad set from utm_term on a unique provider id', async () => {
-      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingAd.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingAdSet.findFirst as jest.Mock).mockResolvedValue({
@@ -301,7 +301,7 @@ describe('MarketingAttributionService', () => {
     });
 
     it('records an ad id without a campaign rather than dropping the link', async () => {
-      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.orderAttribution.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.marketingAd.findFirst as jest.Mock).mockResolvedValue({
         id: 'ad-row-4',

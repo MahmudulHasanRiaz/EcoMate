@@ -43,8 +43,8 @@ describe('OrderStockDeductService — movement result', () => {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({}),
       },
-      physicalReservation: { findUnique: jest.fn() },
-      comboComponentPhysicalReservation: { findUnique: jest.fn() },
+      physicalReservation: { findFirst: jest.fn() },
+      comboComponentPhysicalReservation: { findFirst: jest.fn() },
       physicalInventory: { findFirst: jest.fn() },
       costingLotConsumption: { findMany: jest.fn().mockResolvedValue([]) },
     };
@@ -99,7 +99,7 @@ describe('OrderStockDeductService — movement result', () => {
       msConditionalOnSync: false,
     });
     tx.orderStockCycle.findFirst.mockResolvedValue({ id: 'cycle-1', status: 'ACTIVE' });
-    tx.physicalReservation.findUnique.mockResolvedValue({ id: 'res-1', status: 'ACTIVE' });
+    tx.physicalReservation.findFirst.mockResolvedValue({ id: 'res-1', status: 'ACTIVE' });
 
     const result = await call();
 
@@ -116,7 +116,7 @@ describe('OrderStockDeductService — movement result', () => {
       msConditionalOnSync: false,
     });
     tx.orderStockCycle.findFirst.mockResolvedValue({ id: 'cycle-1', status: 'ACTIVE' });
-    tx.physicalReservation.findUnique.mockResolvedValue({ id: 'res-1', status: 'CONSUMED' });
+    tx.physicalReservation.findFirst.mockResolvedValue({ id: 'res-1', status: 'CONSUMED' });
 
     const result = await call();
 

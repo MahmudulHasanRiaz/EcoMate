@@ -266,7 +266,7 @@ export async function assertReturnEligible(
   orderId: string,
   opts: AssertReturnEligibleOptions,
 ): Promise<void> {
-  const order = await db.order.findUnique({
+  const order = await db.order.findFirst({
     where: { id: orderId },
     include: {
       status: true,
@@ -456,7 +456,7 @@ export async function orderItemsSnapshotForClient(
   client: any,
   orderId: string,
 ): Promise<GuardReturnItem[]> {
-  const order = await client.order.findUnique({
+  const order = await client.order.findFirst({
     where: { id: orderId },
     include: {
       items: {
@@ -527,7 +527,7 @@ export async function resolveReceivedById(
     // Defensive: a transaction double without a userProfile delegate simply
     // has no receiver to record (the column is nullable).
     const user = db?.userProfile?.findUnique
-      ? await db.userProfile.findUnique({
+      ? await db.userProfile.findFirst({
           where: { email: actor },
           select: { id: true },
         })
@@ -557,7 +557,7 @@ export async function restoreStockForReturnTx(
   opts?: { items?: GuardReturnItem[]; performedBy?: string; receivedById?: string | null },
 ): Promise<any> {
   const { db, cancelReturnStock } = deps;
-  const ret = await db.return.findUnique({ where: { id: returnId } });
+  const ret = await db.return.findFirst({ where: { id: returnId } });
   if (!ret) throw new NotFoundException(`Return not found: ${returnId}`);
   if ((ret as any).status === 'CLOSED') {
     throw new BadRequestException('Return is CLOSED — cannot restock');

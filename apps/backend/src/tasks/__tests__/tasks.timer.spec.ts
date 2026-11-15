@@ -23,7 +23,7 @@ describe('TasksService — timer concurrency', () => {
   beforeEach(async () => {
     prisma = {
       task: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'task-1',
           assignedEmployeeId: 'emp-1',
           status: 'in_progress',

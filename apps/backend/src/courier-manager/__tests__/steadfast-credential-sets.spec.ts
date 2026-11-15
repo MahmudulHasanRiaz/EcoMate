@@ -18,7 +18,7 @@ function makePrisma() {
     _dispatchRows: dispatchRows,
     courierCredentialSet: {
       findMany: jest.fn(async () => [...sets]),
-      findUnique: jest.fn(async ({ where }: any) =>
+      findFirst: jest.fn(async ({ where }: any) =>
         sets.find((s) => s.id === where.id) ?? null,
       ),
       findFirst: jest.fn(async ({ where }: any) => {
@@ -53,7 +53,7 @@ function makePrisma() {
       }),
     },
     courierCredentials: {
-      findUnique: jest.fn(async () => ({
+      findFirst: jest.fn(async () => ({
         courier: 'steadfast',
         enabled: true,
         mode: 'sandbox',
@@ -201,18 +201,18 @@ describe('Task 8: Steadfast hybrid credential sets', () => {
           { id: 'a', courier: 'steadfast', label: 'A', apiKeyEnc: 'enc:key-a', secretKeyEnc: 'enc:sec-a', isDefault: true },
           { id: 'b', courier: 'steadfast', label: 'B', apiKeyEnc: 'enc:key-b', secretKeyEnc: 'enc:sec-b', isDefault: false },
         ]),
-        findUnique: jest.fn(async ({ where }: any) => (where.id === 'a'
+        findFirst: jest.fn(async ({ where }: any) => (where.id === 'a'
           ? { id: 'a', courier: 'steadfast', label: 'A', apiKeyEnc: 'enc:key-a', secretKeyEnc: 'enc:sec-a', isDefault: true }
           : null)),
         findFirst: jest.fn(async () => ({ id: 'a', courier: 'steadfast', label: 'A', apiKeyEnc: 'enc:key-a', secretKeyEnc: 'enc:sec-a', isDefault: true })),
       },
       courierCredentials: {
-        findUnique: jest.fn(async () => ({ courier: 'steadfast', enabled: true, mode: 'sandbox' })),
+        findFirst: jest.fn(async () => ({ courier: 'steadfast', enabled: true, mode: 'sandbox' })),
       },
       order: { findMany: jest.fn(async () => []) },
       dispatch: { findMany: jest.fn(async () => []), findFirst: jest.fn(async () => null), upsert: jest.fn() },
       courierDispatchLog: { create: jest.fn() },
-      systemSetting: { findUnique: jest.fn(async () => null) },
+      systemSetting: { findFirst: jest.fn(async () => null) },
     };
     const sets = new SteadfastCredentialSetsService(prisma, mockEncryption);
     const mgr = new CourierManagerService(prisma, {} as any, sets as any);

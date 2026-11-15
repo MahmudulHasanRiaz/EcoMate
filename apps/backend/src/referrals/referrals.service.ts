@@ -25,7 +25,7 @@ export class ReferralsService {
   }
 
   async claimReferral(dto: ClaimReferralDto) {
-    const referral = await this.prisma.referral.findUnique({
+    const referral = await this.prisma.referral.findFirst({
       where: { code: dto.code },
     });
     if (!referral) throw new NotFoundException('Invalid referral code');
@@ -78,7 +78,7 @@ export class ReferralsService {
   }
 
   async findOne(id: string) {
-    const referral = await this.prisma.referral.findUnique({
+    const referral = await this.prisma.referral.findFirst({
       where: { id },
       include: {
         referrer: {
@@ -131,7 +131,7 @@ export class ReferralsService {
       for (let i = 0; i < 8; i++) {
         code += chars[Math.floor(Math.random() * chars.length)];
       }
-      const exists = await this.prisma.referral.findUnique({ where: { code } });
+      const exists = await this.prisma.referral.findFirst({ where: { code } });
       if (!exists) return code;
     }
     throw new Error('Unable to generate unique referral code after 5 attempts');

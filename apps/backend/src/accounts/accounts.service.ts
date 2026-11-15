@@ -13,7 +13,7 @@ export class AccountsService {
   constructor(private prisma: PrismaService) {}
 
   async create(dto: CreateAccountDto, userId?: string) {
-    const existing = await this.prisma.account.findUnique({
+    const existing = await this.prisma.account.findFirst({
       where: { code: dto.code },
     });
     if (existing)
@@ -22,7 +22,7 @@ export class AccountsService {
       );
 
     if (dto.parentId) {
-      const parent = await this.prisma.account.findUnique({
+      const parent = await this.prisma.account.findFirst({
         where: { id: dto.parentId },
       });
       if (!parent)
@@ -51,7 +51,7 @@ export class AccountsService {
   }
 
   async findOne(id: string) {
-    const account = await this.prisma.account.findUnique({
+    const account = await this.prisma.account.findFirst({
       where: { id },
       include: { children: true },
     });
@@ -64,7 +64,7 @@ export class AccountsService {
     const account = await this.findOne(id);
 
     if (dto.code && dto.code !== account.code) {
-      const existing = await this.prisma.account.findUnique({
+      const existing = await this.prisma.account.findFirst({
         where: { code: dto.code },
       });
       if (existing) {
@@ -80,7 +80,7 @@ export class AccountsService {
       }
 
       if (dto.parentId) {
-        const parent = await this.prisma.account.findUnique({
+        const parent = await this.prisma.account.findFirst({
           where: { id: dto.parentId },
         });
         if (!parent) {
@@ -101,7 +101,7 @@ export class AccountsService {
               'Cannot set parent to a descendant account (cycle detected)',
             );
           }
-          const ancestor = await this.prisma.account.findUnique({
+          const ancestor = await this.prisma.account.findFirst({
             where: { id: currentId },
             select: { parentId: true },
           });

@@ -24,26 +24,26 @@ function makePrisma(overrides: any = {}) {
 
   return {
     order: {
-      findUnique: jest.fn().mockResolvedValue(baseOrder),
+      findFirst: jest.fn().mockResolvedValue(baseOrder),
       findFirst: jest.fn().mockResolvedValue(null),
     },
     trackingSnapshot: {
       findMany: jest.fn().mockResolvedValue([]),
       // buildEvent re-reads the row it was handed an id for.
-      findUnique: jest.fn(async ({ where }: any) => (overrides.snapshotById ?? {})[where.id] ?? null),
+      findFirst: jest.fn(async ({ where }: any) => (overrides.snapshotById ?? {})[where.id] ?? null),
     },
     trackingDispatch: { findMany: jest.fn().mockResolvedValue([]) },
     trackingDispatchEvent: { findMany: jest.fn().mockResolvedValue([]) },
     trackingOutbox: { count: jest.fn().mockResolvedValue(0) },
     customerProfile: {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'c1', name: 'Rahim Uddin', phone: '+8801711111111',
         email: 'rahim@example.com', createdAt: new Date(),
         lastOrderAt: new Date(), lastOrderIp: '203.0.113.9',
         customerAddresses: [],
       }),
     },
-    orderAttribution: { findUnique: jest.fn().mockResolvedValue(null) },
+    orderAttribution: { findFirst: jest.fn().mockResolvedValue(null) },
     ...(overrides.rest ?? {}),
   } as any;
 }
@@ -64,7 +64,7 @@ const SNAPSHOT_BASE = {
 describe('OrderOthersService', () => {
   it('throws NotFound for a missing order', async () => {
     const prisma = makePrisma();
-    prisma.order.findUnique = jest.fn().mockResolvedValue(null);
+    prisma.order.findFirst = jest.fn().mockResolvedValue(null);
     const service = await buildService(prisma);
     await expect(service.getForOrder('missing')).rejects.toThrow(NotFoundException);
   });
@@ -81,7 +81,7 @@ describe('OrderOthersService', () => {
 
   it('surfaces a snapshot-vs-profile divergence in fieldDiffs', async () => {
     const prisma = makePrisma();
-    prisma.customerProfile.findUnique.mockResolvedValue({
+    prisma.customerProfile.findFirst.mockResolvedValue({
       id: 'c1', name: 'Md Rahim', phone: '+8801711111111', email: 'new@example.com',
       createdAt: new Date(), lastOrderAt: new Date(), lastOrderIp: '1.1.1.1',
       customerAddresses: [],
@@ -103,7 +103,7 @@ describe('OrderOthersService', () => {
 
   it('separates raw attribution from resolved attribution', async () => {
     const prisma = makePrisma();
-    prisma.order.findUnique.mockResolvedValue({
+    prisma.order.findFirst.mockResolvedValue({
       id: 'o1', displayId: 'ORD-1', createdAt: new Date(), customerId: 'c1',
       guestName: null, guestPhone: null, customerEmail: null, customerPhone: null,
       customerFirstName: null, customerLastName: null, customerCity: null,
@@ -122,7 +122,7 @@ describe('OrderOthersService', () => {
         capturedAt: new Date().toISOString(),
       },
     });
-    prisma.orderAttribution.findUnique.mockResolvedValue({
+    prisma.orderAttribution.findFirst.mockResolvedValue({
       method: 'fbclid', confidence: 95, explanation: 'session match',
       attributionVersion: 1, attributedAt: new Date(), sessionId: 's1',
       campaignId: 'c-1', adSetId: null, adId: null,
@@ -141,7 +141,7 @@ describe('OrderOthersService', () => {
 
   it('marks the transition log unavailable past the retention horizon', async () => {
     const prisma = makePrisma();
-    prisma.order.findUnique.mockResolvedValue({
+    prisma.order.findFirst.mockResolvedValue({
       id: 'o1', displayId: 'ORD-1',
       createdAt: new Date(Date.now() - 45 * DAY), // older than 30 days
       customerId: 'c1', guestName: null, guestPhone: null,
@@ -268,7 +268,7 @@ describe('OrderOthersService', () => {
     const device = out.sections.device;
     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     const prisma2 = makePrisma();
-    prisma2.order.findUnique.mockResolvedValue({
+    prisma2.order.findFirst.mockResolvedValue({
       id: 'o1', displayId: 'ORD-1', createdAt: new Date(), customerId: null,
       guestName: null, guestPhone: null, customerEmail: null, customerPhone: null,
       customerFirstName: null, customerLastName: null, customerCity: null,

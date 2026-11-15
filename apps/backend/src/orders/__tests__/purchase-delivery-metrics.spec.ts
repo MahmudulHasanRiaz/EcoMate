@@ -45,16 +45,16 @@ const ORDER = {
 
 function makePrisma(over: { dispatches?: any[]; events?: any[]; deadOutbox?: number } = {}) {
   return {
-    order: { findUnique: jest.fn().mockResolvedValue(ORDER), findFirst: jest.fn().mockResolvedValue(null) },
+    order: { findFirst: jest.fn().mockResolvedValue(ORDER), findFirst: jest.fn().mockResolvedValue(null) },
     trackingSnapshot: {
       findMany: jest.fn().mockResolvedValue([SNAPSHOT]),
-      findUnique: jest.fn().mockResolvedValue(SNAPSHOT),
+      findFirst: jest.fn().mockResolvedValue(SNAPSHOT),
     },
     trackingDispatch: { findMany: jest.fn().mockResolvedValue(over.dispatches ?? []) },
     trackingDispatchEvent: { findMany: jest.fn().mockResolvedValue(over.events ?? []) },
     trackingOutbox: { count: jest.fn().mockResolvedValue(over.deadOutbox ?? 0) },
-    customerProfile: { findUnique: jest.fn().mockResolvedValue(null) },
-    orderAttribution: { findUnique: jest.fn().mockResolvedValue(null) },
+    customerProfile: { findFirst: jest.fn().mockResolvedValue(null) },
+    orderAttribution: { findFirst: jest.fn().mockResolvedValue(null) },
   } as any;
 }
 
@@ -159,7 +159,7 @@ describe('Purchase delivery metrics', () => {
       events: [],
     });
     // Force the order to look older than the 30-day transition-log horizon.
-    (svc as any).prisma.order.findUnique.mockResolvedValue({
+    (svc as any).prisma.order.findFirst.mockResolvedValue({
       ...ORDER,
       createdAt: new Date(Date.now() - 60 * 86_400_000),
     });

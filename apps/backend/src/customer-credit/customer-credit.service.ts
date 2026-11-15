@@ -124,7 +124,7 @@ export class CustomerCreditService {
       throw new BadRequestException('Credit amount must be a positive number');
     }
     const result = await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId } });
+      const order = await tx.order.findFirst({ where: { id: orderId } });
       if (!order) throw new NotFoundException('Order not found');
       const customerId = (order as any).customerId;
       if (!customerId) {

@@ -51,7 +51,7 @@ export class PayrollService {
   }
 
   async setSalaryStructure(dto: SetSalaryStructureDto, actorId?: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: dto.employeeId },
     });
     if (!employee)
@@ -165,7 +165,7 @@ export class PayrollService {
     if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime()))
       throw new BadRequestException('A payslip period is required');
 
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId },
     });
     if (!employee)
@@ -430,7 +430,7 @@ export class PayrollService {
         });
       }
 
-      return tx.payslip.findUnique({
+      return tx.payslip.findFirst({
         where: { id: payslip.id },
         include: { items: true, employee: true },
       });
@@ -531,7 +531,7 @@ export class PayrollService {
   }
 
   async findPayslip(id: string) {
-    const payslip = await this.prisma.payslip.findUnique({
+    const payslip = await this.prisma.payslip.findFirst({
       where: { id },
       include: { items: true, employee: true },
     });
@@ -541,7 +541,7 @@ export class PayrollService {
   }
 
   async approvePayslip(id: string) {
-    const payslip = await this.prisma.payslip.findUnique({ where: { id } });
+    const payslip = await this.prisma.payslip.findFirst({ where: { id } });
     if (!payslip)
       throw new NotFoundException(`Payslip with ID ${id} not found`);
 
@@ -597,7 +597,7 @@ export class PayrollService {
     status: 'reviewed' | 'approved' | 'cancelled',
     actorId?: string,
   ) {
-    const payslip = await this.prisma.payslip.findUnique({ where: { id } });
+    const payslip = await this.prisma.payslip.findFirst({ where: { id } });
     if (!payslip)
       throw new NotFoundException(`Payslip with ID ${id} not found`);
 
@@ -684,7 +684,7 @@ export class PayrollService {
   }
 
   async getSalaryStructureHistory(employeeId: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId },
       select: { id: true },
     });
@@ -698,7 +698,7 @@ export class PayrollService {
   }
 
   async getSummary(employeeId: string) {
-    const employee = await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId },
     });
     if (!employee)

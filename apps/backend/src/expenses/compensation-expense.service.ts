@@ -96,13 +96,8 @@ export class CompensationExpenseService {
   ): Promise<void> {
     const db = tx ?? this.prisma;
 
-    const original = await db.expense.findUnique({
-      where: {
-        sourceType_sourceId: {
-          sourceType: input.sourceType,
-          sourceId: input.sourceId,
-        },
-      },
+    const original = await db.expense.findFirst({
+      where: { sourceType: input.sourceType, sourceId: input.sourceId },
       select: { id: true, amount: true },
     });
     // Nothing was posted (e.g. payslip cancelled before any finalisation) —
@@ -132,7 +127,7 @@ export class CompensationExpenseService {
     slug: CompensationCategorySlug,
     db: Prisma.TransactionClient | PrismaService,
   ): Promise<string> {
-    const existing = await db.expenseCategory.findUnique({
+    const existing = await db.expenseCategory.findFirst({
       where: { slug },
       select: { id: true },
     });
@@ -158,7 +153,7 @@ export class CompensationExpenseService {
       return created.id;
     } catch (err) {
       if (isUniqueViolation(err)) {
-        const raced = await db.expenseCategory.findUnique({
+        const raced = await db.expenseCategory.findFirst({
           where: { slug },
           select: { id: true },
         });

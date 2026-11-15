@@ -25,7 +25,7 @@ export class SuppliersService {
   ) {}
 
   async create(createSupplierDto: CreateSupplierDto) {
-    const existing = await this.prisma.supplier.findUnique({
+    const existing = await this.prisma.supplier.findFirst({
       where: { slug: createSupplierDto.slug },
     });
 
@@ -69,7 +69,7 @@ export class SuppliersService {
   }
 
   async findOne(id: string) {
-    const supplier = await this.prisma.supplier.findUnique({
+    const supplier = await this.prisma.supplier.findFirst({
       where: { id },
       include: {
         _count: {
@@ -93,7 +93,7 @@ export class SuppliersService {
   }
 
   async createPayment(supplierId: string, dto: CreatePaymentDto) {
-    const supplier = await this.prisma.supplier.findUnique({
+    const supplier = await this.prisma.supplier.findFirst({
       where: { id: supplierId },
     });
 
@@ -171,7 +171,7 @@ export class SuppliersService {
   }
 
   async getPayments(supplierId: string, page: number, perPage: number) {
-    const supplier = await this.prisma.supplier.findUnique({
+    const supplier = await this.prisma.supplier.findFirst({
       where: { id: supplierId },
     });
 
@@ -206,7 +206,7 @@ export class SuppliersService {
   }
 
   async getPayment(paymentId: string) {
-    const payment = await this.prisma.supplierPayment.findUnique({
+    const payment = await this.prisma.supplierPayment.findFirst({
       where: { id: paymentId },
       include: {
         invoices: true,
@@ -231,7 +231,7 @@ export class SuppliersService {
     await this.findOne(id);
 
     if (updateSupplierDto.slug) {
-      const existing = await this.prisma.supplier.findUnique({
+      const existing = await this.prisma.supplier.findFirst({
         where: { slug: updateSupplierDto.slug },
       });
       if (existing && existing.id !== id) {

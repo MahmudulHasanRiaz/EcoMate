@@ -12,7 +12,7 @@ export class BrandsService {
   constructor(private prisma: PrismaService) {}
 
   async create(createBrandDto: CreateBrandDto) {
-    const existing = await this.prisma.brand.findUnique({
+    const existing = await this.prisma.brand.findFirst({
       where: { slug: createBrandDto.slug },
     });
 
@@ -38,7 +38,7 @@ export class BrandsService {
   }
 
   async findOne(id: string) {
-    const brand = await this.prisma.brand.findUnique({
+    const brand = await this.prisma.brand.findFirst({
       where: { id },
       include: {
         _count: {
@@ -58,7 +58,7 @@ export class BrandsService {
     await this.findOne(id);
 
     if (updateBrandDto.slug) {
-      const existing = await this.prisma.brand.findUnique({
+      const existing = await this.prisma.brand.findFirst({
         where: { slug: updateBrandDto.slug },
       });
       if (existing && existing.id !== id) {

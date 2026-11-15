@@ -21,7 +21,7 @@ export class StockRouterService {
   constructor(private readonly prisma: PrismaService) {}
 
   async isInventoryManagementEnabled(): Promise<boolean> {
-    const setting = await this.prisma.systemSetting.findUnique({
+    const setting = await this.prisma.systemSetting.findFirst({
       where: { key: 'inventory_enabled' },
     });
     return setting?.value === 'true';

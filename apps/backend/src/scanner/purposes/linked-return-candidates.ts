@@ -125,7 +125,7 @@ export async function loadLinkedReturnCandidates(
     }),
     // Coverage denominator: Σ ordered quantities — ONE query, self-contained
     // (dispatch-scan outcomes can have a null order preview).
-    prisma.order.findUnique({
+    prisma.order.findFirst({
       where: { id: orderId },
       select: {
         displayId: true,
@@ -297,7 +297,7 @@ export async function loadReturnCandidatesForScannedOrder(
   prisma: PrismaService,
   scannedOrderId: string,
 ): Promise<ScannedOrderReturnCandidates> {
-  const scanned = (await prisma.order.findUnique({
+  const scanned = (await prisma.order.findFirst({
     where: { id: scannedOrderId },
     select: {
       id: true,
@@ -328,7 +328,7 @@ export async function loadReturnCandidatesForScannedOrder(
     };
   }
   const [parent, parentCandidates] = await Promise.all([
-    prisma.order.findUnique({
+    prisma.order.findFirst({
       where: { id: parentOrderId },
       select: { displayId: true },
     }) as Promise<any>,

@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Optional, NotFoundException } from '@nestjs/common';
 import { CourierManagerService } from './courier-manager.service';
 import { CourierTrackingService } from './courier-tracking.service';
@@ -114,7 +115,7 @@ export class CourierManagerController {
    */
   @Get('credentials/:courier/reveal')
   async revealCredentials(@Param('courier') courier: string) {
-    const row = await this.prisma.courierCredentials.findUnique({
+    const row = await this.prisma.courierCredentials.findFirst({
       where: { courier },
     });
     if (!row) {
@@ -140,7 +141,7 @@ export class CourierManagerController {
 
   @Get('default-note')
   async getDefaultNote() {
-    const setting = await this.prisma.systemSetting.findUnique({
+    const setting = await this.prisma.systemSetting.findFirst({
       where: { key: 'default_office_note' },
     });
     return { note: setting?.value || '' };
@@ -149,7 +150,7 @@ export class CourierManagerController {
   @Put('default-note')
   async setDefaultNote(@Body() dto: { note: string }) {
     await this.prisma.systemSetting.upsert({
-      where: { key: 'default_office_note' },
+      where: { tenantId_key: tenantCompound({  key: 'default_office_note'  }) },
       create: { key: 'default_office_note', value: dto.note || '' },
       update: { value: dto.note || '' },
     });
@@ -176,7 +177,7 @@ export class CourierManagerController {
     // wipe a stored secret — only a non-empty value overwrites it. (There
     // is deliberately no way to clear a single secret through this route;
     // use a direct DB edit for that rare case.)
-    const existing = await this.prisma.courierCredentials.findUnique({
+    const existing = await this.prisma.courierCredentials.findFirst({
       where: { courier },
     });
     const secret = (field: string): string | undefined => {
@@ -211,7 +212,7 @@ export class CourierManagerController {
       credentials: credsValue,
     };
     const saved = await this.prisma.courierCredentials.upsert({
-      where: { courier },
+      where: { tenantId_courier: tenantCompound({  courier  }) },
       create: { courier, ...data },
       update: data,
     });
@@ -234,7 +235,7 @@ export class CourierManagerController {
   ): Promise<{ courier: string; enabled: boolean }> {
     // Missing row (P2025) is mapped to 404 by GlobalExceptionFilter.
     return this.prisma.courierCredentials.update({
-      where: { courier },
+      where: { tenantId_courier: tenantCompound({  courier  }) },
       data: { enabled: dto.enabled },
       select: { courier: true, enabled: true },
     });
@@ -244,7 +245,7 @@ export class CourierManagerController {
   async generateWebhookSecret(@Param('courier') courier: string) {
     const secret = randomBytes(32).toString('hex');
     await this.prisma.courierCredentials.update({
-      where: { courier },
+      where: { tenantId_courier: tenantCompound({  courier  }) },
       data: { webhookSecret: secret },
     });
     return { webhookSecret: secret };

@@ -36,9 +36,9 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
     getHealthScore: jest.fn(),
   };
   const prisma = {
-    trackingSnapshot: { findUnique: jest.fn() },
+    trackingSnapshot: { findFirst: jest.fn() },
     trackingDispatchEvent: { findMany: jest.fn() },
-    trackingOutbox: { findUnique: jest.fn() },
+    trackingOutbox: { findFirst: jest.fn() },
   };
   let controller: MonitoringController;
 
@@ -277,7 +277,7 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
 
   describe('GET /tracking/admin/monitoring/timeline', () => {
     it('returns the dispatch-event rows plus snapshot eventType and outbox status', async () => {
-      prisma.trackingSnapshot.findUnique.mockResolvedValue({
+      prisma.trackingSnapshot.findFirst.mockResolvedValue({
         id: 'snap-1',
         eventType: 'Purchase',
       });
@@ -302,14 +302,14 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
         },
       ];
       prisma.trackingDispatchEvent.findMany.mockResolvedValue(rows);
-      prisma.trackingOutbox.findUnique.mockResolvedValue({ status: 'SENT' });
+      prisma.trackingOutbox.findFirst.mockResolvedValue({ status: 'SENT' });
 
       const result = await controller.timeline('purchase_1');
 
       expect(result.eventType).toBe('Purchase');
       expect(result.status).toBe('SENT');
       expect(result.events).toEqual(rows);
-      expect(prisma.trackingSnapshot.findUnique).toHaveBeenCalledWith({
+      expect(prisma.trackingSnapshot.findFirst).toHaveBeenCalledWith({
         where: { eventId: 'purchase_1' },
         select: { id: true, eventType: true },
       });
@@ -317,14 +317,14 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
         where: { eventId: 'purchase_1' },
         orderBy: { createdAt: 'asc' },
       });
-      expect(prisma.trackingOutbox.findUnique).toHaveBeenCalledWith({
+      expect(prisma.trackingOutbox.findFirst).toHaveBeenCalledWith({
         where: { snapshotId: 'snap-1' },
         select: { status: true },
       });
     });
 
     it('returns empty events and null status for an eventId with no snapshot', async () => {
-      prisma.trackingSnapshot.findUnique.mockResolvedValue(null);
+      prisma.trackingSnapshot.findFirst.mockResolvedValue(null);
       prisma.trackingDispatchEvent.findMany.mockResolvedValue([]);
 
       await expect(controller.timeline('ghost_1')).resolves.toEqual({
@@ -332,7 +332,7 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
         status: null,
         events: [],
       });
-      expect(prisma.trackingOutbox.findUnique).not.toHaveBeenCalled();
+      expect(prisma.trackingOutbox.findFirst).not.toHaveBeenCalled();
     });
 
     it('rejects with 400 when eventId is missing', async () => {

@@ -52,7 +52,7 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
       orderStatus: { findMany: async () => [{ id: 'st-shipping', name: 'Shipping' }] },
       order: {
         findFirst: async () => (order ? { ...order, dispatches: [] } : null),
-        findUnique: async ({ where }: any) =>
+        findFirst: async ({ where }: any) =>
           order && where.id === order.id ? order : null,
         findMany: async () => opts.exchanges ?? [],
         update: jest.fn(),
@@ -68,7 +68,7 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
       dispatch: { findMany: async () => [] },
       return: {
         findMany: async () => opts.returns ?? [],
-        findUnique: async ({ where }: any) =>
+        findFirst: async ({ where }: any) =>
           (opts.returns ?? []).find((r: any) => r.id === where.id) ?? null,
       },
     };
@@ -246,7 +246,7 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
     await build({
       exchanges: [{ id: 'ex-1', displayId: 'EX-260930-0001', status: { name: 'Confirmed' } }],
     });
-    (prisma.order.findUnique as any) = async ({ where }: any) =>
+    (prisma.order.findFirst as any) = async ({ where }: any) =>
       where.id === 'ex-1'
         ? { id: 'ex-1', displayId: 'EX-260930-0001', exchangeOfOrderId: 'order-1' }
         : saleOrder();

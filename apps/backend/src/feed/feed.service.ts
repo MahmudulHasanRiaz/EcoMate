@@ -38,7 +38,7 @@ export class FeedService {
   }
 
   private async getStoreName(): Promise<string> {
-    const s = await this.prisma.systemSetting.findUnique({
+    const s = await this.prisma.systemSetting.findFirst({
       where: { key: 'store_name' },
     });
     return s?.value || '';
@@ -595,7 +595,7 @@ export class FeedService {
     totalItems: number;
     items: any[];
   }> {
-    const config = await this.prisma.productFeedConfig.findUnique({
+    const config = await this.prisma.productFeedConfig.findFirst({
       where: { id },
     });
     if (!config) throw new NotFoundException('Feed config not found');

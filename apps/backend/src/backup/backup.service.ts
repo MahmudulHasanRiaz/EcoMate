@@ -1,3 +1,4 @@
+import { tenantCompound } from '../tenancy/tenant-context';
 import {
   BadRequestException,
   ConflictException,
@@ -708,7 +709,7 @@ export class BackupService implements OnModuleInit {
   }
 
   private async runQueuedRestoreOwned(data: QueuedRestoreData): Promise<void> {
-    const current = await this.prisma.backupJob.findUnique({
+    const current = await this.prisma.backupJob.findFirst({
       where: { id: data.backupId },
       select: { status: true, errorMessage: true },
     });
@@ -745,7 +746,7 @@ export class BackupService implements OnModuleInit {
   private async migrateLegacyBackupOwned(
     data: LegacyBackupMigrationData,
   ): Promise<void> {
-    const record = await this.prisma.backupJob.findUnique({
+    const record = await this.prisma.backupJob.findFirst({
       where: { id: data.backupId },
     });
     if (!record) return;
@@ -850,7 +851,7 @@ export class BackupService implements OnModuleInit {
       await this.deleteLegacyArtifactEverywhere(data.legacyKey);
     } catch (error) {
       const current = await this.prisma.backupJob
-        .findUnique({ where: { id: record.id } })
+        .findFirst({ where: { id: record.id } })
         .catch(() => null);
       await this.prisma.backupJob
         .update({
@@ -903,14 +904,14 @@ export class BackupService implements OnModuleInit {
     backupId: string,
     options: { allowDuringRestore?: boolean } = {},
   ): Promise<void> {
-    const record = await this.prisma.backupJob.findUnique({
+    const record = await this.prisma.backupJob.findFirst({
       where: { id: backupId },
     });
     if (!record) throw new Error(`BackupJob ${backupId} not found`);
     if (record.status === 'completed' && record.fileKey) return;
 
     const admission = await this.withLifecycleLock(async (tx) => {
-      const current = await tx.backupJob.findUnique({
+      const current = await tx.backupJob.findFirst({
         where: { id: backupId },
         select: { status: true, fileKey: true },
       });
@@ -1087,7 +1088,7 @@ export class BackupService implements OnModuleInit {
       this.logger.error(`Backup ${backupId} failed: ${message}`);
       if (publishedStorageKey) {
         const current = await this.prisma.backupJob
-          .findUnique({
+          .findFirst({
             where: { id: backupId },
             select: { fileKey: true },
           })
@@ -1419,7 +1420,7 @@ export class BackupService implements OnModuleInit {
     manual = false,
   ): Promise<boolean> {
     const reservation = await this.withLifecycleLock(async (tx) => {
-      const job = await tx.backupJob.findUnique({ where: { id } });
+      const job = await tx.backupJob.findFirst({ where: { id } });
       if (!job) return null;
       if (job.locked) {
         if (manual) {
@@ -1511,7 +1512,7 @@ export class BackupService implements OnModuleInit {
   }
 
   async getBackup(id: string) {
-    const job = await this.prisma.backupJob.findUnique({ where: { id } });
+    const job = await this.prisma.backupJob.findFirst({ where: { id } });
     if (!job) throw new NotFoundException('Backup not found');
     return job;
   }
@@ -2240,7 +2241,7 @@ export class BackupService implements OnModuleInit {
 
     const safety = await this.createBackupJob('db_files', 'safety');
     await this.runBackupPipeline(safety.id, { allowDuringRestore: true });
-    return this.prisma.backupJob.findUnique({ where: { id: safety.id } });
+    return this.prisma.backupJob.findFirst({ where: { id: safety.id } });
   }
 
   private async runRestorePipeline(
@@ -2263,7 +2264,7 @@ export class BackupService implements OnModuleInit {
     let postRestoreReady = false;
     const sourceSnapshot =
       options.sourceSnapshot ||
-      (await this.prisma.backupJob.findUnique({ where: { id: backupId } }));
+      (await this.prisma.backupJob.findFirst({ where: { id: backupId } }));
     if (!sourceSnapshot) throw new Error('Restore source record not found');
 
     try {
@@ -3280,7 +3281,7 @@ export class BackupService implements OnModuleInit {
 
   async toggleLock(id: string, locked: boolean): Promise<void> {
     await this.withLifecycleLock(async (tx) => {
-      const job = await tx.backupJob.findUnique({ where: { id } });
+      const job = await tx.backupJob.findFirst({ where: { id } });
       if (!job) throw new NotFoundException('Backup not found');
       if (
         ['pending', 'running', 'restoring', 'deleting'].includes(job.status)
@@ -3301,7 +3302,7 @@ export class BackupService implements OnModuleInit {
   }
 
   async getSetting(key: string, defaultValue?: string): Promise<string | null> {
-    const row = await this.prisma.systemSetting.findUnique({ where: { key } });
+    const row = await this.prisma.systemSetting.findFirst({ where: { key } });
     return row?.value ?? defaultValue ?? null;
   }
 
@@ -3364,7 +3365,7 @@ export class BackupService implements OnModuleInit {
     for (const [key, value] of Object.entries(normalizedBody)) {
       if (!key.startsWith('backup_')) continue;
       await this.prisma.systemSetting.upsert({
-        where: { key },
+        where: { tenantId_key: tenantCompound({  key  }) },
         create: { key, value: String(value) },
         update: { value: String(value) },
       });
@@ -3501,7 +3502,7 @@ export class BackupService implements OnModuleInit {
           (job) => (job.data as { backupId?: string }).backupId === record.id,
         );
         if (freshQueueOwner) return;
-        const current = await tx.backupJob.findUnique({
+        const current = await tx.backupJob.findFirst({
           where: { id: record.id },
         });
         if (

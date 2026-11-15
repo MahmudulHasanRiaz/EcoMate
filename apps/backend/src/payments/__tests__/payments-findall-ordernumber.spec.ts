@@ -12,7 +12,7 @@ describe('PaymentsService.findAll — orderNumber (D-B)', () => {
   let service: PaymentsService;
   const mockPrisma: any = {
     payment: { findMany: jest.fn(), count: jest.fn() },
-    order: { findUnique: jest.fn() },
+    order: { findFirst: jest.fn() },
   };
 
   beforeEach(async () => {
@@ -27,7 +27,7 @@ describe('PaymentsService.findAll — orderNumber (D-B)', () => {
   });
 
   it('resolves orderNumber (displayId) to the order rows', async () => {
-    mockPrisma.order.findUnique.mockResolvedValue({ id: 'order-1' });
+    mockPrisma.order.findFirst.mockResolvedValue({ id: 'order-1' });
     mockPrisma.payment.findMany.mockResolvedValue([
       { id: 'pay-1', orderId: 'order-1' },
     ]);
@@ -35,7 +35,7 @@ describe('PaymentsService.findAll — orderNumber (D-B)', () => {
 
     const result = await service.findAll({ orderNumber: 'ORD-001' });
 
-    expect(mockPrisma.order.findUnique).toHaveBeenCalledWith(
+    expect(mockPrisma.order.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { displayId: 'ORD-001' } }),
     );
     expect(mockPrisma.payment.findMany).toHaveBeenCalledWith(
@@ -47,7 +47,7 @@ describe('PaymentsService.findAll — orderNumber (D-B)', () => {
   });
 
   it('404s on an unknown orderNumber without touching the ledger', async () => {
-    mockPrisma.order.findUnique.mockResolvedValue(null);
+    mockPrisma.order.findFirst.mockResolvedValue(null);
 
     await expect(service.findAll({ orderNumber: 'ORD-NOPE' })).rejects.toThrow(
       NotFoundException,
@@ -61,7 +61,7 @@ describe('PaymentsService.findAll — orderNumber (D-B)', () => {
 
     await service.findAll({ orderId: 'order-9' });
 
-    expect(mockPrisma.order.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.order.findFirst).not.toHaveBeenCalled();
     expect(mockPrisma.payment.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ orderId: 'order-9' }),

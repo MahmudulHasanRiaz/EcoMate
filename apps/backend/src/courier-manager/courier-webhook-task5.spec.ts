@@ -54,11 +54,11 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
-        findUnique: jest.fn().mockResolvedValue(order),
+        findFirst: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
       orderStatus: {
-        findUnique: jest.fn().mockImplementation(({ where }: any) => {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.name === 'Partial') return Promise.resolve(partialStatus);
           if (where?.name === 'Return Pending') return Promise.resolve(returnPendingStatus);
           if (where?.name === 'Delivered') return Promise.resolve(deliveredStatus);

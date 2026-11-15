@@ -36,7 +36,7 @@ describe('CmsPagesService', () => {
           provide: PrismaService,
           useValue: {
             cmsPage: {
-              findUnique: jest.fn().mockResolvedValue(null),
+              findFirst: jest.fn().mockResolvedValue(null),
               findMany: jest.fn().mockResolvedValue([]),
               create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'x', ...data })),
               update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'x', ...data })),
@@ -73,7 +73,7 @@ describe('CmsPagesService', () => {
     });
 
     it('is idempotent — skips pages that already exist', async () => {
-      (prisma.cmsPage.findUnique as jest.Mock).mockImplementation(({ where }: any) =>
+      (prisma.cmsPage.findFirst as jest.Mock).mockImplementation(({ where }: any) =>
         Promise.resolve(where?.slug === 'careers' ? { id: 'existing', slug: 'careers' } : null),
       );
       await service.ensureTemplatePages();
@@ -122,7 +122,7 @@ describe('CmsPagesService', () => {
 
   describe('findBySlug', () => {
     it('throws 404 for an inactive page', async () => {
-      (prisma.cmsPage.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.cmsPage.findFirst as jest.Mock).mockResolvedValue({
         id: 'x',
         slug: 'privacy-policy',
         isActive: false,
@@ -134,7 +134,7 @@ describe('CmsPagesService', () => {
 
     it('returns an active page', async () => {
       const page = { id: 'x', slug: 'faq', isActive: true, config: {} };
-      (prisma.cmsPage.findUnique as jest.Mock).mockResolvedValue(page);
+      (prisma.cmsPage.findFirst as jest.Mock).mockResolvedValue(page);
       await expect(service.findBySlug('faq')).resolves.toEqual(page);
     });
 
@@ -145,7 +145,7 @@ describe('CmsPagesService', () => {
         isActive: true,
         content: '<p>Hi</p><img src="/uploads/banner.jpg" alt="Banner">',
       };
-      (prisma.cmsPage.findUnique as jest.Mock).mockResolvedValue(page);
+      (prisma.cmsPage.findFirst as jest.Mock).mockResolvedValue(page);
       const resolver = (service as any).mediaResolver as MediaResolverService;
       (resolver.resolve as jest.Mock).mockResolvedValue({
         '/uploads/banner.jpg': {
@@ -174,7 +174,7 @@ describe('CmsPagesService', () => {
         content: '<p>Hi</p>',
         config: { image: '/uploads/hero.png', hero: { image: '/uploads/hero2.png' }, title: 'About' },
       };
-      (prisma.cmsPage.findUnique as jest.Mock).mockResolvedValue(page);
+      (prisma.cmsPage.findFirst as jest.Mock).mockResolvedValue(page);
       const resolver = (service as any).mediaResolver as MediaResolverService;
       (resolver.resolve as jest.Mock).mockResolvedValue({
         '/uploads/hero.png': {
@@ -201,7 +201,7 @@ describe('CmsPagesService', () => {
         isActive: true,
         content: '<img src="/uploads/banner.jpg">',
       };
-      (prisma.cmsPage.findUnique as jest.Mock).mockResolvedValue(page);
+      (prisma.cmsPage.findFirst as jest.Mock).mockResolvedValue(page);
       const result: any = await service.findBySlug('about');
       expect(result.content).toBe(page.content);
     });

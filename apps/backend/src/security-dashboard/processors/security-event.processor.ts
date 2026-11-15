@@ -58,7 +58,7 @@ export class SecurityEventProcessor extends WorkerHost {
       // Fast-path retry check: a retry after a committed run must not touch
       // the aggregates again. (Inside the transaction the create would abort
       // the whole tx on P2002, which is the race safety net below.)
-      const alreadyProcessed = await this.prisma.securityEvent.findUnique({
+      const alreadyProcessed = await this.prisma.securityEvent.findFirst({
         where: { dedupKey: data.dedupKey },
         select: { id: true },
       });
