@@ -180,3 +180,5 @@ Phase 2D is merged into `feat/saas-multitenant` at `26806f22`:
 - `PrismaService` is a request-scoped proxy over `TenantPrismaManager`; TenantMiddleware/TenantGuard, per-tenant Better Auth, RLS coverage startup gate and the transitional FeatureFlags provider are wired. Dev has a default-tenant fallback; production fails closed without a resolved tenant. Two-tenant runtime isolation is proven with a non-superuser DB role.
 - Legacy license module removed from this branch; seed/scripts excluded from `nest build` pending tenant bootstrap.
 Phase 3 entitlements are in progress: the platform registry now feeds tenant plan snapshots; `TenantEntitlementsService` + the `FeatureFlagsService` compatibility provider are wired. See `docs/saas/phase-2d-wip-report.md`.
+
+Phase 3 remaining work: see `docs/saas/phase-3-handoff.md`.
