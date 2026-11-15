@@ -123,7 +123,8 @@ Converted end to end (producer + processor):
   `TenantWorkerHost`, and the aggregate dimension uses the tenant UUID; the formerly
   consumer-less `security-aggregate` queue now has a per-tenant consumer. Security
   retention cleanup is per tenant and the dashboard retention-policy write no longer
-  hardcodes `default`.
+  hardcodes `default`;
+- `import` — the stub job now carries `tenantId` and runs in `TenantWorkerHost`.
 
 Converted interval sweeps (per-tenant, failure-isolated via `runPerTenant`):
 
@@ -138,10 +139,24 @@ remaining queues and interval sweeps.
 
 ## Remaining work before merge
 
-1. **Remaining queue conversions** — the import stub and the platform-level backup
-   queue. The import stub has no Prisma work yet; backup is intentionally global.
+1. **Platform backup queue** — intentionally global (no tenant envelope); every
+   tenant-facing queue is now tenant-aware.
 2. **Per-tenant marketing sync interval** — the repeatable job now fans out per
    tenant, but its cadence is still read from the default tenant's setting.
+
+## Merge readiness
+
+- `nest build`: 0 errors.
+- Backend suite: **6175 passed, 0 failed, 10 skipped** on a clean migrated DB with
+  the non-superuser RLS role.
+- RLS coverage: 200 tenant tables, 0 gaps; two-tenant runtime isolation passed.
+- Runtime: proxy + middleware/guard + Better Auth + registry host resolution smoke
+  passed; production mode fails closed for unknown hosts.
+- Tenant-facing queues and interval sweeps are converted; the platform backup queue
+  remains intentionally global. The only open configuration item is the per-tenant
+  marketing cadence + production deployment env/DNS.
+
+Ready to merge into `feat/saas-multitenant` on approval.
 3. Wire the registry feed into the production deployment (`PLATFORM_API_URL` +
    `INTERNAL_SERVICE_SECRET`) and add custom-domain DNS/verification coverage; the
    endpoint/refresh contract itself is verified.
