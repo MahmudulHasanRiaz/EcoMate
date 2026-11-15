@@ -24,6 +24,15 @@ describe('TenantRegistrySyncService', () => {
             slug: 'acme',
             status: 'ACTIVE',
             hosts: ['acme.ecomate.bd', 'shop.example.com'],
+            subscription: {
+              status: 'ACTIVE',
+              currentPeriodEnd: '2027-01-01T00:00:00.000Z',
+            },
+            plan: {
+              name: 'Growth',
+              features: ['admin_products', 'admin_orders'],
+              limits: { products: 100 },
+            },
           },
         ],
       }),
@@ -43,6 +52,13 @@ describe('TenantRegistrySyncService', () => {
     );
     expect(registry.resolveBySlug('acme')?.id).toBe('tenant-1');
     expect(registry.resolveByHost('shop.example.com')?.slug).toBe('acme');
+    expect(registry.resolveBySlug('acme')).toMatchObject({
+      features: ['admin_products', 'admin_orders'],
+      limits: { products: 100 },
+      planName: 'Growth',
+      subscriptionStatus: 'ACTIVE',
+      currentPeriodEnd: '2027-01-01T00:00:00.000Z',
+    });
     expect(service.getStatus()).toMatchObject({
       tenants: 1,
       lastError: null,

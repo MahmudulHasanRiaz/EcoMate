@@ -163,3 +163,27 @@ remaining queues and interval sweeps.
 4. Merge the swap branch into `feat/saas-multitenant`; then Phase 3 (entitlements/license removal).
 
 > The stable `feat/saas-multitenant` branch (Phase 0–2C, green build + 26/20 unit suites) is unchanged. This branch is the working swap; it should stay separate until the test suite and runtime are green.
+
+
+---
+
+## Phase 3 — entitlements (first slice)
+
+- The platform registry payload now carries each tenant's `plan.features`,
+  `plan.limits`, plan name and subscription dates; `TenantRegistrySyncService`
+  maps them into `TenantRegistryRecord`.
+- `TenantEntitlementsService` reads the current tenant snapshot:
+  - `canUse` / `getActiveFeatures` / `getLimits` / `getPlanName`;
+  - access state (`full` / `grace` / `read_only` / `suspended`) from tenant and
+    subscription status + grace window;
+  - dev/test wildcard when no snapshot exists; **production fails closed**.
+- `TenantFeatureFlagsService` is provided under the package `FeatureFlagsService`
+  token, so every existing `@RequiresFeature` route/service now checks plan
+  entitlements without touching the old license engine.
+- Verification: entitlement/registry tests 8/8; full suite **6180 passed, 0 failed,
+  10 skipped**; runtime boot with a two-tenant registry showed `RLS coverage 200/3`
+  and the FeatureFlags alias resolved.
+
+Remaining Phase 3 work: subscription/write guard enforcement, admin/storefront
+entitlement endpoints + UI, `@RequiresLimit`/usage counters, and deletion of the
+remaining `@ecomate/license-engine` / license env references.

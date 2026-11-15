@@ -16,6 +16,18 @@ export interface PlatformRegistryResponse {
     slug: string;
     status: string;
     hosts?: string[];
+    trialEndsAt?: string | null;
+    graceEndsAt?: string | null;
+    subscription?: {
+      status?: string;
+      trialEndsAt?: string | null;
+      currentPeriodEnd?: string | null;
+    } | null;
+    plan?: {
+      name?: string;
+      features?: unknown;
+      limits?: unknown;
+    } | null;
   }>;
 }
 
@@ -75,12 +87,40 @@ export class TenantRegistrySyncService
 
       const payload = (await response.json()) as PlatformRegistryResponse;
       const records: TenantRegistryRecord[] = (payload.tenants ?? []).map(
-        (tenant) => ({
-          id: tenant.id,
-          slug: tenant.slug,
-          status: tenant.status,
-          hosts: Array.isArray(tenant.hosts) ? tenant.hosts : [],
-        }),
+        (tenant) => {
+          const features = Array.isArray(tenant.plan?.features)
+            ? tenant.plan.features.filter(
+                (feature): feature is string => typeof feature === 'string',
+              )
+            : undefined;
+          const limits =
+            tenant.plan?.limits &&
+            typeof tenant.plan.limits === 'object' &&
+            !Array.isArray(tenant.plan.limits)
+              ? (tenant.plan.limits as Record<string, unknown>)
+              : undefined;
+
+          return {
+            id: tenant.id,
+            slug: tenant.slug,
+            status: tenant.status,
+            hosts: Array.isArray(tenant.hosts) ? tenant.hosts : [],
+            features,
+            limits,
+            planName: tenant.plan?.name,
+            subscriptionStatus: tenant.subscription?.status ?? null,
+            trialEndsAt:
+              tenant.subscription?.trialEndsAt ?? tenant.trialEndsAt ?? null,
+            currentPeriodEnd:
+              tenant.subscription?.currentPeriodEnd ?? null,
+            graceEndsAt: tenant.graceEndsAt ?? null,
+            validUntil:
+              tenant.subscription?.currentPeriodEnd ??
+              tenant.trialEndsAt ??
+              tenant.graceEndsAt ??
+              null,
+          };
+        },
       );
 
       this.registry.replace(records);

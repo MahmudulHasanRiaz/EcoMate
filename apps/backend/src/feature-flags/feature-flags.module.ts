@@ -1,25 +1,21 @@
-import { Global, Module, OnModuleInit } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
+import { TenantFeatureFlagsService } from './tenant-feature-flags.service';
 
 /**
- * Transitional feature-flag host until plan entitlements replace the legacy
- * license service. Dev/test opens the catalog; production stays closed by
- * default so a missing entitlement can never silently unlock a feature.
+ * Phase 3 bridge: existing services/controllers still inject the package
+ * FeatureFlagsService token, but the implementation is now backed by the
+ * tenant's platform entitlement snapshot rather than a license server.
  */
 @Global()
 @Module({
-  providers: [FeatureFlagsService],
-  exports: [FeatureFlagsService],
+  providers: [
+    TenantFeatureFlagsService,
+    {
+      provide: FeatureFlagsService,
+      useExisting: TenantFeatureFlagsService,
+    },
+  ],
+  exports: [FeatureFlagsService, TenantFeatureFlagsService],
 })
-export class FeatureFlagsModule implements OnModuleInit {
-  constructor(private readonly flags: FeatureFlagsService) {}
-
-  onModuleInit(): void {
-    if (
-      process.env.SKIP_LICENSE_CHECK === 'true' ||
-      process.env.NODE_ENV !== 'production'
-    ) {
-      this.flags.setLicense(['*']);
-    }
-  }
-}
+export class FeatureFlagsModule {}

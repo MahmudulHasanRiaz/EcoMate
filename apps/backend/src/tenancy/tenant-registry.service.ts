@@ -6,6 +6,14 @@ export interface TenantRegistryRecord {
   slug: string;
   status: string;
   hosts: string[];
+  features?: string[];
+  limits?: Record<string, unknown>;
+  planName?: string;
+  subscriptionStatus?: string | null;
+  trialEndsAt?: string | null;
+  currentPeriodEnd?: string | null;
+  graceEndsAt?: string | null;
+  validUntil?: string | null;
 }
 
 /**
