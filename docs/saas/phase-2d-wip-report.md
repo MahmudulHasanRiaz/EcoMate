@@ -9,7 +9,7 @@
 - Active backend schema is now the tenant-aware schema (203 models; 200 tenant-scoped; 3 global reference tables).
 - Active migrations are `0001_saas_baseline` + `0002_rls_and_tenant_guards` (legacy migrations removed from this branch; they remain in the old branch/tag).
 - Backend `nest build`: **green (0 TypeScript errors)**.
-- Backend Jest: **6161 passed, 0 failed, 10 skipped** (429 suites; 428 passed, 1 skipped) against a clean migrated tenant database. The 10 skips are intentionally obsolete single-tenant migration-contract specs.
+- Backend Jest: **6169 passed, 0 failed, 10 skipped** (431 suites; 430 passed, 1 skipped) against a clean migrated tenant database using a non-superuser app role (RLS enforced). The 10 skips are intentionally obsolete single-tenant migration-contract specs.
 
 ## Applied changes
 
@@ -52,7 +52,15 @@ The two DB-backed marketing integration suites were migrated to the tenant schem
 - `p0-financial.integration.spec.ts` now uses the tenant-composite `tenantId_code` key for its account upserts.
 - `campaign-deletion-preservation.integration.spec.ts` self-seeds an `OrderStatus` when the fresh tenant DB has none.
 
-**Result: 6161 passed, 0 failed, 10 skipped.** The 10 skipped specs are obsolete single-tenant migration contracts whose migration files no longer exist in the tenant baseline.
+**Result: 6169 passed, 0 failed, 10 skipped.** The 10 skipped specs are obsolete single-tenant migration contracts whose migration files no longer exist in the tenant baseline.
+
+### RLS proof (not superuser-bypassed)
+
+- Test/runtime DB uses the non-superuser role `ecomate_tenant_app`; `postgres` is a superuser and bypasses RLS, so it is never used for isolation tests.
+- `rls_coverage`: **200 tenant tables, 0 gaps, 3 global reference tables**.
+- `RlsCoverageService` runs at boot and refuses to start when any tenant table lacks FORCE RLS, the `tenant_isolation` policy or the `tenant_id_guard` trigger.
+- `tenant-runtime-isolation.spec.ts` creates the same `SystemSetting` key in two random tenants through the real proxy: each tenant sees only its row, and cross-tenant read/delete returns null/0.
+- App-role runtime smoke: health 200, products 200, Better Auth get-session 200; boot log `RLS coverage verified: 200 tenant table(s), 3 global table(s)`.
 
 Runbook: see `docs/saas/tenant-test-db.md`.
 
@@ -79,9 +87,8 @@ Full backend suite re-ran after this wiring: **6161 passed, 0 failed, 10 skipped
 
 ## Remaining work before merge
 
-1. Feed the production tenant registry (`PLATFORM_API_URL` + `INTERNAL_SERVICE_SECRET` / Redis pub-sub) and add a two-tenant runtime isolation test.
+1. Feed the production tenant registry (`PLATFORM_API_URL` + `INTERNAL_SERVICE_SECRET` / Redis pub-sub).
 2. Tenant fan-out for queue workers/interval jobs (currently they use the default-tenant bridge).
-3. Add the RLS coverage startup gate (`rls_coverage` view) and carry it into the deployment check.
-4. Merge the swap branch into `feat/saas-multitenant`; then Phase 3 (entitlements/license removal).
+3. Merge the swap branch into `feat/saas-multitenant`; then Phase 3 (entitlements/license removal).
 
 > The stable `feat/saas-multitenant` branch (Phase 0–2C, green build + 26/20 unit suites) is unchanged. This branch is the working swap; it should stay separate until the test suite and runtime are green.

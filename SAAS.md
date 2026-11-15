@@ -173,8 +173,8 @@ pass; both builds are clean. See `docs/saas/phase-2c-report.md`.
 The active tenant schema/migration swap is on `feat/saas-tenancy-swap`:
 
 - Active schema: 203 models (200 tenant-scoped, 3 global reference); RLS baseline + guards.
-- Backend `nest build`: green; full Jest suite: 6161 passed, 0 failed, 10 skipped against a clean migrated tenant DB.
-- `PrismaService` is a request-scoped proxy over `TenantPrismaManager`; TenantMiddleware/TenantGuard, per-tenant Better Auth and the transitional FeatureFlags provider are wired. Dev has a default-tenant fallback; production fails closed without a resolved tenant.
+- Backend `nest build`: green; full Jest suite: 6169 passed, 0 failed, 10 skipped against a clean migrated tenant DB using a non-superuser RLS role.
+- `PrismaService` is a request-scoped proxy over `TenantPrismaManager`; TenantMiddleware/TenantGuard, per-tenant Better Auth, RLS coverage startup gate and the transitional FeatureFlags provider are wired. Dev has a default-tenant fallback; production fails closed without a resolved tenant. Two-tenant runtime isolation is proven with a non-superuser DB role.
 - Legacy license module removed from this branch; seed/scripts excluded from `nest build` pending tenant bootstrap.
 - **Do not merge this branch yet.** The verified Phase 0–2C branch is `feat/saas-multitenant`.
 
