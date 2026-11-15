@@ -52,3 +52,5 @@ query_*.js
 .license-data/
 apps/platform-api/src/generated/
 apps/platform-api/dist/
+__pycache__/
+*.pyc

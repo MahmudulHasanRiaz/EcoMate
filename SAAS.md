@@ -118,3 +118,19 @@ npm run platform:build
 ```
 
 Current endpoints: `GET /api/health` and `GET /api/public/plans`. Platform auth, tenant CRUD, plan editing and billing are the next Phase 1 increments.
+
+
+## Phase 2A — tenant schema + RLS (staged)
+
+The tenant-aware schema is generated and verified but **not active yet**:
+
+- `apps/backend/prisma/schema.tenant.prisma` — proposed schema (203 models; 200 tenant-scoped; 3 global reference).
+- `apps/backend/prisma/migrations-saas/0001_saas_baseline` — baseline DDL.
+- `apps/backend/prisma/migrations-saas/0002_rls_and_tenant_guards` — 200 RLS policies/triggers + `rls_coverage`.
+- `scripts/saas/analyze_schema.py`, `transform_schema.py`, `generate_rls.py` — repeatable tooling.
+- `scripts/saas/check_rls.sql` — gate query; must return zero rows.
+- `scripts/saas/rls_smoke_test.sql` — two-tenant isolation test.
+
+Verified on a disposable PostgreSQL 16: baseline + RLS apply cleanly, 0 coverage gaps, and the two-tenant read/write/raw-SQL smoke test passes. The active schema is intentionally not swapped until the tenancy runtime and `findUnique`/queue migrations land, so the backend build stays green.
+
+See `docs/saas/phase-2a-report.md` and `docs/saas/schema-transform-report.md`.
