@@ -4,17 +4,23 @@ import { notFound } from 'next/navigation';
 import ComboDetailClient from '@/components/ComboDetailClient';
 import { getStorefrontConfigServer } from '@/lib/api/storefront-config-server';
 import { hasPlanFeature } from '@/lib/api/storefront-config';
+import { serverFetch } from '@/lib/api-server';
 
 // Combo stock is rendered on this page via a revalidate:0 fetch — the page
 // must be fully dynamic or Next.js throws DYNAMIC_SERVER_USAGE at runtime.
 export const dynamic = 'force-dynamic';
 
-const API = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-
 async function getCombo(id: string) {
-  const res = await fetch(`${API}/combos/${id}`, { next: { revalidate: 0 } });
-  if (!res.ok) return null;
-  const data = await res.json();
+  let data: any;
+  try {
+    data = await serverFetch<any>(`/combos/${id}`, { revalidate: 0 });
+  } catch (err) {
+    // serverFetch throws on non-2xx; a missing combo is a notFound, not a
+    // backend failure. Anything else must stay loud.
+    if (String(err).includes('404')) return null;
+    throw err;
+  }
+  if (!data) return null;
   const basePrice = Number(data.basePrice);
   const salePrice = data.salePrice ? Number(data.salePrice) : undefined;
   return {

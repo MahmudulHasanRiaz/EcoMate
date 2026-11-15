@@ -2,14 +2,24 @@ import { Injectable, NestMiddleware } from '@nestjs/common';
 import { runWithTenant } from './tenant-context';
 import { resolveTenantHost } from './tenant-host';
 import { TenantRegistryService } from './tenant-registry.service';
+import { isInternalRequest } from '../common/rate-limit/internal-request';
 
 @Injectable()
 export class TenantMiddleware implements NestMiddleware {
   constructor(private readonly registry: TenantRegistryService) {}
 
   use(req: any, _res: any, next: () => void): void {
-    const rawHost = req.headers?.['x-tenant-host'] ?? req.headers?.host;
-    const host = Array.isArray(rawHost) ? rawHost[0] : rawHost;
+    // Browser apps resolve the tenant from the Host they were served on. The
+    // x-tenant-host override exists only for server-to-server SSR calls whose
+    // API origin differs from the tenant host — it is trusted only when the
+    // request also carries the internal shared secret from a private peer.
+    // Without that check any client could pick another tenant's RLS context
+    // with one header.
+    const forwardedHost = req.headers?.['x-tenant-host'];
+    const hostHeader = isInternalRequest(req)
+      ? forwardedHost ?? req.headers?.host
+      : req.headers?.host;
+    const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
     if (!host) {
       next();
       return;

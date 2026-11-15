@@ -1,4 +1,27 @@
+import { headers } from "next/headers";
+
 const API = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+
+/**
+ * The backend resolves the tenant from the request Host. Server-side fetches
+ * originate from the storefront container (backend:4000), so the tenant host
+ * must be forwarded explicitly. This override is trusted by the backend only
+ * together with the internal shared secret from a private peer — never from a
+ * browser.
+ *
+ * Outside a request scope (build-time static generation, scripts) `headers()`
+ * throws; there is no tenant to forward, so the header is omitted.
+ */
+async function tenantHostHeader(): Promise<Record<string, string>> {
+  try {
+    const requestHeaders = await headers();
+    const host =
+      requestHeaders.get("x-tenant-host") || requestHeaders.get("host");
+    return host ? { "x-tenant-host": host } : {};
+  } catch {
+    return {};
+  }
+}
 
 function isRetryableError(err: unknown): boolean {
   if (err instanceof DOMException && err.name === 'AbortError') return false;
@@ -33,7 +56,7 @@ export async function serverFetch<T = unknown>(
   // the convenience top-level `revalidate`/`tags` and a caller's own
   // `next: { revalidate, tags }` (which previously just rode along in
   // fetchOptions and won by spread order). Explicit top-level values win.
-  const { next: callerNext, ...restFetchOptions } = fetchOptions as RequestInit & {
+  const { next: callerNext, headers: callerHeaders, ...restFetchOptions } = fetchOptions as RequestInit & {
     next?: { revalidate?: number | false; tags?: string[] };
   };
   const nextOptions = {
@@ -43,21 +66,29 @@ export async function serverFetch<T = unknown>(
   };
   const hasNextOptions = Object.keys(nextOptions).length > 0;
 
+  // F2: server-to-server calls identify themselves with the shared internal
+  // secret (server-only env — never NEXT_PUBLIC_, never sent from the
+  // browser). The backend exempts these from rate limiting only when the TCP
+  // peer is also a private address (F1). The tenant host rides the same
+  // trusted channel so RLS resolves the right tenant.
+  const internalSecret = process.env.INTERNAL_SHARED_SECRET;
+  const requestHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(internalSecret ? { "x-internal-secret": internalSecret } : {}),
+    ...(await tenantHostHeader()),
+  };
+  const mergedHeaders = {
+    ...requestHeaders,
+    ...((callerHeaders as Record<string, string> | undefined) ?? {}),
+  };
+
   let lastError: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT);
     try {
-      // F2: server-to-server calls identify themselves with the shared
-      // internal secret (server-only env — never NEXT_PUBLIC_, never sent
-      // from the browser). The backend exempts these from rate limiting
-      // only when the TCP peer is also a private address (F1).
-      const internalSecret = process.env.INTERNAL_SHARED_SECRET;
       const res = await fetch(`${API}${path}`, {
-        headers: {
-          "Content-Type": "application/json",
-          ...(internalSecret ? { "x-internal-secret": internalSecret } : {}),
-        },
+        headers: mergedHeaders,
         ...(hasNextOptions ? { next: nextOptions } : {}),
         signal: controller.signal,
         ...restFetchOptions,
