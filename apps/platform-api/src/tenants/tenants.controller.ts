@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -13,6 +14,7 @@ import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { DomainsService } from '../domains/domains.service';
 import { AddDomainDto } from './dto/add-domain.dto';
 import { ChangePlanDto } from './dto/change-plan.dto';
 import { CreateTenantDto } from './dto/create-tenant.dto';
@@ -23,7 +25,10 @@ import { TenantsService } from './tenants.service';
 @Controller('tenants')
 @UseGuards(PlatformAuthGuard, RolesGuard)
 export class TenantsController {
-  constructor(private readonly tenants: TenantsService) {}
+  constructor(
+    private readonly tenants: TenantsService,
+    private readonly domains: DomainsService,
+  ) {}
 
   @Get()
   list(
@@ -79,6 +84,11 @@ export class TenantsController {
     return this.tenants.changePlan(id, dto, user?.id);
   }
 
+  @Get(':id/domains')
+  listDomains(@Param('id', ParseUUIDPipe) id: string) {
+    return this.domains.list(id);
+  }
+
   @Post(':id/domains')
   @Roles('SUPERADMIN', 'BILLING', 'SUPPORT')
   addDomain(
@@ -86,6 +96,26 @@ export class TenantsController {
     @Body() dto: AddDomainDto,
     @CurrentPlatformUser() user?: { id: string },
   ) {
-    return this.tenants.addDomain(id, dto, user?.id);
+    return this.domains.addDomain(id, dto, user?.id);
+  }
+
+  @Post(':id/domains/:domainId/verify')
+  @Roles('SUPERADMIN', 'BILLING', 'SUPPORT')
+  verifyDomain(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('domainId', ParseUUIDPipe) domainId: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.domains.verify(id, domainId, user?.id);
+  }
+
+  @Delete(':id/domains/:domainId')
+  @Roles('SUPERADMIN', 'BILLING')
+  removeDomain(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('domainId', ParseUUIDPipe) domainId: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.domains.remove(id, domainId, user?.id);
   }
 }

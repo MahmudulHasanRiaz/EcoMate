@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { TenantsService } from './tenants.service';
 
 const prisma: any = {
@@ -11,9 +8,6 @@ const prisma: any = {
     update: jest.fn(),
     findMany: jest.fn(),
     count: jest.fn(),
-  },
-  tenantDomain: {
-    create: jest.fn(),
   },
   planVersion: {
     findUnique: jest.fn(),
@@ -179,14 +173,5 @@ describe('TenantsService', () => {
         data: expect.objectContaining({ planVersionId: 'new-version' }),
       }),
     );
-  });
-
-  it('maps a duplicate domain to a generic conflict', async () => {
-    prisma.tenant.findUnique.mockResolvedValue({ id: 'tenant-1' });
-    prisma.tenantDomain.create.mockRejectedValue({ code: 'P2002' });
-
-    await expect(
-      service.addDomain('tenant-1', { host: 'shop.example.com' } as any, 'u1'),
-    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

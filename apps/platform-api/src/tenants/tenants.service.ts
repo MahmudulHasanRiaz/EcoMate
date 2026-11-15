@@ -10,7 +10,6 @@ import {
   RESERVED_SLUGS,
 } from '../config/domain-config.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
-import { AddDomainDto } from './dto/add-domain.dto';
 import { ChangePlanDto } from './dto/change-plan.dto';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
@@ -278,38 +277,5 @@ export class TenantsService {
     });
 
     return updated;
-  }
-
-  async addDomain(id: string, dto: AddDomainDto, actorId?: string) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
-    if (!tenant) throw new NotFoundException('Tenant not found');
-
-    const host = dto.host.trim().toLowerCase();
-    try {
-      const domain = await this.prisma.tenantDomain.create({
-        data: {
-          tenantId: id,
-          host,
-          type: (dto.type ?? 'CUSTOM') as any,
-          status: 'PENDING',
-        },
-      });
-
-      await this.audit.record({
-        actorId,
-        tenantId: id,
-        action: 'tenant.domain.add',
-        entity: 'TenantDomain',
-        entityId: domain.id,
-        after: { host, type: domain.type },
-      });
-
-      return domain;
-    } catch (err: any) {
-      if (err?.code === 'P2002') {
-        throw new ConflictException('Domain is already assigned');
-      }
-      throw err;
-    }
   }
 }

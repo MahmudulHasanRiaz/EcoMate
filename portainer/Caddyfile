@@ -1,0 +1,49 @@
+# Reference edge configuration for tenant hosts (Caddy 2).
+#
+# Not wired into docker-compose.yml: the public edge is deployment-specific
+# (one Caddy per fleet, or Traefik on a VPS). Apply this where the tenant hosts
+# are terminated. Service names match the SaaS compose file.
+#
+# TLS is ON-DEMAND: Caddy asks the platform before issuing a certificate for a
+# host. The ask endpoint allows SUBDOMAIN hosts of non-deleted tenants and
+# CUSTOM domains only after DNS verification. Anything else is a 404 and no
+# certificate is issued. Keep platform-api on a private network.
+#
+#   TLS_ASK_TOKEN must match platform-api's TLS_ASK_TOKEN
+#   (fallback: INTERNAL_SERVICE_SECRET).
+
+{
+	on_demand_tls {
+		ask http://platform-api:4100/api/internal/tls/allow?token={env.TLS_ASK_TOKEN}
+	}
+}
+
+:443 {
+	tls {
+		on_demand
+	}
+
+	# API answers on canonical AND alias hosts (aliases are not redirected for
+	# /api, so integrations keep working).
+	@api path /api/*
+	handle @api {
+		reverse_proxy backend:4000
+	}
+
+	# Admin and POS are always noindex; alias hosts are redirected by the
+	# storefront proxy when these paths are routed through Next. At this edge,
+	# add the same 301 rule if they are routed directly to their static services.
+	@admin path /admin/*
+	handle @admin {
+		reverse_proxy admin:80
+	}
+
+	@pos path /pos/*
+	handle @pos {
+		reverse_proxy pos:80
+	}
+
+	handle {
+		reverse_proxy storefront:3000
+	}
+}
