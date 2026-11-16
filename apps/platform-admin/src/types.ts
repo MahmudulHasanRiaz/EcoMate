@@ -15,6 +15,26 @@ export interface TenantDomain {
   status: string;
   isPrimary: boolean;
   tlsStatus?: string | null;
+  tenantId?: string;
+  verificationToken?: string | null;
+  verifiedAt?: string | null;
+  lastCheckedAt?: string | null;
+  tenant?: { id: string; name: string; slug: string };
+}
+
+export interface DomainConfig {
+  primaryDomain: string;
+  baseDomains: string[];
+  fallbackDomain?: string;
+  customDomainCname: string;
+  allowExternalFallback: boolean;
+  primaryHealthy: boolean;
+  platformHosts: {
+    landing: string;
+    platformAdmin: string;
+    platformApi: string;
+    webhooks: string;
+  };
 }
 
 export interface PlanVersion {

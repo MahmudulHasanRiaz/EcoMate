@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 
 export interface PlatformHosts {
@@ -22,6 +27,13 @@ export interface DomainConfig {
   primaryHealthy: boolean;
   platformHosts: PlatformHosts;
 }
+
+export type DomainConfigUpdate = Omit<
+  Partial<DomainConfig>,
+  'platformHosts'
+> & {
+  platformHosts?: Partial<PlatformHosts>;
+};
 
 export type HostResolution =
   | { kind: 'platform'; role: keyof PlatformHosts; host: string }
@@ -82,6 +94,67 @@ export class DomainConfigService implements OnModuleInit {
 
   getConfig(): DomainConfig {
     return this.config;
+  }
+
+  /**
+   * Runtime-editable domain configuration. Persists PlatformSetting.domains
+   * and swaps the in-memory config immediately; env remains the bootstrap.
+   */
+  async update(input: DomainConfigUpdate): Promise<DomainConfig> {
+    const primaryDomain = normaliseDomain(
+      input.primaryDomain || this.config.primaryDomain,
+    );
+    const requestedBase =
+      input.baseDomains && input.baseDomains.length > 0
+        ? input.baseDomains
+        : this.config.baseDomains;
+    const baseDomains = [
+      primaryDomain,
+      ...requestedBase
+        .map((domain) => normaliseDomain(domain))
+        .filter((domain) => domain && domain !== primaryDomain),
+    ];
+
+    const primaryChanged =
+      primaryDomain !== this.config.primaryDomain && !input.platformHosts;
+    const next = this.normalise({
+      ...this.config,
+      ...input,
+      primaryDomain,
+      baseDomains,
+      platformHosts: {
+        ...(primaryChanged
+          ? {
+              landing: `www.${primaryDomain}`,
+              platformAdmin: `saas.${primaryDomain}`,
+              platformApi: `api.${primaryDomain}`,
+              webhooks: `api.${primaryDomain}`,
+            }
+          : this.config.platformHosts),
+        ...(input.platformHosts ?? {}),
+      },
+    });
+
+    try {
+      this.validate(next);
+    } catch (err) {
+      throw new BadRequestException(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    await this.prisma.platformSetting.upsert({
+      where: { key: 'domains' },
+      update: { value: next as any },
+      create: { key: 'domains', value: next as any },
+    });
+    this.config = next;
+    this.logger.log(
+      `Domains updated: primary=${next.primaryDomain} base=[${next.baseDomains.join(
+        ',',
+      )}] fallback=${next.fallbackDomain ?? '(none)'}`,
+    );
+    return next;
   }
 
   private async load(): Promise<DomainConfig> {

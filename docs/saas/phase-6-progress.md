@@ -9,7 +9,7 @@ complete.
 - [x] 2. Impersonation tokens + tenant exchange endpoint + audit
 - [x] 3. Payment proof review queue + approve/reject + invoice/payment ledger
 - [x] 4. Subscription/plan change UI, credit notes, coupons
-- [ ] 5. Domain management: primary/base/fallback config, tenant domains,
+- [x] 5. Domain management: primary/base/fallback config, tenant domains,
       verification/TLS status, force re-check
 - [ ] 6. Usage dashboards + limit overrides
 - [ ] 7. Metrics dashboard (MRR/ARR/trials/past-due/churn)
@@ -130,7 +130,27 @@ export, delete). Smoke tenant/admin were purged.
   (20%, once, max 5) and disabled. Audit rows and DB state verified; smoke
   tenant/plan/coupon/admin were purged.
 
+## Domain management — DONE
+
+- **Runtime config:** `GET/PATCH /domains/config` reads/writes
+  `PlatformSetting.domains` and swaps the in-memory config immediately. The
+  update path enforces primary-first base domains, dedupes aliases, validates
+  fallback/base rules, derives platform hosts when the primary changes, and is
+  audited (`domains.config.update`).
+- **Tenant domains:** `GET /domains/tenants` lists all hosts with tenant,
+  type/status/TLS, verification token and last-checked timestamp (status +
+  search + pagination). `POST /domains/tenants/:id/recheck` forces DNS
+  verification and audits the result. Add/remove continue through the existing
+  tenant-domain endpoints (global host uniqueness preserved).
+- Console: Domains nav with editable primary/base/fallback/CNAME/health
+  fields, add-domain form, TXT hint for pending custom hosts, TLS/status/last
+  checked columns, re-check and remove actions.
+- Verification: platform **149/149**, backend unchanged **6268 passed / 10
+  skipped / 0 failed**, platform-admin build + **4/4** tests. Live browser
+  **5/5**: config saved without deploy, custom host added PENDING with the TXT
+  hint, re-check recorded a real failed DNS attempt, remove cleared it; config
+  PATCH wrote `domains.config.update`. Smoke tenant/setting/admin were purged.
+
 ## Next
 
-Item 5: domain management — primary/base/fallback config, tenant domains,
-verification/TLS status, force re-check.
+Item 6: usage dashboards + limit overrides.

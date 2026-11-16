@@ -76,6 +76,74 @@ export class DomainsService {
     });
   }
 
+  async listAll(query: {
+    status?: string;
+    search?: string;
+    page?: string;
+    limit?: string;
+  }) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 50));
+    const where: any = {};
+    if (query.status) {
+      const status = query.status.toUpperCase();
+      if (!['PENDING', 'VERIFIED', 'FAILED'].includes(status)) {
+        throw new BadRequestException('Unknown domain status');
+      }
+      where.status = status;
+    }
+    if (query.search?.trim()) {
+      const search = query.search.trim();
+      where.OR = [
+        { host: { contains: search, mode: 'insensitive' } },
+        { tenant: { name: { contains: search, mode: 'insensitive' } } },
+        { tenant: { slug: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.tenantDomain.findMany({
+        where,
+        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          tenant: { select: { id: true, name: true, slug: true } },
+        },
+      }),
+      this.prisma.tenantDomain.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async recheck(domainId: string, actorId?: string) {
+    const domain = await this.prisma.tenantDomain.findUnique({
+      where: { id: domainId },
+      select: { id: true, tenantId: true },
+    });
+    if (!domain) throw new NotFoundException('Domain not found');
+
+    const result = await this.verify(domain.tenantId, domain.id, actorId);
+    await this.audit.record({
+      actorId,
+      tenantId: domain.tenantId,
+      action: 'tenant.domain.recheck',
+      entity: 'TenantDomain',
+      entityId: domain.id,
+      after: { verified: result.verified, status: result.domain.status },
+    });
+    return result;
+  }
+
   async addDomain(tenantId: string, dto: AddDomainDto, actorId?: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },

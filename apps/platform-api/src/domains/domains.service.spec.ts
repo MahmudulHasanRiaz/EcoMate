@@ -38,6 +38,7 @@ function makeService(overrides: {
     },
     tenantDomain: {
       findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(1),
       findFirst: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn().mockResolvedValue(overrides.create ?? {
@@ -181,6 +182,59 @@ describe('DomainsService — add', () => {
     await expect(
       service.addDomain('tenant-1', { host: 'shop.example.com' } as any),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('lists all tenant domains with tenant context', async () => {
+    const { service, prisma } = makeService();
+    prisma.tenantDomain.findMany.mockResolvedValue([
+      {
+        id: 'dom-1',
+        host: 'shop.example.com',
+        status: 'PENDING',
+        tenant: { id: 'tenant-1', name: 'Acme', slug: 'acme' },
+      },
+    ]);
+
+    const result = await service.listAll({
+      status: 'PENDING',
+      search: 'acme',
+    });
+
+    expect(prisma.tenantDomain.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'PENDING',
+          OR: expect.any(Array),
+        }),
+        include: {
+          tenant: { select: { id: true, name: true, slug: true } },
+        },
+      }),
+    );
+    expect(result.meta.total).toBe(1);
+  });
+
+  it('forces a recheck and audits the result', async () => {
+    const { service, prisma, audit } = makeService();
+    prisma.tenantDomain.findUnique.mockResolvedValue({
+      id: 'dom-1',
+      tenantId: 'tenant-1',
+    });
+    prisma.tenantDomain.findFirst.mockResolvedValue({
+      id: 'dom-1',
+      tenantId: 'tenant-1',
+      host: 'acme.ecomate.bd',
+      type: 'SUBDOMAIN',
+      status: 'VERIFIED',
+      verificationToken: null,
+    });
+
+    const result = await service.recheck('dom-1', 'admin-1');
+
+    expect(result.verified).toBe(true);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'tenant.domain.recheck' }),
+    );
   });
 
   it('enforces the custom_domain plan feature when a plan exists', async () => {

@@ -6,6 +6,7 @@ function buildService(stored: unknown = null) {
       findUnique: jest.fn().mockResolvedValue(
         stored === null ? null : { key: 'domains', value: stored },
       ),
+      upsert: jest.fn().mockResolvedValue({}),
     },
   } as any;
   return new DomainConfigService(prisma);
@@ -78,6 +79,59 @@ describe('DomainConfigService', () => {
     await expect(buildService().onModuleInit()).rejects.toThrow(
       'fallbackDomain must be in baseDomains',
     );
+  });
+
+  it('updates and persists runtime domain config', async () => {
+    process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+    const prisma = {
+      platformSetting: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+    } as any;
+    const service = new DomainConfigService(prisma);
+    await service.onModuleInit();
+
+    const next = await service.update({
+      primaryDomain: 'new.example',
+      baseDomains: ['old.example', 'new.example', 'new.example'],
+      fallbackDomain: '',
+      primaryHealthy: false,
+    });
+
+    expect(next.baseDomains).toEqual(['new.example', 'old.example']);
+    expect(next.fallbackDomain).toBeUndefined();
+    expect(next.primaryHealthy).toBe(false);
+    expect(next.platformHosts).toMatchObject({
+      landing: 'www.new.example',
+      platformAdmin: 'saas.new.example',
+    });
+    expect(prisma.platformSetting.upsert).toHaveBeenCalledWith({
+      where: { key: 'domains' },
+      update: { value: next },
+      create: { key: 'domains', value: next },
+    });
+    expect(service.getConfig()).toEqual(next);
+  });
+
+  it('refuses an invalid fallback update', async () => {
+    process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+    const service = new DomainConfigService({
+      platformSetting: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+    } as any);
+    await service.onModuleInit();
+
+    await expect(
+      service.update({
+        fallbackDomain: 'outside.example',
+        allowExternalFallback: false,
+      }),
+    ).rejects.toThrow('fallbackDomain must be in baseDomains');
   });
 
   it('prefers PlatformSetting.domains over env', async () => {
