@@ -146,6 +146,45 @@ describe('PlatformMailService', () => {
     expect(mockClose).toHaveBeenCalled();
   });
 
+  it('sends an invite with the role and the accept link', async () => {
+    const { service } = makeService();
+
+    const result = await service.sendInvite({
+      to: 'invited@test.com',
+      name: 'Invited User',
+      role: 'BILLING',
+      acceptUrl: 'https://saas.ecomate.test/accept-invite?token=abc123',
+    });
+
+    expect(result).toEqual({ delivered: true });
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'invited@test.com',
+        subject: 'Your EcoMate platform invite',
+        text: expect.stringContaining('as BILLING'),
+      }),
+    );
+    const sent = mockSendMail.mock.calls[0][0];
+    expect(sent.text).toContain(
+      'https://saas.ecomate.test/accept-invite?token=abc123',
+    );
+    expect(sent.text).toContain('72 hours');
+  });
+
+  it('logs the invite link in dev when SMTP is unconfigured', async () => {
+    const { service } = makeService(null);
+
+    const result = await service.sendInvite({
+      to: 'invited@test.com',
+      name: 'Invited User',
+      role: 'SUPPORT',
+      acceptUrl: 'https://saas.ecomate.test/accept-invite?token=abc123',
+    });
+
+    expect(result).toEqual({ delivered: false });
+    expect(mockSendMail).not.toHaveBeenCalled();
+  });
+
   it('sendTest throws when SMTP is unconfigured and sends when configured', async () => {
     const unconfigured = makeService(null);
     await expect(unconfigured.service.sendTest('ops@test.com')).rejects.toBeInstanceOf(

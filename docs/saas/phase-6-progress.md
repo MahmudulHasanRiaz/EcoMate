@@ -15,7 +15,7 @@ complete.
 - [x] 7. Metrics dashboard (MRR/ARR/trials/past-due/churn)
 - [x] 8. Platform settings (payment methods, SMTP, trial/grace, tax, branding,
       domain config)
-- [ ] 9. Platform users/roles, audit search/export
+- [x] 9. Platform users/roles, audit search/export
 - [ ] 10. Acceptance: full tenant lifecycle and billing operated from the SaaS
       admin
 
@@ -350,6 +350,102 @@ trial save + persist after reload, method add/list/delete through the UI,
 trial restored). All smoke plans, methods, settings keys and audit rows were
 purged; services stopped.
 
+## Platform users/roles, audit search/export — DONE (9/10)
+
+- **Users:** `GET /users` (paginated, role/status/search filters),
+  `GET /users/:id`, `POST /users` (explicit password, min 12, bcrypt 12),
+  `PATCH /users/:id` (name/role/status), `DELETE /users/:id`,
+  `POST /users/:id/reset-password` — all `SUPERADMIN` only, including reads
+  (the operator list is itself sensitive). No endpoint ever returns
+  `passwordHash` or `mfaSecret`. Every write is audited with before/after.
+- **Self-lockout guards:** you cannot change your own role or status, delete
+  yourself, or reset your own password through the admin route (use
+  change-password). Demoting or disabling the last active SUPERADMIN is a
+  `409` — unreachable through the API today (the self-guard already blocks
+  the only path), kept as defense-in-depth and covered by a unit test.
+- **Delete rule:** an account must be DISABLED first (`409` otherwise);
+  refresh tokens and impersonations cascade, audit rows keep their history
+  with the actor cleared (`SetNull`).
+- **Reset password:** generates a random 16-char temporary password, revokes
+  every refresh token, returns the password once in the response (the admin
+  shares it out of band). The temp password is never written to the audit log
+  — verified live.
+- **Invite:** `POST /users/invite` creates a `PlatformUserInvite` row
+  (token stored as SHA-256 only, 72-hour expiry, one live invite per email —
+  re-inviting replaces the pending one) and emails the accept link via
+  `PlatformMailService.sendInvite` (dev logs the link, production fails
+  closed when SMTP is unconfigured, same rule as verification mail). A failed
+  send deletes the invite row again, so no orphan invite is left behind.
+  `POST /users/invite/accept` is public: one error message for a missing,
+  used or expired token. `GET /users/invites` lists pending invites,
+  `DELETE /users/invites/:id` revokes one. The accept URL is built from the
+  new `PLATFORM_ADMIN_URL` env var (`http://localhost:5174` default), same
+  env-with-localhost-default pattern as `PLATFORM_LANDING_URL`.
+- **Change password:** `POST /auth/change-password` (any authed role, own
+  account): verifies the current password, requires a different new one,
+  revokes all refresh tokens. Audited as `auth.password.change`.
+- **Role matrix:** `GET /users/roles` returns the matrix as data (verified
+  against every `@Roles()` annotation in the codebase, not invented):
+  SUPERADMIN full everywhere; BILLING reads + billing/plans/usage writes +
+  audit export, no user management, no settings writes, no tenant
+  delete/purge/impersonate; SUPPORT reads + tenant help actions (restore,
+  impersonate, owner-password reset), no billing writes, no export; READONLY
+  login + own profile only, `403` everywhere else.
+- **Audit reads:** `GET /audit` (filters: actorId, tenantId, action contains,
+  entity, entityId, from/to, search over action/entity; paginated, newest
+  first, actor + tenant included) for `SUPERADMIN`/`BILLING`/`SUPPORT`;
+  `GET /audit/:id` single entry with before/after; `GET /audit/export`
+  (`?format=csv|json`, `SUPERADMIN`/`BILLING` only) streams up to 5,000 rows
+  with a `truncated` flag, RFC-4180 CSV quoting, attachment filename
+  `audit-export-<timestamp>.<ext>`. Export uses `StreamableFile`, not
+  `@Res()` — the app runs Fastify, where Express-style `res.set()` 500s.
+  The read side is a new `AuditQueryService`/`AuditController`; the write
+  side (`common/AuditService`, fail-open record) is untouched.
+- **Migration:** `20261116160200_platform_user_invites` — new
+  `PlatformUserInvite` table + unique `tokenHash` index + `email/expiresAt`
+  index + FK to `PlatformUser` (`SetNull`), with `rollback.sql` in the same
+  commit. No enum or DML changes.
+- **Console:** `/users` nav page (user table + edit form, create form,
+  invite form + pending invites with revoke, role-matrix card, one-time temp
+  password banner, delete disabled until the account is disabled);
+  `/audit` nav page (filters, table, row-expand before/after detail, CSV/JSON
+  export download); `/account` (own profile + change-password form, linked
+  next to Sign out, usable by every role); `/accept-invite` public page
+  (outside the shell, like `/login`).
+- **Known limits:** MFA is still not wired — `mfaSecret` stays a dead field
+  (master plan calls TOTP "optional"; Phase 8 hardening candidate). Expired
+  invites are inert (accept rejects them) but no sweeper deletes them. No
+  password complexity rules beyond min-12 (matches the seed rule).
+  `PLATFORM_ADMIN_URL` is in `.env.example` only — compose/portainer wiring
+  lands with the Phase 8 deployment work, like every other `PLATFORM_*` var
+  (no platform-api service exists in compose yet).
+
+Verification: platform **292/292** (35 suites, +32: users service 15, users
+controller 3, audit query 6, audit controller 4, auth change-password 2, mail
+sendInvite 2), platform `nest build` clean, platform-admin tsc clean + vitest
+**19/19** + production build clean, backend **6271 passed / 10 skipped /
+0 failed** (447 suites, unchanged), storefront **699/699**, shared-types
+**14/14**, tenant-admin **1671/1671** (185 files, unchanged),
+`prisma migrate status` 5 up-to-date. Live **API E2E 51/51**: admin login,
+anon `401`s, role matrix, user create/duplicate-`409`/short-password-`400`,
+billing `403` on users but audit read + CSV export `200`, change-password
+(wrong `401`, same `400`, ok, old refresh revoked, new login works), SMTP
+pointed at a local catcher, invite delivered (accept link + role + 72h
+verified in the raw message after quoted-printable decoding), bad-token
+accept `400`, real-token accept, reuse `400`, invited login, invite-existing
+`409`, support export `403`, second invite + revoke + revoked-accept `400`,
+all four self-guards `400`, reset (16-char temp password, temp login works,
+old password dead, temp password absent from audit), audit filters
+(action/actor), detail with actor, JSON export with `truncated: false`, bad
+format `400`, delete-active `409` → disable → delete → `404`, cleanup
+verified (0 e2e users left). Live **browser 17/17** (`/users` render +
+matrix, create/edit/invite through the UI, real invite email captured,
+accept-invite flow in the browser, account page + change password as the
+invited user, `/audit` filter + row detail + CSV download, disable + delete
+of both browser users through the UI). All smoke users, invites, settings
+keys and audit rows were purged; services stopped.
+
 ## Next
 
-Item 9: platform users/roles, audit search/export.
+Item 10: acceptance — full tenant lifecycle and billing operated from the SaaS
+admin.

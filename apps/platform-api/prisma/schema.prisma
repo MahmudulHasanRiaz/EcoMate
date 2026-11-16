@@ -131,8 +131,24 @@ model PlatformUser {
   refreshTokens  PlatformRefreshToken[]
   auditLogs      AuditLog[]
   impersonations ImpersonationSession[]
+  invitesCreated PlatformUserInvite[]
 
   @@index([role, status])
+}
+
+model PlatformUserInvite {
+  id          String           @id @default(uuid())
+  email       String
+  name        String
+  role        PlatformUserRole @default(READONLY)
+  tokenHash   String           @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  createdBy   PlatformUser?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+
+  @@index([email, expiresAt])
 }
 
 model PlatformRefreshToken {

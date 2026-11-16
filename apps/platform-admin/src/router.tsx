@@ -5,6 +5,9 @@ import {
   Outlet,
 } from '@tanstack/react-router';
 import { AppShell } from './components/app-shell';
+import { AcceptInvitePage } from './pages/accept-invite';
+import { AccountPage } from './pages/account';
+import { AuditPage } from './pages/audit';
 import { BillingPage } from './pages/billing';
 import { DomainsPage } from './pages/domains';
 import { LoginPage } from './pages/login';
@@ -15,6 +18,7 @@ import { SettingsPage } from './pages/settings';
 import { TenantDetailPage } from './pages/tenant-detail';
 import { TenantsPage } from './pages/tenants';
 import { UsagePage } from './pages/usage';
+import { UsersPage } from './pages/users';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -114,8 +118,45 @@ const settingsRoute = createRoute({
   ),
 });
 
+const usersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/users',
+  component: () => (
+    <AppShell>
+      <UsersPage />
+    </AppShell>
+  ),
+});
+
+const auditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/audit',
+  component: () => (
+    <AppShell>
+      <AuditPage />
+    </AppShell>
+  ),
+});
+
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/account',
+  component: () => (
+    <AppShell>
+      <AccountPage />
+    </AppShell>
+  ),
+});
+
+const acceptInviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/accept-invite',
+  component: AcceptInvitePage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  acceptInviteRoute,
   overviewRoute,
   tenantsRoute,
   tenantRoute,
@@ -125,6 +166,9 @@ const routeTree = rootRoute.addChildren([
   metricsRoute,
   plansRoute,
   settingsRoute,
+  usersRoute,
+  auditRoute,
+  accountRoute,
 ]);
 
 export const router = createRouter({ routeTree });

@@ -1,11 +1,14 @@
 import {
+  BadRequestException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
+import { AuditService } from '../common/audit.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 
 export interface PlatformSessionUser {
@@ -20,6 +23,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly jwt: JwtService,
+    private readonly audit: AuditService,
   ) {}
 
   private accessSecret(): string {
@@ -151,6 +155,45 @@ export class AuthService {
     await this.prisma.platformRefreshToken.updateMany({
       where: { tokenHash: hash, revokedAt: null },
       data: { revokedAt: new Date() },
+    });
+    return { success: true };
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.platformUser.findUnique({
+      where: { id: userId },
+    });
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Platform account is not active');
+    }
+
+    const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!valid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException(
+        'New password must be different from the current password',
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.platformUser.update({
+        where: { id: userId },
+        data: { passwordHash: await bcrypt.hash(dto.newPassword, 12) },
+      }),
+      this.prisma.platformRefreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    await this.audit.record({
+      actorId: userId,
+      action: 'auth.password.change',
+      entity: 'PlatformUser',
+      entityId: userId,
+      after: { sessionsRevoked: true },
     });
     return { success: true };
   }

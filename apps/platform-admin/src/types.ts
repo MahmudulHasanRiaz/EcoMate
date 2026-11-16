@@ -94,6 +94,45 @@ export interface PlatformUser {
   role: string;
   status?: string;
   lastLoginAt?: string | null;
+  createdAt?: string;
+}
+
+export interface PlatformUserInvite {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface RoleCapability {
+  area: string;
+  access: 'none' | 'read' | 'write' | 'full';
+  note?: string;
+}
+
+export interface RoleMatrixEntry {
+  role: string;
+  description: string;
+  capabilities: RoleCapability[];
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actorType: string;
+  actorId: string | null;
+  actor: { id: string; email: string; name: string } | null;
+  tenantId: string | null;
+  tenant: { id: string; slug: string; name: string } | null;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  before: unknown;
+  after: unknown;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string;
 }
 
 export interface BillingSummary {

@@ -137,6 +137,50 @@ export class PlatformMailService {
     return { delivered: true };
   }
 
+  async sendInvite(input: {
+    to: string;
+    name: string;
+    role: string;
+    acceptUrl: string;
+  }): Promise<{ delivered: boolean }> {
+    const transporter = this.getTransporter();
+    if (!transporter) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new ServiceUnavailableException(
+          'Email delivery is not configured. Set SMTP_HOST/SMTP_FROM.',
+        );
+      }
+      // Dev/test: log the link instead of failing the invite.
+      this.logger.log(
+        `[dev] invite link for ${input.to}: ${input.acceptUrl}`,
+      );
+      return { delivered: false };
+    }
+
+    const platformName = this.settings.getBranding().platformName;
+    const name = escapeHtml(input.name);
+    const role = escapeHtml(input.role);
+    await transporter.sendMail({
+      from: this.fromAddress(),
+      replyTo: this.replyTo(),
+      to: input.to,
+      subject: `Your ${platformName} platform invite`,
+      text:
+        `Hi ${input.name},\n\nYou have been invited to the ${platformName} ` +
+        `platform console as ${input.role}.\n\n` +
+        `Accept the invite and set your password:\n\n` +
+        `${input.acceptUrl}\n\n` +
+        `This link expires in 72 hours. If you did not expect this, ignore this email.`,
+      html:
+        `<p>Hi ${name},</p><p>You have been invited to the ` +
+        `<strong>${escapeHtml(platformName)}</strong> platform console as ` +
+        `<strong>${role}</strong>.</p>` +
+        `<p><a href="${escapeHtml(input.acceptUrl)}">Accept the invite and set your password</a></p>` +
+        `<p>This link expires in 72 hours. If you did not expect this, ignore this email.</p>`,
+    });
+    return { delivered: true };
+  }
+
   async sendWelcome(input: {
     to: string;
     tenantName: string;

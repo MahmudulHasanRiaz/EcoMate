@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AuditQueryModule } from './audit/audit-query.module';
 import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
 import { AuditModule } from './common/audit.module';
@@ -16,12 +17,14 @@ import { SettingsModule } from './settings/settings.module';
 import { SignupModule } from './signup/signup.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { UsageModule } from './usage/usage.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AuditModule,
+    AuditQueryModule,
     PlatformMailModule,
     AuthModule,
     BillingModule,
@@ -36,6 +39,7 @@ import { UsageModule } from './usage/usage.module';
     SignupModule,
     TenantsModule,
     UsageModule,
+    UsersModule,
   ],
 })
 export class AppModule {}

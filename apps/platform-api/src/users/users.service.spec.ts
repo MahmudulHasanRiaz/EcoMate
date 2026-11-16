@@ -1,0 +1,466 @@
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import { createHash } from 'crypto';
+import { UsersService } from './users.service';
+
+const ADMIN_ID = '11111111-1111-4111-8111-111111111111';
+const USER_ID = '22222222-2222-4222-8222-222222222222';
+
+function makeAdmin(overrides: any = {}) {
+  return {
+    id: ADMIN_ID,
+    email: 'admin@ecomate.test',
+    name: 'Platform Admin',
+    role: 'SUPERADMIN',
+    status: 'ACTIVE',
+    passwordHash: 'hash',
+    lastLoginAt: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  };
+}
+
+function makeService() {
+  const admin = makeAdmin();
+  const prisma: any = {
+    platformUser: {
+      findMany: jest.fn().mockResolvedValue([admin]),
+      findUnique: jest.fn().mockResolvedValue(null),
+      // The real calls use select: userSelect, which never returns the
+      // password hash — the mocks mirror that.
+      create: jest.fn().mockImplementation(async ({ data }: any) => {
+        const { passwordHash: _passwordHash, ...safe } = data;
+        return {
+          id: USER_ID,
+          ...safe,
+          lastLoginAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      }),
+      update: jest.fn().mockImplementation(async ({ data }: any) => {
+        const { passwordHash: _passwordHash, ...safeAdmin } = admin;
+        return { ...safeAdmin, ...data };
+      }),
+      delete: jest.fn().mockResolvedValue(admin),
+      count: jest.fn().mockResolvedValue(1),
+    },
+    platformRefreshToken: {
+      updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+    },
+    platformUserInvite: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockImplementation(async ({ data }: any) => ({
+        id: 'invite-1',
+        ...data,
+        usedAt: null,
+        createdAt: new Date(),
+      })),
+      update: jest.fn().mockResolvedValue({}),
+      delete: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+  };
+  prisma.$transaction = jest.fn(async (input: any) =>
+    typeof input === 'function' ? input(prisma) : Promise.all(input),
+  );
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  const mail = {
+    sendInvite: jest.fn().mockResolvedValue({ delivered: true }),
+  };
+  return {
+    prisma,
+    audit,
+    mail,
+    admin,
+    service: new UsersService(prisma as any, audit as any, mail as any),
+  };
+}
+
+describe('UsersService', () => {
+  const ORIGINAL_ADMIN_URL = process.env.PLATFORM_ADMIN_URL;
+
+  beforeEach(() => {
+    process.env.PLATFORM_ADMIN_URL = 'https://saas.ecomate.test';
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_ADMIN_URL === undefined) delete process.env.PLATFORM_ADMIN_URL;
+    else process.env.PLATFORM_ADMIN_URL = ORIGINAL_ADMIN_URL;
+  });
+
+  it('lists users with filters and page meta', async () => {
+    const { service, prisma } = makeService();
+
+    const result = await service.list({
+      page: '2',
+      limit: '10',
+      role: 'BILLING',
+      search: 'acme',
+    });
+
+    expect(prisma.platformUser.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          role: 'BILLING',
+          OR: expect.arrayContaining([
+            { email: { contains: 'acme', mode: 'insensitive' } },
+          ]),
+        }),
+        skip: 10,
+        take: 10,
+      }),
+    );
+    expect(result.meta).toEqual({
+      page: 2,
+      limit: 10,
+      total: 1,
+      totalPages: 1,
+    });
+  });
+
+  it('creates a user with a normalized email and a bcrypt hash', async () => {
+    const { service, prisma, audit } = makeService();
+
+    const result = await service.create(
+      {
+        email: '  New@Ecomate.Test ',
+        name: '  New User ',
+        role: 'BILLING',
+        password: 'a-very-long-password',
+      } as any,
+      ADMIN_ID,
+    );
+
+    const data = prisma.platformUser.create.mock.calls[0][0].data;
+    expect(data.email).toBe('new@ecomate.test');
+    expect(data.name).toBe('New User');
+    expect(
+      await bcrypt.compare('a-very-long-password', data.passwordHash),
+    ).toBe(true);
+    expect(result).not.toHaveProperty('passwordHash');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: ADMIN_ID,
+        action: 'users.create',
+        entity: 'PlatformUser',
+      }),
+    );
+  });
+
+  it('refuses to create a duplicate email', async () => {
+    const { service, prisma, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue(admin);
+
+    await expect(
+      service.create(
+        {
+          email: 'admin@ecomate.test',
+          name: 'Dup',
+          role: 'SUPPORT',
+          password: 'a-very-long-password',
+        } as any,
+        ADMIN_ID,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('updates name and role and audits before/after', async () => {
+    const { service, prisma, audit, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+      role: 'SUPPORT',
+    });
+
+    await service.update(
+      USER_ID,
+      { name: 'Renamed', role: 'BILLING' } as any,
+      ADMIN_ID,
+    );
+
+    expect(prisma.platformUser.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: USER_ID },
+        data: { name: 'Renamed', role: 'BILLING' },
+      }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'users.update',
+        before: expect.objectContaining({ role: 'SUPPORT' }),
+        after: expect.objectContaining({ role: 'BILLING' }),
+      }),
+    );
+  });
+
+  it('refuses a self role change or self disable', async () => {
+    const { service, prisma, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue(admin);
+
+    await expect(
+      service.update(ADMIN_ID, { role: 'BILLING' } as any, ADMIN_ID),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.update(ADMIN_ID, { status: 'DISABLED' } as any, ADMIN_ID),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses to demote the last active superadmin', async () => {
+    const { service, prisma, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+    prisma.platformUser.count.mockResolvedValue(0);
+
+    await expect(
+      service.update(USER_ID, { role: 'BILLING' } as any, ADMIN_ID),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.platformUser.count).toHaveBeenCalledWith({
+      where: {
+        role: 'SUPERADMIN',
+        status: 'ACTIVE',
+        id: { not: USER_ID },
+      },
+    });
+  });
+
+  it('refuses to delete an active account and to delete yourself', async () => {
+    const { service, prisma, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+
+    await expect(service.remove(USER_ID, ADMIN_ID)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    await expect(service.remove(ADMIN_ID, ADMIN_ID)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('deletes a disabled account and audits it', async () => {
+    const { service, prisma, audit, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+      status: 'DISABLED',
+    });
+
+    const result = await service.remove(USER_ID, ADMIN_ID);
+
+    expect(prisma.platformUser.delete).toHaveBeenCalledWith({
+      where: { id: USER_ID },
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'users.delete', entityId: USER_ID }),
+    );
+    expect(result).toEqual({ success: true });
+  });
+
+  it('resets a password, revokes sessions and returns the temp password once', async () => {
+    const { service, prisma, audit, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+
+    const result = await service.resetPassword(USER_ID, ADMIN_ID);
+
+    expect(typeof result.temporaryPassword).toBe('string');
+    expect(result.temporaryPassword.length).toBe(16);
+    const data = prisma.platformUser.update.mock.calls[0][0].data;
+    expect(
+      await bcrypt.compare(result.temporaryPassword, data.passwordHash),
+    ).toBe(true);
+    expect(prisma.platformRefreshToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    const auditCall = audit.record.mock.calls[0][0];
+    expect(auditCall.action).toBe('users.password.reset');
+    expect(JSON.stringify(auditCall)).not.toContain(
+      result.temporaryPassword,
+    );
+    await expect(
+      service.resetPassword(ADMIN_ID, ADMIN_ID),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('invites a user, replaces a pending invite and emails the accept link', async () => {
+    const { service, prisma, mail, audit } = makeService();
+
+    const result = await service.invite(
+      { email: 'Invite@Ecomate.Test', name: 'Invited', role: 'SUPPORT' } as any,
+      ADMIN_ID,
+    );
+
+    expect(prisma.platformUserInvite.deleteMany).toHaveBeenCalledWith({
+      where: { email: 'invite@ecomate.test', usedAt: null },
+    });
+    const created = prisma.platformUserInvite.create.mock.calls[0][0].data;
+    expect(created.email).toBe('invite@ecomate.test');
+    expect(created.tokenHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(created.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(mail.sendInvite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'invite@ecomate.test',
+        role: 'SUPPORT',
+        acceptUrl: expect.stringMatching(
+          /^https:\/\/saas\.ecomate\.test\/accept-invite\?token=[a-f0-9]{64}$/,
+        ),
+      }),
+    );
+    // The emailed token hashes to the stored hash.
+    const emailed = mail.sendInvite.mock.calls[0][0].acceptUrl as string;
+    const rawToken = emailed.split('token=')[1];
+    expect(createHash('sha256').update(rawToken).digest('hex')).toBe(
+      created.tokenHash,
+    );
+    expect(result.delivered).toBe(true);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'users.invite' }),
+    );
+  });
+
+  it('refuses to invite an existing user and cleans up after a failed send', async () => {
+    const { service, prisma, mail, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue(admin);
+
+    await expect(
+      service.invite(
+        { email: 'admin@ecomate.test', name: 'X', role: 'SUPPORT' } as any,
+        ADMIN_ID,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    prisma.platformUser.findUnique.mockResolvedValue(null);
+    mail.sendInvite.mockRejectedValue(new Error('SMTP down'));
+    await expect(
+      service.invite(
+        { email: 'new@ecomate.test', name: 'X', role: 'SUPPORT' } as any,
+        ADMIN_ID,
+      ),
+    ).rejects.toThrow('SMTP down');
+    expect(prisma.platformUserInvite.delete).toHaveBeenCalledWith({
+      where: { id: 'invite-1' },
+    });
+  });
+
+  it('accepts an invite, creates the user and marks the invite used', async () => {
+    const { service, prisma, audit } = makeService();
+    prisma.platformUserInvite.findUnique.mockResolvedValue({
+      id: 'invite-1',
+      email: 'invited@ecomate.test',
+      name: 'Invited',
+      role: 'BILLING',
+      tokenHash: 'hash',
+      expiresAt: new Date(Date.now() + 3600_000),
+      usedAt: null,
+    });
+
+    const result = await service.acceptInvite({
+      token: 'raw-token',
+      password: 'a-very-long-password',
+    } as any);
+
+    expect(result).toEqual({ success: true });
+    const created = prisma.platformUser.create.mock.calls[0][0].data;
+    expect(created.email).toBe('invited@ecomate.test');
+    expect(created.role).toBe('BILLING');
+    expect(
+      await bcrypt.compare('a-very-long-password', created.passwordHash),
+    ).toBe(true);
+    expect(prisma.platformUserInvite.update).toHaveBeenCalledWith({
+      where: { id: 'invite-1' },
+      data: { usedAt: expect.any(Date) },
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'users.invite.accept' }),
+    );
+  });
+
+  it('rejects missing, used and expired invites with one message', async () => {
+    const { service, prisma } = makeService();
+
+    prisma.platformUserInvite.findUnique.mockResolvedValue(null);
+    await expect(
+      service.acceptInvite({ token: 'nope', password: 'x'.repeat(12) } as any),
+    ).rejects.toThrow('Invalid or expired invite');
+
+    prisma.platformUserInvite.findUnique.mockResolvedValue({
+      usedAt: new Date(),
+      expiresAt: new Date(Date.now() + 3600_000),
+    });
+    await expect(
+      service.acceptInvite({ token: 'used', password: 'x'.repeat(12) } as any),
+    ).rejects.toThrow('Invalid or expired invite');
+
+    prisma.platformUserInvite.findUnique.mockResolvedValue({
+      usedAt: null,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    await expect(
+      service.acceptInvite({
+        token: 'old',
+        password: 'x'.repeat(12),
+      } as any),
+    ).rejects.toThrow('Invalid or expired invite');
+  });
+
+  it('lists pending invites and revokes one', async () => {
+    const { service, prisma, audit } = makeService();
+    prisma.platformUserInvite.findMany.mockResolvedValue([
+      { id: 'invite-1', email: 'a@test.com' },
+    ]);
+
+    const listed = await service.listInvites();
+    expect(listed.data).toHaveLength(1);
+    expect(prisma.platformUserInvite.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { usedAt: null, expiresAt: { gt: expect.any(Date) } },
+      }),
+    );
+
+    prisma.platformUserInvite.findUnique.mockResolvedValue({
+      id: 'invite-1',
+      email: 'a@test.com',
+      role: 'SUPPORT',
+    });
+    const revoked = await service.revokeInvite('invite-1', ADMIN_ID);
+    expect(revoked).toEqual({ success: true });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'users.invite.revoke' }),
+    );
+
+    prisma.platformUserInvite.findUnique.mockResolvedValue(null);
+    await expect(
+      service.revokeInvite('missing', ADMIN_ID),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('returns the role matrix', () => {
+    const { service } = makeService();
+
+    const { roles } = service.getRoles();
+
+    expect(roles.map((r: any) => r.role)).toEqual([
+      'SUPERADMIN',
+      'BILLING',
+      'SUPPORT',
+      'READONLY',
+    ]);
+    const readonly = roles.find((r: any) => r.role === 'READONLY');
+    expect(
+      readonly.capabilities.every((c: any) => c.access === 'none'),
+    ).toBe(true);
+  });
+});

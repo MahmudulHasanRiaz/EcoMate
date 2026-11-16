@@ -15,10 +15,13 @@ const prisma: any = {
     update: jest.fn(),
     updateMany: jest.fn(),
   },
+  $transaction: jest.fn(async (input: any) => Promise.all(input)),
 };
 
+const audit: any = { record: jest.fn().mockResolvedValue(undefined) };
+
 const jwt = new JwtService({});
-const service = new AuthService(prisma, jwt);
+const service = new AuthService(prisma, jwt, audit);
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -167,5 +170,59 @@ describe('AuthService', () => {
       where: { tokenHash: expect.any(String), revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
+  });
+
+  it('changes a password, revokes all sessions and audits it', async () => {
+    const passwordHash = await bcrypt.hash('old-password-123', 4);
+    prisma.platformUser.findUnique.mockResolvedValue({
+      id: 'user-1',
+      status: 'ACTIVE',
+      passwordHash,
+    });
+
+    const result = await service.changePassword('user-1', {
+      currentPassword: 'old-password-123',
+      newPassword: 'new-password-456',
+    });
+
+    expect(result).toEqual({ success: true });
+    const data = prisma.platformUser.update.mock.calls[0][0].data;
+    expect(await bcrypt.compare('new-password-456', data.passwordHash)).toBe(
+      true,
+    );
+    expect(prisma.platformRefreshToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'user-1',
+        action: 'auth.password.change',
+        entity: 'PlatformUser',
+      }),
+    );
+  });
+
+  it('rejects a wrong current password and a reused password', async () => {
+    const passwordHash = await bcrypt.hash('old-password-123', 4);
+    prisma.platformUser.findUnique.mockResolvedValue({
+      id: 'user-1',
+      status: 'ACTIVE',
+      passwordHash,
+    });
+
+    await expect(
+      service.changePassword('user-1', {
+        currentPassword: 'not-the-password',
+        newPassword: 'new-password-456',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    await expect(
+      service.changePassword('user-1', {
+        currentPassword: 'old-password-123',
+        newPassword: 'old-password-123',
+      }),
+    ).rejects.toThrow('must be different');
   });
 });

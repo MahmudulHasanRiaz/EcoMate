@@ -11,6 +11,8 @@ const NAV = [
   { to: '/metrics', label: 'Metrics' },
   { to: '/plans', label: 'Plans' },
   { to: '/settings', label: 'Settings' },
+  { to: '/users', label: 'Users' },
+  { to: '/audit', label: 'Audit' },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -50,6 +52,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <strong>{session.user.name}</strong>
             <small>{session.user.role}</small>
           </span>
+          <Link to="/account" className="link-button">
+            Account
+          </Link>
           <button
             type="button"
             className="link-button"
