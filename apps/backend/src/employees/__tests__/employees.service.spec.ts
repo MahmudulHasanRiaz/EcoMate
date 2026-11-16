@@ -381,6 +381,30 @@ describe('EmployeesService', () => {
       );
     });
 
+    it('falls back to the tenant-scoped system Manager preset in SaaS', async () => {
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      };
+      (prisma.accessPreset.findFirst as jest.Mock).mockImplementation(
+        async ({ where }: any) => {
+          if (where?.id === 'system-preset-manager') return null;
+          if (where?.isSystem === true && where?.name === 'Manager') {
+            return { id: 'tenant-manager' };
+          }
+          return null;
+        },
+      );
+
+      await service.create(dto);
+
+      expect(prisma.employee.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ accessPresetId: 'tenant-manager' }),
+        }),
+      );
+    });
+
     it('uses the explicitly chosen preset instead of the default', async () => {
       const dto: CreateEmployeeDto = {
         betterAuthUserId: 'ba-user-test',

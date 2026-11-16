@@ -38,7 +38,8 @@ export class CmsPagesService implements OnModuleInit {
    * behind the demo-import path (prisma/seed.ts, SEED_DUMMY_DATA=true),
    * which never creates CmsPage rows.
    */
-  async ensureTemplatePages() {
+  async ensureTemplatePages(): Promise<number> {
+    let created = 0;
     for (const def of templatePages) {
       const existing = await this.prisma.cmsPage.findFirst({
         where: { slug: def.slug },
@@ -57,11 +58,13 @@ export class CmsPagesService implements OnModuleInit {
             config,
           },
         });
+        created++;
         this.logger.log(`Created system page "${def.slug}"`);
       } catch (e) {
         this.logger.warn(`Failed to create system page "${def.slug}": ${e}`);
       }
     }
+    return created;
   }
 
   private async migrateTemplateConfig(def: {

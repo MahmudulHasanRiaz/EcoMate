@@ -9,7 +9,7 @@ tracked separately.
 - [x] 2. Slug validation (3–30, lowercase, reserved list, uniqueness)
 - [x] 3. Provisioning job: tenant row → tenant seed → owner → subdomains →
       trial subscription → entitlement snapshot → welcome email
-- [ ] 4. `TenantBootstrapService`: roles/permissions, order statuses, payment
+- [x] 4. `TenantBootstrapService`: roles/permissions, order statuses, payment
       options, system settings, default warehouse/store, email templates, legal
       pages, sample data off by default
 - [ ] 5. Idempotent retries, rollback on failure, provisioning progress API/UI
@@ -90,13 +90,33 @@ tracked separately.
   logged; after registry sync, `GET /api/tenants/resolve?host=<slug>.ecomate.bd`
   returned 200. Smoke rows were purged afterwards.
 
-### 4–7. Remaining bootstrap, lifecycle and abuse — NOT STARTED (4 partially done)
+### 4. Tenant bootstrap completeness — DONE
 
-Core bootstrap (owner, statuses/transitions, core settings, warehouse, payment)
-landed with item 3. Remaining Phase 5 work:
+Extended `TenantBootstrapService` in the same provisioning path:
 
-- Item 4 completeness: role presets/permission defaults beyond the owner,
-  email templates, legal/CMS pages, and explicit sample-data-off coverage.
+- **Roles/permissions:** two built-in system presets per tenant — `Manager`
+  (all 291 catalogue permissions) and `Staff` (the 4 employee defaults), both
+  `isSystem: true` so the preset editor protects them. Employee creation now
+  resolves the tenant-scoped `Manager` preset by name when the legacy fixed-id
+  preset is absent (a shared PK cannot repeat per tenant).
+- **Stores:** default `main-showroom` warehouse plus a `Main Store` storefront
+  location (SHOWROOM, Dhaka).
+- **Email templates:** tenant-neutral `Order Confirmation` and `Welcome`
+  templates with `{{variable}}` placeholders.
+- **Legal/template pages:** reuses `CmsPagesService.ensureTemplatePages()` after
+  settings are written, creating all 13 system pages (about, contact, FAQ,
+  stores, delivery areas, terms, privacy, refund, exchange, shipping, careers,
+  company, download) as editable, empty, tenant-neutral rows.
+- **Sample data:** never seeded — no products/categories/orders; demo data
+  remains an explicit import action.
+- All steps remain find-first/create-only, so retries create nothing.
+- Verification: targeted **159/159**; full backend **6255 passed / 10 skipped /
+  0 failed**; build clean. Live bootstrap on the real tenant DB: first call
+  created 2 presets, 16 statuses, 10 settings, 1 warehouse, 1 store, 2
+  templates, 13 pages (incl. privacy/terms/refund/shipping), 0 products; second
+  call returned all-zero creates. Smoke rows were purged (2 tenants).
+
+### 5–7. Remaining lifecycle, export and abuse — NOT STARTED
 - Item 5: landing progress UI wired to the status endpoint, admin retry/rollback
   surface, and a stale-job sweeper.
 - Item 6: soft delete/export/purge (30-day retention) with dependency-ordered
@@ -106,4 +126,4 @@ landed with item 3. Remaining Phase 5 work:
 **Acceptance status:** signup → email verification → automatic provisioning is
 now real end-to-end (tenant rows + seeded tenant DB + registry resolution), so a
 new user reaches a provisioned workspace without manual intervention. Phase 5 is
-still **not complete** until items 4–7 land (lifecycle/export/abuse/UI).
+still **not complete** until items 5–7 land (lifecycle/export/abuse/UI).

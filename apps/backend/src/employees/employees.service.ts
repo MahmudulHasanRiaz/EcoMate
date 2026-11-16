@@ -179,11 +179,20 @@ export class EmployeesService {
    * the employee is created exactly as before rather than failing.
    */
   private async resolveDefaultPresetId(): Promise<string | undefined> {
-    const preset = await this.prisma.accessPreset.findFirst({
+    const legacy = await this.prisma.accessPreset.findFirst({
       where: { id: DEFAULT_ACCESS_PRESET_ID },
       select: { id: true },
     });
-    return preset?.id;
+    if (legacy) return legacy.id;
+
+    // SaaS: the fixed id above only exists on single-tenant installs, and a
+    // shared PK cannot repeat per tenant. New tenants get their own system
+    // "Manager" row (auto id); resolve it by name, RLS-scoped to the tenant.
+    const manager = await this.prisma.accessPreset.findFirst({
+      where: { isSystem: true, name: 'Manager' },
+      select: { id: true },
+    });
+    return manager?.id;
   }
 
   async findAll(query: EmployeeListQuery = {}) {

@@ -8,6 +8,12 @@ function makeService(existing = false) {
       ),
       create: jest.fn().mockResolvedValue({ id: 'owner-1' }),
     },
+    accessPreset: {
+      findFirst: jest
+        .fn()
+        .mockImplementation(async () => (existing ? { id: 'preset-existing' } : null)),
+      create: jest.fn().mockResolvedValue({}),
+    },
     orderStatus: {
       findFirst: jest
         .fn()
@@ -29,6 +35,20 @@ function makeService(existing = false) {
         .mockImplementation(async () => (existing ? { id: 'wh-1' } : null)),
       create: jest.fn().mockResolvedValue({ id: 'wh-1' }),
     },
+    storeLocation: {
+      findFirst: jest
+        .fn()
+        .mockImplementation(async () => (existing ? { id: 'loc-1' } : null)),
+      create: jest.fn().mockResolvedValue({ id: 'loc-1' }),
+    },
+    emailTemplate: {
+      findFirst: jest
+        .fn()
+        .mockImplementation(async () => (existing ? { id: 'tpl-1' } : null)),
+      create: jest.fn().mockResolvedValue({ id: 'tpl-1' }),
+    },
+    product: { create: jest.fn() },
+    category: { create: jest.fn() },
     paymentOption: { upsert: jest.fn().mockResolvedValue({}) },
     paymentGateway: {
       findFirst: jest
@@ -37,9 +57,13 @@ function makeService(existing = false) {
       create: jest.fn().mockResolvedValue({ id: 'gw-1' }),
     },
   };
+  const cmsPages = {
+    ensureTemplatePages: jest.fn().mockResolvedValue(13),
+  };
   return {
     prisma,
-    service: new TenantBootstrapService(prisma as any),
+    cmsPages,
+    service: new TenantBootstrapService(prisma as any, cmsPages as any),
   };
 }
 
@@ -55,8 +79,8 @@ const dto = {
 };
 
 describe('TenantBootstrapService', () => {
-  it('seeds owner, statuses, settings, warehouse and cash payment', async () => {
-    const { service, prisma } = makeService();
+  it('seeds owner, presets, statuses, settings, stores, templates and pages', async () => {
+    const { service, prisma, cmsPages } = makeService();
 
     const result = await service.bootstrap(dto as any);
 
@@ -71,6 +95,23 @@ describe('TenantBootstrapService', () => {
       }),
       select: { id: true },
     });
+
+    expect(prisma.accessPreset.create).toHaveBeenCalledTimes(2);
+    expect(prisma.accessPreset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: 'Manager',
+        isSystem: true,
+        permissions: expect.arrayContaining(['view_orders']),
+      }),
+    });
+    expect(prisma.accessPreset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: 'Staff',
+        isSystem: true,
+        permissions: ['view_media', 'view_customer_reviews', 'approve_customer_reviews', 'view_cod_mismatch'],
+      }),
+    });
+
     expect(prisma.orderStatus.create).toHaveBeenCalledTimes(16);
     expect(prisma.orderStatus.update).toHaveBeenCalled();
     expect(prisma.systemSetting.upsert).toHaveBeenCalledWith({
@@ -83,6 +124,10 @@ describe('TenantBootstrapService', () => {
     expect(prisma.warehouse.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ slug: 'main-showroom' }),
     });
+    expect(prisma.storeLocation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: 'Main Store', type: 'SHOWROOM' }),
+    });
+    expect(prisma.emailTemplate.create).toHaveBeenCalledTimes(2);
     expect(prisma.paymentOption.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { type: 'CASH_ON_DELIVERY' } }),
     );
@@ -93,28 +138,50 @@ describe('TenantBootstrapService', () => {
         enabled: true,
       }),
     });
+    expect(cmsPages.ensureTemplatePages).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       tenantId: dto.tenantId,
       slug: 'acme',
       ownerUserId: 'owner-1',
+      presetsCreated: 2,
       orderStatusesCreated: 16,
+      warehousesCreated: 1,
+      storeLocationsCreated: 1,
+      emailTemplatesCreated: 2,
+      pagesCreated: 13,
     });
   });
 
+  it('never seeds sample catalog data', async () => {
+    const { service, prisma } = makeService();
+    await service.bootstrap(dto as any);
+    expect(prisma.product.create).not.toHaveBeenCalled();
+    expect(prisma.category.create).not.toHaveBeenCalled();
+  });
+
   it('is idempotent when a retry finds existing rows', async () => {
-    const { service, prisma } = makeService(true);
+    const { service, prisma, cmsPages } = makeService(true);
+    cmsPages.ensureTemplatePages.mockResolvedValue(0);
 
     const result = await service.bootstrap(dto as any);
 
     expect(prisma.userProfile.create).not.toHaveBeenCalled();
+    expect(prisma.accessPreset.create).not.toHaveBeenCalled();
     expect(prisma.orderStatus.create).not.toHaveBeenCalled();
     expect(prisma.systemSetting.upsert).not.toHaveBeenCalled();
     expect(prisma.warehouse.create).not.toHaveBeenCalled();
+    expect(prisma.storeLocation.create).not.toHaveBeenCalled();
+    expect(prisma.emailTemplate.create).not.toHaveBeenCalled();
     expect(prisma.paymentGateway.create).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       ownerUserId: 'owner-existing',
+      presetsCreated: 0,
       orderStatusesCreated: 0,
       settingsCreated: 0,
+      warehousesCreated: 0,
+      storeLocationsCreated: 0,
+      emailTemplatesCreated: 0,
+      pagesCreated: 0,
     });
   });
 

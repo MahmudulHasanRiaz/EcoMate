@@ -1,4 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { CmsPagesService } from '../cms-pages/cms-pages.service';
+import { EMPLOYEE_DEFAULT_PERMISSIONS } from '../common/permissions/effective-permissions';
+import { getAllPermissions } from '../common/permissions/registry';
 import { PrismaService } from '../prisma/prisma.service';
 import { tenantCompound } from '../tenancy/tenant-context';
 import { ORDER_TRANSITIONS } from '../orders/order-transitions';
@@ -42,22 +45,66 @@ const PAYMENT_OPTIONS = [
  */
 @Injectable()
 export class TenantBootstrapService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cmsPages: CmsPagesService,
+  ) {}
 
   async bootstrap(dto: ProvisionTenantDto) {
     const ownerUserId = await this.ensureOwner(dto);
+    const presetsCreated = await this.ensurePresets();
     const statusCount = await this.ensureOrderStatuses();
     const settingCount = await this.ensureSettings(dto);
-    await this.ensureWarehouse();
+    const warehousesCreated = await this.ensureWarehouse();
+    const storeLocationsCreated = await this.ensureStoreLocation();
     await this.ensurePayment();
+    const emailTemplatesCreated = await this.ensureEmailTemplates();
+    // Runs last so contact/about/shipping pages can pick up the settings above.
+    const pagesCreated = await this.cmsPages.ensureTemplatePages();
 
+    // Sample catalog data is deliberately never seeded here: a new tenant
+    // starts empty and demo data remains an explicit import action.
     return {
       tenantId: dto.tenantId,
       slug: dto.slug,
       ownerUserId,
+      presetsCreated,
       orderStatusesCreated: statusCount,
       settingsCreated: settingCount,
+      warehousesCreated,
+      storeLocationsCreated,
+      emailTemplatesCreated,
+      pagesCreated,
     };
+  }
+
+  private async ensurePresets(): Promise<number> {
+    const presets = [
+      {
+        name: 'Manager',
+        description: 'Full store management access (built-in)',
+        permissions: getAllPermissions(),
+      },
+      {
+        name: 'Staff',
+        description: 'Everyday staff access (built-in)',
+        permissions: [...EMPLOYEE_DEFAULT_PERMISSIONS],
+      },
+    ];
+
+    let created = 0;
+    for (const preset of presets) {
+      const existing = await this.prisma.accessPreset.findFirst({
+        where: { name: preset.name },
+        select: { id: true },
+      });
+      if (existing) continue;
+      await this.prisma.accessPreset.create({
+        data: { ...preset, isSystem: true },
+      });
+      created++;
+    }
+    return created;
   }
 
   private async ensureOwner(dto: ProvisionTenantDto): Promise<string> {
@@ -178,12 +225,12 @@ export class TenantBootstrapService {
     return created;
   }
 
-  private async ensureWarehouse(): Promise<void> {
+  private async ensureWarehouse(): Promise<number> {
     const existing = await this.prisma.warehouse.findFirst({
       where: { slug: 'main-showroom' },
       select: { id: true },
     });
-    if (existing) return;
+    if (existing) return 0;
     await this.prisma.warehouse.create({
       data: {
         name: 'Main Showroom',
@@ -194,6 +241,60 @@ export class TenantBootstrapService {
         isActive: true,
       },
     });
+    return 1;
+  }
+
+  private async ensureStoreLocation(): Promise<number> {
+    const existing = await this.prisma.storeLocation.findFirst({
+      where: { name: 'Main Store' },
+      select: { id: true },
+    });
+    if (existing) return 0;
+    await this.prisma.storeLocation.create({
+      data: {
+        name: 'Main Store',
+        type: 'SHOWROOM',
+        address: 'Main Store Address',
+        city: 'Dhaka',
+        isActive: true,
+        sortOrder: 0,
+      },
+    });
+    return 1;
+  }
+
+  private async ensureEmailTemplates(): Promise<number> {
+    const templates = [
+      {
+        name: 'Order Confirmation',
+        subject: 'Your order {{orderNumber}} is confirmed',
+        body:
+          '<p>Hi {{customerName}},</p>' +
+          '<p>We have received your order {{orderNumber}} for {{orderTotal}}.</p>' +
+          '<p>We will let you know as soon as it ships.</p>',
+        variables: ['customerName', 'orderNumber', 'orderTotal'],
+      },
+      {
+        name: 'Welcome',
+        subject: 'Welcome to {{storeName}}',
+        body:
+          '<p>Hi {{customerName}},</p>' +
+          '<p>Thanks for joining {{storeName}}. Browse the store any time.</p>',
+        variables: ['customerName', 'storeName'],
+      },
+    ];
+
+    let created = 0;
+    for (const template of templates) {
+      const existing = await this.prisma.emailTemplate.findFirst({
+        where: { name: template.name },
+        select: { id: true },
+      });
+      if (existing) continue;
+      await this.prisma.emailTemplate.create({ data: template });
+      created++;
+    }
+    return created;
   }
 
   private async ensurePayment(): Promise<void> {
