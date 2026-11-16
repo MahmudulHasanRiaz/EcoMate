@@ -15,6 +15,8 @@ import { CreateSignupDto } from './dto/create-signup.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { PlatformMailService } from '../common/platform-mail.service';
 import { SignupRateLimitService } from './signup-rate-limit.service';
+import { isDisposableEmail } from './signup-disposable';
+import { normalizePhone, phoneVariants } from './signup-phone';
 import { validateSlug } from './signup-slug';
 
 const IP_WINDOW_MS = 10 * 60_000;
@@ -55,9 +57,16 @@ export class SignupService {
     if (!slugCheck.ok) throw new BadRequestException(slugCheck.message);
     const slug = slugCheck.slug;
     const ownerEmail = dto.ownerEmail.trim().toLowerCase();
+    const ownerPhone = normalizePhone(dto.ownerPhone);
+
+    if (isDisposableEmail(ownerEmail)) {
+      throw new BadRequestException(
+        'Disposable email addresses are not supported. Use a permanent address.',
+      );
+    }
 
     await this.expireStale();
-    await this.assertAvailable(slug, ownerEmail);
+    await this.assertAvailable(slug, ownerEmail, ownerPhone);
     this.rateLimit.assert(`signup:email:${ownerEmail}`, EMAIL_LIMIT, EMAIL_WINDOW_MS);
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
@@ -69,7 +78,7 @@ export class SignupService {
         tenantName: dto.tenantName.trim(),
         slug,
         ownerEmail,
-        ownerPhone: dto.ownerPhone?.trim() || null,
+        ownerPhone,
         passwordHash,
         status: 'PENDING_EMAIL',
         verificationTokenHash: sha256(token),
@@ -332,21 +341,45 @@ export class SignupService {
     });
   }
 
-  private async assertAvailable(slug: string, ownerEmail: string) {
-    const [tenantSlug, tenantEmail, pendingSlug, pendingEmail] =
-      await Promise.all([
-        this.prisma.tenant.findUnique({ where: { slug } }),
-        this.prisma.tenant.findFirst({ where: { ownerEmail } }),
-        this.prisma.signupRequest.findFirst({
-          where: { slug, status: { in: ['PENDING_EMAIL', 'VERIFIED'] } },
-        }),
-        this.prisma.signupRequest.findFirst({
-          where: {
-            ownerEmail,
-            status: { in: ['PENDING_EMAIL', 'VERIFIED'] },
-          },
-        }),
-      ]);
+  private async assertAvailable(
+    slug: string,
+    ownerEmail: string,
+    ownerPhone: string | null,
+  ) {
+    const phones = phoneVariants(ownerPhone);
+    const [
+      tenantSlug,
+      tenantEmail,
+      pendingSlug,
+      pendingEmail,
+      tenantPhone,
+      pendingPhone,
+    ] = await Promise.all([
+      this.prisma.tenant.findUnique({ where: { slug } }),
+      this.prisma.tenant.findFirst({ where: { ownerEmail } }),
+      this.prisma.signupRequest.findFirst({
+        where: { slug, status: { in: ['PENDING_EMAIL', 'VERIFIED'] } },
+      }),
+      this.prisma.signupRequest.findFirst({
+        where: {
+          ownerEmail,
+          status: { in: ['PENDING_EMAIL', 'VERIFIED'] },
+        },
+      }),
+      phones.length > 0
+        ? this.prisma.tenant.findFirst({
+            where: { ownerPhone: { in: phones } },
+          })
+        : Promise.resolve(null),
+      phones.length > 0
+        ? this.prisma.signupRequest.findFirst({
+            where: {
+              ownerPhone: { in: phones },
+              status: { in: ['PENDING_EMAIL', 'VERIFIED'] },
+            },
+          })
+        : Promise.resolve(null),
+    ]);
 
     if (tenantSlug || pendingSlug) {
       throw new ConflictException('This store address is already taken');
@@ -357,6 +390,11 @@ export class SignupService {
     if (pendingEmail) {
       throw new ConflictException(
         'A signup is already pending for this email. Resend the verification email.',
+      );
+    }
+    if (tenantPhone || pendingPhone) {
+      throw new ConflictException(
+        'A trial is already registered for this phone number. Contact support if you need another store.',
       );
     }
   }

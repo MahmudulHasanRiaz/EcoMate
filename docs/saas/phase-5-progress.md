@@ -14,7 +14,7 @@ tracked separately.
       pages, sample data off by default
 - [x] 5. Idempotent retries, rollback on failure, provisioning progress API/UI
 - [x] 6. Tenant soft delete/export/purge job (30-day retention)
-- [ ] 7. Trial abuse controls (disposable email, phone/domain dedupe)
+- [x] 7. Trial abuse controls (disposable email, phone/domain dedupe)
 
 ## Unit log
 
@@ -173,11 +173,45 @@ Extended `TenantBootstrapService` in the same provisioning path:
   tenant rows removed, platform tenant gone, tenant DB counts zero, and the
   `tenant.purge` audit retained. Smoke rows/export files were purged.
 
-### 7. Remaining trial abuse controls — NOT STARTED
-- Disposable-email list plus phone/domain dedupe before provisioning.
-- None of the above changes the Phase 5 acceptance gate.
+### 7. Trial abuse controls — DONE
 
-**Acceptance status:** signup → email verification → automatic provisioning is
-now real end-to-end (tenant rows + seeded tenant DB + registry resolution), so a
-new user reaches a provisioned workspace without manual intervention. Phase 5 is
-still **not complete** until item 7 lands (trial abuse controls).
+- **Disposable email:** built-in provider list (mailinator, yopmail, temp-mail,
+  guerrillamail, …) plus `SIGNUP_DISPOSABLE_DOMAINS` extras; exact domains and
+  their subdomains are rejected at signup with a 400 before any row/email is
+  written.
+- **Phone dedupe:** phone variants (`+880…`, `880…`, `0…`, spacing/punctuation)
+  are checked against every tenant and every PENDING/VERIFIED signup; new
+  signups store a canonical `+<digits>` form so later attempts match regardless
+  of formatting. A blocked phone returns 409 with a support message.
+- **Domain dedupe:** `TenantDomain.host` is globally unique and `addDomain`
+  maps `P2002` to a 409, so a verified/pending custom domain (or subdomain)
+  cannot be claimed by another tenant; deleted tenants keep their row until the
+  purge job, so the domain stays reserved through the 30-day window.
+- Verification: platform **128/128** (backend unchanged **6260 passed / 10
+  skipped / 0 failed**). Live: disposable `mailinator.com` → 400; first phone
+  `+8801700000001` → 201; second signup with `01700000001` → 409; adding
+  `shop-dedupe.example.com` to tenant A → 201, same host on tenant B → 409.
+  Abuse-smoke rows/domains/admin were purged.
+
+## Phase 5 completion notes
+
+All seven items are done. The end-to-end acceptance now holds: signup → email
+verification → provisioning job → seeded tenant DB → registry resolution →
+landing progress with admin/storefront links, plus rollback/retry, lifecycle
+export/purge, and trial abuse controls.
+
+Carry these caveats into the final SaaS report:
+
+- Entitlement refresh is periodic (60s) per platform/tenant instance plus
+  request-time reads; multi-instance convergence is eventual, not instant.
+- Historical repository docs (pre-SaaS license activation, legacy volume names)
+  remain in the tree for reference; `SAAS.md`, `docs/saas/phase-3-report.md` and
+  this progress log are the current source of truth.
+- Production signup/welcome mail needs SMTP; without it signup fails closed
+  (development logs the verification link instead).
+- Custom domains need real DNS; the background verifier and Caddy on-demand TLS
+  only admit verified hosts.
+- Export files are only as durable as `TENANT_EXPORT_DIR`; mount a persistent
+  volume in production.
+
+**Acceptance status:** Phase 5 is **complete (7/7)**.

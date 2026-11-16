@@ -75,6 +75,63 @@ const dto = {
   captchaToken: 'captcha-token',
 };
 
+describe('SignupService — abuse controls', () => {
+  it('rejects disposable email providers', async () => {
+    const { service, prisma } = makeService();
+    await expect(
+      service.create(
+        { ...dto, ownerEmail: 'owner@mailinator.com' } as any,
+        { ip: '1.2.3.4' },
+      ),
+    ).rejects.toThrow('Disposable email');
+    expect(prisma.signupRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a phone already used by a tenant', async () => {
+    const { service, prisma } = makeService();
+    prisma.tenant.findFirst.mockImplementation(async ({ where }: any) =>
+      where?.ownerPhone ? { id: 'tenant-1' } : null,
+    );
+
+    await expect(
+      service.create(
+        { ...dto, ownerPhone: '01700000000' } as any,
+        { ip: '1.2.3.4' },
+      ),
+    ).rejects.toThrow('phone number');
+    expect(prisma.signupRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a phone already pending verification', async () => {
+    const { service, prisma } = makeService();
+    prisma.signupRequest.findFirst.mockImplementation(async ({ where }: any) =>
+      where?.ownerPhone ? { id: 'signup-pending' } : null,
+    );
+
+    await expect(
+      service.create(
+        { ...dto, ownerPhone: '+880 1700-000000' } as any,
+        { ip: '1.2.3.4' },
+      ),
+    ).rejects.toThrow('phone number');
+  });
+
+  it('queries every common form of the phone number', async () => {
+    const { service, prisma } = makeService();
+    await service.create(
+      { ...dto, ownerPhone: '+880 1700-000000' } as any,
+      { ip: '1.2.3.4' },
+    );
+
+    const phoneQuery = (
+      prisma.tenant.findFirst as jest.Mock
+    ).mock.calls.find(([args]) => args?.where?.ownerPhone);
+    expect(phoneQuery?.[0].where.ownerPhone.in).toEqual(
+      expect.arrayContaining(['+8801700000000', '01700000000', '8801700000000']),
+    );
+  });
+});
+
 describe('SignupService — create', () => {
   it('creates a pending signup with a hashed password/token and emails the link', async () => {
     const { service, prisma, mail, captcha, rateLimit } = makeService();
