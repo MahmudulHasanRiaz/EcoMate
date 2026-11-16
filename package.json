@@ -26,6 +26,9 @@
     "install:all": "npm install",
     "platform:dev": "npm run start:dev --workspace=platform-api",
     "platform:build": "npm run build --workspace=platform-api",
+    "platform-admin:dev": "npm run dev --workspace=platform-admin",
+    "platform-admin:build": "npm run build --workspace=platform-admin",
+    "platform-admin:test": "npm run test --workspace=platform-admin",
     "platform:migrate": "npm run prisma:deploy --workspace=platform-api",
     "platform:generate": "npm run prisma:generate --workspace=platform-api",
     "platform:seed": "npm run prisma:seed --workspace=platform-api"
