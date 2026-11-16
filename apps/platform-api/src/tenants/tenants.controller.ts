@@ -8,8 +8,10 @@ import {
   Patch,
   Post,
   Query,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
+import { createReadStream } from 'fs';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -20,6 +22,7 @@ import { ChangePlanDto } from './dto/change-plan.dto';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { ExtendTrialDto } from './dto/extend-trial.dto';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
+import { TenantLifecycleService } from './tenant-lifecycle.service';
 import { TenantsService } from './tenants.service';
 
 @Controller('tenants')
@@ -28,6 +31,7 @@ export class TenantsController {
   constructor(
     private readonly tenants: TenantsService,
     private readonly domains: DomainsService,
+    private readonly lifecycle: TenantLifecycleService,
   ) {}
 
   @Get()
@@ -38,6 +42,47 @@ export class TenantsController {
     @Query('search') search?: string,
   ) {
     return this.tenants.list({ page, limit, status, search });
+  }
+
+  @Get(':id/export')
+  @Roles('SUPERADMIN', 'BILLING', 'SUPPORT')
+  async exportTenant(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    const file = await this.lifecycle.exportToFile(id, user?.id);
+    return new StreamableFile(createReadStream(file.path), {
+      type: 'application/json',
+      disposition: `attachment; filename="${file.filename}"`,
+      length: file.sizeBytes,
+    });
+  }
+
+  @Delete(':id')
+  @Roles('SUPERADMIN')
+  softDelete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.lifecycle.softDelete(id, user?.id);
+  }
+
+  @Post(':id/restore')
+  @Roles('SUPERADMIN', 'SUPPORT')
+  restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.lifecycle.restore(id, user?.id);
+  }
+
+  @Post(':id/purge')
+  @Roles('SUPERADMIN')
+  purge(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.lifecycle.purgeNow(id, user?.id);
   }
 
   @Get(':id')

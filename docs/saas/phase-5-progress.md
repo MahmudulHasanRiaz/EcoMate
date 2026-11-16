@@ -13,7 +13,7 @@ tracked separately.
       options, system settings, default warehouse/store, email templates, legal
       pages, sample data off by default
 - [x] 5. Idempotent retries, rollback on failure, provisioning progress API/UI
-- [ ] 6. Tenant soft delete/export/purge job (30-day retention)
+- [x] 6. Tenant soft delete/export/purge job (30-day retention)
 - [ ] 7. Trial abuse controls (disposable email, phone/domain dedupe)
 
 ## Unit log
@@ -146,13 +146,38 @@ Extended `TenantBootstrapService` in the same provisioning path:
   showed retry and reached ready after “Try again”. Live platform row ended
   TRIAL / ACTIVE domain / SUCCEEDED job. Smoke rows were purged.
 
-### 6–7. Remaining lifecycle, export and abuse — NOT STARTED
-- Item 6: soft delete/export/purge (30-day retention) with dependency-ordered
-  tenant export.
-- Item 7: disposable-email list plus phone/domain dedupe before provisioning.
+### 6. Soft delete, export and purge — DONE
+
+- **Soft delete/restore:** `DELETE /api/tenants/:id` sets `status=DELETED` +
+  `deletedAt` and returns the 30-day `purgeAfter`; the registry and TLS ask
+  already exclude DELETED tenants. `POST /api/tenants/:id/restore` works inside
+  the window and returns 410 after it. Both are audited.
+- **Dependency-ordered export:** the tenant backend discovers every public
+  table with a `tenant_id` (200 at current schema), topologically orders them
+  by FK edges, and exports parent-first via `row_to_json` (per-table cap
+  `TENANT_EXPORT_MAX_ROWS`, abort rather than truncate). The platform combines
+  that with its own tenant/domains/subscription/invoices/payments/audit rows and
+  writes one JSON file under `TENANT_EXPORT_DIR`; `GET /api/tenants/:id/export`
+  downloads it.
+- **Purge job:** every `TENANT_PURGE_INTERVAL_MS` (default 6h, startup pass,
+  `TENANT_PURGE_ENABLED=false` kill switch) finds DELETED tenants past
+  `TENANT_RETENTION_DAYS` (default 30), exports first, calls the tenant-internal
+  `POST /internal/provisioning/purge` (reverse dependency order; only
+  tenant-scoped rows), then deletes the platform row. A failed export or tenant
+  purge aborts and retries next sweep; the export file is kept. Audit rows
+  survive with `tenantId=null`.
+- Verification: platform **115/115**; backend **6260 passed / 10 skipped /
+  0 failed**. Live: soft delete returned `purgeAfter` and registry stopped
+  listing the host; export downloaded 33,662 bytes / 200 tables / 13 pages;
+  early purge returned 400; after backdating 31 days purge returned 201 with 47
+  tenant rows removed, platform tenant gone, tenant DB counts zero, and the
+  `tenant.purge` audit retained. Smoke rows/export files were purged.
+
+### 7. Remaining trial abuse controls — NOT STARTED
+- Disposable-email list plus phone/domain dedupe before provisioning.
+- None of the above changes the Phase 5 acceptance gate.
 
 **Acceptance status:** signup → email verification → automatic provisioning is
 now real end-to-end (tenant rows + seeded tenant DB + registry resolution), so a
 new user reaches a provisioned workspace without manual intervention. Phase 5 is
-still **not complete** until items 6–7 land (soft delete/export/purge and trial
-abuse controls).
+still **not complete** until item 7 lands (trial abuse controls).
