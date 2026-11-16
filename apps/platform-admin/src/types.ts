@@ -83,6 +83,103 @@ export interface PlatformUser {
   lastLoginAt?: string | null;
 }
 
+export interface BillingSummary {
+  pendingProofs: number;
+  openInvoices: number;
+  overdueInvoices: number;
+  collectedAmount: number;
+}
+
+export interface PaymentMethod {
+  id: string;
+  type: string;
+  name: string;
+  accountName?: string | null;
+  accountNumber?: string | null;
+  instructions?: string | null;
+  qrMediaUrl?: string | null;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface PaymentProof {
+  id: string;
+  invoiceId: string;
+  tenantId: string;
+  amount: string | number;
+  transactionId: string;
+  senderNumber?: string | null;
+  screenshotUrl?: string | null;
+  note?: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  tenant?: { id: string; name: string; slug: string };
+  invoice?: {
+    id: string;
+    number: string;
+    status: string;
+    total: string | number;
+    currency: string;
+  };
+  method?: { id: string; type: string; name: string };
+}
+
+export interface InvoiceLine {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: string | number;
+  amount: string | number;
+}
+
+export interface Invoice {
+  id: string;
+  number: string;
+  status: string;
+  subtotal: string | number;
+  discount: string | number;
+  tax: string | number;
+  total: string | number;
+  currency: string;
+  dueAt: string;
+  paidAt?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  paidAmount?: number;
+  tenant?: { id: string; name: string; slug: string };
+  lines?: InvoiceLine[];
+  payments?: Payment[];
+  proofs?: PaymentProof[];
+  creditNotes?: Array<{
+    id: string;
+    amount: string | number;
+    currency: string;
+    reason: string;
+    createdAt: string;
+  }>;
+  _count?: { lines?: number; proofs?: number };
+}
+
+export interface Payment {
+  id: string;
+  invoiceId: string;
+  tenantId: string;
+  amount: string | number;
+  currency: string;
+  reference?: string | null;
+  receivedAt: string;
+  recordedBy?: string | null;
+  tenant?: { id: string; name: string; slug: string };
+  invoice?: { id: string; number: string };
+  method?: { id: string; type: string; name: string };
+  proof?: { id: string; transactionId: string };
+}
+
 export interface Session {
   accessToken: string;
   refreshToken: string;

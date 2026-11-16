@@ -552,6 +552,76 @@ button {
   color: var(--muted);
 }
 
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+
+.tab {
+  border: 0;
+  background: none;
+  padding: 10px 14px;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 650;
+  border-bottom: 2px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tab[data-active='true'] {
+  color: var(--ink);
+  border-bottom-color: var(--brand);
+}
+
+.tab span {
+  min-width: 20px;
+  border-radius: 999px;
+  background: #eef2f1;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 1px 6px;
+}
+
+.review-panel {
+  border-color: #cfe0ef;
+  box-shadow: 0 0 0 3px rgb(11 99 182 / 5%), var(--shadow);
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.reject-box {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 280px;
+}
+
+.reject-box input {
+  flex: 1;
+  min-height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+}
+
+.subhead {
+  margin: 22px 0 10px;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
 @media (max-width: 760px) {
   .action-grid {
     grid-template-columns: 1fr;

@@ -7,7 +7,7 @@ complete.
 - [x] 1. Tenant detail actions: change plan, extend trial, suspend/reactivate,
       reset owner password, impersonate, export, delete
 - [x] 2. Impersonation tokens + tenant exchange endpoint + audit
-- [ ] 3. Payment proof review queue + approve/reject + invoice/payment ledger
+- [x] 3. Payment proof review queue + approve/reject + invoice/payment ledger
 - [ ] 4. Subscription/plan change UI, credit notes, coupons
 - [ ] 5. Domain management: primary/base/fallback config, tenant domains,
       verification/TLS status, force re-check
@@ -81,6 +81,30 @@ export, delete). Smoke tenant/admin were purged.
 - The scaffold shipped read-only; the tenant-action panel above is the first
   Phase 6 increment on top of it.
 
+## Payment proof review + ledger — DONE
+
+- Platform API `/api/billing`: summary, methods, proof queue/detail,
+  approve/reject, invoices/detail, payments.
+- Approve is transactional and race-safe: a conditional `PENDING → APPROVED`
+  claim, then a `Payment` row from the proof amount/transaction reference, then
+  a payment sum. The invoice becomes `PAID` only when fully covered; a partial
+  payment leaves it `OPEN`. Subscription extension is deliberately deferred to
+  Phase 7.
+- Reject requires a 3–500 char reason, stores `reviewedBy/At/rejectionReason`
+  and never creates a payment. Both actions write platform audit rows.
+- Ledger lists are tenant-aware and include tenant, invoice, method, proof and
+  recorded-by context; invoice detail shows lines, payments, proofs and credit
+  notes.
+- Console: Billing nav with pending/open/overdue/collected metrics, Proofs /
+  Invoices / Payments tabs, inline proof review (approve with confirm, reject
+  with reason), invoice detail and payment ledger.
+- Verification: platform **141/141**, backend unchanged **6268 passed / 10
+  skipped / 0 failed**, platform-admin build + **4/4** tests. Live browser
+  **8/8**: two pending proofs → approve paid `INV-BILL-1` and created the
+  `1500 BDT` ledger row → reject with “Wrong transaction” → pending queue empty.
+  DB ended `INV-BILL-1 PAID`, `INV-BILL-2 OPEN`, collected `1500`, both audit
+  rows. Smoke rows/method/admin were purged.
+
 ## Next
 
-Item 3: payment proof review queue + approve/reject + invoice/payment ledger.
+Item 4: subscription/plan change UI, credit notes, coupons.

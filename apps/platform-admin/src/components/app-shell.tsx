@@ -5,6 +5,7 @@ import { useAuth } from '../auth';
 const NAV = [
   { to: '/', label: 'Overview', end: true },
   { to: '/tenants', label: 'Tenants' },
+  { to: '/billing', label: 'Billing' },
   { to: '/plans', label: 'Plans' },
 ] as const;
 

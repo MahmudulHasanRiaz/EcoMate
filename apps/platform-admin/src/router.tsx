@@ -5,6 +5,7 @@ import {
   Outlet,
 } from '@tanstack/react-router';
 import { AppShell } from './components/app-shell';
+import { BillingPage } from './pages/billing';
 import { LoginPage } from './pages/login';
 import { OverviewPage } from './pages/overview';
 import { PlansPage } from './pages/plans';
@@ -59,11 +60,22 @@ const plansRoute = createRoute({
   ),
 });
 
+const billingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/billing',
+  component: () => (
+    <AppShell>
+      <BillingPage />
+    </AppShell>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   overviewRoute,
   tenantsRoute,
   tenantRoute,
+  billingRoute,
   plansRoute,
 ]);
 

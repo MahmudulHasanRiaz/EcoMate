@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
+import { BillingModule } from './billing/billing.module';
 import { AuditModule } from './common/audit.module';
 import { PlatformMailModule } from './common/platform-mail.module';
 import { DomainConfigModule } from './config/domain-config.module';
@@ -20,6 +21,7 @@ import { TenantsModule } from './tenants/tenants.module';
     AuditModule,
     PlatformMailModule,
     AuthModule,
+    BillingModule,
     DomainConfigModule,
     DomainsModule,
     HealthModule,
