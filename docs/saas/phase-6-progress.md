@@ -12,7 +12,7 @@ complete.
 - [x] 5. Domain management: primary/base/fallback config, tenant domains,
       verification/TLS status, force re-check
 - [x] 6. Usage dashboards + limit overrides
-- [ ] 7. Metrics dashboard (MRR/ARR/trials/past-due/churn)
+- [x] 7. Metrics dashboard (MRR/ARR/trials/past-due/churn)
 - [ ] 8. Platform settings (payment methods, SMTP, trial/grace, tax, branding,
       domain config)
 - [ ] 9. Platform users/roles, audit search/export
@@ -205,6 +205,74 @@ restored the plan value and the three audit rows carried before/after values.
 Smoke tenant counters, snapshots, overrides and audit rows were purged;
 services stopped.
 
+## Metrics dashboard — DONE
+
+- **Server-derived only:** `apps/platform-api/src/metrics/` computes every
+  figure from stored platform rows (`Subscription`, `Tenant`, `Payment`,
+  `Invoice`). Nothing is estimated and no period is invented — a window with no
+  data reports zeros, a rate with no base reports `null` (rendered `—`).
+- **Money rules (`metrics.compute.ts`):** prices are converted to integer cents
+  before any sum, so MRR never drifts. `MONTHLY` keeps the price, `YEARLY` is
+  divided by twelve, `CUSTOM` is normalised to 30 days (falling back to the
+  monthly value when `intervalDays` is missing). **A paying subscription** is
+  `status = ACTIVE`, or a subscription still marked `TRIAL` on a tenant the
+  operator activated (`tenant.status = ACTIVE`); terminal subscription states
+  (`CANCELLED`/`EXPIRED`/`SUSPENDED`) always win and produce no revenue.
+  `PAST_DUE` on either side is reported separately as **at-risk MRR** and is
+  never counted as earned. Currencies are kept apart end to end — the payload
+  carries a `byCurrency[]` plus a `primaryCurrency`, and the console never adds
+  currencies together.
+- **Trials:** `active` (status `TRIAL`), `endingSoon` (`trialEndsAt` within
+  7 days) and `expired` (`trialEndsAt` in the past without a conversion — the
+  actionable leak).
+- **Churn:** window-based on `endedAt ?? canceledAt`; the rate is relative to
+  the subscriptions live at window start and is `null` when that base is zero.
+  Churned tenants are listed with plan, cause and timestamp.
+- **Collections:** payments inside the window grouped per currency, open
+  invoices split into total vs overdue (`dueAt < now`), plus a six-month series
+  of `collected` (primary currency only), `newTenants`, `newSubscriptions` and
+  `churned` keyed by Dhaka month.
+- **Clock seam:** `METRICS_CLOCK` is an injected provider (`() => new Date()` by
+  default) so window/month maths is deterministic in tests.
+- **API:** `GET /metrics/overview?window=` — window clamped to 1–365 days
+  (default 30); a non-numeric window falls back to the default instead of being
+  forwarded raw. Read roles are `SUPERADMIN`/`BILLING`/`SUPPORT` (`READONLY`
+  gets `403`).
+- **Console:** `/metrics` nav page — eight KPI cards (MRR, ARR, paying subs +
+  conversion, past-due at-risk, active trials, expired trials, churn rate, open
+  invoices), revenue-by-currency table (headline currency flagged, paying-basis
+  disclosure), subscription status distribution with share bars, collections +
+  outstanding panel, six-month trend with scaled bars and per-month deltas, top
+  plans by MRR, and the churn list linking into each tenant. Window presets
+  (`7d/30d/90d/1y`) refetch; the layout collapses to 2 columns and then 1 at
+  narrow widths with no horizontal overflow.
+
+Verification: platform **220/220** (26 suites, +35), platform-admin tsc clean +
+vitest **12/12** + production build clean, platform `nest build` clean,
+backend **6271 passed / 10 skipped / 0 failed** (447 suites, unchanged),
+storefront **699/699**, shared-types **14/14**, `prisma migrate status`
+4 up-to-date (no schema change in this item). Live **API E2E 48/48**: three
+plans created through `POST /plans` and seven tenants through `POST /tenants`
+(real TRIAL subscriptions), then subscription/tenant lifecycle states, a
+backdated signup history, a payment method, two open invoices and four payments
+were set up, asserting `MRR 5,500 / ARR 66,000` in BDT (2 subscription-based +
+1 operator-activated tenant), `atRiskMrr 1,500`, status counts
+(2/3/1/0/0/1), `trials {3,1,1}`, `churn {1,7,14%}`, conversion `3/7 = 43%`,
+collections `BDT 2,000 (2) + $20 (1)`, outstanding `5,000 open / 2,000
+overdue`, the six-month series (`700` Sep, `500` Oct, `1,500` Nov; `+5` subs
+Jul, `+2` Oct; `−1` churn Nov) and top plans `3,000 / 1,500 / 1,000` (the
+yearly plan correctly shown as its monthly equivalent). Window edges
+(`0 → 1`, `9999 → 365`, `abc → 30`) and the role boundary (`READONLY → 403`,
+anonymous `401`) were checked. Live **browser 39/39** on `/metrics`
+(sidebar entry, all cards, both tables, status bars, six scaled series bars,
+churn list, preset refetch `window=90`, no horizontal overflow at 390px — no
+page errors). The live run caught a real bug: Prisma hands a price back as a
+`Decimal` object, which the cents helper silently read as free (MRR showed `0`
+with 3 paying subscriptions); prices are now coerced through their string form
+(fixed + unit-tested). All smoke tenants, plans, invoices, payments, method and
+the READONLY account were purged; services stopped.
+
 ## Next
 
-Item 7: metrics dashboard (MRR/ARR/trials/past-due/churn).
+Item 8: platform settings (payment methods, SMTP, trial/grace, tax, branding,
+maintenance).

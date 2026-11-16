@@ -298,6 +298,99 @@ export interface UsageOverview {
   tenants: UsageOverviewTenant[];
 }
 
+export interface MetricsCurrencyRow {
+  currency: string;
+  mrr: number;
+  arr: number;
+  subscriptions: number;
+  atRiskMrr: number;
+}
+
+export interface MetricsOverview {
+  generatedAt: string;
+  windowDays: number;
+  revenue: {
+    byCurrency: MetricsCurrencyRow[];
+    paying: number;
+    atRisk: number;
+    primaryCurrency: string;
+    basis: {
+      payingFromSubscription: number;
+      payingFromTenant: number;
+      atRiskFromSubscription: number;
+      atRiskFromTenant: number;
+    };
+  };
+  subscriptions: {
+    total: number;
+    counts: {
+      ACTIVE: number;
+      TRIAL: number;
+      PAST_DUE: number;
+      SUSPENDED: number;
+      CANCELLED: number;
+      EXPIRED: number;
+    };
+  };
+  tenants: {
+    total: number;
+    active: number;
+    trial: number;
+    pastDue: number;
+    suspended: number;
+    pending: number;
+    cancelled: number;
+    deleted: number;
+  };
+  trials: { active: number; endingSoon: number; expired: number };
+  churn: {
+    churned: number;
+    base: number;
+    rate: number | null;
+    tenants: Array<{
+      tenantId: string;
+      tenantName: string;
+      planName: string | null;
+      endedAt: string;
+      cause: 'ended' | 'canceled';
+    }>;
+  };
+  conversion: { paying: number; total: number; rate: number | null };
+  collections: {
+    windowDays: number;
+    payments: number;
+    byCurrency: Array<{ currency: string; amount: number; payments: number }>;
+    outstanding: {
+      open: { count: number; amount: number; currency: string };
+      overdue: { count: number; amount: number; currency: string };
+      byCurrency: Array<{
+        currency: string;
+        openCount: number;
+        openAmount: number;
+        overdueCount: number;
+        overdueAmount: number;
+      }>;
+    };
+  };
+  series: {
+    primaryCurrency: string;
+    months: Array<{
+      month: string;
+      collected: number;
+      newTenants: number;
+      newSubscriptions: number;
+      churned: number;
+    }>;
+  };
+  topPlans: Array<{
+    plan: string;
+    version: number;
+    currency: string;
+    tenants: number;
+    mrr: number;
+  }>;
+}
+
 export interface Session {
   accessToken: string;
   refreshToken: string;

@@ -1103,6 +1103,109 @@ tbody tr:hover {
   font-size: 12.5px;
 }
 
+/* ---------- metrics ---------- */
+
+.usage-bar > span[data-tone='muted'] {
+  background: #b9c4c0;
+}
+
+.usage-bar > span[data-tone='warning'] {
+  background: var(--warning);
+}
+
+.usage-bar > span[data-tone='danger'] {
+  background: var(--danger);
+}
+
+.usage-bar > span[data-tone='success'] {
+  background: var(--success);
+}
+
+.status-list {
+  list-style: none;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+}
+
+.status-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.status-list-head strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.series {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.series-col {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+}
+
+.series-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 132px;
+  width: 100%;
+  padding: 0 6px;
+  background: linear-gradient(
+    to top,
+    rgba(15, 42, 33, 0.04),
+    rgba(15, 42, 33, 0)
+  );
+  border-radius: var(--radius-sm);
+}
+
+.series-bar {
+  display: block;
+  width: 100%;
+  max-width: 46px;
+  min-height: 2px;
+  border-radius: 6px 6px 2px 2px;
+  align-self: flex-end;
+}
+
+.series-bar--money {
+  background: var(--brand);
+}
+
+.series-value {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.series-col strong {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.churn-list {
+  list-style: none;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+}
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 960px) {
@@ -1143,6 +1246,11 @@ tbody tr:hover {
 
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .series {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 18px;
   }
 
   .detail-grid {

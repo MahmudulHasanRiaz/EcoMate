@@ -8,6 +8,7 @@ import { DomainConfigModule } from './config/domain-config.module';
 import { DomainsModule } from './domains/domains.module';
 import { HealthModule } from './health/health.module';
 import { InternalModule } from './internal/internal.module';
+import { MetricsModule } from './metrics/metrics.module';
 import { PlansModule } from './plans/plans.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
@@ -27,6 +28,7 @@ import { UsageModule } from './usage/usage.module';
     DomainsModule,
     HealthModule,
     InternalModule,
+    MetricsModule,
     PlansModule,
     ProvisioningModule,
     SignupModule,

@@ -8,6 +8,7 @@ import { AppShell } from './components/app-shell';
 import { BillingPage } from './pages/billing';
 import { DomainsPage } from './pages/domains';
 import { LoginPage } from './pages/login';
+import { MetricsPage } from './pages/metrics';
 import { OverviewPage } from './pages/overview';
 import { PlansPage } from './pages/plans';
 import { TenantDetailPage } from './pages/tenant-detail';
@@ -92,6 +93,16 @@ const usageRoute = createRoute({
   ),
 });
 
+const metricsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/metrics',
+  component: () => (
+    <AppShell>
+      <MetricsPage />
+    </AppShell>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   overviewRoute,
@@ -100,6 +111,7 @@ const routeTree = rootRoute.addChildren([
   billingRoute,
   domainsRoute,
   usageRoute,
+  metricsRoute,
   plansRoute,
 ]);
 
