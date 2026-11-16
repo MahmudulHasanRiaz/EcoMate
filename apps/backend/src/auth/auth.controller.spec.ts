@@ -19,6 +19,7 @@ describe('AuthController — me() permission fallback', () => {
   const mockAuthService = {
     me: jest.fn(),
     adminLogin: jest.fn(),
+    impersonate: jest.fn(),
     computePermissionsForUser: jest.fn(async (user: any) => {
       const role = user.role || 'customer';
       if (role === 'superadmin' || role === 'admin') {
@@ -208,5 +209,55 @@ describe('AuthController — me() permission fallback', () => {
       accessToken: 'at',
       user: { id: 'user-1', role: 'admin', permissions: [] },
     });
+  });
+
+  it('sets the tenant admin cookie and redirects after impersonation', async () => {
+    const res = {
+      cookie: jest.fn(),
+      code: jest.fn().mockReturnThis(),
+      header: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+    } as any;
+    mockAuthService.impersonate.mockResolvedValue({
+      accessToken: 'impersonated-token',
+      expiresIn: 900,
+      user: { id: 'user-1', email: 'owner@example.com', role: 'superadmin' },
+    });
+
+    await controller.impersonate('a'.repeat(64), res);
+
+    expect(mockAuthService.impersonate).toHaveBeenCalledWith('a'.repeat(64));
+    expect(res.cookie).toHaveBeenCalledWith(
+      'eco_mate_access_token',
+      'impersonated-token',
+      expect.objectContaining({
+        httpOnly: false,
+        path: '/',
+        maxAge: 900_000,
+      }),
+    );
+    expect(res.code).toHaveBeenCalledWith(302);
+    expect(res.header).toHaveBeenCalledWith('location', '/admin/');
+    expect(res.send).toHaveBeenCalled();
+  });
+
+  it('redirects to sign-in when impersonation fails', async () => {
+    const res = {
+      cookie: jest.fn(),
+      code: jest.fn().mockReturnThis(),
+      header: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+    } as any;
+    mockAuthService.impersonate.mockRejectedValue(new Error('invalid'));
+
+    await controller.impersonate('b'.repeat(64), res);
+
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.code).toHaveBeenCalledWith(302);
+    expect(res.header).toHaveBeenCalledWith(
+      'location',
+      '/admin/sign-in?impersonation=failed',
+    );
+    expect(res.send).toHaveBeenCalled();
   });
 });

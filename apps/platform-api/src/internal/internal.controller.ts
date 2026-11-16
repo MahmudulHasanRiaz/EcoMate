@@ -1,18 +1,26 @@
 import {
+  Body,
   Controller,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { ImpersonationService } from '../tenants/impersonation.service';
+import { ConsumeImpersonationDto } from './dto/consume-impersonation.dto';
 import { InternalServiceGuard } from './internal-service.guard';
 
 @Controller('internal')
 @UseGuards(InternalServiceGuard)
 export class InternalController {
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly impersonation: ImpersonationService,
+  ) {}
 
   @Get('tenants/registry')
   async registry() {
@@ -71,6 +79,12 @@ export class InternalController {
           : null,
       })),
     };
+  }
+
+  @Post('impersonations/consume')
+  @HttpCode(200)
+  consumeImpersonation(@Body() dto: ConsumeImpersonationDto) {
+    return this.impersonation.consume(dto.token, dto.tenantId);
   }
 
   @Get('tenants/:id/entitlements')

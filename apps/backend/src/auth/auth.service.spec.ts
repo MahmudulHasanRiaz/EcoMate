@@ -20,6 +20,7 @@ jest.mock('bcryptjs', () => ({
 
 import * as bcrypt from 'bcryptjs';
 import { baPrisma } from '../better-auth/prisma';
+import { runWithTenant } from '../tenancy/tenant-context';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -121,6 +122,91 @@ describe('AuthService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('impersonation', () => {
+    const OLD_ENV = { ...process.env };
+    const token = 'a'.repeat(64);
+    const tenant = { tenantId: 'tenant-1', slug: 'acme' };
+
+    beforeEach(() => {
+      process.env = { ...OLD_ENV };
+      process.env.PLATFORM_API_URL = 'http://platform:4100/api';
+      process.env.INTERNAL_SERVICE_SECRET = 'shared-secret';
+      process.env.JWT_SECRET = 'tenant-jwt-secret';
+      process.env.IMPERSONATION_TTL_SECONDS = '900';
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ tenantId: 'tenant-1', email: mockUser.email }),
+      });
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(mockUser);
+      (jwtService.sign as jest.Mock).mockReturnValue('impersonated-access');
+    });
+
+    afterEach(() => {
+      process.env = { ...OLD_ENV };
+      delete (global as any).fetch;
+    });
+
+    it('exchanges a platform token for a short tenant access token', async () => {
+      const result = await runWithTenant(tenant, () =>
+        service.impersonate(token),
+      );
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://platform:4100/api/internal/impersonations/consume',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'x-platform-service-token': 'shared-secret',
+          }),
+          body: JSON.stringify({ token, tenantId: 'tenant-1' }),
+        }),
+      );
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: mockUser.id,
+          email: mockUser.email,
+          imp: true,
+        }),
+        expect.objectContaining({ secret: 'tenant-jwt-secret', expiresIn: 900 }),
+      );
+      expect(result).toMatchObject({
+        accessToken: 'impersonated-access',
+        expiresIn: 900,
+        user: { id: mockUser.id, email: mockUser.email },
+      });
+    });
+
+    it('rejects a token consumed for another tenant', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ tenantId: 'tenant-2', email: mockUser.email }),
+      });
+      await expect(
+        runWithTenant(tenant, () => service.impersonate(token)),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects a platform rejection', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({}),
+      });
+      await expect(
+        runWithTenant(tenant, () => service.impersonate(token)),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects malformed tokens before calling the platform', async () => {
+      await expect(
+        runWithTenant(tenant, () => service.impersonate('nope')),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
   });
 
   describe('register', () => {

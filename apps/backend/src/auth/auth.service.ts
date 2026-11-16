@@ -1,4 +1,4 @@
-import { tenantCompound } from '../tenancy/tenant-context';
+import { requireTenant, tenantCompound } from '../tenancy/tenant-context';
 import {
   Injectable,
   Optional,
@@ -6,6 +6,7 @@ import {
   ConflictException,
   BadRequestException,
   ForbiddenException,
+  ServiceUnavailableException,
   Logger,
   OnModuleDestroy,
   OnModuleInit,
@@ -31,6 +32,13 @@ import { getAllPermissions } from '../common/permissions/registry';
 import * as bcrypt from 'bcryptjs';
 import ms from 'ms';
 import type { StringValue } from 'ms';
+
+function platformApiBase(): string {
+  const configured = (
+    process.env.PLATFORM_API_URL || 'http://platform-api:4100/api'
+  ).replace(/\/+$/, '');
+  return configured.endsWith('/api') ? configured : `${configured}/api`;
+}
 
 @Injectable()
 export class AuthService implements OnModuleInit, OnModuleDestroy {
@@ -772,6 +780,99 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     });
 
     return { message: 'Email verified successfully' };
+  }
+
+  /**
+   * Exchanges a one-time platform impersonation token for a short tenant
+   * access token. The platform consume call also revokes the token, so a
+   * replay fails even if two requests race.
+   */
+  async impersonate(rawToken: string) {
+    const token = String(rawToken || '').trim();
+    if (!/^[0-9a-f]{64}$/i.test(token)) {
+      throw new UnauthorizedException('Invalid impersonation token');
+    }
+
+    const tenant = requireTenant();
+    const secret = process.env.INTERNAL_SERVICE_SECRET;
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Impersonation is not configured on this tenant backend',
+      );
+    }
+
+    let payload: { tenantId?: string; email?: string } | null = null;
+    try {
+      const response = await fetch(
+        `${platformApiBase()}/internal/impersonations/consume`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-platform-service-token': secret,
+          },
+          body: JSON.stringify({ token, tenantId: tenant.tenantId }),
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      if (!response.ok) {
+        throw new UnauthorizedException('Impersonation token is not valid');
+      }
+      payload = (await response.json()) as {
+        tenantId?: string;
+        email?: string;
+      };
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      this.logger.warn(
+        `Impersonation exchange failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      throw new UnauthorizedException('Impersonation token is not valid');
+    }
+
+    if (payload?.tenantId !== tenant.tenantId || !payload.email) {
+      throw new UnauthorizedException('Impersonation token is not valid');
+    }
+
+    const user = await this.prisma.userProfile.findFirst({
+      where: { email: payload.email },
+    });
+    if (!user || user.status !== 'active') {
+      throw new UnauthorizedException('Owner account is not active');
+    }
+
+    const configuredTtl = Number(process.env.IMPERSONATION_TTL_SECONDS);
+    const expiresIn =
+      Number.isFinite(configuredTtl) && configuredTtl >= 60
+        ? Math.min(configuredTtl, 3_600)
+        : 900;
+    const accessToken = this.jwtService.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        imp: true,
+      },
+      {
+        secret: process.env['JWT_SECRET'],
+        expiresIn,
+      },
+    );
+
+    return {
+      accessToken,
+      expiresIn,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username,
+      },
+    };
   }
 
   private async generateTokens(user: {

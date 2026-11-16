@@ -1,13 +1,12 @@
 # Phase 6 — SaaS admin completion
 
 The Phase 1 deliverable `apps/platform-admin` was never scaffolded, so it is a
-prerequisite for every Phase 6 item. The scaffold unit is done; no Phase 6
-checkbox below is ticked yet.
+prerequisite for every Phase 6 item. The scaffold is done; items 1–2 are now
+complete.
 
-- [ ] 1. Tenant detail actions: change plan, extend trial, suspend/reactivate,
+- [x] 1. Tenant detail actions: change plan, extend trial, suspend/reactivate,
       reset owner password, impersonate, export, delete
-      — **6/7 done**; impersonation waits for item 2 (exchange flow).
-- [ ] 2. Impersonation tokens + tenant exchange endpoint + audit
+- [x] 2. Impersonation tokens + tenant exchange endpoint + audit
 - [ ] 3. Payment proof review queue + approve/reject + invoice/payment ledger
 - [ ] 4. Subscription/plan change UI, credit notes, coupons
 - [ ] 5. Domain management: primary/base/fallback config, tenant domains,
@@ -20,7 +19,7 @@ checkbox below is ticked yet.
 - [ ] 10. Acceptance: full tenant lifecycle and billing operated from the SaaS
       admin
 
-## Tenant detail actions — PARTIAL (6/7)
+## Tenant detail actions — DONE (7/7)
 
 The tenant detail page now has an audited Operations panel:
 
@@ -36,15 +35,31 @@ The tenant detail page now has an audited Operations panel:
   with the server filename.
 - **Delete:** soft-deletes with confirmation, returns to the filtered list and
   shows the Deleted badge; routing stops immediately.
-- **Impersonate is not wired yet** — it belongs to item 2 (one-time token +
-  tenant exchange + audit). Until that lands, item 1 cannot be ticked.
+- **Impersonate:** issues a one-time 64-char token (stored only as SHA-256,
+  15-minute TTL) and opens `https://<tenant>/api/auth/impersonate?token=…`.
+  The tenant backend exchanges it server-to-server with the platform, which
+  atomically revokes it, then sets the tenant admin access cookie and 302s to
+  `/admin/`. Replays, wrong tenants, expired/revoked tokens and DELETED tenants
+  are refused; create + consume are audited. The console shows a fallback link
+  if the popup is blocked.
 
-Verification: platform **130/130**, backend **6262 passed / 10 skipped / 0
-failed**, platform-admin vitest **4/4**, builds clean. Live browser **7/7**:
-extend-trial changed the date, change-plan succeeded, suspend/reactivate badges
-updated, reset code triggered, export downloaded 14,732 bytes of platform +
-tenant data, and soft-delete returned the list with a Deleted badge. Smoke
-tenants/admin were purged.
+Verification: platform **135/135**, backend **6268 passed / 10 skipped / 0
+failed**, platform-admin vitest **4/4**, builds clean. Live: create → exchange
+302 + `eco_mate_access_token` cookie → `/auth/me` returned the owner with 291
+permissions; replay redirected to sign-in; platform session revoked; both audit
+actions present; console issued the link and opened the popup. Earlier live
+actions **7/7** (trial date, plan, suspend/reactivate, reset, 14,732-byte
+export, delete). Smoke tenant/admin were purged.
+
+## Impersonation security contract — DONE (item 2)
+
+- Opaque 64-hex token; only its SHA-256 is stored (`tokenJti` unique).
+- Tenant-bound: consume requires the same tenant id resolved from the Host.
+- One-time: `updateMany` claims `revokedAt=null` + unexpired before issuing.
+- Short-lived: 900s default (`IMPERSONATION_TTL_SECONDS`, capped 3600).
+- Tenant JWT carries `imp: true` and no refresh token; cookie is JS-readable
+  (matching the normal admin contract) with 15-minute max-age.
+- Audit: `tenant.impersonate.create` and `tenant.impersonate.consume`.
 
 ## Prerequisite — platform-admin scaffold — DONE
 
@@ -68,5 +83,4 @@ tenants/admin were purged.
 
 ## Next
 
-Item 2 (impersonation tokens + tenant exchange + audit) completes the last
-tenant action; after it, item 1 can be ticked.
+Item 3: payment proof review queue + approve/reject + invoice/payment ledger.

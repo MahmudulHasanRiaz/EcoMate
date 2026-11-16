@@ -37,6 +37,7 @@ export function TenantDetailPage() {
   const [days, setDays] = useState('14');
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [impersonationUrl, setImpersonationUrl] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,6 +104,7 @@ export function TenantDetailPage() {
     if (busy) return;
     setBusy(key);
     setNotice(null);
+    setImpersonationUrl(null);
     setActionError(null);
     try {
       await action();
@@ -196,6 +198,37 @@ export function TenantDetailPage() {
     );
   }
 
+  async function impersonateTenant() {
+    if (!tenant) return;
+    if (
+      !window.confirm(
+        `Sign in to "${tenant.name}" as its owner for 15 minutes? This is audited.`,
+      )
+    ) {
+      return;
+    }
+    setBusy('impersonate');
+    setNotice(null);
+    setImpersonationUrl(null);
+    setActionError(null);
+    try {
+      const response = await api(`/tenants/${tenantId}/impersonate`, {
+        method: 'POST',
+      });
+      const data = await readJson<{ url: string }>(response);
+      const popup = window.open(data.url, '_blank');
+      if (popup) popup.opener = null;
+      setNotice(
+        'Impersonation link issued for 15 minutes. It can be used once.',
+      );
+      setImpersonationUrl(data.url);
+    } catch (err) {
+      setActionError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function exportTenant() {
     if (!tenant) return;
     await runAction(
@@ -282,18 +315,28 @@ export function TenantDetailPage() {
                 {busy === 'restore' ? 'Restoring…' : 'Restore'}
               </button>
             ) : (
-              <button
-                type="button"
-                className="button button--ghost"
-                onClick={toggleSuspension}
-                disabled={!!busy}
-              >
-                {busy === 'status'
-                  ? 'Updating…'
-                  : tenant.status === 'SUSPENDED'
-                    ? 'Reactivate'
-                    : 'Suspend'}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={impersonateTenant}
+                  disabled={!!busy}
+                >
+                  {busy === 'impersonate' ? 'Issuing…' : 'Impersonate'}
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={toggleSuspension}
+                  disabled={!!busy}
+                >
+                  {busy === 'status'
+                    ? 'Updating…'
+                    : tenant.status === 'SUSPENDED'
+                      ? 'Reactivate'
+                      : 'Suspend'}
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -311,6 +354,15 @@ export function TenantDetailPage() {
       {notice ? (
         <div className="notice notice--success" role="status">
           {notice}
+          {impersonationUrl ? (
+            <>
+              {' '}
+              <a href={impersonationUrl} target="_blank" rel="noreferrer">
+                Open the impersonated admin
+              </a>
+              .
+            </>
+          ) : null}
         </div>
       ) : null}
 

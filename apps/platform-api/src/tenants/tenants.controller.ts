@@ -23,6 +23,7 @@ import { CreateTenantDto } from './dto/create-tenant.dto';
 import { ExtendTrialDto } from './dto/extend-trial.dto';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
 import { TenantLifecycleService } from './tenant-lifecycle.service';
+import { ImpersonationService } from './impersonation.service';
 import { TenantsService } from './tenants.service';
 
 @Controller('tenants')
@@ -32,6 +33,7 @@ export class TenantsController {
     private readonly tenants: TenantsService,
     private readonly domains: DomainsService,
     private readonly lifecycle: TenantLifecycleService,
+    private readonly impersonation: ImpersonationService,
   ) {}
 
   @Get()
@@ -74,6 +76,15 @@ export class TenantsController {
     @CurrentPlatformUser() user?: { id: string },
   ) {
     return this.lifecycle.restore(id, user?.id);
+  }
+
+  @Post(':id/impersonate')
+  @Roles('SUPERADMIN', 'SUPPORT')
+  impersonate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.impersonation.create(id, user?.id);
   }
 
   @Post(':id/reset-owner-password')
