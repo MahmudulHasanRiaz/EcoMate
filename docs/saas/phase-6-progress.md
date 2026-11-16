@@ -13,7 +13,7 @@ complete.
       verification/TLS status, force re-check
 - [x] 6. Usage dashboards + limit overrides
 - [x] 7. Metrics dashboard (MRR/ARR/trials/past-due/churn)
-- [ ] 8. Platform settings (payment methods, SMTP, trial/grace, tax, branding,
+- [x] 8. Platform settings (payment methods, SMTP, trial/grace, tax, branding,
       domain config)
 - [ ] 9. Platform users/roles, audit search/export
 - [ ] 10. Acceptance: full tenant lifecycle and billing operated from the SaaS
@@ -272,7 +272,84 @@ with 3 paying subscriptions); prices are now coerced through their string form
 (fixed + unit-tested). All smoke tenants, plans, invoices, payments, method and
 the READONLY account were purged; services stopped.
 
+## Platform settings — DONE
+
+- **Settings service (`apps/platform-api/src/settings/settings.service.ts`):**
+  five typed sections over the generic `PlatformSetting` key-value store —
+  `smtp`, `trial_defaults`, `tax`, `branding`, `maintenance` — following the
+  item-5 `domains` precedent (env bootstrap, DB override, in-memory cache
+  swapped immediately on update). No migration: new keys need none.
+- **Payment methods:** `POST/PATCH/DELETE /billing/methods`
+  (`SUPERADMIN`/`BILLING`; the existing `GET` stays open to all roles).
+  Delete is refused with `409` while proofs or payments reference the method
+  (deactivate instead); the DB relation is `Restrict` as a backstop. Every
+  write is audited with before/after.
+- **SMTP:** the mail service is now lazy — the transporter is built on first
+  use from the *effective* config and dropped by `refresh()` after a settings
+  change. Precedence is env-wins (same rule as `DEFAULT_PLAN_VERSION_ID`):
+  `SMTP_HOST` set means env, otherwise the stored setting, otherwise
+  unconfigured. `POST /settings/smtp/test` sends a real test email. The
+  password is never returned by any read endpoint. Dev log fallback and the
+  production fail-closed behaviour are unchanged.
+- **Trial/grace defaults:** `trialDays` (0–365) and `graceDays` (0–90) wired
+  into plan creation, plan-version creation and tenant creation, in that
+  order: explicit DTO value → plan version value → global setting → hardcoded
+  14/7 fallback. Provisioning already reads the plan version's value, so it
+  needed no change. The grace *workflow* (expiry enforcement, dunning) is
+  Phase 7, not this item.
+- **Tax:** stored + validated + audited (`ratePercent` 0–100, label,
+  inclusive flag). It has no consumer yet — it takes effect when invoice
+  generation lands in Phase 7.
+- **Branding:** `platformName` (default `EcoMate`), `supportEmail`, `logoUrl`.
+  Consumers in this item are the platform emails only: the from display name
+  uses the platform name and the support address becomes the reply-to.
+  `logoUrl` is stored for later use in the console/landing.
+- **Domain config:** not rebuilt — done under item 5. The settings page links
+  to `/domains` instead of duplicating the form.
+- **Maintenance:** a global `MaintenanceGuard` (registered via `APP_GUARD`).
+  While enabled, non-GET requests get `503` with the operator's message,
+  except auth, health, internal registry/entitlement endpoints, and settings
+  itself (so SUPERADMIN can turn it off). Reads always pass. This is
+  platform-plane maintenance only; tenant storefront maintenance is separate.
+- **API:** `GET /settings` (one payload, SMTP without the password),
+  `PATCH /settings/smtp|trial|tax|branding|maintenance` (`SUPERADMIN` only),
+  `POST /settings/smtp/test` (`SUPERADMIN`). Reads are
+  `SUPERADMIN`/`BILLING`/`SUPPORT`. Every write is audited
+  (`settings.<section>.update`, entity `PlatformSetting`).
+- **Console:** `/settings` nav page — payment-method table + add/edit form
+  (type, name, account, instructions, QR URL, sort order, activate/deactivate,
+  delete with the 409 surfaced), SMTP form + configured badge + source label
+  (env vs setting) + test-email sender, trial/grace, tax, branding and
+  maintenance cards, plus a Domains link card. A banner warns while
+  maintenance is on.
+- **Empty-string trap (found by the browser smoke):** class-validator's
+  `@IsOptional` does not skip `''`, so optional `@IsEmail`/`@IsUrl` fields
+  400'd when the console sent an empty string. The optional email/URL fields
+  now use `@ValidateIf((o) => o.field !== '')`, so `''` clears the value and
+  a non-empty value is validated. Locked by live E2E checks.
+- **Known limits:** there is no UI affordance to *unset* SMTP once stored
+  (host is required on save); clearing it needs a DB edit. Tax has no
+  consumer until Phase 7. `logoUrl` has no renderer yet.
+
+Verification: platform **260/260** (31 suites, +40: settings service 13,
+settings controller 4, maintenance guard 5, billing methods 7, mail service 6,
+plans trial-defaults 3, tenants trial-defaults 2), platform `nest build`
+clean, platform-admin tsc clean + vitest **15/15** + production build clean,
+backend **6271 passed / 10 skipped / 0 failed** (447 suites, unchanged),
+storefront **699/699**, shared-types **14/14**, `prisma migrate status`
+4 up-to-date (no schema change in this item). Live **API E2E 32/32**: login,
+anonymous `401`, defaults `14/7` + SMTP unconfigured, trial defaults changed
+to `21/5` and a new plan version inheriting them, payment-method create/list/
+update/deactivate + invalid type `400` + empty-URL clear, SMTP pointed at a
+local catcher with a test email received (branding name + support reply-to
+verified in the raw message), tax save + rate `150 → 400`, maintenance on
+(write `503` with the message, reads pass, settings escape hatch works),
+writes working again after off, both methods deleted, second delete `404`.
+Live **browser 16/16** on `/settings` (login, nav entry, all seven sections,
+trial save + persist after reload, method add/list/delete through the UI,
+trial restored). All smoke plans, methods, settings keys and audit rows were
+purged; services stopped.
+
 ## Next
 
-Item 8: platform settings (payment methods, SMTP, trial/grace, tax, branding,
-maintenance).
+Item 9: platform users/roles, audit search/export.

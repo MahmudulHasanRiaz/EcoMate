@@ -396,3 +396,43 @@ export interface Session {
   refreshToken: string;
   user: PlatformUser;
 }
+
+export interface SmtpSettingsPublic {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  from: string;
+  configured: boolean;
+  source: 'env' | 'setting' | 'none';
+}
+
+export interface TrialSettings {
+  trialDays: number;
+  graceDays: number;
+}
+
+export interface TaxSettings {
+  ratePercent: number;
+  label: string;
+  inclusive: boolean;
+}
+
+export interface BrandingSettings {
+  platformName: string;
+  supportEmail: string;
+  logoUrl: string;
+}
+
+export interface MaintenanceSettings {
+  enabled: boolean;
+  message: string;
+}
+
+export interface PlatformSettings {
+  smtp: SmtpSettingsPublic;
+  trial: TrialSettings;
+  tax: TaxSettings;
+  branding: BrandingSettings;
+  maintenance: MaintenanceSettings;
+}

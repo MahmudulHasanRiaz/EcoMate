@@ -5,6 +5,11 @@ import {
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import {
+  DEFAULT_GRACE_DAYS,
+  DEFAULT_TRIAL_DAYS,
+  SettingsService,
+} from '../settings/settings.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { CreatePlanVersionDto } from './dto/create-plan-version.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
@@ -14,7 +19,20 @@ export class PlansService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly audit: AuditService,
+    private readonly settings: SettingsService,
   ) {}
+
+  /** Global trial/grace defaults, with hardcoded fallbacks if unset. */
+  private trialDefaults(): { trialDays: number; graceDays: number } {
+    try {
+      return this.settings.getTrialDefaults();
+    } catch {
+      return {
+        trialDays: DEFAULT_TRIAL_DAYS,
+        graceDays: DEFAULT_GRACE_DAYS,
+      };
+    }
+  }
 
   async list() {
     const plans = await this.prisma.plan.findMany({
@@ -50,6 +68,7 @@ export class PlansService {
     });
     if (existing) throw new ConflictException('Plan slug already exists');
 
+    const defaults = this.trialDefaults();
     const plan = await this.prisma.plan.create({
       data: {
         slug: dto.slug,
@@ -66,10 +85,10 @@ export class PlansService {
             currency: dto.currency ?? 'BDT',
             interval: dto.interval ?? 'MONTHLY',
             intervalDays: dto.intervalDays,
-            trialDays: dto.trialDays ?? 14,
+            trialDays: dto.trialDays ?? defaults.trialDays,
             features: dto.features ?? [],
             limits: (dto.limits ?? {}) as any,
-            graceDays: dto.graceDays ?? 7,
+            graceDays: dto.graceDays ?? defaults.graceDays,
           },
         },
       },
@@ -100,6 +119,7 @@ export class PlansService {
       orderBy: { version: 'desc' },
     });
     const version = (latest?.version ?? 0) + 1;
+    const defaults = this.trialDefaults();
 
     const created = await this.prisma.planVersion.create({
       data: {
@@ -109,10 +129,10 @@ export class PlansService {
         currency: dto.currency ?? latest?.currency ?? 'BDT',
         interval: dto.interval ?? latest?.interval ?? 'MONTHLY',
         intervalDays: dto.intervalDays ?? latest?.intervalDays,
-        trialDays: dto.trialDays ?? latest?.trialDays ?? 14,
+        trialDays: dto.trialDays ?? latest?.trialDays ?? defaults.trialDays,
         features: dto.features ?? latest?.features ?? [],
         limits: (dto.limits ?? (latest?.limits as any) ?? {}) as any,
-        graceDays: dto.graceDays ?? latest?.graceDays ?? 7,
+        graceDays: dto.graceDays ?? latest?.graceDays ?? defaults.graceDays,
       },
     });
 

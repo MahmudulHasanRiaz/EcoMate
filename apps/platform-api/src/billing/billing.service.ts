@@ -8,7 +8,9 @@ import { AuditService } from '../common/audit.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { CreateCreditNoteDto } from './dto/create-credit-note.dto';
+import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
+import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 
 const PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'];
 const INVOICE_STATUSES = ['DRAFT', 'OPEN', 'PAID', 'VOID', 'UNCOLLECTIBLE'];
@@ -330,6 +332,90 @@ export class BillingService {
     return this.prisma.paymentMethod.findMany({
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
+  }
+
+  async createMethod(dto: CreatePaymentMethodDto, actorId?: string) {
+    const method = await this.prisma.paymentMethod.create({
+      data: {
+        type: dto.type as any,
+        name: dto.name.trim(),
+        accountName: dto.accountName?.trim() || null,
+        accountNumber: dto.accountNumber?.trim() || null,
+        instructions: dto.instructions?.trim() || null,
+        qrMediaUrl: dto.qrMediaUrl?.trim() || null,
+        sortOrder: dto.sortOrder ?? 0,
+      },
+    });
+    await this.audit.record({
+      actorId,
+      action: 'billing.method.create',
+      entity: 'PaymentMethod',
+      entityId: method.id,
+      after: method as any,
+    });
+    return method;
+  }
+
+  async updateMethod(
+    id: string,
+    dto: UpdatePaymentMethodDto,
+    actorId?: string,
+  ) {
+    const before = await this.prisma.paymentMethod.findUnique({
+      where: { id },
+    });
+    if (!before) throw new NotFoundException('Payment method not found');
+    const data: any = {};
+    if (dto.type !== undefined) data.type = dto.type;
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.accountName !== undefined)
+      data.accountName = dto.accountName.trim() || null;
+    if (dto.accountNumber !== undefined)
+      data.accountNumber = dto.accountNumber.trim() || null;
+    if (dto.instructions !== undefined)
+      data.instructions = dto.instructions.trim() || null;
+    if (dto.qrMediaUrl !== undefined)
+      data.qrMediaUrl = dto.qrMediaUrl.trim() || null;
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
+    const method = await this.prisma.paymentMethod.update({
+      where: { id },
+      data,
+    });
+    await this.audit.record({
+      actorId,
+      action: 'billing.method.update',
+      entity: 'PaymentMethod',
+      entityId: method.id,
+      before: before as any,
+      after: method as any,
+    });
+    return method;
+  }
+
+  async deleteMethod(id: string, actorId?: string) {
+    const before = await this.prisma.paymentMethod.findUnique({
+      where: { id },
+    });
+    if (!before) throw new NotFoundException('Payment method not found');
+    const [proofCount, paymentCount] = await Promise.all([
+      this.prisma.paymentProof.count({ where: { methodId: id } }),
+      this.prisma.payment.count({ where: { methodId: id } }),
+    ]);
+    if (proofCount > 0 || paymentCount > 0) {
+      throw new ConflictException(
+        'Payment method is referenced by payment proofs or payments; deactivate it instead of deleting',
+      );
+    }
+    await this.prisma.paymentMethod.delete({ where: { id } });
+    await this.audit.record({
+      actorId,
+      action: 'billing.method.delete',
+      entity: 'PaymentMethod',
+      entityId: id,
+      before: before as any,
+    });
+    return { id, deleted: true };
   }
 
   async subscriptions(query: {

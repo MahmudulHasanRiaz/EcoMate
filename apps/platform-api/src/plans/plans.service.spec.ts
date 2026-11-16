@@ -14,7 +14,10 @@ const prisma: any = {
 };
 
 const audit = { record: jest.fn() };
-const service = new PlansService(prisma, audit as any);
+const settings = {
+  getTrialDefaults: jest.fn().mockReturnValue({ trialDays: 30, graceDays: 10 }),
+};
+const service = new PlansService(prisma, audit as any, settings as any);
 
 const basePlanDto = {
   slug: 'starter',
@@ -68,6 +71,63 @@ describe('PlansService', () => {
     await expect(
       service.create(basePlanDto as any, 'platform-user-1'),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('uses the platform trial defaults when the DTO omits trial/grace days', async () => {
+    prisma.plan.findUnique.mockResolvedValue(null);
+    prisma.plan.create.mockResolvedValue({
+      id: 'plan-1',
+      slug: 'starter',
+      versions: [{ id: 'v1', version: 1 }],
+    });
+
+    await service.create(basePlanDto as any, 'platform-user-1');
+
+    const data = prisma.plan.create.mock.calls[0][0].data;
+    expect(data.versions.create.trialDays).toBe(30);
+    expect(data.versions.create.graceDays).toBe(10);
+  });
+
+  it('explicit DTO trial/grace days win over the platform defaults', async () => {
+    prisma.plan.findUnique.mockResolvedValue(null);
+    prisma.plan.create.mockResolvedValue({
+      id: 'plan-1',
+      slug: 'starter',
+      versions: [{ id: 'v1', version: 1 }],
+    });
+
+    await service.create(
+      { ...basePlanDto, trialDays: 5, graceDays: 3 } as any,
+      'platform-user-1',
+    );
+
+    const data = prisma.plan.create.mock.calls[0][0].data;
+    expect(data.versions.create.trialDays).toBe(5);
+    expect(data.versions.create.graceDays).toBe(3);
+  });
+
+  it('falls back to the platform defaults for a new version without a previous value', async () => {
+    prisma.plan.findUnique.mockResolvedValue({ id: 'plan-1', slug: 'starter' });
+    prisma.planVersion.findFirst.mockResolvedValue({
+      version: 2,
+      currency: 'BDT',
+      interval: 'MONTHLY',
+      trialDays: undefined,
+      graceDays: undefined,
+      features: [],
+      limits: {},
+    });
+    prisma.planVersion.create.mockResolvedValue({
+      id: 'v3',
+      version: 3,
+      planId: 'plan-1',
+    });
+
+    await service.addVersion('plan-1', { price: 1499 } as any, 'u1');
+
+    const data = prisma.planVersion.create.mock.calls[0][0].data;
+    expect(data.trialDays).toBe(30);
+    expect(data.graceDays).toBe(10);
   });
 
   it('creates the next immutable version', async () => {

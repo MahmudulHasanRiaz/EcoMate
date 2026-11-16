@@ -1,0 +1,434 @@
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
+import { PlatformPrismaService } from '../prisma/prisma.service';
+
+export interface SmtpSettings {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass?: string;
+  from: string;
+}
+
+export interface SmtpSettingsPublic {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  from: string;
+  configured: boolean;
+  /** Where the effective config comes from: env wins when set, else the stored setting. */
+  source: 'env' | 'setting' | 'none';
+}
+
+export interface TrialSettings {
+  trialDays: number;
+  graceDays: number;
+}
+
+export interface TaxSettings {
+  ratePercent: number;
+  label: string;
+  inclusive: boolean;
+}
+
+export interface BrandingSettings {
+  platformName: string;
+  supportEmail: string;
+  logoUrl: string;
+}
+
+export interface MaintenanceSettings {
+  enabled: boolean;
+  message: string;
+}
+
+export interface AllSettings {
+  smtp: SmtpSettingsPublic;
+  trial: TrialSettings;
+  tax: TaxSettings;
+  branding: BrandingSettings;
+  maintenance: MaintenanceSettings;
+}
+
+export const DEFAULT_TRIAL_DAYS = 14;
+export const DEFAULT_GRACE_DAYS = 7;
+
+const DEFAULT_TRIAL: TrialSettings = {
+  trialDays: DEFAULT_TRIAL_DAYS,
+  graceDays: DEFAULT_GRACE_DAYS,
+};
+
+const DEFAULT_TAX: TaxSettings = {
+  ratePercent: 0,
+  label: '',
+  inclusive: false,
+};
+
+const DEFAULT_BRANDING: BrandingSettings = {
+  platformName: 'EcoMate',
+  supportEmail: '',
+  logoUrl: '',
+};
+
+const DEFAULT_MAINTENANCE: MaintenanceSettings = {
+  enabled: false,
+  message: '',
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function asBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+@Injectable()
+export class SettingsService implements OnModuleInit {
+  private readonly logger = new Logger(SettingsService.name);
+  private smtp!: SmtpSettingsPublic & { pass?: string };
+  private trial: TrialSettings = { ...DEFAULT_TRIAL };
+  private tax: TaxSettings = { ...DEFAULT_TAX };
+  private branding: BrandingSettings = { ...DEFAULT_BRANDING };
+  private maintenance: MaintenanceSettings = { ...DEFAULT_MAINTENANCE };
+
+  constructor(private readonly prisma: PlatformPrismaService) {}
+
+  async onModuleInit() {
+    await this.loadAll();
+  }
+
+  getAll(): AllSettings {
+    const { pass: _pass, ...smtp } = this.smtp;
+    return {
+      smtp,
+      trial: { ...this.trial },
+      tax: { ...this.tax },
+      branding: { ...this.branding },
+      maintenance: { ...this.maintenance },
+    };
+  }
+
+  /** Full effective SMTP config (including the password) for the mail service. Null when unconfigured. */
+  getSmtp(): SmtpSettings | null {
+    if (!this.smtp.configured) return null;
+    return {
+      host: this.smtp.host,
+      port: this.smtp.port,
+      secure: this.smtp.secure,
+      user: this.smtp.user,
+      pass: this.smtp.pass,
+      from: this.smtp.from,
+    };
+  }
+
+  getSmtpPublic(): SmtpSettingsPublic {
+    const { pass: _pass, ...smtp } = this.smtp;
+    return smtp;
+  }
+
+  getTrialDefaults(): TrialSettings {
+    return { ...this.trial };
+  }
+
+  getTax(): TaxSettings {
+    return { ...this.tax };
+  }
+
+  getBranding(): BrandingSettings {
+    return { ...this.branding };
+  }
+
+  getMaintenance(): MaintenanceSettings {
+    return { ...this.maintenance };
+  }
+
+  isMaintenanceEnabled(): boolean {
+    return this.maintenance.enabled;
+  }
+
+  async updateSmtp(input: {
+    host?: string;
+    port?: number;
+    secure?: boolean;
+    user?: string;
+    pass?: string;
+    from?: string;
+  }): Promise<SmtpSettingsPublic> {
+    const stored = await this.readStored('smtp');
+    const current: Partial<SmtpSettings> = isRecord(stored) ? stored : {};
+    // Omit = keep the stored password; an explicit value replaces it.
+    const pass =
+      input.pass !== undefined
+        ? input.pass.trim() || undefined
+        : current.pass;
+    const next: SmtpSettings = {
+      host: (input.host ?? current.host ?? '').trim(),
+      port: input.port ?? asNumber(current.port, 587),
+      secure: input.secure ?? asBoolean(current.secure, false),
+      user: (input.user ?? current.user ?? '').trim(),
+      pass,
+      from: (input.from ?? current.from ?? '').trim(),
+    };
+    this.validateSmtp(next);
+    await this.store('smtp', next);
+    // The effective config may still come from env; reload to recompute it.
+    await this.loadSmtp();
+    this.logger.log(
+      `SMTP settings updated (effective source: ${this.smtp.source})`,
+    );
+    return this.getSmtpPublic();
+  }
+
+  async updateTrial(input: {
+    trialDays?: number;
+    graceDays?: number;
+  }): Promise<TrialSettings> {
+    const next: TrialSettings = {
+      trialDays: input.trialDays ?? this.trial.trialDays,
+      graceDays: input.graceDays ?? this.trial.graceDays,
+    };
+    if (
+      !Number.isInteger(next.trialDays) ||
+      next.trialDays < 0 ||
+      next.trialDays > 365
+    ) {
+      throw new BadRequestException(
+        'trialDays must be an integer between 0 and 365',
+      );
+    }
+    if (
+      !Number.isInteger(next.graceDays) ||
+      next.graceDays < 0 ||
+      next.graceDays > 90
+    ) {
+      throw new BadRequestException(
+        'graceDays must be an integer between 0 and 90',
+      );
+    }
+    await this.store('trial_defaults', next);
+    this.trial = next;
+    return { ...next };
+  }
+
+  async updateTax(input: {
+    ratePercent?: number;
+    label?: string;
+    inclusive?: boolean;
+  }): Promise<TaxSettings> {
+    const next: TaxSettings = {
+      ratePercent: input.ratePercent ?? this.tax.ratePercent,
+      label: (input.label ?? this.tax.label).trim(),
+      inclusive: input.inclusive ?? this.tax.inclusive,
+    };
+    if (
+      typeof next.ratePercent !== 'number' ||
+      !Number.isFinite(next.ratePercent) ||
+      next.ratePercent < 0 ||
+      next.ratePercent > 100
+    ) {
+      throw new BadRequestException(
+        'ratePercent must be a number between 0 and 100',
+      );
+    }
+    if (next.label.length > 100) {
+      throw new BadRequestException('label must be at most 100 characters');
+    }
+    await this.store('tax', next);
+    this.tax = next;
+    return { ...next };
+  }
+
+  async updateBranding(input: {
+    platformName?: string;
+    supportEmail?: string;
+    logoUrl?: string;
+  }): Promise<BrandingSettings> {
+    const next: BrandingSettings = {
+      platformName: (input.platformName ?? this.branding.platformName).trim(),
+      supportEmail: (input.supportEmail ?? this.branding.supportEmail).trim(),
+      logoUrl: (input.logoUrl ?? this.branding.logoUrl).trim(),
+    };
+    if (!next.platformName || next.platformName.length > 100) {
+      throw new BadRequestException(
+        'platformName is required and must be at most 100 characters',
+      );
+    }
+    if (
+      next.supportEmail &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next.supportEmail)
+    ) {
+      throw new BadRequestException('supportEmail must be a valid email');
+    }
+    if (next.logoUrl) {
+      try {
+        const url = new URL(next.logoUrl);
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+          throw new Error('logoUrl must use http(s)');
+        }
+      } catch {
+        throw new BadRequestException('logoUrl must be a valid http(s) URL');
+      }
+    }
+    await this.store('branding', next);
+    this.branding = next;
+    return { ...next };
+  }
+
+  async updateMaintenance(input: {
+    enabled?: boolean;
+    message?: string;
+  }): Promise<MaintenanceSettings> {
+    const next: MaintenanceSettings = {
+      enabled: input.enabled ?? this.maintenance.enabled,
+      message: (input.message ?? this.maintenance.message).trim(),
+    };
+    if (next.message.length > 500) {
+      throw new BadRequestException('message must be at most 500 characters');
+    }
+    await this.store('maintenance', next);
+    this.maintenance = next;
+    this.logger.log(
+      `Maintenance mode ${next.enabled ? 'ENABLED' : 'disabled'}`,
+    );
+    return { ...next };
+  }
+
+  private async loadAll(): Promise<void> {
+    await this.loadSmtp();
+    const trial = await this.readStored('trial_defaults');
+    if (isRecord(trial)) {
+      this.trial = {
+        trialDays: asNumber(trial.trialDays, DEFAULT_TRIAL_DAYS),
+        graceDays: asNumber(trial.graceDays, DEFAULT_GRACE_DAYS),
+      };
+    }
+    const tax = await this.readStored('tax');
+    if (isRecord(tax)) {
+      this.tax = {
+        ratePercent: asNumber(tax.ratePercent, 0),
+        label: asString(tax.label),
+        inclusive: asBoolean(tax.inclusive, false),
+      };
+    }
+    const branding = await this.readStored('branding');
+    if (isRecord(branding)) {
+      this.branding = {
+        platformName:
+          asString(branding.platformName) || DEFAULT_BRANDING.platformName,
+        supportEmail: asString(branding.supportEmail),
+        logoUrl: asString(branding.logoUrl),
+      };
+    }
+    const maintenance = await this.readStored('maintenance');
+    if (isRecord(maintenance)) {
+      this.maintenance = {
+        enabled: asBoolean(maintenance.enabled, false),
+        message: asString(maintenance.message),
+      };
+    }
+  }
+
+  /**
+   * SMTP precedence (same rule as DEFAULT_PLAN_VERSION_ID): env wins when
+   * SMTP_HOST is set; otherwise the stored PlatformSetting; otherwise
+   * unconfigured. The stored setting is kept even while env wins, so
+   * removing the env vars later reveals it again.
+   */
+  private async loadSmtp(): Promise<void> {
+    const envHost = (process.env.SMTP_HOST ?? '').trim();
+    if (envHost) {
+      this.smtp = {
+        host: envHost,
+        port: Number(process.env.SMTP_PORT ?? 587) || 587,
+        secure: process.env.SMTP_SECURE === 'true',
+        user: (process.env.SMTP_USER ?? '').trim(),
+        pass: process.env.SMTP_PASS || undefined,
+        from: (process.env.SMTP_FROM ?? process.env.PLATFORM_MAIL_FROM ?? '')
+          .trim(),
+        configured: true,
+        source: 'env',
+      };
+      return;
+    }
+    const stored = await this.readStored('smtp');
+    if (isRecord(stored) && asString(stored.host)) {
+      this.smtp = {
+        host: asString(stored.host),
+        port: asNumber(stored.port, 587),
+        secure: asBoolean(stored.secure, false),
+        user: asString(stored.user),
+        pass: asString(stored.pass) || undefined,
+        from: asString(stored.from),
+        configured: true,
+        source: 'setting',
+      };
+      return;
+    }
+    this.smtp = {
+      host: '',
+      port: 587,
+      secure: false,
+      user: '',
+      pass: undefined,
+      from: (process.env.PLATFORM_MAIL_FROM ?? '').trim(),
+      configured: false,
+      source: 'none',
+    };
+  }
+
+  private validateSmtp(config: SmtpSettings): void {
+    if (!config.host) {
+      throw new BadRequestException('SMTP host is required');
+    }
+    if (
+      !Number.isInteger(config.port) ||
+      config.port < 1 ||
+      config.port > 65535
+    ) {
+      throw new BadRequestException('SMTP port must be between 1 and 65535');
+    }
+    if (config.from && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.from)) {
+      throw new BadRequestException('SMTP from must be a valid email');
+    }
+  }
+
+  private async readStored(key: string): Promise<unknown> {
+    try {
+      const row = await this.prisma.platformSetting.findUnique({
+        where: { key },
+      });
+      return row?.value ?? null;
+    } catch (err) {
+      this.logger.warn(
+        `PlatformSetting.${key} unavailable; using defaults: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  private async store(key: string, value: unknown): Promise<void> {
+    await this.prisma.platformSetting.upsert({
+      where: { key },
+      update: { value: value as any },
+      create: { key, value: value as any },
+    });
+  }
+}

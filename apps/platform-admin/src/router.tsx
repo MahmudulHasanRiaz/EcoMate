@@ -11,6 +11,7 @@ import { LoginPage } from './pages/login';
 import { MetricsPage } from './pages/metrics';
 import { OverviewPage } from './pages/overview';
 import { PlansPage } from './pages/plans';
+import { SettingsPage } from './pages/settings';
 import { TenantDetailPage } from './pages/tenant-detail';
 import { TenantsPage } from './pages/tenants';
 import { UsagePage } from './pages/usage';
@@ -103,6 +104,16 @@ const metricsRoute = createRoute({
   ),
 });
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  component: () => (
+    <AppShell>
+      <SettingsPage />
+    </AppShell>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   overviewRoute,
@@ -113,6 +124,7 @@ const routeTree = rootRoute.addChildren([
   usageRoute,
   metricsRoute,
   plansRoute,
+  settingsRoute,
 ]);
 
 export const router = createRouter({ routeTree });

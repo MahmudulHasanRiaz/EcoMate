@@ -4,6 +4,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
+import { SettingsService } from '../settings/settings.service';
 
 function escapeHtml(value: string): string {
   return value
@@ -17,26 +18,86 @@ function escapeHtml(value: string): string {
 @Injectable()
 export class PlatformMailService {
   private readonly logger = new Logger(PlatformMailService.name);
-  private readonly transporter: Transporter | null;
+  /** undefined = not built yet; null = SMTP unconfigured. */
+  private transporter: Transporter | null | undefined = undefined;
 
-  constructor() {
-    const host = process.env.SMTP_HOST;
-    if (!host) {
-      this.transporter = null;
-      return;
+  constructor(private readonly settings: SettingsService) {}
+
+  /**
+   * Drop the cached transporter so the next send rebuilds it from the
+   * current effective SMTP config. Called after SMTP settings change.
+   */
+  refresh(): void {
+    if (this.transporter) {
+      try {
+        this.transporter.close();
+      } catch {
+        // Best-effort: a stale transporter must never break the settings save.
+      }
     }
-    this.transporter = nodemailer.createTransport({
-      host,
-      port: Number(process.env.SMTP_PORT ?? 587),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: process.env.SMTP_USER
-        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-        : undefined,
-    });
+    this.transporter = undefined;
   }
 
   isConfigured(): boolean {
-    return this.transporter !== null;
+    return this.settings.getSmtp() !== null;
+  }
+
+  private getTransporter(): Transporter | null {
+    if (this.transporter !== undefined) return this.transporter;
+    const config = this.settings.getSmtp();
+    if (!config) {
+      this.transporter = null;
+      return null;
+    }
+    this.transporter = nodemailer.createTransport({
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      auth: config.user
+        ? { user: config.user, pass: config.pass }
+        : undefined,
+    });
+    return this.transporter;
+  }
+
+  private fromAddress(): string {
+    const branding = this.settings.getBranding();
+    const smtp = this.settings.getSmtp();
+    const address =
+      smtp?.from ||
+      process.env.PLATFORM_MAIL_FROM ||
+      'no-reply@ecomate.bd';
+    // PLATFORM_MAIL_FROM may already carry a display name ("Name <a@b>").
+    if (address.includes('<')) return address;
+    return `${branding.platformName} <${address}>`;
+  }
+
+  private replyTo(): string | undefined {
+    const support = this.settings.getBranding().supportEmail;
+    return support || undefined;
+  }
+
+  async sendTest(to: string): Promise<{ delivered: boolean }> {
+    const transporter = this.getTransporter();
+    if (!transporter) {
+      throw new ServiceUnavailableException(
+        'Email delivery is not configured. Set SMTP settings first.',
+      );
+    }
+    const platformName = this.settings.getBranding().platformName;
+    await transporter.sendMail({
+      from: this.fromAddress(),
+      replyTo: this.replyTo(),
+      to,
+      subject: `${platformName} test email`,
+      text:
+        `Hi,\n\nThis is a test email from your ${platformName} platform. ` +
+        `If you received it, SMTP delivery is working.\n`,
+      html: `<p>Hi,</p><p>This is a test email from your <strong>${escapeHtml(
+        platformName,
+      )}</strong> platform. If you received it, SMTP delivery is working.</p>`,
+    });
+    return { delivered: true };
   }
 
   async sendVerification(input: {
@@ -44,10 +105,8 @@ export class PlatformMailService {
     tenantName: string;
     verificationUrl: string;
   }): Promise<{ delivered: boolean }> {
-    const from =
-      process.env.PLATFORM_MAIL_FROM || 'EcoMate <no-reply@ecomate.bd>';
-
-    if (!this.transporter) {
+    const transporter = this.getTransporter();
+    if (!transporter) {
       if (process.env.NODE_ENV === 'production') {
         throw new ServiceUnavailableException(
           'Email delivery is not configured. Set SMTP_HOST/SMTP_FROM.',
@@ -61,8 +120,9 @@ export class PlatformMailService {
     }
 
     const name = escapeHtml(input.tenantName);
-    await this.transporter.sendMail({
-      from,
+    await transporter.sendMail({
+      from: this.fromAddress(),
+      replyTo: this.replyTo(),
       to: input.to,
       subject: `Verify your email for ${input.tenantName}`,
       text:
@@ -83,10 +143,8 @@ export class PlatformMailService {
     adminUrl: string;
     storefrontUrl: string;
   }): Promise<{ delivered: boolean }> {
-    const from =
-      process.env.PLATFORM_MAIL_FROM || 'EcoMate <no-reply@ecomate.bd>';
-
-    if (!this.transporter) {
+    const transporter = this.getTransporter();
+    if (!transporter) {
       if (process.env.NODE_ENV === 'production') {
         throw new ServiceUnavailableException(
           'Email delivery is not configured. Set SMTP_HOST/SMTP_FROM.',
@@ -101,8 +159,9 @@ export class PlatformMailService {
     const name = escapeHtml(input.tenantName);
     const admin = escapeHtml(input.adminUrl);
     const store = escapeHtml(input.storefrontUrl);
-    await this.transporter.sendMail({
-      from,
+    await transporter.sendMail({
+      from: this.fromAddress(),
+      replyTo: this.replyTo(),
       to: input.to,
       subject: `${input.tenantName} is ready`,
       text:

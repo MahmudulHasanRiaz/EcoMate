@@ -23,11 +23,15 @@ const domainConfig = {
   getConfig: () => ({ primaryDomain: 'ecomate.bd' }),
 };
 const audit = { record: jest.fn() };
+const settings = {
+  getTrialDefaults: jest.fn().mockReturnValue({ trialDays: 30, graceDays: 10 }),
+};
 
 const service = new TenantsService(
   prisma,
   domainConfig as any,
   audit as any,
+  settings as any,
 );
 
 const baseTenantDto = {
@@ -90,6 +94,57 @@ describe('TenantsService', () => {
     expect(result.id).toBe('tenant-1');
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'tenant.create', tenantId: 'tenant-1' }),
+    );
+  });
+
+  it('uses the platform trial default when the plan version has no trial days', async () => {
+    prisma.tenant.findUnique.mockResolvedValue(null);
+    prisma.planVersion.findUnique.mockResolvedValue({
+      id: 'pv-1',
+      version: 1,
+      trialDays: undefined,
+      features: [],
+      limits: {},
+    });
+    prisma.tenant.create.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      status: 'TRIAL',
+    });
+
+    await service.create(baseTenantDto as any, 'platform-user-1');
+
+    const data = prisma.tenant.create.mock.calls[0][0].data;
+    const expected = Date.now() + 30 * 86_400_000;
+    expect(Math.abs(data.trialEndsAt.getTime() - expected)).toBeLessThan(
+      60_000,
+    );
+  });
+
+  it('explicit DTO trial days win over the platform default', async () => {
+    prisma.tenant.findUnique.mockResolvedValue(null);
+    prisma.planVersion.findUnique.mockResolvedValue({
+      id: 'pv-1',
+      version: 1,
+      trialDays: 14,
+      features: [],
+      limits: {},
+    });
+    prisma.tenant.create.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      status: 'TRIAL',
+    });
+
+    await service.create(
+      { ...baseTenantDto, trialDays: 5 } as any,
+      'platform-user-1',
+    );
+
+    const data = prisma.tenant.create.mock.calls[0][0].data;
+    const expected = Date.now() + 5 * 86_400_000;
+    expect(Math.abs(data.trialEndsAt.getTime() - expected)).toBeLessThan(
+      60_000,
     );
   });
 

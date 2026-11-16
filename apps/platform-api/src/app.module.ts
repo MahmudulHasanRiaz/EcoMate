@@ -12,6 +12,7 @@ import { MetricsModule } from './metrics/metrics.module';
 import { PlansModule } from './plans/plans.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
+import { SettingsModule } from './settings/settings.module';
 import { SignupModule } from './signup/signup.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { UsageModule } from './usage/usage.module';
@@ -31,6 +32,7 @@ import { UsageModule } from './usage/usage.module';
     MetricsModule,
     PlansModule,
     ProvisioningModule,
+    SettingsModule,
     SignupModule,
     TenantsModule,
     UsageModule,

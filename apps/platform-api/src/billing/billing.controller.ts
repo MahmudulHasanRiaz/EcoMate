@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -16,8 +17,10 @@ import { RolesGuard } from '../auth/roles.guard';
 import { BillingService } from './billing.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { CreateCreditNoteDto } from './dto/create-credit-note.dto';
+import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
 import { RejectProofDto } from './dto/reject-proof.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
+import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 
 @Controller('billing')
 @UseGuards(PlatformAuthGuard, RolesGuard)
@@ -32,6 +35,34 @@ export class BillingController {
   @Get('methods')
   methods() {
     return this.billing.methods();
+  }
+
+  @Post('methods')
+  @Roles('SUPERADMIN', 'BILLING')
+  createMethod(
+    @Body() dto: CreatePaymentMethodDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.billing.createMethod(dto, user?.id);
+  }
+
+  @Patch('methods/:id')
+  @Roles('SUPERADMIN', 'BILLING')
+  updateMethod(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePaymentMethodDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.billing.updateMethod(id, dto, user?.id);
+  }
+
+  @Delete('methods/:id')
+  @Roles('SUPERADMIN', 'BILLING')
+  deleteMethod(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.billing.deleteMethod(id, user?.id);
   }
 
   @Get('proofs')

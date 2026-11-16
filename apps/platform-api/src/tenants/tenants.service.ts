@@ -10,6 +10,10 @@ import {
   RESERVED_SLUGS,
 } from '../config/domain-config.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import {
+  DEFAULT_TRIAL_DAYS,
+  SettingsService,
+} from '../settings/settings.service';
 import { ChangePlanDto } from './dto/change-plan.dto';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
@@ -20,6 +24,7 @@ export class TenantsService {
     private readonly prisma: PlatformPrismaService,
     private readonly domainConfig: DomainConfigService,
     private readonly audit: AuditService,
+    private readonly settings: SettingsService,
   ) {}
 
   async list(query: {
@@ -103,7 +108,13 @@ export class TenantsService {
 
     const primaryDomain = this.domainConfig.getConfig().primaryDomain;
     const now = new Date();
-    const trialDays = dto.trialDays ?? planVersion?.trialDays ?? 14;
+    let defaultTrialDays = DEFAULT_TRIAL_DAYS;
+    try {
+      defaultTrialDays = this.settings.getTrialDefaults().trialDays;
+    } catch {
+      // Settings unavailable: fall back to the hardcoded default.
+    }
+    const trialDays = dto.trialDays ?? planVersion?.trialDays ?? defaultTrialDays;
     const trialEndsAt = new Date(now.getTime() + trialDays * 86_400_000);
     const status = planVersion ? 'TRIAL' : 'PENDING_VERIFICATION';
 
