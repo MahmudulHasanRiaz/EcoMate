@@ -16,7 +16,7 @@ complete.
 - [x] 8. Platform settings (payment methods, SMTP, trial/grace, tax, branding,
       domain config)
 - [x] 9. Platform users/roles, audit search/export
-- [ ] 10. Acceptance: full tenant lifecycle and billing operated from the SaaS
+- [x] 10. Acceptance: full tenant lifecycle and billing operated from the SaaS
       admin
 
 ## Tenant detail actions — DONE (7/7)
@@ -445,7 +445,97 @@ invited user, `/audit` filter + row detail + CSV download, disable + delete
 of both browser users through the UI). All smoke users, invites, settings
 keys and audit rows were purged; services stopped.
 
+## Acceptance — DONE (62/62 API + 11/11 browser)
+
+Phase 6 item 10 is a verification item, not a coding item: one tenant taken
+through the whole lifecycle, operated from the SaaS admin, against the live
+stack (platform-api + tenant backend + both consoles + a local SMTP catcher).
+No code changed; the commit is this document.
+
+Two tenants were used. Tenant A (`e2e-accept`) ran the full lifecycle
+including purge; tenant B (`e2e-browse`) was provisioned for the browser
+smoke and purged afterwards. Live **API E2E 62/62**: platform login, anon
+`401`, SMTP pointed at the catcher, bKash method + paid plan created (plan
+create takes the first version inline — `price` is required on
+`CreatePlanDto`), signup `201` + duplicate-slug `409`, verification email
+captured and the token extracted after quoted-printable decoding, bad-token
+verify `400`, real verify, provisioning `SUCCEEDED` + tenant `TRIAL`,
+welcome email (`"<name> is ready"` subject — no "welcome" word), backend
+registry resolves the new tenant (needs `PLATFORM_API_URL` to include the
+`/api` suffix — without it the sync `404`s), owner `admin-login` `200`
+superadmin + `/auth/me` in tenant context, change-plan to the new version,
+invoice + proof seeded (see below), proof visible `PENDING`, approve →
+invoice `PAID` + payment created (5000 BDT, proof-linked), second approve
+`409`, subdomain verify `verified: true` with no DNS, custom-domain add
+returns TXT instructions, custom verify honestly `verified: false` with no
+real DNS (domain stays `PENDING`, never fake-verified), custom removed,
+usage read `200`, export `200` containing the slug + owner email, audit
+rows for `tenant.plan.change`, `billing.proof.approve`, `tenant.domain.add`,
+`tenant.export`, audit CSV export `200`, purge-before-delete `400`, soft
+delete → `DELETED`, restore → `TRIAL`, delete again, purge inside the
+retention window `400`, `deletedAt` backdated 31 days via SQL, purge →
+`404` on the platform API and 0 rows left in the tenant DB (`"User"` —
+`UserProfile` maps to table `"User"` — and `"OrderStatus"`, column
+`"tenant_id"`). Tenant B provisioned `TRIAL` on the trial version via the
+explicit default (see finding F1). Live **browser 11/11**: console login,
+tenants list, tenant detail (`TRIAL` + subscription + domains), billing
+proofs list, approve from the UI (the approve button uses a native
+`window.confirm` — the smoke accepts it), API-confirmed `APPROVED`, audit
+page shows `billing.proof.approve`, tenant-admin owner sign-in through the
+subdomain API URL (Chrome `--host-resolver-rules` maps the subdomain to
+127.0.0.1 — `/etc/hosts` is read-only on the VM — plus `--no-proxy-server`
+so the egress proxy does not swallow the subdomain host, plus
+`CORS_ORIGIN=http://127.0.0.1:5173` on the backend), dashboard renders,
+products page loads (tenant-scoped read). All smoke tenants, methods,
+plans, settings keys, invoices, proofs, payments, signup requests, audit
+rows and export files were purged; services stopped.
+
+**Finding F1 — signup default follows the newest plan version (documented,
+not changed).** `resolvePlanVersion()` falls back to the latest effective,
+non-archived version across all active plans when no explicit default is
+set. During the run, creating the `e2e-growth` plan version silently made
+it the signup default — the next signup landed on the paid plan instead of
+the trial. The explicit escape hatch (`DEFAULT_PLAN_VERSION_ID` env or the
+`default_plan_version_id` platform setting) works and was used to pin the
+trial version for the rest of the run. Production must set an explicit
+default before launch; adding an `isDefault` flag on the plan (instead of
+latest-wins) is a Phase 8 hardening candidate.
+
+**Phase 7 scope (asserted, not fixed here).** There is no invoice-creation
+endpoint and no tenant proof-submission endpoint — the invoice + proof in
+this run were seeded directly in the platform DB. Approving a proof creates
+the Payment and marks the invoice `PAID` but does **not** extend the
+subscription or refresh entitlements: the run asserts `currentPeriodEnd`
+is unchanged after approve. Plan change is immediate (no proration or
+effective dates). Trials never expire (no job evaluates `trialEndsAt`).
+Real custom-domain verification needs DNS + Caddy on-demand TLS. All of
+these belong to Phase 7 (billing lifecycle) and Phase 8 (hardening/launch).
+
+**Test-env notes learned in this run.** Signup is rate-limited per IP
+(5/10 min) and per email (3/60 min), in-memory per platform-api instance —
+restart the platform to reset it between E2E runs. `TENANT_RETENTION_DAYS=0`
+makes restore impossible (the restore window IS the retention window, so a
+0-day retention returns `410` on every restore — correct behavior, wrong
+test config); keep the 30-day default and backdate `deletedAt` instead.
+`psql -t -A` with `RETURNING` prints a trailing `INSERT 0 1` tag line —
+take the first line. Prisma `@updatedAt` has no DB default, so seeded rows
+need explicit `createdAt`/`updatedAt`. Soft delete is `DELETE /tenants/:id`
+(not `POST /delete`). The tenant admin SPA is served under base `/admin/`
+(sign-in is `/admin/sign-in`, products `/admin/op/products`).
+
+Verification: platform **292/292** (35 suites, unchanged — no code changed
+in this item), platform `nest build` clean, platform-admin tsc clean +
+vitest **19/19** (unchanged), backend **6271 passed / 10 skipped / 0 failed**
+(447 suites, unchanged), storefront **699/699** (unchanged), shared-types
+**14/14** (unchanged), tenant-admin **1671/1671** (185 files, unchanged).
+Live **API E2E 62/62** + **browser 11/11** (see above).
+
 ## Next
 
-Item 10: acceptance — full tenant lifecycle and billing operated from the SaaS
-admin.
+Phase 6 is complete (10/10). Phase 7: billing lifecycle — renewal invoice
+job + reminders + grace/suspend/cancel state machine; manual payment
+verification transaction (invoice → payment → subscription extension →
+entitlement refresh); partial payments, overpayment credit, duplicate
+transaction detection; upgrade/downgrade effective dates + proration;
+plan version application to existing subscriptions; usage counters + limit
+enforcement + upgrade CTA; email templates; invoice PDF/receipt.
