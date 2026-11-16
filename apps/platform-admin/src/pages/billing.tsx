@@ -7,11 +7,13 @@ import type {
   Coupon,
   CreditNote,
   Invoice,
+  JobsStatus,
   Page,
   Payment,
   PaymentProof,
   Plan,
   Subscription,
+  Tenant,
 } from '../types';
 import {
   ErrorNote,
@@ -26,7 +28,8 @@ type Tab =
   | 'payments'
   | 'subscriptions'
   | 'credits'
-  | 'coupons';
+  | 'coupons'
+  | 'jobs';
 const PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
 const INVOICE_STATUSES = [
   '',
@@ -49,6 +52,12 @@ export function BillingPage() {
   const [creditNotes, setCreditNotes] = useState<Page<CreditNote> | null>(null);
   const [coupons, setCoupons] = useState<Page<Coupon> | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [tenants, setTenants] = useState<Page<Tenant> | null>(null);
+  const [jobs, setJobs] = useState<JobsStatus | null>(null);
+  const [invoiceTenantId, setInvoiceTenantId] = useState('');
+  const [invoiceDescription, setInvoiceDescription] = useState('');
+  const [invoiceAmount, setInvoiceAmount] = useState('');
+  const [invoiceDueAt, setInvoiceDueAt] = useState('');
   const [planChoices, setPlanChoices] = useState<Record<string, string>>({});
   const [proofStatus, setProofStatus] =
     useState<(typeof PROOF_STATUSES)[number]>('PENDING');
@@ -75,7 +84,7 @@ export function BillingPage() {
     setBusy('load');
     setError(null);
     try {
-      const [nextSummary, nextProofs, nextInvoices, nextPayments, nextSubscriptions, nextCredits, nextCoupons, nextPlans] =
+      const [nextSummary, nextProofs, nextInvoices, nextPayments, nextSubscriptions, nextCredits, nextCoupons, nextPlans, nextTenants, nextJobs] =
         await Promise.all([
           api('/billing/summary').then((r) => readJson<BillingSummary>(r)),
           api(`/billing/proofs?status=${proofStatus}&limit=50`).then((r) =>
@@ -97,6 +106,8 @@ export function BillingPage() {
             readJson<Page<Coupon>>(r),
           ),
           api('/plans').then((r) => readJson<Plan[]>(r)),
+          api('/tenants?limit=100').then((r) => readJson<Page<Tenant>>(r)),
+          api('/jobs').then((r) => readJson<JobsStatus>(r)),
         ]);
       setSummary(nextSummary);
       setProofs(nextProofs);
@@ -106,6 +117,8 @@ export function BillingPage() {
       setCreditNotes(nextCredits);
       setCoupons(nextCoupons);
       setPlans(nextPlans);
+      setTenants(nextTenants);
+      setJobs(nextJobs);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -174,6 +187,105 @@ export function BillingPage() {
     try {
       const response = await api(`/billing/invoices/${invoice.id}`);
       setSelectedInvoice(await readJson<Invoice>(response));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function downloadInvoicePdf(invoice: Invoice) {
+    setBusy(`pdf:${invoice.id}`);
+    setError(null);
+    try {
+      const response = await api(`/billing/invoices/${invoice.id}/pdf`);
+      if (!response.ok) {
+        throw new Error(`Invoice PDF failed (${response.status})`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice-${invoice.number}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setNotice(`Invoice ${invoice.number} downloaded as PDF.`);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function createInvoice() {
+    if (!invoiceTenantId || !invoiceDescription.trim() || !invoiceAmount) {
+      setError('Pick a tenant, a description and an amount first.');
+      return;
+    }
+    setBusy('create-invoice');
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await api('/billing/invoices', {
+        method: 'POST',
+        body: JSON.stringify({
+          tenantId: invoiceTenantId,
+          lines: [
+            {
+              description: invoiceDescription.trim(),
+              quantity: 1,
+              unitPrice: Number(invoiceAmount),
+            },
+          ],
+          dueAt: invoiceDueAt ? new Date(invoiceDueAt).toISOString() : undefined,
+        }),
+      });
+      const created = await readJson<Invoice>(response);
+      setNotice(`Invoice ${created.number} created.`);
+      setInvoiceDescription('');
+      setInvoiceAmount('');
+      setInvoiceDueAt('');
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runJob(name: string) {
+    setBusy(`job:${name}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await api(`/jobs/${name}/run`, { method: 'POST' });
+      const result = await readJson<{
+        counts: Record<string, number>;
+        errors: string[];
+      }>(response);
+      const counts = Object.entries(result.counts)
+        .map(([key, value]) => `${key} ${value}`)
+        .join(', ');
+      setNotice(
+        `Job ${name} finished${counts ? `: ${counts}` : ''}${result.errors.length > 0 ? ` — ${result.errors.length} error(s)` : ''}.`,
+      );
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runAllJobs() {
+    setBusy('job:all');
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await api('/jobs/all/run', { method: 'POST' });
+      await readJson(response);
+      setNotice('All billing jobs finished.');
+      setRefresh((value) => value + 1);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -420,6 +532,16 @@ export function BillingPage() {
           Coupons
           {coupons ? <span>{coupons.meta.total}</span> : null}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'jobs'}
+          className="tab"
+          data-active={tab === 'jobs'}
+          onClick={() => setTab('jobs')}
+        >
+          Billing jobs
+        </button>
       </div>
 
       {tab === 'proofs' ? (
@@ -630,6 +752,72 @@ export function BillingPage() {
           <section className="card">
             <div className="card-head">
               <div>
+                <h2>Create invoice</h2>
+                <p>
+                  A manual invoice for a tenant. Open credit applies
+                  automatically; a fully-covered invoice is marked paid.
+                </p>
+              </div>
+            </div>
+            <div className="form-row">
+              <label className="inline-field">
+                <span>Tenant</span>
+                <select
+                  value={invoiceTenantId}
+                  onChange={(event) => setInvoiceTenantId(event.target.value)}
+                  aria-label="Invoice tenant"
+                >
+                  <option value="">Select a tenant</option>
+                  {(tenants?.data ?? []).map((tenant) => (
+                    <option key={tenant.id} value={tenant.id}>
+                      {tenant.name} ({tenant.slug})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="inline-field">
+                <span>Description</span>
+                <input
+                  type="text"
+                  value={invoiceDescription}
+                  onChange={(event) => setInvoiceDescription(event.target.value)}
+                  placeholder="e.g. Setup fee"
+                  aria-label="Invoice description"
+                />
+              </label>
+              <label className="inline-field">
+                <span>Amount (BDT)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={invoiceAmount}
+                  onChange={(event) => setInvoiceAmount(event.target.value)}
+                  aria-label="Invoice amount"
+                />
+              </label>
+              <label className="inline-field">
+                <span>Due date</span>
+                <input
+                  type="date"
+                  value={invoiceDueAt}
+                  onChange={(event) => setInvoiceDueAt(event.target.value)}
+                  aria-label="Invoice due date"
+                />
+              </label>
+              <button
+                type="button"
+                className="button"
+                onClick={() => void createInvoice()}
+                disabled={!!busy}
+              >
+                {busy === 'create-invoice' ? 'Creating…' : 'Create invoice'}
+              </button>
+            </div>
+          </section>
+          <section className="card">
+            <div className="card-head">
+              <div>
                 <h2>Invoices</h2>
                 <p>Subscription invoices and their payment position.</p>
               </div>
@@ -695,13 +883,25 @@ export function BillingPage() {
                 <StatusBadge status={selectedInvoice.status} />
               </p>
             </div>
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={() => setSelectedInvoice(null)}
-            >
-              Close
-            </button>
+            <div className="button-row">
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => void downloadInvoicePdf(selectedInvoice)}
+                disabled={!!busy}
+              >
+                {busy === `pdf:${selectedInvoice.id}`
+                  ? 'Preparing…'
+                  : 'Download PDF'}
+              </button>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => setSelectedInvoice(null)}
+              >
+                Close
+              </button>
+            </div>
           </div>
           <dl className="facts">
             <div>
@@ -718,11 +918,21 @@ export function BillingPage() {
               </dd>
             </div>
             <div>
+              <dt>Credit applied</dt>
+              <dd>
+                {formatMoney(
+                  selectedInvoice.creditAmount ?? 0,
+                  selectedInvoice.currency,
+                )}
+              </dd>
+            </div>
+            <div>
               <dt>Balance</dt>
               <dd>
                 {formatMoney(
-                  Number(selectedInvoice.total) -
-                    (selectedInvoice.paidAmount ?? 0),
+                  selectedInvoice.remaining ??
+                    Number(selectedInvoice.total) -
+                      (selectedInvoice.paidAmount ?? 0),
                   selectedInvoice.currency,
                 )}
               </dd>
@@ -1243,6 +1453,81 @@ export function BillingPage() {
                 </table>
               </div>
             ) : null}
+          </section>
+        </>
+      ) : null}
+
+      {tab === 'jobs' ? (
+        <>
+          <section className="card">
+            <div className="card-head">
+              <div>
+                <h2>Billing jobs</h2>
+                <p>
+                  The lifecycle runs on a schedule (hourly by default). Each
+                  job is idempotent — running it twice changes nothing the
+                  second time.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="button"
+                onClick={() => void runAllJobs()}
+                disabled={!!busy}
+              >
+                {busy === 'job:all' ? 'Running…' : 'Run all jobs'}
+              </button>
+            </div>
+            {!jobs ? (
+              <p className="muted-note">Loading job status…</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Job</th>
+                      <th>Last run</th>
+                      <th>Last result</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobs.jobs.map((job) => (
+                      <tr key={job.name}>
+                        <td className="mono">{job.name}</td>
+                        <td>
+                          {job.lastRunAt
+                            ? formatDateTime(job.lastRunAt)
+                            : 'Never'}
+                        </td>
+                        <td>
+                          {job.lastResult
+                            ? Object.entries(job.lastResult.counts)
+                                .map(([key, value]) => `${key} ${value}`)
+                                .join(', ') || 'No changes'
+                            : '—'}
+                          {job.lastError ? (
+                            <span className="sub error-text">
+                              {job.lastError}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            onClick={() => void runJob(job.name)}
+                            disabled={!!busy}
+                          >
+                            {busy === `job:${job.name}` ? 'Running…' : 'Run'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         </>
       ) : null}

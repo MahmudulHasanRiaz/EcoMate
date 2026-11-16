@@ -11,6 +11,9 @@ export type TenantAccessState =
   | 'read_only'
   | 'suspended';
 
+/** Tenant statuses that may operate (subject to the subscription state). */
+const OPERATING_TENANT_STATUSES = new Set(['ACTIVE', 'TRIAL', 'PAST_DUE']);
+
 /**
  * Tenant entitlement view backed by the platform registry snapshot.
  *
@@ -51,11 +54,27 @@ export class TenantEntitlementsService {
   getAccessState(now = new Date()): TenantAccessState {
     const record = this.currentRecord();
     if (!record) return this.devWildcard() ? 'full' : 'read_only';
-    if (record.status && record.status !== 'ACTIVE') return 'suspended';
+    // TRIAL tenants operate fully, and PAST_DUE tenants get their grace
+    // window from the subscription logic below. Anything else (SUSPENDED,
+    // CANCELLED, DELETED, PENDING_VERIFICATION, PROVISIONING) is suspended.
+    // (Before Phase 7 this checked status !== 'ACTIVE', which suspended
+    // every trial tenant and skipped the grace window entirely.)
+    if (
+      record.status &&
+      !OPERATING_TENANT_STATUSES.has(record.status.toUpperCase())
+    ) {
+      return 'suspended';
+    }
 
     const status = (record.subscriptionStatus || '').toUpperCase();
-    if (status === 'SUSPENDED' || status === 'CANCELED') return 'suspended';
-    if (status === 'READ_ONLY') return 'read_only';
+    if (
+      status === 'SUSPENDED' ||
+      status === 'CANCELED' ||
+      status === 'CANCELLED'
+    ) {
+      return 'suspended';
+    }
+    if (status === 'READ_ONLY' || status === 'EXPIRED') return 'read_only';
     if (status === 'PAST_DUE') {
       const until = this.parseDate(record.graceEndsAt ?? record.validUntil);
       return until && now <= until ? 'grace' : 'read_only';

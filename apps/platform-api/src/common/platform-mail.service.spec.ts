@@ -201,4 +201,129 @@ describe('PlatformMailService', () => {
       }),
     );
   });
+
+  describe('billing templates', () => {
+    it('sends an invoice email naming the invoice, amount and due date', async () => {
+      const { service } = makeService();
+      const result = await service.sendInvoice({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        invoiceNumber: 'INV-2611-0001',
+        total: 1150,
+        currency: 'BDT',
+        dueAt: new Date('2026-11-23T00:00:00.000Z'),
+        periodLabel: '2026-11-16 to 2026-12-16',
+      });
+
+      expect(result).toEqual({ delivered: true });
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'owner@acme.test',
+          subject: expect.stringContaining('INV-2611-0001'),
+        }),
+      );
+      const mail = mockSendMail.mock.calls[0][0];
+      expect(mail.text).toContain('2026-11-16 to 2026-12-16');
+      expect(mail.text).toContain('1,150');
+    });
+
+    it('sends payment approved / rejected emails with the reason', async () => {
+      const { service } = makeService();
+      await service.sendPaymentApproved({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        invoiceNumber: 'INV-2611-0001',
+        amount: 1150,
+        currency: 'BDT',
+      });
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: expect.stringContaining('Payment approved'),
+        }),
+      );
+
+      jest.clearAllMocks();
+      await service.sendPaymentRejected({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        invoiceNumber: 'INV-2611-0001',
+        reason: 'Wrong transaction id',
+      });
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: expect.stringContaining('Payment proof rejected'),
+        }),
+      );
+      expect(mockSendMail.mock.calls[0][0].text).toContain(
+        'Wrong transaction id',
+      );
+    });
+
+    it('sends trial-ending, suspension and reactivation emails', async () => {
+      const { service } = makeService();
+      await service.sendTrialEnding({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        trialEndsAt: new Date('2026-11-19T00:00:00.000Z'),
+        planName: 'Growth',
+      });
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: expect.stringContaining('trial ends on 2026-11-19'),
+        }),
+      );
+
+      jest.clearAllMocks();
+      await service.sendSuspension({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        reason: 'Grace period ended with an unpaid invoice',
+      });
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: expect.stringContaining('has been suspended'),
+        }),
+      );
+      expect(mockSendMail.mock.calls[0][0].text).toContain(
+        'Grace period ended',
+      );
+
+      jest.clearAllMocks();
+      await service.sendReactivation({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+      });
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: expect.stringContaining('is active again'),
+        }),
+      );
+    });
+
+    it('dev-logs billing mail without SMTP and fails closed in production', async () => {
+      const { service } = makeService(null);
+      const result = await service.sendInvoice({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        invoiceNumber: 'INV-2611-0001',
+        total: 1150,
+        currency: 'BDT',
+        dueAt: new Date('2026-11-23T00:00:00.000Z'),
+      });
+      expect(result).toEqual({ delivered: false });
+      expect(mockSendMail).not.toHaveBeenCalled();
+
+      process.env.NODE_ENV = 'production';
+      await expect(
+        service.sendInvoice({
+          to: 'owner@acme.test',
+          tenantName: 'Acme',
+          invoiceNumber: 'INV-2611-0001',
+          total: 1150,
+          currency: 'BDT',
+          dueAt: new Date('2026-11-23T00:00:00.000Z'),
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+  });
 });

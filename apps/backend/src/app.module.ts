@@ -113,6 +113,7 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { SecurityDashboardModule } from './security-dashboard/security-dashboard.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { EntitlementsModule } from './entitlements/entitlements.module';
+import { TenantBillingModule } from './billing/billing.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { TenantMiddleware } from './tenancy/tenant.middleware';
@@ -227,6 +228,7 @@ import { TenantLimitGuard } from './entitlements/tenant-limit.guard';
     PermissionsModule,
     TenancyModule,
     EntitlementsModule,
+    TenantBillingModule,
     ProvisioningModule,
   ],
 

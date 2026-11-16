@@ -5,10 +5,12 @@ import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
 import { AuditModule } from './common/audit.module';
 import { PlatformMailModule } from './common/platform-mail.module';
+import { TenantRefreshModule } from './common/tenant-refresh.module';
 import { DomainConfigModule } from './config/domain-config.module';
 import { DomainsModule } from './domains/domains.module';
 import { HealthModule } from './health/health.module';
 import { InternalModule } from './internal/internal.module';
+import { JobsModule } from './jobs/jobs.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { PlansModule } from './plans/plans.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -26,12 +28,14 @@ import { UsersModule } from './users/users.module';
     AuditModule,
     AuditQueryModule,
     PlatformMailModule,
+    TenantRefreshModule,
     AuthModule,
     BillingModule,
     DomainConfigModule,
     DomainsModule,
     HealthModule,
     InternalModule,
+    JobsModule,
     MetricsModule,
     PlansModule,
     ProvisioningModule,

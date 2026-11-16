@@ -2,15 +2,24 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
+import { PlatformMailService } from '../common/platform-mail.service';
+import { TenantRefreshService } from '../common/tenant-refresh.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
+import { addInterval } from './billing-dates';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { CreateCreditNoteDto } from './dto/create-credit-note.dto';
+import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
+import { SubmitProofDto } from './dto/submit-proof.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
 import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
+import { InvoicePdfService } from './invoice-pdf.service';
+import { InvoiceService } from './invoice.service';
 
 const PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'];
 const INVOICE_STATUSES = ['DRAFT', 'OPEN', 'PAID', 'VOID', 'UNCOLLECTIBLE'];
@@ -31,9 +40,16 @@ function pageArgs(page?: string, limit?: string) {
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly audit: AuditService,
+    private readonly invoiceService: InvoiceService,
+    private readonly pdf: InvoicePdfService,
+    private readonly mail: PlatformMailService,
+    private readonly refresh: TenantRefreshService,
+    private readonly settings: SettingsService,
   ) {}
 
   async proofQueue(query: {
@@ -105,14 +121,60 @@ export class BillingService {
     return proof;
   }
 
+  /**
+   * Approve a payment proof. One transaction: claim the proof, record the
+   * payment, settle the invoice (payments + applied credit), bank any
+   * overpayment as open credit, and — when the invoice is fully paid —
+   * extend the subscription, reactivate the tenant and refresh entitlements.
+   * A partial payment settles nothing: the invoice stays OPEN and the
+   * subscription is untouched.
+   */
   async approveProof(id: string, actorId?: string) {
     const proof = await this.prisma.paymentProof.findUnique({
       where: { id },
-      include: { invoice: { select: { id: true, total: true, currency: true } } },
+      include: {
+        invoice: {
+          select: {
+            id: true,
+            number: true,
+            total: true,
+            currency: true,
+            subscriptionId: true,
+            periodStart: true,
+            periodEnd: true,
+          },
+        },
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            status: true,
+            ownerEmail: true,
+          },
+        },
+      },
     });
     if (!proof) throw new NotFoundException('Payment proof not found');
     if (proof.status !== 'PENDING') {
       throw new ConflictException('This payment proof was already reviewed');
+    }
+    // Duplicate transaction detection: the same transaction id on the same
+    // method must never pay twice. The partial unique index is the backstop;
+    // this query gives the friendly error.
+    const duplicate = await this.prisma.paymentProof.findFirst({
+      where: {
+        id: { not: id },
+        methodId: proof.methodId,
+        transactionId: proof.transactionId,
+        status: 'APPROVED',
+      },
+      select: { id: true, invoiceId: true },
+    });
+    if (duplicate) {
+      throw new ConflictException(
+        'This transaction id was already used for another approved payment',
+      );
     }
 
     const now = new Date();
@@ -143,20 +205,91 @@ export class BillingService {
         },
       });
 
-      const paid = await tx.payment.aggregate({
-        where: { invoiceId: proof.invoiceId },
-        _sum: { amount: true },
-      });
-      const paidAmount = Number(paid._sum.amount ?? 0);
-      const total = Number(proof.invoice.total);
-      const invoiceStatus = paidAmount >= total ? 'PAID' : 'OPEN';
-      if (invoiceStatus === 'PAID') {
-        await tx.invoice.update({
-          where: { id: proof.invoiceId },
-          data: { status: 'PAID', paidAt: now },
+      const settled = await this.invoiceService.settleInvoice(tx, proof.invoiceId, now);
+
+      // Overpayment: the excess is not refunded automatically — it becomes
+      // open credit for the tenant's next invoice.
+      let overpaymentCredit = 0;
+      if (settled.paidAmount > settled.total) {
+        overpaymentCredit = Math.round(
+          (settled.paidAmount - settled.total + Number.EPSILON) * 100,
+        ) / 100;
+        await tx.creditNote.create({
+          data: {
+            tenantId: proof.tenantId,
+            amount: overpaymentCredit,
+            currency: proof.invoice.currency,
+            reason: `Overpayment on invoice ${proof.invoice.number}`,
+            appliedInvoiceId: null,
+          },
         });
       }
-      return { payment, paidAmount, total, invoiceStatus };
+
+      // Full payment: extend the subscription and reactivate the tenant.
+      let extended: {
+        currentPeriodStart: Date;
+        currentPeriodEnd: Date;
+      } | null = null;
+      if (settled.status === 'PAID' && proof.invoice.subscriptionId) {
+        const subscription = await tx.subscription.findUnique({
+          where: { id: proof.invoice.subscriptionId },
+          include: { planVersion: true },
+        });
+        if (subscription) {
+          const periodStart =
+            proof.invoice.periodStart ??
+            (subscription.currentPeriodEnd > now
+              ? subscription.currentPeriodEnd
+              : now);
+          const periodEnd =
+            proof.invoice.periodEnd ??
+            addInterval(
+              periodStart,
+              subscription.planVersion.interval,
+              subscription.planVersion.intervalDays,
+            );
+          await tx.subscription.update({
+            where: { id: subscription.id },
+            data: {
+              status: 'ACTIVE',
+              currentPeriodStart: periodStart,
+              currentPeriodEnd: periodEnd,
+              trialEndsAt: null,
+              cancelAtPeriodEnd: false,
+              canceledAt: null,
+              endedAt: null,
+              entitlementsSnapshot: {
+                features: subscription.planVersion.features,
+                limits: subscription.planVersion.limits,
+                changedAt: now.toISOString(),
+              } as any,
+            },
+          });
+          extended = { currentPeriodStart: periodStart, currentPeriodEnd: periodEnd };
+        }
+      }
+      // Reactivation only follows a subscription extension: paying a manual
+      // invoice (setup fee, no subscription) must not flip a TRIAL tenant
+      // to ACTIVE and strand the subscription in TRIAL.
+      let reactivated = false;
+      if (
+        settled.status === 'PAID' &&
+        extended &&
+        (proof.tenant.status === 'PAST_DUE' ||
+          proof.tenant.status === 'SUSPENDED' ||
+          proof.tenant.status === 'TRIAL')
+      ) {
+        await tx.tenant.update({
+          where: { id: proof.tenantId },
+          data: {
+            status: 'ACTIVE',
+            graceEndsAt: null,
+            suspendedAt: null,
+          },
+        });
+        reactivated = true;
+      }
+      return { payment, settled, overpaymentCredit, extended, reactivated };
     });
 
     await this.audit.record({
@@ -169,17 +302,45 @@ export class BillingService {
         invoiceId: proof.invoiceId,
         paymentId: result.payment.id,
         amount: String(proof.amount),
-        invoiceStatus: result.invoiceStatus,
+        invoiceStatus: result.settled.status,
+        overpaymentCredit: result.overpaymentCredit,
+        reactivated: result.reactivated,
       },
     });
+
+    if (result.settled.status === 'PAID') {
+      // Best-effort: mail + refresh must never fail an approved payment.
+      try {
+        await this.mail.sendPaymentApproved({
+          to: proof.tenant.ownerEmail,
+          tenantName: proof.tenant.name,
+          invoiceNumber: proof.invoice.number,
+          amount: Number(proof.amount),
+          currency: proof.invoice.currency,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Payment-approved email failed for ${proof.invoice.number}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const pushed = await this.refresh.pushRefresh(proof.tenant.slug);
+      if (!pushed.ok) {
+        this.logger.warn(
+          `Entitlement refresh push failed for ${proof.tenant.slug}: ${pushed.error}`,
+        );
+      }
+    }
 
     return {
       proofId: proof.id,
       invoiceId: proof.invoiceId,
       paymentId: result.payment.id,
-      paidAmount: result.paidAmount,
-      invoiceTotal: result.total,
-      invoiceStatus: result.invoiceStatus,
+      paidAmount: result.settled.paidAmount,
+      invoiceTotal: result.settled.total,
+      invoiceStatus: result.settled.status,
+      overpaymentCredit: result.overpaymentCredit,
+      reactivated: result.reactivated,
+      currentPeriodEnd: result.extended?.currentPeriodEnd ?? null,
     };
   }
 
@@ -190,7 +351,10 @@ export class BillingService {
     }
     const proof = await this.prisma.paymentProof.findUnique({
       where: { id },
-      select: { id: true, tenantId: true, status: true },
+      include: {
+        invoice: { select: { id: true, number: true } },
+        tenant: { select: { id: true, name: true, ownerEmail: true } },
+      },
     });
     if (!proof) throw new NotFoundException('Payment proof not found');
 
@@ -216,6 +380,18 @@ export class BillingService {
       entityId: proof.id,
       after: { reason: cleanReason },
     });
+    try {
+      await this.mail.sendPaymentRejected({
+        to: proof.tenant.ownerEmail,
+        tenantName: proof.tenant.name,
+        invoiceNumber: proof.invoice.number,
+        reason: cleanReason,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Payment-rejected email failed for ${proof.invoice.number}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     return { proofId: proof.id, status: 'REJECTED' };
   }
 
@@ -277,7 +453,9 @@ export class BillingService {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: {
-        tenant: { select: { id: true, name: true, slug: true } },
+        tenant: {
+          select: { id: true, name: true, slug: true, ownerEmail: true },
+        },
         lines: true,
         payments: { include: { method: true }, orderBy: { receivedAt: 'desc' } },
         proofs: { include: { method: true }, orderBy: { createdAt: 'desc' } },
@@ -285,11 +463,133 @@ export class BillingService {
       },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
-    const paidAmount = invoice.payments.reduce(
-      (sum, payment) => sum + Number(payment.amount),
-      0,
+    const balance = this.invoiceService.balanceOf(invoice);
+    return { ...invoice, ...balance };
+  }
+
+  async createInvoice(dto: CreateInvoiceDto, actorId?: string) {
+    return this.invoiceService.createInvoice(
+      {
+        tenantId: dto.tenantId,
+        subscriptionId: dto.subscriptionId,
+        lines: dto.lines,
+        discount: dto.discount,
+        taxRatePercent: dto.taxRatePercent,
+        dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+        periodStart: dto.periodStart ? new Date(dto.periodStart) : undefined,
+        periodEnd: dto.periodEnd ? new Date(dto.periodEnd) : undefined,
+        notes: dto.notes,
+      },
+      actorId,
     );
-    return { ...invoice, paidAmount };
+  }
+
+  async invoicePdf(id: string) {
+    const detail = await this.invoiceDetail(id);
+    const branding = this.settings.getBranding();
+    const buffer = await this.pdf.render({
+      number: detail.number,
+      status: detail.status,
+      tenantName: detail.tenant.name,
+      tenantSlug: detail.tenant.slug,
+      ownerEmail: detail.tenant.ownerEmail ?? '',
+      createdAt: detail.createdAt,
+      dueAt: detail.dueAt,
+      periodStart: detail.periodStart,
+      periodEnd: detail.periodEnd,
+      lines: detail.lines.map((line: any) => ({
+        description: line.description,
+        quantity: line.quantity,
+        unitPrice: Number(line.unitPrice),
+        amount: Number(line.amount),
+      })),
+      subtotal: Number(detail.subtotal),
+      discount: Number(detail.discount),
+      tax: Number(detail.tax),
+      total: Number(detail.total),
+      currency: detail.currency,
+      payments: detail.payments.map((payment: any) => ({
+        amount: Number(payment.amount),
+        receivedAt: payment.receivedAt,
+        reference: payment.reference,
+      })),
+      creditAmount: detail.creditAmount,
+      platformName: branding.platformName,
+      supportEmail: branding.supportEmail || 'support@ecomate.bd',
+    });
+    return { buffer, filename: `invoice-${detail.number}.pdf` };
+  }
+
+  /**
+   * Tenant proof submission (called by the internal endpoint, which the
+   * tenant backend proxies with the tenant id from its own context). The
+   * invoice must belong to the tenant and be OPEN; the method must be
+   * active; the transaction id must not already be PENDING or APPROVED on
+   * this method (the partial unique index enforces the same rule).
+   */
+  async submitProof(tenantId: string, dto: SubmitProofDto) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: dto.invoiceId },
+      select: { id: true, tenantId: true, status: true, number: true },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.tenantId !== tenantId) {
+      throw new BadRequestException('The invoice does not belong to this tenant');
+    }
+    if (invoice.status !== 'OPEN') {
+      throw new ConflictException(
+        `This invoice is ${invoice.status} and cannot take a payment proof`,
+      );
+    }
+    const method = await this.prisma.paymentMethod.findUnique({
+      where: { id: dto.methodId },
+      select: { id: true, isActive: true, name: true },
+    });
+    if (!method) throw new NotFoundException('Payment method not found');
+    if (!method.isActive) {
+      throw new BadRequestException('This payment method is not active');
+    }
+    const existing = await this.prisma.paymentProof.findFirst({
+      where: {
+        methodId: dto.methodId,
+        transactionId: dto.transactionId.trim(),
+        status: { in: ['PENDING', 'APPROVED'] },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'This transaction id was already submitted for this payment method',
+      );
+    }
+
+    const proof = await this.prisma.paymentProof.create({
+      data: {
+        invoiceId: invoice.id,
+        tenantId,
+        methodId: dto.methodId,
+        amount: dto.amount,
+        transactionId: dto.transactionId.trim(),
+        senderNumber: dto.senderNumber ?? null,
+        note: dto.note ?? null,
+        status: 'PENDING',
+      },
+      include: { method: { select: { id: true, name: true, type: true } } },
+    });
+
+    await this.audit.record({
+      tenantId,
+      action: 'billing.proof.submit',
+      entity: 'PaymentProof',
+      entityId: proof.id,
+      after: {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.number,
+        amount: String(dto.amount),
+        transactionId: dto.transactionId.trim(),
+      },
+    });
+    return proof;
   }
 
   async payments(query: {
@@ -515,18 +815,28 @@ export class BillingService {
       }
     }
 
-    const note = await this.prisma.creditNote.create({
-      data: {
-        tenantId: dto.tenantId,
-        amount: dto.amount,
-        currency: (dto.currency || 'BDT').toUpperCase(),
-        reason: dto.reason.trim(),
-        appliedInvoiceId: dto.appliedInvoiceId ?? null,
-      },
-      include: {
-        tenant: { select: { id: true, name: true, slug: true } },
-        appliedInvoice: { select: { id: true, number: true } },
-      },
+    const note = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.creditNote.create({
+        data: {
+          tenantId: dto.tenantId,
+          amount: dto.amount,
+          currency: (dto.currency || 'BDT').toUpperCase(),
+          reason: dto.reason.trim(),
+          appliedInvoiceId: dto.appliedInvoiceId ?? null,
+        },
+        include: {
+          tenant: { select: { id: true, name: true, slug: true } },
+          appliedInvoice: { select: { id: true, number: true } },
+        },
+      });
+      // A credit note applied to an invoice reduces what the tenant owes:
+      // settle the invoice so a fully-covered invoice becomes PAID. A
+      // credit-paid invoice does NOT extend the subscription — only a real
+      // payment does (see approveProof).
+      if (dto.appliedInvoiceId) {
+        await this.invoiceService.settleInvoice(tx, dto.appliedInvoiceId, new Date());
+      }
+      return created;
     });
 
     await this.audit.record({

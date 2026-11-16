@@ -116,4 +116,95 @@ describe('TenantEntitlementsService', () => {
       'suspended',
     );
   });
+
+  it('gives a trial tenant full access (Phase 7: TRIAL is operating)', () => {
+    registry.replace([
+      {
+        id: context.tenantId,
+        slug: context.slug,
+        status: 'TRIAL',
+        hosts: [],
+        features: ['admin_products'],
+        subscriptionStatus: 'TRIAL',
+      },
+    ]);
+    expect(runWithTenant(context, () => service.getAccessState())).toBe('full');
+  });
+
+  it('honours the grace window for a PAST_DUE tenant', () => {
+    const base: any = {
+      id: context.tenantId,
+      slug: context.slug,
+      status: 'PAST_DUE',
+      hosts: [],
+      features: ['admin_products'],
+      subscriptionStatus: 'PAST_DUE',
+    };
+    registry.replace([
+      {
+        ...base,
+        graceEndsAt: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    ]);
+    expect(runWithTenant(context, () => service.getAccessState())).toBe('grace');
+
+    registry.replace([
+      {
+        ...base,
+        graceEndsAt: new Date(Date.now() - 86_400_000).toISOString(),
+      },
+    ]);
+    expect(runWithTenant(context, () => service.getAccessState())).toBe(
+      'read_only',
+    );
+  });
+
+  it('falls back to validUntil when graceEndsAt is absent', () => {
+    registry.replace([
+      {
+        id: context.tenantId,
+        slug: context.slug,
+        status: 'PAST_DUE',
+        hosts: [],
+        features: ['admin_products'],
+        subscriptionStatus: 'PAST_DUE',
+        validUntil: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    ]);
+    expect(runWithTenant(context, () => service.getAccessState())).toBe('grace');
+  });
+
+  it('treats an expired subscription as read-only', () => {
+    registry.replace([
+      {
+        id: context.tenantId,
+        slug: context.slug,
+        status: 'ACTIVE',
+        hosts: [],
+        features: ['admin_products'],
+        subscriptionStatus: 'EXPIRED',
+      },
+    ]);
+    expect(runWithTenant(context, () => service.getAccessState())).toBe(
+      'read_only',
+    );
+  });
+
+  it('suspends on CANCELLED and CANCELED alike', () => {
+    for (const subscriptionStatus of ['CANCELLED', 'CANCELED']) {
+      registry.replace([
+        {
+          id: context.tenantId,
+          slug: context.slug,
+          status: 'ACTIVE',
+          hosts: [],
+          features: ['admin_products'],
+          subscriptionStatus,
+        },
+      ]);
+      expect(runWithTenant(context, () => service.getAccessState())).toBe(
+        'suspended',
+      );
+    }
+  });
 });

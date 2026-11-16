@@ -9,15 +9,32 @@ const prisma: any = {
   },
   planVersion: {
     findFirst: jest.fn(),
+    findUnique: jest.fn(),
     create: jest.fn(),
   },
+  subscription: {
+    findMany: jest.fn(),
+    update: jest.fn().mockResolvedValue({}),
+  },
+  tenant: {
+    update: jest.fn().mockResolvedValue({}),
+  },
+  $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
 const audit = { record: jest.fn() };
 const settings = {
   getTrialDefaults: jest.fn().mockReturnValue({ trialDays: 30, graceDays: 10 }),
 };
-const service = new PlansService(prisma, audit as any, settings as any);
+const refresh = {
+  pushRefresh: jest.fn().mockResolvedValue({ ok: true }),
+};
+const service = new PlansService(
+  prisma,
+  audit as any,
+  settings as any,
+  refresh as any,
+);
 
 const basePlanDto = {
   slug: 'starter',
@@ -162,5 +179,106 @@ describe('PlansService', () => {
       }),
     );
     expect(result.version).toBe(3);
+  });
+
+  describe('applyVersion', () => {
+    const version = {
+      id: 'v2',
+      version: 2,
+      planId: 'plan-1',
+      archivedAt: null,
+      features: ['admin_products'],
+      limits: { products: 500 },
+      plan: { id: 'plan-1', name: 'Growth' },
+    };
+    const affected = [
+      {
+        id: 'sub-1',
+        tenantId: 'tenant-1',
+        planVersionId: 'v1',
+        status: 'ACTIVE',
+        tenant: { id: 'tenant-1', name: 'Acme', slug: 'acme' },
+      },
+      {
+        id: 'sub-2',
+        tenantId: 'tenant-2',
+        planVersionId: 'v1',
+        status: 'TRIAL',
+        tenant: { id: 'tenant-2', name: 'Beta', slug: 'beta' },
+      },
+    ];
+
+    it('dry-run reports the affected tenants without changing anything', async () => {
+      prisma.planVersion.findUnique.mockResolvedValue(version);
+      prisma.subscription.findMany.mockResolvedValue(affected);
+
+      const result = await service.applyVersion(
+        'plan-1',
+        'v2',
+        { dryRun: true },
+        'u1',
+      );
+
+      expect(result).toMatchObject({
+        dryRun: true,
+        affected: 2,
+        version: 2,
+      });
+      expect(result.tenants[0]).toMatchObject({
+        tenantSlug: 'acme',
+        fromVersionId: 'v1',
+        status: 'ACTIVE',
+      });
+      expect(prisma.subscription.update).not.toHaveBeenCalled();
+      expect(prisma.tenant.update).not.toHaveBeenCalled();
+      expect(refresh.pushRefresh).not.toHaveBeenCalled();
+    });
+
+    it('moves every affected subscription and refreshes entitlements', async () => {
+      prisma.planVersion.findUnique.mockResolvedValue(version);
+      prisma.subscription.findMany.mockResolvedValue(affected);
+
+      const result = await service.applyVersion(
+        'plan-1',
+        'v2',
+        { dryRun: false },
+        'u1',
+      );
+
+      expect(result.affected).toBe(2);
+      expect(prisma.subscription.update).toHaveBeenCalledTimes(2);
+      expect(prisma.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sub-1' },
+          data: expect.objectContaining({ planVersionId: 'v2' }),
+        }),
+      );
+      expect(prisma.tenant.update).toHaveBeenCalledTimes(2);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'tenant.plan.version.apply',
+          tenantId: 'tenant-1',
+        }),
+      );
+      expect(refresh.pushRefresh).toHaveBeenCalledWith('*');
+    });
+
+    it('refuses a version from another plan or an archived version', async () => {
+      prisma.planVersion.findUnique.mockResolvedValue({
+        ...version,
+        planId: 'other-plan',
+      });
+      await expect(
+        service.applyVersion('plan-1', 'v2', { dryRun: true }),
+      ).rejects.toThrow('Plan version not found');
+
+      prisma.planVersion.findUnique.mockResolvedValue({
+        ...version,
+        archivedAt: new Date(),
+      });
+      await expect(
+        service.applyVersion('plan-1', 'v2', { dryRun: true }),
+      ).rejects.toThrow('This plan version is archived');
+    });
   });
 });

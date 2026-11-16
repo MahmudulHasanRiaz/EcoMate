@@ -46,6 +46,8 @@ export function TenantDetailPage() {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [plans, setPlans] = useState<PlanOption[]>([]);
   const [planVersionId, setPlanVersionId] = useState('');
+  const [planEffectiveAt, setPlanEffectiveAt] = useState<'immediate' | 'next_period'>('immediate');
+  const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(true);
   const [days, setDays] = useState('14');
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -268,11 +270,29 @@ export function TenantDetailPage() {
       async () => {
         const response = await api(`/tenants/${tenantId}/change-plan`, {
           method: 'POST',
-          body: JSON.stringify({ planVersionId }),
+          body: JSON.stringify({ planVersionId, effectiveAt: planEffectiveAt }),
         });
         await readJson<unknown>(response);
       },
-      'Plan changed and the entitlement snapshot was refreshed.',
+      planEffectiveAt === 'next_period'
+        ? 'Plan change scheduled for the next billing period.'
+        : 'Plan changed and the entitlement snapshot was refreshed.',
+    );
+  }
+
+  async function cancelTenant() {
+    await runAction(
+      'cancel',
+      async () => {
+        const response = await api(`/tenants/${tenantId}/cancel`, {
+          method: 'POST',
+          body: JSON.stringify({ atPeriodEnd: cancelAtPeriodEnd }),
+        });
+        await readJson<unknown>(response);
+      },
+      cancelAtPeriodEnd
+        ? 'Subscription cancels at the end of the current period.'
+        : 'Subscription cancelled immediately.',
     );
   }
 
@@ -523,8 +543,8 @@ export function TenantDetailPage() {
           <div className="action-block">
             <h3>Change plan</h3>
             <p className="muted-note">
-              Applies the selected plan version and refreshes the entitlement
-              snapshot immediately.
+              Immediate changes prorate the unused days as credit and start a
+              new billing period. Next-period changes apply at renewal.
             </p>
             <select
               value={planVersionId}
@@ -539,6 +559,19 @@ export function TenantDetailPage() {
                 </option>
               ))}
             </select>
+            <select
+              value={planEffectiveAt}
+              onChange={(event) =>
+                setPlanEffectiveAt(
+                  event.target.value as 'immediate' | 'next_period',
+                )
+              }
+              disabled={!!busy}
+              aria-label="When the plan change takes effect"
+            >
+              <option value="immediate">Effective immediately</option>
+              <option value="next_period">Effective next period</option>
+            </select>
             <button
               type="button"
               className="button"
@@ -546,6 +579,38 @@ export function TenantDetailPage() {
               disabled={!!busy || !planVersionId}
             >
               {busy === 'plan' ? 'Changing…' : 'Change plan'}
+            </button>
+          </div>
+
+          <div className="action-block action-block--danger">
+            <h3>Cancel subscription</h3>
+            <p className="muted-note">
+              At period end the tenant keeps access until the period closes.
+              Immediate cancellation stops access now.
+            </p>
+            <select
+              value={cancelAtPeriodEnd ? 'period' : 'immediate'}
+              onChange={(event) =>
+                setCancelAtPeriodEnd(event.target.value === 'period')
+              }
+              disabled={!!busy}
+              aria-label="When the cancellation takes effect"
+            >
+              <option value="period">Cancel at period end</option>
+              <option value="immediate">Cancel immediately</option>
+            </select>
+            <button
+              type="button"
+              className="button button--danger"
+              onClick={cancelTenant}
+              disabled={
+                !!busy ||
+                !tenant?.subscription ||
+                tenant.subscription.status === 'CANCELLED' ||
+                tenant.subscription.cancelAtPeriodEnd
+              }
+            >
+              {busy === 'cancel' ? 'Cancelling…' : 'Cancel subscription'}
             </button>
           </div>
 
@@ -672,6 +737,24 @@ export function TenantDetailPage() {
               <dt>Features</dt>
               <dd>{version?.features.length ?? 0}</dd>
             </div>
+            {tenant.subscription?.pendingPlanVersionId ? (
+              <div>
+                <dt>Pending plan</dt>
+                <dd>
+                  Change scheduled for{' '}
+                  {formatDate(tenant.subscription.pendingPlanEffectiveAt)}
+                </dd>
+              </div>
+            ) : null}
+            {tenant.subscription?.cancelAtPeriodEnd ? (
+              <div>
+                <dt>Cancels</dt>
+                <dd>
+                  At period end (
+                  {formatDate(tenant.subscription.currentPeriodEnd)})
+                </dd>
+              </div>
+            ) : null}
           </dl>
         </article>
       </section>

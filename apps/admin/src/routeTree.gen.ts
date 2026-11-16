@@ -147,6 +147,7 @@ import { Route as AuthenticatedMonAnalyticsProductsIndexRouteImport } from './ro
 import { Route as AuthenticatedMonAnalyticsProductsIdRouteImport } from './routes/_authenticated/mon/analytics/products/$id'
 import { Route as AuthenticatedMonMarketingCatalogIndexRouteImport } from './routes/_authenticated/mon/marketing/catalog/index'
 import { Route as AuthenticatedMonSettingsAuthIndexRouteImport } from './routes/_authenticated/mon/settings/auth/index'
+import { Route as AuthenticatedMonSettingsBillingIndexRouteImport } from './routes/_authenticated/mon/settings/billing/index'
 import { Route as AuthenticatedMonSettingsBrandingIndexRouteImport } from './routes/_authenticated/mon/settings/branding/index'
 import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
@@ -994,6 +995,12 @@ const AuthenticatedMonSettingsAuthIndexRoute =
     path: '/auth/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsBillingIndexRoute =
+  AuthenticatedMonSettingsBillingIndexRouteImport.update({
+    id: '/billing/',
+    path: '/billing/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsBrandingIndexRoute =
   AuthenticatedMonSettingsBrandingIndexRouteImport.update({
     id: '/branding/',
@@ -1399,6 +1406,7 @@ export interface FileRoutesByFullPath {
   '/mon/analytics/products/': typeof AuthenticatedMonAnalyticsProductsIndexRoute
   '/mon/marketing/catalog/': typeof AuthenticatedMonMarketingCatalogIndexRoute
   '/mon/settings/auth/': typeof AuthenticatedMonSettingsAuthIndexRoute
+  '/mon/settings/billing/': typeof AuthenticatedMonSettingsBillingIndexRoute
   '/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
@@ -1581,6 +1589,7 @@ export interface FileRoutesByTo {
   '/mon/analytics/products': typeof AuthenticatedMonAnalyticsProductsIndexRoute
   '/mon/marketing/catalog': typeof AuthenticatedMonMarketingCatalogIndexRoute
   '/mon/settings/auth': typeof AuthenticatedMonSettingsAuthIndexRoute
+  '/mon/settings/billing': typeof AuthenticatedMonSettingsBillingIndexRoute
   '/mon/settings/branding': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
@@ -1765,6 +1774,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/analytics/products/': typeof AuthenticatedMonAnalyticsProductsIndexRoute
   '/_authenticated/mon/marketing/catalog/': typeof AuthenticatedMonMarketingCatalogIndexRoute
   '/_authenticated/mon/settings/auth/': typeof AuthenticatedMonSettingsAuthIndexRoute
+  '/_authenticated/mon/settings/billing/': typeof AuthenticatedMonSettingsBillingIndexRoute
   '/_authenticated/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/_authenticated/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
@@ -1949,6 +1959,7 @@ export interface FileRouteTypes {
     | '/mon/analytics/products/'
     | '/mon/marketing/catalog/'
     | '/mon/settings/auth/'
+    | '/mon/settings/billing/'
     | '/mon/settings/branding/'
     | '/mon/settings/courier/'
     | '/mon/settings/gateways/'
@@ -2131,6 +2142,7 @@ export interface FileRouteTypes {
     | '/mon/analytics/products'
     | '/mon/marketing/catalog'
     | '/mon/settings/auth'
+    | '/mon/settings/billing'
     | '/mon/settings/branding'
     | '/mon/settings/courier'
     | '/mon/settings/gateways'
@@ -2314,6 +2326,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/analytics/products/'
     | '/_authenticated/mon/marketing/catalog/'
     | '/_authenticated/mon/settings/auth/'
+    | '/_authenticated/mon/settings/billing/'
     | '/_authenticated/mon/settings/branding/'
     | '/_authenticated/mon/settings/courier/'
     | '/_authenticated/mon/settings/gateways/'
@@ -3334,6 +3347,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsAuthIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/billing/': {
+      id: '/_authenticated/mon/settings/billing/'
+      path: '/billing'
+      fullPath: '/mon/settings/billing/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsBillingIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/branding/': {
       id: '/_authenticated/mon/settings/branding/'
       path: '/branding'
@@ -3641,6 +3661,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsTrackingMonitoringRoute: typeof AuthenticatedMonSettingsTrackingMonitoringRoute
   AuthenticatedMonSettingsAuthIndexRoute: typeof AuthenticatedMonSettingsAuthIndexRoute
+  AuthenticatedMonSettingsBillingIndexRoute: typeof AuthenticatedMonSettingsBillingIndexRoute
   AuthenticatedMonSettingsBrandingIndexRoute: typeof AuthenticatedMonSettingsBrandingIndexRoute
   AuthenticatedMonSettingsCourierIndexRoute: typeof AuthenticatedMonSettingsCourierIndexRoute
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
@@ -3667,6 +3688,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsTrackingMonitoringRoute,
     AuthenticatedMonSettingsAuthIndexRoute:
       AuthenticatedMonSettingsAuthIndexRoute,
+    AuthenticatedMonSettingsBillingIndexRoute:
+      AuthenticatedMonSettingsBillingIndexRoute,
     AuthenticatedMonSettingsBrandingIndexRoute:
       AuthenticatedMonSettingsBrandingIndexRoute,
     AuthenticatedMonSettingsCourierIndexRoute:

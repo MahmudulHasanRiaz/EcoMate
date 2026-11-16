@@ -8,6 +8,10 @@ vi.mock('@/lib/api-client', () => ({
   apiClient: { get: vi.fn() },
 }))
 
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => vi.fn(),
+}))
+
 const getMock = vi.mocked(apiClient.get)
 
 function snapshot(overrides: Record<string, unknown> = {}) {

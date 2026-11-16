@@ -18,6 +18,7 @@ import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { DomainsService } from '../domains/domains.service';
 import { AddDomainDto } from './dto/add-domain.dto';
+import { CancelTenantDto } from './dto/cancel-tenant.dto';
 import { ChangePlanDto } from './dto/change-plan.dto';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { ExtendTrialDto } from './dto/extend-trial.dto';
@@ -147,6 +148,16 @@ export class TenantsController {
     @CurrentPlatformUser() user?: { id: string },
   ) {
     return this.tenants.changePlan(id, dto, user?.id);
+  }
+
+  @Post(':id/cancel')
+  @Roles('SUPERADMIN', 'BILLING')
+  cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CancelTenantDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.tenants.cancel(id, dto, user?.id);
   }
 
   @Get(':id/domains')

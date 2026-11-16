@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import {
   AlertTriangle,
   ArrowUpCircle,
@@ -77,6 +78,7 @@ function formatDate(value: string | null): string {
 
 export function PlanUsageSettings() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const billingUrl = import.meta.env.VITE_BILLING_URL as string | undefined
 
   const snapshotQuery = useQuery<EntitlementSnapshot>({
@@ -135,7 +137,7 @@ export function PlanUsageSettings() {
               Upgrade plan
             </Button>
           ) : (
-            <Button size='sm' disabled title='Set VITE_BILLING_URL to enable the upgrade portal'>
+            <Button size='sm' onClick={() => navigate({ to: '/mon/settings/billing' })}>
               <ArrowUpCircle className='me-2 h-4 w-4' />
               Upgrade plan
             </Button>

@@ -184,6 +184,7 @@ model Tenant {
   domains           TenantDomain[]
   subscription      Subscription?
   invoices          Invoice[]
+  reminders         InvoiceReminder[]
   paymentProofs     PaymentProof[]
   payments          Payment[]
   creditNotes       CreditNote[]
@@ -195,6 +196,7 @@ model Tenant {
   provisioningJobs  ProvisioningJob[]
 
   @@index([status, createdAt])
+  @@index([status, graceEndsAt])
   @@index([ownerEmail])
   @@index([planVersionId])
 }
@@ -296,6 +298,7 @@ model PlanVersion {
 
   tenants       Tenant[]
   subscriptions Subscription[]
+  pendingSubscriptions Subscription[] @relation("PendingPlanVersion")
 
   @@unique([planId, version])
   @@index([planId, effectiveFrom])
@@ -315,6 +318,9 @@ model Subscription {
   cancelAtPeriodEnd    Boolean            @default(false)
   canceledAt           DateTime?
   endedAt              DateTime?
+  pendingPlanVersionId String?
+  pendingPlanVersion   PlanVersion?       @relation("PendingPlanVersion", fields: [pendingPlanVersionId], references: [id])
+  pendingPlanEffectiveAt DateTime?
   entitlementsSnapshot Json               @default("{}")
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
@@ -323,7 +329,9 @@ model Subscription {
   addOns   SubscriptionAddOn[]
 
   @@index([status, currentPeriodEnd])
-  @@index([planVersionId])
+  @@index([status, trialEndsAt])
+  @@index([cancelAtPeriodEnd, currentPeriodEnd])
+  @@index([planVersionId, status])
 }
 
 model AddOn {
@@ -385,6 +393,24 @@ model Invoice {
 
   @@index([tenantId, status])
   @@index([status, dueAt])
+  @@index([subscriptionId, status, periodStart])
+  @@index([createdAt])
+}
+
+/// One row per reminder actually sent. The unique key stops the jobs from
+/// spamming: each (tenant, kind, reference) is sent at most once.
+/// referenceId is an invoice id for invoice reminders, a subscription id
+/// for the trial-ending reminder.
+model InvoiceReminder {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind        String
+  referenceId String
+  sentAt      DateTime @default(now())
+
+  @@unique([tenantId, kind, referenceId])
+  @@index([tenantId])
 }
 
 model InvoiceLine {
@@ -440,7 +466,11 @@ model PaymentProof {
 
   payments Payment[]
 
-  @@unique([methodId, transactionId])
+  // No full unique on (methodId, transactionId): a REJECTED proof's
+  // transaction id must be resubmittable. Duplicate detection for live
+  // proofs is the PARTIAL unique index in migration
+  // 20261116230000_phase7_billing_lifecycle (status IN PENDING/APPROVED),
+  // maintained in SQL — Prisma has no partial-index support.
   @@index([tenantId, status])
   @@index([status, createdAt])
 }
@@ -477,7 +507,7 @@ model CreditNote {
   appliedInvoice   Invoice? @relation(fields: [appliedInvoiceId], references: [id], onDelete: SetNull)
   createdAt        DateTime @default(now())
 
-  @@index([tenantId])
+  @@index([tenantId, appliedInvoiceId, createdAt])
 }
 
 model Coupon {

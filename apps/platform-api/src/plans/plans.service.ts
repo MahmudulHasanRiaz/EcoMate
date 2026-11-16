@@ -1,9 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
+import { TenantRefreshService } from '../common/tenant-refresh.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_GRACE_DAYS,
@@ -16,10 +19,13 @@ import { UpdatePlanDto } from './dto/update-plan.dto';
 
 @Injectable()
 export class PlansService {
+  private readonly logger = new Logger(PlansService.name);
+
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly audit: AuditService,
     private readonly settings: SettingsService,
+    private readonly refresh: TenantRefreshService,
   ) {}
 
   /** Global trial/grace defaults, with hardcoded fallbacks if unset. */
@@ -181,6 +187,104 @@ export class PlansService {
     });
 
     return updated;
+  }
+
+  /**
+   * Apply a plan version to the existing subscriptions on OTHER versions of
+   * the SAME plan — an explicit operator action, never silent. A new plan
+   * version never moves existing subscribers by itself (see 6.10 finding
+   * F1: only new signups follow the newest version). Dry-run returns the
+   * affected tenants without changing anything.
+   */
+  async applyVersion(
+    planId: string,
+    versionId: string,
+    options: { dryRun?: boolean },
+    actorId?: string,
+  ) {
+    const version = await this.prisma.planVersion.findUnique({
+      where: { id: versionId },
+      include: { plan: { select: { id: true, name: true } } },
+    });
+    if (!version || version.planId !== planId) {
+      throw new NotFoundException('Plan version not found');
+    }
+    if (version.archivedAt) {
+      throw new BadRequestException('This plan version is archived');
+    }
+
+    const affected = await this.prisma.subscription.findMany({
+      where: {
+        planVersion: { planId },
+        planVersionId: { not: versionId },
+        status: { in: ['TRIAL', 'ACTIVE', 'PAST_DUE'] },
+      },
+      include: {
+        tenant: { select: { id: true, name: true, slug: true } },
+      },
+    });
+    const tenants = affected.map((subscription) => ({
+      tenantId: subscription.tenantId,
+      tenantName: subscription.tenant.name,
+      tenantSlug: subscription.tenant.slug,
+      fromVersionId: subscription.planVersionId,
+      status: subscription.status,
+    }));
+
+    if (options.dryRun) {
+      return {
+        planId,
+        versionId,
+        version: version.version,
+        dryRun: true,
+        affected: tenants.length,
+        tenants,
+      };
+    }
+
+    const now = new Date();
+    const snapshot = {
+      features: version.features,
+      limits: version.limits,
+      changedAt: now.toISOString(),
+    } as any;
+    for (const subscription of affected) {
+      await this.prisma.$transaction([
+        this.prisma.subscription.update({
+          where: { id: subscription.id },
+          data: { planVersionId: versionId, entitlementsSnapshot: snapshot },
+        }),
+        this.prisma.tenant.update({
+          where: { id: subscription.tenantId },
+          data: { planVersionId: versionId },
+        }),
+      ]);
+      await this.audit.record({
+        actorId,
+        tenantId: subscription.tenantId,
+        action: 'tenant.plan.version.apply',
+        entity: 'Tenant',
+        entityId: subscription.tenantId,
+        before: { planVersionId: subscription.planVersionId },
+        after: { planVersionId: versionId, planId },
+      });
+    }
+    if (affected.length > 0) {
+      const pushed = await this.refresh.pushRefresh('*');
+      if (!pushed.ok) {
+        this.logger.warn(
+          `Entitlement refresh push failed after plan version apply: ${pushed.error}`,
+        );
+      }
+    }
+    return {
+      planId,
+      versionId,
+      version: version.version,
+      dryRun: false,
+      affected: tenants.length,
+      tenants,
+    };
   }
 
   async archive(planId: string, actorId?: string) {

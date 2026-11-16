@@ -555,6 +555,29 @@ button {
   color: var(--muted);
 }
 
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.form-row .inline-field {
+  flex: 1 1 160px;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.error-text {
+  color: #b3261e;
+}
+
 .tabs {
   display: flex;
   flex-wrap: wrap;

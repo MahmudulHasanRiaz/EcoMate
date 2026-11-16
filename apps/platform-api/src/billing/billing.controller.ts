@@ -3,11 +3,13 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
@@ -17,6 +19,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { BillingService } from './billing.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { CreateCreditNoteDto } from './dto/create-credit-note.dto';
+import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
 import { RejectProofDto } from './dto/reject-proof.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
@@ -110,9 +113,28 @@ export class BillingController {
     return this.billing.invoices({ status, tenantId, search, page, limit });
   }
 
+  @Post('invoices')
+  @Roles('SUPERADMIN', 'BILLING')
+  createInvoice(
+    @Body() dto: CreateInvoiceDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.billing.createInvoice(dto, user?.id);
+  }
+
   @Get('invoices/:id')
   invoice(@Param('id', ParseUUIDPipe) id: string) {
     return this.billing.invoiceDetail(id);
+  }
+
+  @Get('invoices/:id/pdf')
+  @Header('Content-Type', 'application/pdf')
+  async invoicePdf(@Param('id', ParseUUIDPipe) id: string) {
+    const { buffer, filename } = await this.billing.invoicePdf(id);
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${filename}"`,
+    });
   }
 
   @Get('payments')

@@ -69,4 +69,15 @@ export class PlansController {
   ) {
     return this.plans.archive(id, user?.id);
   }
+
+  @Post(':id/versions/:versionId/apply')
+  @Roles('SUPERADMIN', 'BILLING')
+  applyVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('versionId', ParseUUIDPipe) versionId: string,
+    @Body() body: { dryRun?: boolean },
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.plans.applyVersion(id, versionId, { dryRun: body?.dryRun }, user?.id);
+  }
 }

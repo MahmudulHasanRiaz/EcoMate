@@ -204,6 +204,8 @@ export interface Invoice {
   notes?: string | null;
   createdAt: string;
   paidAmount?: number;
+  creditAmount?: number;
+  remaining?: number;
   tenant?: { id: string; name: string; slug: string };
   lines?: InvoiceLine[];
   payments?: Payment[];
@@ -242,6 +244,8 @@ export interface Subscription {
   currentPeriodEnd: string;
   trialEndsAt?: string | null;
   cancelAtPeriodEnd: boolean;
+  pendingPlanVersionId?: string | null;
+  pendingPlanEffectiveAt?: string | null;
   tenant?: { id: string; name: string; slug: string };
   planVersion?: PlanVersion | null;
   addOns?: Array<{
@@ -474,4 +478,20 @@ export interface PlatformSettings {
   tax: TaxSettings;
   branding: BrandingSettings;
   maintenance: MaintenanceSettings;
+}
+
+export interface JobRun {
+  name: string;
+  lastRunAt: string | null;
+  lastResult: {
+    job: string;
+    ranAt: string;
+    counts: Record<string, number>;
+    errors: string[];
+  } | null;
+  lastError: string | null;
+}
+
+export interface JobsStatus {
+  jobs: JobRun[];
 }
