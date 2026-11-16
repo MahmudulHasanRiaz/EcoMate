@@ -35,6 +35,11 @@ export class SignupController {
     return this.signup.verify(token ?? '');
   }
 
+  @Get('status')
+  status(@Query('token') token?: string) {
+    return this.signup.status(token ?? '');
+  }
+
   @Post('resend')
   @HttpCode(200)
   resend(@Body() dto: ResendVerificationDto, @Req() req: any) {

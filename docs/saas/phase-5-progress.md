@@ -7,7 +7,7 @@ tracked separately.
 
 - [x] 1. Landing signup wizard + email verification + CAPTCHA/rate limit
 - [x] 2. Slug validation (3–30, lowercase, reserved list, uniqueness)
-- [ ] 3. Provisioning job: tenant row → tenant seed → owner → subdomains →
+- [x] 3. Provisioning job: tenant row → tenant seed → owner → subdomains →
       trial subscription → entitlement snapshot → welcome email
 - [ ] 4. `TenantBootstrapService`: roles/permissions, order statuses, payment
       options, system settings, default warehouse/store, email templates, legal
@@ -54,20 +54,56 @@ tracked separately.
     duplicate slug 409 → honeypot 400 → resend 200; DB row `VERIFIED` with a
     64-char token hash.
 
-### 3–7. Provisioning, bootstrap, lifecycle and abuse — NOT STARTED
+### 3. Provisioning job + core tenant bootstrap — DONE
 
-These remain and are the reason Phase 5 is not complete yet:
+- `ProvisioningService` (platform API) runs after email verification:
+  resolves a plan (explicit `DEFAULT_PLAN_VERSION_ID`/PlatformSetting, else the
+  newest active version), creates the `Tenant` (PROVISIONING) + primary
+  `TenantDomain` (ACTIVE) + TRIAL `Subscription` with an entitlement snapshot in
+  one nested write, then creates a `ProvisioningJob` (unique `signupId`).
+- The job calls the tenant backend's new internal endpoint
+  `POST /internal/provisioning` (`x-platform-service-token`, `@SkipTenant`,
+  explicit `runWithTenant`). The backend `TenantBootstrapService` seeds:
+  owner `superadmin` (bcrypt hash from signup, verified), 16 order statuses with
+  the runtime transition map, 10 core system settings (store identity, currency,
+  delivery, search indexing off, canonical/storefront URL), the default
+  `main-showroom` warehouse, the global COD payment option and a tenant cash
+  gateway. All steps are find-first/create-only, so retries are idempotent.
+- On success: tenant → TRIAL, job → SUCCEEDED with step `completed`, welcome
+  email sent (dev logs the admin URL); a welcome-email failure is disclosed as
+  `completed_without_welcome_email` without failing provisioning.
+- Failures leave the tenant in PROVISIONING and record `status=FAILED`,
+  `step=failed`, `error`, `attempts`; `retry(jobId)` resets and re-runs. Verify
+  is idempotent and resumes a missing job if the platform restarted mid-flow.
+- New public `GET /api/public/signup/status?token=` exposes signup + job
+  status/step for the landing progress UI.
+- Trial plan: platform seed now creates a free, non-public `trial` plan
+  (version 1, features `['*']`, 14-day trial) so self-serve provisioning works
+  on a fresh platform DB.
+- Verification: platform **103/103** (8 new provisioning tests), backend
+  **6253 passed / 10 skipped / 0 failed** (3 new bootstrap tests), both builds
+  clean; migration `0003_provisioning_job_signup` applied.
+- Live E2E on the real services: signup → verify → job SUCCEEDED (attempt 1) →
+  platform tenant TRIAL + domain ACTIVE + TRIAL subscription snapshot; tenant DB
+  owner `superadmin`, 16 statuses, 10 settings, warehouse, cash gateway;
+  `store_name`/`canonical_domain`/`storefront_url` correct; welcome admin URL
+  logged; after registry sync, `GET /api/tenants/resolve?host=<slug>.ecomate.bd`
+  returned 200. Smoke rows were purged afterwards.
 
-- Provisioning needs the platform → tenant-backend contract (create owner,
-  statuses, payment options, settings, warehouse, templates, legal pages) and a
-  job runner with retries/rollback; it must be idempotent per tenant.
-- The landing progress page/API depends on that job.
-- Soft delete/export/purge needs a dependency-ordered tenant export and a
-  30-day purge job.
-- Trial-abuse controls need a disposable-domain list plus phone/domain dedupe
-  before the first tenant is provisioned.
+### 4–7. Remaining bootstrap, lifecycle and abuse — NOT STARTED (4 partially done)
 
-**Acceptance status:** a new user can sign up and verify their email today, but
-is not yet provisioned into a working admin/storefront. Full Phase 5 acceptance
-(“sign up → working store without manual intervention”) is therefore **not met
-yet**; do not merge Phase 5 as complete until items 3–7 land.
+Core bootstrap (owner, statuses/transitions, core settings, warehouse, payment)
+landed with item 3. Remaining Phase 5 work:
+
+- Item 4 completeness: role presets/permission defaults beyond the owner,
+  email templates, legal/CMS pages, and explicit sample-data-off coverage.
+- Item 5: landing progress UI wired to the status endpoint, admin retry/rollback
+  surface, and a stale-job sweeper.
+- Item 6: soft delete/export/purge (30-day retention) with dependency-ordered
+  tenant export.
+- Item 7: disposable-email list plus phone/domain dedupe before provisioning.
+
+**Acceptance status:** signup → email verification → automatic provisioning is
+now real end-to-end (tenant rows + seeded tenant DB + registry resolution), so a
+new user reaches a provisioned workspace without manual intervention. Phase 5 is
+still **not complete** until items 4–7 land (lifecycle/export/abuse/UI).

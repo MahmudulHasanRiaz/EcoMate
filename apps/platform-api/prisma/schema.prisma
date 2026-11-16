@@ -547,6 +547,9 @@ model ProvisioningJob {
   id        String             @id @default(uuid())
   tenantId  String
   tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// The signup that owns this job. Unique so a retried verification cannot
+  /// create a second job/tenant for the same request.
+  signupId  String?            @unique
   status    ProvisioningStatus @default(PENDING)
   step      String             @default("queued")
   error     String?            @db.Text

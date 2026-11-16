@@ -16,6 +16,9 @@ function makeService() {
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(null),
     },
+    provisioningJob: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
     signupRequest: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       findFirst: jest.fn().mockResolvedValue(null),
@@ -35,17 +38,23 @@ function makeService() {
   const rateLimit = { assert: jest.fn() };
   const mail = {
     sendVerification: jest.fn().mockResolvedValue({ delivered: true }),
+    sendWelcome: jest.fn().mockResolvedValue({ delivered: true }),
+  };
+  const provisioning = {
+    startForSignup: jest.fn().mockResolvedValue({ id: 'job-1' }),
   };
   return {
     prisma,
     captcha,
     rateLimit,
     mail,
+    provisioning,
     service: new SignupService(
       prisma,
       captcha as any,
       rateLimit as any,
       mail as any,
+      provisioning as any,
     ),
   };
 }
@@ -169,7 +178,7 @@ describe('SignupService — verify', () => {
   };
 
   it('marks a valid token verified', async () => {
-    const { service, prisma } = makeService();
+    const { service, prisma, provisioning } = makeService();
     prisma.signupRequest.findUnique.mockResolvedValue(baseRequest);
 
     const result = await service.verify(token);
@@ -183,6 +192,7 @@ describe('SignupService — verify', () => {
       where: { id: 'signup-1' },
       data: expect.objectContaining({ status: 'VERIFIED' }),
     });
+    expect(provisioning.startForSignup).toHaveBeenCalledWith('signup-1');
   });
 
   it('is idempotent for an already verified request', async () => {

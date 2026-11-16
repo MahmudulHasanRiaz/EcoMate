@@ -104,9 +104,46 @@ async function seedFeatureCatalog(): Promise<void> {
   console.log(`[seed] feature catalog synced: ${entries.length}`);
 }
 
+async function seedTrialPlan(): Promise<void> {
+  const plan = await prisma.plan.upsert({
+    where: { slug: 'trial' },
+    update: {},
+    create: {
+      slug: 'trial',
+      name: 'Trial',
+      description: 'Default self-serve trial workspace',
+      isActive: true,
+      isPublic: false,
+      isFree: true,
+      sortOrder: 0,
+    },
+  });
+
+  const existing = await prisma.planVersion.findUnique({
+    where: { planId_version: { planId: plan.id, version: 1 } },
+  });
+  if (!existing) {
+    await prisma.planVersion.create({
+      data: {
+        planId: plan.id,
+        version: 1,
+        price: 0,
+        currency: 'BDT',
+        interval: 'MONTHLY',
+        trialDays: 14,
+        features: ['*'],
+        limits: {},
+        graceDays: 7,
+      },
+    });
+  }
+  console.log('[seed] trial plan ready');
+}
+
 async function main(): Promise<void> {
   await seedPlatformAdmin();
   await seedFeatureCatalog();
+  await seedTrialPlan();
 }
 
 main()

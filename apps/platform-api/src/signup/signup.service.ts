@@ -8,10 +8,11 @@ import {
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { ProvisioningService } from '../provisioning/provisioning.service';
 import { CaptchaService } from './captcha.service';
 import { CreateSignupDto } from './dto/create-signup.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
-import { PlatformMailService } from './platform-mail.service';
+import { PlatformMailService } from '../common/platform-mail.service';
 import { SignupRateLimitService } from './signup-rate-limit.service';
 import { validateSlug } from './signup-slug';
 
@@ -39,6 +40,7 @@ export class SignupService {
     private readonly captcha: CaptchaService,
     private readonly rateLimit: SignupRateLimitService,
     private readonly mail: PlatformMailService,
+    private readonly provisioning: ProvisioningService,
   ) {}
 
   async create(dto: CreateSignupDto, meta: SignupRequestMeta = {}) {
@@ -111,6 +113,12 @@ export class SignupService {
     if (!signup) throw new NotFoundException('Verification link is not valid');
 
     if (signup.status === 'VERIFIED') {
+      // Verification is idempotent. Resume provisioning if the earlier
+      // trigger never created a job (e.g. the platform restarted between the
+      // status update and the async provisioning call).
+      void this.provisioning
+        .startForSignup(signup.id)
+        .catch(() => undefined);
       return {
         verified: true,
         alreadyVerified: true,
@@ -144,11 +152,41 @@ export class SignupService {
       data: { status: 'VERIFIED', verifiedAt: new Date() },
     });
 
+    // Provisioning is asynchronous; the verify response must not wait on the
+    // tenant bootstrap. Failures are recorded on the job and are retryable.
+    void this.provisioning
+      .startForSignup(signup.id)
+      .catch(() => undefined);
+
     return {
       verified: true,
       alreadyVerified: false,
       slug: signup.slug,
       tenantName: signup.tenantName,
+    };
+  }
+
+  async status(rawToken: string) {
+    const token = String(rawToken || '').trim();
+    if (!/^[0-9a-f]{64}$/i.test(token)) {
+      throw new BadRequestException('Invalid verification token');
+    }
+    const signup = await this.prisma.signupRequest.findUnique({
+      where: { verificationTokenHash: sha256(token.toLowerCase()) },
+    });
+    if (!signup) throw new NotFoundException('Signup not found');
+
+    const job = await this.prisma.provisioningJob.findUnique({
+      where: { signupId: signup.id },
+    });
+
+    return {
+      status: signup.status,
+      slug: signup.slug,
+      tenantName: signup.tenantName,
+      provisioning: job
+        ? { status: job.status, step: job.step, attempts: job.attempts }
+        : null,
     };
   }
 
