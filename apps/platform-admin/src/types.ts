@@ -242,6 +242,62 @@ export interface Coupon {
   _count?: { redemptions?: number };
 }
 
+export interface UsageMetricRow {
+  key: string;
+  label: string;
+  planLimit: number | null;
+  override: number | null;
+  limit: number | null;
+  used: number | null;
+  percent: number | null;
+  warning: boolean;
+  over: boolean;
+  capturedAt: string | null;
+}
+
+export interface UsageOverride {
+  key: string;
+  value: number;
+  note?: string | null;
+  updatedAt: string;
+}
+
+export interface TenantUsage {
+  tenant: { id: string; slug: string; name: string; status: TenantStatus };
+  planName: string | null;
+  metrics: UsageMetricRow[];
+  overrides: UsageOverride[];
+  history: Record<string, Array<{ date: string; value: number }>>;
+  lastCollectedAt: string | null;
+}
+
+export interface UsageOverviewTenant {
+  id: string;
+  slug: string;
+  name: string;
+  status: TenantStatus;
+  planName: string | null;
+  metrics: UsageMetricRow[];
+  overrides: UsageOverride[];
+  over: boolean;
+  warning: boolean;
+  maxPercent: number;
+  lastCollectedAt: string | null;
+}
+
+export interface UsageOverview {
+  generatedAt: string;
+  windowDays: number;
+  totals: {
+    tenants: number;
+    tracked: number;
+    missing: number;
+    overLimitMetrics: number;
+    warningMetrics: number;
+  };
+  tenants: UsageOverviewTenant[];
+}
+
 export interface Session {
   accessToken: string;
   refreshToken: string;

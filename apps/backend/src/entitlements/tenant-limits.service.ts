@@ -2,7 +2,12 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { startOfDhakaMonth } from '../common/utils/dhaka-time';
 import { TenantEntitlementsService } from '../tenancy/tenant-entitlements.service';
-import { LIMIT_KEYS, LIMIT_LABELS, LimitKey } from './limit-keys';
+import {
+  LIMIT_KEYS,
+  LIMIT_LABELS,
+  LimitKey,
+  coerceLimit,
+} from './limit-keys';
 
 export interface LimitUsageRow {
   key: LimitKey;
@@ -39,9 +44,7 @@ export class TenantLimitsService {
   ) {}
 
   getLimit(key: string): number | null {
-    const raw = this.entitlements.getLimits()[key];
-    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) return null;
-    return Math.floor(raw);
+    return coerceLimit(this.entitlements.getLimits()[key]);
   }
 
   async getUsage(key: LimitKey): Promise<number> {

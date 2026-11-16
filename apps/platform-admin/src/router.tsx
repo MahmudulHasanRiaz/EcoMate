@@ -12,6 +12,7 @@ import { OverviewPage } from './pages/overview';
 import { PlansPage } from './pages/plans';
 import { TenantDetailPage } from './pages/tenant-detail';
 import { TenantsPage } from './pages/tenants';
+import { UsagePage } from './pages/usage';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -81,6 +82,16 @@ const domainsRoute = createRoute({
   ),
 });
 
+const usageRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/usage',
+  component: () => (
+    <AppShell>
+      <UsagePage />
+    </AppShell>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   overviewRoute,
@@ -88,6 +99,7 @@ const routeTree = rootRoute.addChildren([
   tenantRoute,
   billingRoute,
   domainsRoute,
+  usageRoute,
   plansRoute,
 ]);
 

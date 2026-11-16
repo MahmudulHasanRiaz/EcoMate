@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { ImpersonationService } from '../tenants/impersonation.service';
+import { mergePlanLimitsWithOverrides } from '../usage/usage.limits';
 import { ConsumeImpersonationDto } from './dto/consume-impersonation.dto';
 import { InternalServiceGuard } from './internal-service.guard';
 
@@ -52,6 +53,9 @@ export class InternalController {
             plan: { select: { name: true } },
           },
         },
+        limitOverrides: {
+          select: { key: true, value: true },
+        },
       },
     });
 
@@ -74,7 +78,10 @@ export class InternalController {
           ? {
               name: tenant.planVersion.plan.name,
               features: tenant.planVersion.features,
-              limits: tenant.planVersion.limits,
+              limits: mergePlanLimitsWithOverrides(
+                tenant.planVersion.limits,
+                tenant.limitOverrides,
+              ),
             }
           : null,
       })),
@@ -94,6 +101,10 @@ export class InternalController {
       include: {
         subscription: { include: { planVersion: { include: { plan: true } } } },
         planVersion: { include: { plan: true } },
+        limitOverrides: {
+          select: { key: true, value: true, note: true },
+          orderBy: { key: 'asc' },
+        },
       },
     });
     if (!tenant) throw new NotFoundException('Tenant not found');
@@ -119,11 +130,19 @@ export class InternalController {
             version: planVersion.version,
             name: planVersion.plan.name,
             features: planVersion.features,
-            limits: planVersion.limits,
+            limits: mergePlanLimitsWithOverrides(
+              planVersion.limits,
+              tenant.limitOverrides,
+            ),
             trialDays: planVersion.trialDays,
             graceDays: planVersion.graceDays,
           }
         : null,
+      overrides: tenant.limitOverrides.map((override) => ({
+        key: override.key,
+        value: override.value,
+        note: override.note ?? null,
+      })),
       trialEndsAt: tenant.trialEndsAt,
       graceEndsAt: tenant.graceEndsAt,
       validUntil: tenant.subscription?.currentPeriodEnd ?? tenant.trialEndsAt,

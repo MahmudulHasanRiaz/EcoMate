@@ -8,7 +8,19 @@ import {
   formatMoney,
   planLabel,
 } from '../lib/format';
-import type { Plan, PlanVersion, Tenant } from '../types';
+import {
+  barWidth,
+  formatLimit,
+  formatUsagePercent,
+  usageTone,
+} from '../lib/usage';
+import type {
+  Plan,
+  PlanVersion,
+  Tenant,
+  TenantUsage,
+  UsageMetricRow,
+} from '../types';
 import {
   ErrorNote,
   Loading,
@@ -42,6 +54,14 @@ export function TenantDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
+  const [usage, setUsage] = useState<TenantUsage | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
+  const [usageBusy, setUsageBusy] = useState<string | null>(null);
+  const [usageReload, setUsageReload] = useState(0);
+  const [overrideInputs, setOverrideInputs] = useState<
+    Record<string, string>
+  >({});
+  const [usageNotice, setUsageNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +116,31 @@ export function TenantDetailPage() {
     if (current && !planVersionId) setPlanVersionId(current.id);
   }, [tenant, planVersionId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    api(`/usage/tenants/${tenantId}?days=14`)
+      .then((response) => readJson<TenantUsage>(response))
+      .then((result) => {
+        if (cancelled) return;
+        setUsage(result);
+        setUsageError(null);
+        setOverrideInputs(
+          Object.fromEntries(
+            result.metrics.map((metric) => [
+              metric.key,
+              metric.override === null ? '' : String(metric.override),
+            ]),
+          ),
+        );
+      })
+      .catch((err) => {
+        if (!cancelled) setUsageError(errorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, tenantId, usageReload]);
+
   async function runAction(
     key: string,
     action: () => Promise<void>,
@@ -114,6 +159,105 @@ export function TenantDetailPage() {
       setActionError(errorMessage(err));
     } finally {
       setBusy(null);
+    }
+  }
+
+  function applyUsage(result: TenantUsage) {
+    setUsage(result);
+    setOverrideInputs(
+      Object.fromEntries(
+        result.metrics.map((metric) => [
+          metric.key,
+          metric.override === null ? '' : String(metric.override),
+        ]),
+      ),
+    );
+  }
+
+  async function refreshUsage() {
+    if (usageBusy) return;
+    setUsageBusy('refresh');
+    setUsageError(null);
+    setUsageNotice(null);
+    try {
+      const response = await api(`/usage/tenants/${tenantId}/refresh`, {
+        method: 'POST',
+      });
+      applyUsage(await readJson<TenantUsage>(response));
+      setUsageNotice('Live usage collected and snapshotted.');
+    } catch (err) {
+      setUsageError(errorMessage(err));
+    } finally {
+      setUsageBusy(null);
+    }
+  }
+
+  async function saveOverride(metric: UsageMetricRow) {
+    if (usageBusy) return;
+    const raw = (overrideInputs[metric.key] ?? '').trim();
+    const value = Number(raw);
+    if (
+      raw === '' ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      !Number.isInteger(value)
+    ) {
+      setUsageError('An override must be a whole number of 0 or more.');
+      return;
+    }
+
+    setUsageBusy(`save:${metric.key}`);
+    setUsageError(null);
+    setUsageNotice(null);
+    try {
+      const response = await api(
+        `/usage/tenants/${tenantId}/overrides/${metric.key}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ value }),
+        },
+      );
+      const result = await readJson<{
+        override: unknown;
+        refresh: { ok: boolean; error?: string };
+      }>(response);
+      setUsageNotice(
+        result.refresh.ok
+          ? `${metric.label} override saved. The tenant registry was refreshed immediately.`
+          : `${metric.label} override saved. Immediate tenant refresh failed (${result.refresh.error}); it applies on the next 60s registry poll.`,
+      );
+      setUsageReload((current) => current + 1);
+    } catch (err) {
+      setUsageError(errorMessage(err));
+    } finally {
+      setUsageBusy(null);
+    }
+  }
+
+  async function clearOverride(metric: UsageMetricRow) {
+    if (usageBusy) return;
+    setUsageBusy(`clear:${metric.key}`);
+    setUsageError(null);
+    setUsageNotice(null);
+    try {
+      const response = await api(
+        `/usage/tenants/${tenantId}/overrides/${metric.key}`,
+        { method: 'DELETE' },
+      );
+      const result = await readJson<{
+        cleared: boolean;
+        refresh: { ok: boolean; error?: string };
+      }>(response);
+      setUsageNotice(
+        result.refresh.ok
+          ? `${metric.label} override cleared; the plan value applies again.`
+          : `${metric.label} override cleared. Immediate tenant refresh failed (${result.refresh.error}); it applies on the next 60s registry poll.`,
+      );
+      setUsageReload((current) => current + 1);
+    } catch (err) {
+      setUsageError(errorMessage(err));
+    } finally {
+      setUsageBusy(null);
     }
   }
 
@@ -530,6 +674,143 @@ export function TenantDetailPage() {
             </div>
           </dl>
         </article>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h2>Usage &amp; limits</h2>
+            <p>
+              Counters are collected from the tenant runtime. Overrides apply on
+              top of the plan and reach the tenant through its registry refresh.
+            </p>
+          </div>
+          <div className="head-actions">
+            <span className="muted-note">
+              {usage?.lastCollectedAt
+                ? `Last collected ${formatDateTime(usage.lastCollectedAt)}`
+                : 'No snapshot yet'}
+            </span>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={refreshUsage}
+              disabled={!!usageBusy}
+            >
+              {usageBusy === 'refresh' ? 'Collecting…' : 'Collect live usage'}
+            </button>
+          </div>
+        </div>
+        {usageError ? <ErrorNote message={usageError} /> : null}
+        {usageNotice ? (
+          <div className="notice notice--success" role="status">
+            {usageNotice}
+          </div>
+        ) : null}
+        {!usage ? (
+          <Loading label="Loading usage…" />
+        ) : (
+          <div className="table-wrap">
+            <table className="usage-detail-table">
+              <thead>
+                <tr>
+                  <th>Limit</th>
+                  <th>Plan</th>
+                  <th>Override</th>
+                  <th>Effective</th>
+                  <th>Used</th>
+                  <th>Consumption</th>
+                  <th>Snapshot day</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.metrics.map((metric) => {
+                  const tone = usageTone(metric);
+                  return (
+                    <tr key={metric.key}>
+                      <td>{metric.label}</td>
+                      <td>{formatLimit(metric.planLimit)}</td>
+                      <td>
+                        <div className="usage-override-form">
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            aria-label={`${metric.label} override`}
+                            value={overrideInputs[metric.key] ?? ''}
+                            placeholder="—"
+                            onChange={(event) =>
+                              setOverrideInputs((current) => ({
+                                ...current,
+                                [metric.key]: event.target.value,
+                              }))
+                            }
+                            disabled={!!usageBusy}
+                          />
+                          <button
+                            type="button"
+                            className="button button--ghost button--sm"
+                            onClick={() => saveOverride(metric)}
+                            disabled={
+                              !!usageBusy ||
+                              (overrideInputs[metric.key] ?? '').trim() === ''
+                            }
+                          >
+                            {usageBusy === `save:${metric.key}`
+                              ? 'Saving…'
+                              : 'Save'}
+                          </button>
+                          {metric.override !== null ? (
+                            <button
+                              type="button"
+                              className="button button--danger button--sm"
+                              onClick={() => clearOverride(metric)}
+                              disabled={!!usageBusy}
+                            >
+                              {usageBusy === `clear:${metric.key}`
+                                ? 'Clearing…'
+                                : 'Clear'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td>
+                        <strong>{formatLimit(metric.limit)}</strong>
+                      </td>
+                      <td>
+                        {metric.used === null ? '—' : formatLimit(metric.used)}
+                      </td>
+                      <td>
+                        <div className={`usage-cell usage-cell--${tone}`}>
+                          <div className="usage-cell-top">
+                            <span className="usage-percent">
+                              {formatUsagePercent(metric.percent)}
+                            </span>
+                            {metric.over ? (
+                              <span className="badge badge--danger">Over</span>
+                            ) : metric.warning ? (
+                              <span className="badge badge--warning">Near</span>
+                            ) : null}
+                          </div>
+                          <span className="usage-bar" aria-hidden>
+                            <span
+                              style={{ width: `${barWidth(metric.percent)}%` }}
+                            />
+                          </span>
+                        </div>
+                      </td>
+                      <td>{metric.capturedAt ?? '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="muted-note usage-footnote">
+          Every override change is audited. Clearing an override restores the
+          plan value; a missing plan limit means unlimited.
+        </p>
       </section>
 
       <section className="card">

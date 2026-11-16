@@ -11,7 +11,7 @@ complete.
 - [x] 4. Subscription/plan change UI, credit notes, coupons
 - [x] 5. Domain management: primary/base/fallback config, tenant domains,
       verification/TLS status, force re-check
-- [ ] 6. Usage dashboards + limit overrides
+- [x] 6. Usage dashboards + limit overrides
 - [ ] 7. Metrics dashboard (MRR/ARR/trials/past-due/churn)
 - [ ] 8. Platform settings (payment methods, SMTP, trial/grace, tax, branding,
       domain config)
@@ -151,6 +151,60 @@ export, delete). Smoke tenant/admin were purged.
   hint, re-check recorded a real failed DNS attempt, remove cleared it; config
   PATCH wrote `domains.config.update`. Smoke tenant/setting/admin were purged.
 
+## Usage dashboards + limit overrides — DONE
+
+- **One limit catalogue:** `packages/shared-types/src/limits.ts` is now the
+  single source of truth (`LIMIT_KEYS`, `LIMIT_LABELS`, `isLimitKey`,
+  `coerceLimit`). The tenant runtime re-exports it, and the platform merges
+  the same keys, so a typo cannot make the two sides disagree. Anything that
+  is not a finite non-negative number is treated as unlimited.
+- **Live counters:** the tenant runtime exposes
+  `GET /api/internal/usage?tenantId=&slug=` (service-token guarded, executed
+  inside `runWithTenant`) returning the existing usage snapshot. The platform
+  never counts tenant rows itself.
+- **Dhaka-day snapshots:** `POST /usage/tenants/:id/refresh` pulls the counters
+  and upserts one `UsageDaily` row per metric and Dhaka calendar day; unknown
+  keys and non-numeric counters are rejected instead of silently stored. A
+  failed pull writes nothing and reports `HTTP <status>` / the network error.
+- **Overrides:** `TenantLimitOverride` (unique `tenantId+key`) wins over the
+  plan everywhere — including keys the plan does not define. Set/clear are
+  role-gated (`SUPERADMIN`/`BILLING`; reads allow `SUPPORT`), validated against
+  the catalogue and audited (`tenant.limit_override.set|clear`, before/after).
+  Each write then pushes `POST /entitlements/refresh` to the tenant; a failed
+  push keeps the override and is disclosed — the 60s registry poll remains the
+  fallback.
+- **Merged entitlements:** both `/internal/tenants/registry` and
+  `/internal/tenants/:id/entitlements` merge overrides into `plan.limits`, so
+  the tenant registry, limit guards and the console all read the same
+  effective value. Clearing restores the plan value.
+- **API:** `GET /usage/overview?days=`, `GET /usage/tenants/:id?days=`,
+  `POST /usage/tenants/:id/refresh`, `POST /usage/refresh` (sequential,
+  per-tenant failures itemised) and the override `PUT`/`DELETE`. Windows are
+  clamped to 1–90 days (default 30).
+- **Console:** a `/usage` nav page (tenants, over-limit/warning/not-collected
+  counters, per-metric used/limit + bars, override flags, last collected) and a
+  tenant-detail **Usage & limits** table (plan / override / effective / used /
+  consumption / snapshot day) with save + clear actions and push-status
+  notices. The dashboard sorts over-limit tenants first and flags over-limit
+  rows. Narrow screens scroll the table inside its card (`.main` gained
+  `min-width: 0` so the grid track can shrink).
+- **Migration:** `20261116101222_tenant_limit_overrides` (new table + unique
+  index + cascade FK) with a `rollback.sql` that drops only that table.
+
+Verification: shared-types vitest **14/14**, platform **185/185** (23 suites,
++36), backend **6271 passed / 10 skipped / 0 failed** (447 suites, +3),
+platform-admin tsc clean + vitest **7/7** + production build clean, backend and
+platform `nest build` clean, `prisma migrate status` 4 up-to-date. Live **API
+E2E 35/35** and **browser 24/24**: overview before collection showed plan
+limits with `—`, the refresh collected the real 2 products / 1 staff row, the
+snapshot appeared under the Dhaka day (history read-back), an override of `1`
+made the tenant runtime report limit `1`, its product create failed `403 Plan
+limit reached for Products (2/1)`, raising the override to `10` made the same
+call succeed `201`, a READONLY operator got `403` on read and write, clearing
+restored the plan value and the three audit rows carried before/after values.
+Smoke tenant counters, snapshots, overrides and audit rows were purged;
+services stopped.
+
 ## Next
 
-Item 6: usage dashboards + limit overrides.
+Item 7: metrics dashboard (MRR/ARR/trials/past-due/churn).

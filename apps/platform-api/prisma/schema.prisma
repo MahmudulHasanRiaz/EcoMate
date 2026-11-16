@@ -173,6 +173,7 @@ model Tenant {
   creditNotes       CreditNote[]
   couponRedemptions CouponRedemption[]
   usage             UsageDaily[]
+  limitOverrides    TenantLimitOverride[]
   auditLogs         AuditLog[]
   impersonations    ImpersonationSession[]
   provisioningJobs  ProvisioningJob[]
@@ -506,6 +507,28 @@ model UsageDaily {
 
   @@unique([tenantId, date, metric])
   @@index([metric, date])
+}
+
+/**
+ * Per-tenant numeric limit override applied on top of the plan version.
+ * Absence of a row means "use the plan value"; a value always overrides the
+ * plan, including when the plan does not define the key (upsell/downgrade
+ * negotiations). Values follow the shared limit semantics: finite integer >= 0.
+ */
+model TenantLimitOverride {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String
+  value     Int
+  note      String?
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, key])
+  @@index([key])
 }
 
 model AuditLog {
