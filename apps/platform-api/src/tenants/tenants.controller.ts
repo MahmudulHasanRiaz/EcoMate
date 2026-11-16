@@ -76,6 +76,15 @@ export class TenantsController {
     return this.lifecycle.restore(id, user?.id);
   }
 
+  @Post(':id/reset-owner-password')
+  @Roles('SUPERADMIN', 'SUPPORT')
+  resetOwnerPassword(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.lifecycle.resetOwnerPassword(id, user?.id);
+  }
+
   @Post(':id/purge')
   @Roles('SUPERADMIN')
   purge(

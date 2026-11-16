@@ -56,3 +56,6 @@ apps/platform-api/src/generated/
 apps/platform-api/dist/
 __pycache__/
 *.pyc
+
+# Runtime tenant lifecycle exports
+**/tenant-exports/

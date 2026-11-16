@@ -67,6 +67,46 @@ describe('TenantLifecycleService', () => {
     delete (global as any).fetch;
   });
 
+  it('triggers the tenant owner password reset without touching the password', async () => {
+    const { service, audit } = makeService();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ sent: true }),
+    });
+
+    const result = await service.resetOwnerPassword('tenant-1', 'admin-1');
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://backend:4000/api/internal/provisioning/owner-password-reset',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          tenantId: 'tenant-1',
+          slug: 'acme',
+          email: 'owner@example.com',
+        }),
+      }),
+    );
+    expect(result).toEqual({ sent: true, email: 'owner@example.com' });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'tenant.owner_password_reset' }),
+    );
+  });
+
+  it('reports a reset transport failure', async () => {
+    const { service } = makeService();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 502,
+      text: async () => 'down',
+    });
+
+    await expect(service.resetOwnerPassword('tenant-1')).rejects.toBeInstanceOf(
+      BadGatewayException,
+    );
+  });
+
   it('soft-deletes with a 30-day purge deadline', async () => {
     const { service, prisma, audit } = makeService();
 

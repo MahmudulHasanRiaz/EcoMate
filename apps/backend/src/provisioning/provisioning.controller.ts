@@ -12,14 +12,17 @@ import { runWithTenant } from '../tenancy/tenant-context';
 import { ProvisionTenantDto } from './dto/provision-tenant.dto';
 import { RollbackProvisioningDto } from './dto/rollback-provisioning.dto';
 import { TenantDataDto } from './dto/tenant-data.dto';
+import { OwnerPasswordResetDto } from './dto/owner-password-reset.dto';
 import { TenantBootstrapService } from './tenant-bootstrap.service';
 import { TenantDataService } from './tenant-data.service';
+import { TenantOwnerService } from './tenant-owner.service';
 
 @Controller('internal/provisioning')
 export class ProvisioningController {
   constructor(
     private readonly bootstrap: TenantBootstrapService,
     private readonly data: TenantDataService,
+    private readonly owner: TenantOwnerService,
   ) {}
 
   /**
@@ -78,6 +81,19 @@ export class ProvisioningController {
     return runWithTenant(
       { tenantId: dto.tenantId, slug: dto.slug, status: 'active' },
       () => this.data.purgeTenant(dto.tenantId),
+    );
+  }
+
+  /** Sends the tenant's existing OTP reset to the owner; no password crosses. */
+  @Public()
+  @SkipTenant()
+  @SkipSubscription()
+  @UseGuards(PlatformServiceTokenGuard)
+  @Post('owner-password-reset')
+  resetOwnerPassword(@Body() dto: OwnerPasswordResetDto) {
+    return runWithTenant(
+      { tenantId: dto.tenantId, slug: dto.slug, status: 'active' },
+      () => this.owner.sendPasswordReset(dto),
     );
   }
 }

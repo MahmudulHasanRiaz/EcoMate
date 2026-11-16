@@ -123,9 +123,63 @@ export class TenantLifecycleService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Writes a complete NDJSON-derived JSON export: platform billing/registry
-   * rows plus the tenant database's dependency-ordered tables. Export always
-   * runs before a purge; a failed export aborts destruction.
+   * Triggers the tenant's existing OTP reset for the owner. The platform never
+   * sets or receives a password.
+   */
+  async resetOwnerPassword(id: string, actorId?: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+
+    const secret = process.env.INTERNAL_SERVICE_SECRET;
+    if (!secret) {
+      throw new BadGatewayException(
+        'INTERNAL_SERVICE_SECRET is not configured; owner reset is unavailable',
+      );
+    }
+
+    try {
+      const response = await fetch(
+        `${apiBase()}/internal/provisioning/owner-password-reset`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-platform-service-token': secret,
+          },
+          body: JSON.stringify({
+            tenantId: tenant.id,
+            slug: tenant.slug,
+            email: tenant.ownerEmail,
+          }),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`tenant owner reset HTTP ${response.status}`);
+      }
+    } catch (err) {
+      throw new BadGatewayException(
+        `Owner password reset failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
+    await this.audit.record({
+      actorId,
+      tenantId: id,
+      action: 'tenant.owner_password_reset',
+      entity: 'Tenant',
+      entityId: id,
+      after: { email: tenant.ownerEmail },
+    });
+    return { sent: true, email: tenant.ownerEmail };
+  }
+
+  /**
+   * Writes a complete JSON export: platform billing/registry rows plus the
+   * tenant database's dependency-ordered tables. Export always runs before a
+   * purge; a failed export aborts destruction.
    */
   async exportToFile(tenantId: string, actorId?: string) {
     const tenant = await this.prisma.tenant.findUnique({
