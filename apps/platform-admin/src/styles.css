@@ -554,6 +554,7 @@ button {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   border-bottom: 1px solid var(--line);
   margin-bottom: 18px;
@@ -620,6 +621,69 @@ button {
   margin: 22px 0 10px;
   font-size: 14px;
   letter-spacing: -0.01em;
+}
+
+.credit-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.credit-form input {
+  min-height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+}
+
+.credit-form input:first-child {
+  width: 140px;
+}
+
+.credit-form input:nth-child(2) {
+  flex: 1;
+  min-width: 220px;
+}
+
+.row-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.row-action select {
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
+  background: var(--surface);
+  max-width: 210px;
+}
+
+.coupon-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.coupon-form .inline-field {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.coupon-form .inline-field input,
+.coupon-form .inline-field select {
+  min-height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  background: var(--surface);
+}
+
+.coupon-form .button {
+  min-height: 38px;
 }
 
 @media (max-width: 760px) {

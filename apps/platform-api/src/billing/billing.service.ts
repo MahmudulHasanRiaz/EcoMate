@@ -6,9 +6,20 @@ import {
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { CreateCouponDto } from './dto/create-coupon.dto';
+import { CreateCreditNoteDto } from './dto/create-credit-note.dto';
+import { UpdateCouponDto } from './dto/update-coupon.dto';
 
 const PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'];
 const INVOICE_STATUSES = ['DRAFT', 'OPEN', 'PAID', 'VOID', 'UNCOLLECTIBLE'];
+const SUBSCRIPTION_STATUSES = [
+  'TRIAL',
+  'ACTIVE',
+  'PAST_DUE',
+  'SUSPENDED',
+  'CANCELLED',
+  'EXPIRED',
+];
 
 function pageArgs(page?: string, limit?: string) {
   const current = Math.max(1, Number(page) || 1);
@@ -319,6 +330,240 @@ export class BillingService {
     return this.prisma.paymentMethod.findMany({
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
+  }
+
+  async subscriptions(query: {
+    status?: string;
+    page?: string;
+    limit?: string;
+  }) {
+    const page = pageArgs(query.page, query.limit);
+    const where: any = {};
+    if (query.status) {
+      const status = query.status.toUpperCase();
+      if (!SUBSCRIPTION_STATUSES.includes(status)) {
+        throw new BadRequestException('Unknown subscription status');
+      }
+      where.status = status;
+    }
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.subscription.findMany({
+        where,
+        orderBy: { currentPeriodEnd: 'asc' },
+        skip: page.skip,
+        take: page.take,
+        include: {
+          tenant: { select: { id: true, name: true, slug: true } },
+          planVersion: {
+            include: { plan: { select: { id: true, name: true, slug: true } } },
+          },
+          addOns: { include: { addOn: true } },
+        },
+      }),
+      this.prisma.subscription.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page: page.current,
+        limit: page.size,
+        total,
+        totalPages: Math.ceil(total / page.size),
+      },
+    };
+  }
+
+  async creditNotes(query: {
+    tenantId?: string;
+    page?: string;
+    limit?: string;
+  }) {
+    const page = pageArgs(query.page, query.limit);
+    const where: any = {};
+    if (query.tenantId) where.tenantId = query.tenantId;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.creditNote.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: page.skip,
+        take: page.take,
+        include: {
+          tenant: { select: { id: true, name: true, slug: true } },
+          appliedInvoice: { select: { id: true, number: true } },
+        },
+      }),
+      this.prisma.creditNote.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page: page.current,
+        limit: page.size,
+        total,
+        totalPages: Math.ceil(total / page.size),
+      },
+    };
+  }
+
+  async createCreditNote(dto: CreateCreditNoteDto, actorId?: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: dto.tenantId },
+      select: { id: true, name: true },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+
+    if (dto.appliedInvoiceId) {
+      const invoice = await this.prisma.invoice.findUnique({
+        where: { id: dto.appliedInvoiceId },
+        select: { id: true, tenantId: true },
+      });
+      if (!invoice) throw new NotFoundException('Invoice not found');
+      if (invoice.tenantId !== dto.tenantId) {
+        throw new BadRequestException(
+          'The invoice does not belong to this tenant',
+        );
+      }
+    }
+
+    const note = await this.prisma.creditNote.create({
+      data: {
+        tenantId: dto.tenantId,
+        amount: dto.amount,
+        currency: (dto.currency || 'BDT').toUpperCase(),
+        reason: dto.reason.trim(),
+        appliedInvoiceId: dto.appliedInvoiceId ?? null,
+      },
+      include: {
+        tenant: { select: { id: true, name: true, slug: true } },
+        appliedInvoice: { select: { id: true, number: true } },
+      },
+    });
+
+    await this.audit.record({
+      actorId,
+      tenantId: dto.tenantId,
+      action: 'billing.credit_note.create',
+      entity: 'CreditNote',
+      entityId: note.id,
+      after: {
+        amount: String(dto.amount),
+        appliedInvoiceId: dto.appliedInvoiceId ?? null,
+      },
+    });
+    return note;
+  }
+
+  async coupons(query: {
+    active?: string;
+    page?: string;
+    limit?: string;
+  }) {
+    const page = pageArgs(query.page, query.limit);
+    const where: any = {};
+    if (query.active === 'true') where.isActive = true;
+    if (query.active === 'false') where.isActive = false;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.coupon.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: page.skip,
+        take: page.take,
+        include: { _count: { select: { redemptions: true } } },
+      }),
+      this.prisma.coupon.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page: page.current,
+        limit: page.size,
+        total,
+        totalPages: Math.ceil(total / page.size),
+      },
+    };
+  }
+
+  async createCoupon(dto: CreateCouponDto, actorId?: string) {
+    if (dto.type === 'PERCENT' && dto.value > 100) {
+      throw new BadRequestException('Percent coupons cannot exceed 100');
+    }
+    if (dto.duration === 'MONTHS' && !dto.durationMonths) {
+      throw new BadRequestException(
+        'durationMonths is required for MONTHS coupons',
+      );
+    }
+
+    const code = dto.code.trim().toUpperCase();
+    try {
+      const coupon = await this.prisma.coupon.create({
+        data: {
+          code,
+          type: dto.type,
+          value: dto.value,
+          duration: dto.duration,
+          durationMonths:
+            dto.duration === 'MONTHS' ? dto.durationMonths : null,
+          planIds: dto.planIds ?? [],
+          maxRedemptions: dto.maxRedemptions ?? null,
+          expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+          isActive: dto.isActive ?? true,
+        },
+      });
+      await this.audit.record({
+        actorId,
+        action: 'billing.coupon.create',
+        entity: 'Coupon',
+        entityId: coupon.id,
+        after: { code, type: dto.type, value: dto.value },
+      });
+      return coupon;
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new ConflictException('A coupon with this code already exists');
+      }
+      throw err;
+    }
+  }
+
+  async updateCoupon(id: string, dto: UpdateCouponDto, actorId?: string) {
+    const coupon = await this.prisma.coupon.findUnique({ where: { id } });
+    if (!coupon) throw new NotFoundException('Coupon not found');
+    if (
+      dto.maxRedemptions !== undefined &&
+      dto.maxRedemptions < coupon.redeemedCount
+    ) {
+      throw new BadRequestException(
+        'maxRedemptions cannot be below the redeemed count',
+      );
+    }
+
+    const data: any = {};
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (dto.maxRedemptions !== undefined) {
+      data.maxRedemptions = dto.maxRedemptions;
+    }
+    if (dto.expiresAt !== undefined) data.expiresAt = new Date(dto.expiresAt);
+
+    const updated = await this.prisma.coupon.update({ where: { id }, data });
+    await this.audit.record({
+      actorId,
+      action: 'billing.coupon.update',
+      entity: 'Coupon',
+      entityId: id,
+      before: {
+        isActive: coupon.isActive,
+        maxRedemptions: coupon.maxRedemptions,
+        expiresAt: coupon.expiresAt,
+      },
+      after: data,
+    });
+    return updated;
   }
 
   async summary() {

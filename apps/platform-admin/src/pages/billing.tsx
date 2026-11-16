@@ -4,10 +4,14 @@ import { errorMessage, readJson } from '../lib/api';
 import { formatDate, formatDateTime, formatMoney } from '../lib/format';
 import type {
   BillingSummary,
+  Coupon,
+  CreditNote,
   Invoice,
   Page,
   Payment,
   PaymentProof,
+  Plan,
+  Subscription,
 } from '../types';
 import {
   ErrorNote,
@@ -16,7 +20,13 @@ import {
   StatusBadge,
 } from '../components/ui';
 
-type Tab = 'proofs' | 'invoices' | 'payments';
+type Tab =
+  | 'proofs'
+  | 'invoices'
+  | 'payments'
+  | 'subscriptions'
+  | 'credits'
+  | 'coupons';
 const PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
 const INVOICE_STATUSES = [
   '',
@@ -34,12 +44,28 @@ export function BillingPage() {
   const [proofs, setProofs] = useState<Page<PaymentProof> | null>(null);
   const [invoices, setInvoices] = useState<Page<Invoice> | null>(null);
   const [payments, setPayments] = useState<Page<Payment> | null>(null);
+  const [subscriptions, setSubscriptions] =
+    useState<Page<Subscription> | null>(null);
+  const [creditNotes, setCreditNotes] = useState<Page<CreditNote> | null>(null);
+  const [coupons, setCoupons] = useState<Page<Coupon> | null>(null);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [planChoices, setPlanChoices] = useState<Record<string, string>>({});
   const [proofStatus, setProofStatus] =
     useState<(typeof PROOF_STATUSES)[number]>('PENDING');
   const [invoiceStatus, setInvoiceStatus] = useState('');
   const [selectedProof, setSelectedProof] = useState<PaymentProof | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [creditAmount, setCreditAmount] = useState('');
+  const [creditReason, setCreditReason] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [couponType, setCouponType] = useState<'PERCENT' | 'FIXED'>('PERCENT');
+  const [couponValue, setCouponValue] = useState('');
+  const [couponDuration, setCouponDuration] =
+    useState<'ONCE' | 'FOREVER' | 'MONTHS'>('ONCE');
+  const [couponMonths, setCouponMonths] = useState('1');
+  const [couponMax, setCouponMax] = useState('');
+  const [couponExpires, setCouponExpires] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -49,7 +75,7 @@ export function BillingPage() {
     setBusy('load');
     setError(null);
     try {
-      const [nextSummary, nextProofs, nextInvoices, nextPayments] =
+      const [nextSummary, nextProofs, nextInvoices, nextPayments, nextSubscriptions, nextCredits, nextCoupons, nextPlans] =
         await Promise.all([
           api('/billing/summary').then((r) => readJson<BillingSummary>(r)),
           api(`/billing/proofs?status=${proofStatus}&limit=50`).then((r) =>
@@ -61,11 +87,25 @@ export function BillingPage() {
           api('/billing/payments?limit=50').then((r) =>
             readJson<Page<Payment>>(r),
           ),
+          api('/billing/subscriptions?limit=50').then((r) =>
+            readJson<Page<Subscription>>(r),
+          ),
+          api('/billing/credit-notes?limit=50').then((r) =>
+            readJson<Page<CreditNote>>(r),
+          ),
+          api('/billing/coupons?limit=50').then((r) =>
+            readJson<Page<Coupon>>(r),
+          ),
+          api('/plans').then((r) => readJson<Plan[]>(r)),
         ]);
       setSummary(nextSummary);
       setProofs(nextProofs);
       setInvoices(nextInvoices);
       setPayments(nextPayments);
+      setSubscriptions(nextSubscriptions);
+      setCreditNotes(nextCredits);
+      setCoupons(nextCoupons);
+      setPlans(nextPlans);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -134,6 +174,138 @@ export function BillingPage() {
     try {
       const response = await api(`/billing/invoices/${invoice.id}`);
       setSelectedInvoice(await readJson<Invoice>(response));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const planOptions = plans
+    .flatMap((plan) =>
+      plan.versions
+        .filter((version) => !version.archivedAt)
+        .map((version) => ({ planName: plan.name, version })),
+    )
+    .sort((a, b) =>
+      `${a.planName} v${a.version.version}`.localeCompare(
+        `${b.planName} v${b.version.version}`,
+      ),
+    );
+
+  async function changeSubscriptionPlan(subscription: Subscription) {
+    const planVersionId =
+      planChoices[subscription.id] ?? subscription.planVersionId;
+    if (planVersionId === subscription.planVersionId) {
+      setError('Choose a different plan version first.');
+      return;
+    }
+    setBusy(`plan:${subscription.id}`);
+    setError(null);
+    try {
+      const response = await api(
+        `/tenants/${subscription.tenantId}/change-plan`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ planVersionId }),
+        },
+      );
+      await readJson<unknown>(response);
+      setNotice('Subscription plan changed and entitlement snapshot refreshed.');
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function issueCreditNote() {
+    if (!selectedInvoice) return;
+    const amount = Number(creditAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Enter a credit amount greater than zero.');
+      return;
+    }
+    if (creditReason.trim().length < 3) {
+      setError('Enter a credit note reason.');
+      return;
+    }
+    setBusy('credit');
+    setError(null);
+    try {
+      const response = await api('/billing/credit-notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          tenantId: selectedInvoice.tenantId,
+          appliedInvoiceId: selectedInvoice.id,
+          amount,
+          currency: selectedInvoice.currency,
+          reason: creditReason.trim(),
+        }),
+      });
+      await readJson<unknown>(response);
+      setNotice('Credit note issued.');
+      setCreditAmount('');
+      setCreditReason('');
+      await openInvoice(selectedInvoice);
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function createCoupon() {
+    const value = Number(couponValue);
+    if (!Number.isFinite(value) || value <= 0) {
+      setError('Coupon value must be greater than zero.');
+      return;
+    }
+    setBusy('coupon:create');
+    setError(null);
+    try {
+      const response = await api('/billing/coupons', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: couponCode.trim(),
+          type: couponType,
+          value,
+          duration: couponDuration,
+          durationMonths:
+            couponDuration === 'MONTHS' ? Number(couponMonths) : undefined,
+          maxRedemptions: couponMax ? Number(couponMax) : undefined,
+          expiresAt: couponExpires
+            ? new Date(`${couponExpires}T23:59:59`).toISOString()
+            : undefined,
+        }),
+      });
+      const created = await readJson<Coupon>(response);
+      setNotice(`Coupon ${created.code} created.`);
+      setCouponCode('');
+      setCouponValue('');
+      setCouponMax('');
+      setCouponExpires('');
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleCoupon(coupon: Coupon) {
+    setBusy(`coupon:${coupon.id}`);
+    setError(null);
+    try {
+      const response = await api(`/billing/coupons/${coupon.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !coupon.isActive }),
+      });
+      await readJson<unknown>(response);
+      setNotice(coupon.isActive ? 'Coupon disabled.' : 'Coupon enabled.');
+      setRefresh((value) => value + 1);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -214,6 +386,39 @@ export function BillingPage() {
         >
           Payments
           {payments ? <span>{payments.meta.total}</span> : null}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'subscriptions'}
+          className="tab"
+          data-active={tab === 'subscriptions'}
+          onClick={() => setTab('subscriptions')}
+        >
+          Subscriptions
+          {subscriptions ? <span>{subscriptions.meta.total}</span> : null}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'credits'}
+          className="tab"
+          data-active={tab === 'credits'}
+          onClick={() => setTab('credits')}
+        >
+          Credit notes
+          {creditNotes ? <span>{creditNotes.meta.total}</span> : null}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'coupons'}
+          className="tab"
+          data-active={tab === 'coupons'}
+          onClick={() => setTab('coupons')}
+        >
+          Coupons
+          {coupons ? <span>{coupons.meta.total}</span> : null}
         </button>
       </div>
 
@@ -620,6 +825,56 @@ export function BillingPage() {
               </table>
             </div>
           )}
+          <h3 className="subhead">Credit notes</h3>
+          {(selectedInvoice.creditNotes ?? []).length === 0 ? (
+            <p className="muted-note">No credit notes on this invoice.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Created</th>
+                    <th>Reason</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedInvoice.creditNotes?.map((note) => (
+                    <tr key={note.id}>
+                      <td>{formatDate(note.createdAt)}</td>
+                      <td>{note.reason}</td>
+                      <td>{formatMoney(note.amount, note.currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="credit-form">
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="Amount"
+              aria-label="Credit amount"
+              value={creditAmount}
+              onChange={(event) => setCreditAmount(event.target.value)}
+            />
+            <input
+              placeholder="Reason"
+              aria-label="Credit reason"
+              value={creditReason}
+              onChange={(event) => setCreditReason(event.target.value)}
+            />
+            <button
+              type="button"
+              className="button"
+              onClick={issueCreditNote}
+              disabled={!!busy}
+            >
+              {busy === 'credit' ? 'Issuing…' : 'Issue credit note'}
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -668,6 +923,328 @@ export function BillingPage() {
             </div>
           ) : null}
         </section>
+      ) : null}
+
+      {tab === 'subscriptions' ? (
+        <section className="card">
+          <div className="card-head">
+            <div>
+              <h2>Subscriptions</h2>
+              <p>Plan versions, billing periods and add-ons.</p>
+            </div>
+          </div>
+          {subscriptions && subscriptions.data.length === 0 ? (
+            <p className="muted-note">No subscriptions yet.</p>
+          ) : null}
+          {subscriptions && subscriptions.data.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tenant</th>
+                    <th>Status</th>
+                    <th>Current plan</th>
+                    <th>Period ends</th>
+                    <th>Add-ons</th>
+                    <th>Change plan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subscriptions.data.map((subscription) => (
+                    <tr key={subscription.id}>
+                      <td>
+                        <strong>{subscription.tenant?.name ?? '—'}</strong>
+                        <span className="sub">{subscription.tenant?.slug}</span>
+                      </td>
+                      <td>
+                        <StatusBadge status={subscription.status} />
+                      </td>
+                      <td>
+                        {subscription.planVersion
+                          ? `${subscription.planVersion.plan?.name ?? 'Plan'} v${subscription.planVersion.version}`
+                          : '—'}
+                      </td>
+                      <td>{formatDate(subscription.currentPeriodEnd)}</td>
+                      <td>
+                        {subscription.addOns?.length
+                          ? subscription.addOns
+                              .map((addOn) => addOn.addOn?.name ?? addOn.addOnId)
+                              .join(', ')
+                          : '—'}
+                      </td>
+                      <td>
+                        <div className="row-action">
+                          <select
+                            value={
+                              planChoices[subscription.id] ??
+                              subscription.planVersionId
+                            }
+                            onChange={(event) =>
+                              setPlanChoices((previous) => ({
+                                ...previous,
+                                [subscription.id]: event.target.value,
+                              }))
+                            }
+                            aria-label={`Plan for ${subscription.tenant?.name ?? subscription.tenantId}`}
+                          >
+                            {planOptions.map((option) => (
+                              <option
+                                key={option.version.id}
+                                value={option.version.id}
+                              >
+                                {option.planName} v{option.version.version}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            onClick={() => changeSubscriptionPlan(subscription)}
+                            disabled={!!busy}
+                          >
+                            {busy === `plan:${subscription.id}`
+                              ? 'Changing…'
+                              : 'Change'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {tab === 'credits' ? (
+        <section className="card">
+          <div className="card-head">
+            <div>
+              <h2>Credit notes</h2>
+              <p>Credits issued against tenant invoices.</p>
+            </div>
+          </div>
+          {creditNotes && creditNotes.data.length === 0 ? (
+            <p className="muted-note">
+              No credit notes yet. Issue one from an invoice detail.
+            </p>
+          ) : null}
+          {creditNotes && creditNotes.data.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Created</th>
+                    <th>Tenant</th>
+                    <th>Invoice</th>
+                    <th>Reason</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {creditNotes.data.map((note) => (
+                    <tr key={note.id}>
+                      <td>{formatDate(note.createdAt)}</td>
+                      <td>
+                        <strong>{note.tenant?.name ?? '—'}</strong>
+                        <span className="sub">{note.tenant?.slug}</span>
+                      </td>
+                      <td className="mono">
+                        {note.appliedInvoice?.number ?? '—'}
+                      </td>
+                      <td>{note.reason}</td>
+                      <td>{formatMoney(note.amount, note.currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {tab === 'coupons' ? (
+        <>
+          <section className="card">
+            <div className="card-head">
+              <div>
+                <h2>New coupon</h2>
+                <p>Codes are stored uppercase and can be plan-scoped later.</p>
+              </div>
+            </div>
+            <div className="coupon-form">
+              <label className="inline-field">
+                <span>Code</span>
+                <input
+                  value={couponCode}
+                  onChange={(event) => setCouponCode(event.target.value)}
+                  placeholder="SAVE10"
+                  aria-label="Coupon code"
+                />
+              </label>
+              <label className="inline-field">
+                <span>Type</span>
+                <select
+                  value={couponType}
+                  onChange={(event) =>
+                    setCouponType(event.target.value as 'PERCENT' | 'FIXED')
+                  }
+                  aria-label="Coupon type"
+                >
+                  <option value="PERCENT">Percent</option>
+                  <option value="FIXED">Fixed</option>
+                </select>
+              </label>
+              <label className="inline-field">
+                <span>Value</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={couponValue}
+                  onChange={(event) => setCouponValue(event.target.value)}
+                  aria-label="Coupon value"
+                />
+              </label>
+              <label className="inline-field">
+                <span>Duration</span>
+                <select
+                  value={couponDuration}
+                  onChange={(event) =>
+                    setCouponDuration(
+                      event.target.value as 'ONCE' | 'FOREVER' | 'MONTHS',
+                    )
+                  }
+                  aria-label="Coupon duration"
+                >
+                  <option value="ONCE">Once</option>
+                  <option value="FOREVER">Forever</option>
+                  <option value="MONTHS">Months</option>
+                </select>
+              </label>
+              {couponDuration === 'MONTHS' ? (
+                <label className="inline-field">
+                  <span>Months</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="120"
+                    value={couponMonths}
+                    onChange={(event) => setCouponMonths(event.target.value)}
+                    aria-label="Duration months"
+                  />
+                </label>
+              ) : null}
+              <label className="inline-field">
+                <span>Max uses</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={couponMax}
+                  onChange={(event) => setCouponMax(event.target.value)}
+                  placeholder="Unlimited"
+                  aria-label="Max redemptions"
+                />
+              </label>
+              <label className="inline-field">
+                <span>Expires</span>
+                <input
+                  type="date"
+                  value={couponExpires}
+                  onChange={(event) => setCouponExpires(event.target.value)}
+                  aria-label="Coupon expiry"
+                />
+              </label>
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={createCoupon}
+                disabled={!!busy}
+              >
+                {busy === 'coupon:create' ? 'Creating…' : 'Create coupon'}
+              </button>
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="card-head">
+              <div>
+                <h2>Coupons</h2>
+                <p>Active and retired discount codes.</p>
+              </div>
+            </div>
+            {coupons && coupons.data.length === 0 ? (
+              <p className="muted-note">No coupons yet.</p>
+            ) : null}
+            {coupons && coupons.data.length > 0 ? (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Discount</th>
+                      <th>Duration</th>
+                      <th>Redeemed</th>
+                      <th>Expires</th>
+                      <th>Status</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {coupons.data.map((coupon) => (
+                      <tr key={coupon.id}>
+                        <td className="mono">{coupon.code}</td>
+                        <td>
+                          {coupon.type === 'PERCENT'
+                            ? `${coupon.value}%`
+                            : formatMoney(coupon.value)}
+                        </td>
+                        <td>
+                          {coupon.duration === 'MONTHS'
+                            ? `${coupon.durationMonths} months`
+                            : coupon.duration.toLowerCase()}
+                        </td>
+                        <td>
+                          {coupon.redeemedCount}
+                          {coupon.maxRedemptions
+                            ? ` / ${coupon.maxRedemptions}`
+                            : ''}
+                        </td>
+                        <td>{formatDate(coupon.expiresAt)}</td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              coupon.isActive
+                                ? 'badge--success'
+                                : 'badge--muted'
+                            }`}
+                          >
+                            {coupon.isActive ? 'Active' : 'Disabled'}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            onClick={() => toggleCoupon(coupon)}
+                            disabled={!!busy}
+                          >
+                            {busy === `coupon:${coupon.id}`
+                              ? 'Updating…'
+                              : coupon.isActive
+                                ? 'Disable'
+                                : 'Enable'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </section>
+        </>
       ) : null}
     </>
   );

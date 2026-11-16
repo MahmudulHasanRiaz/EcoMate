@@ -8,7 +8,7 @@ complete.
       reset owner password, impersonate, export, delete
 - [x] 2. Impersonation tokens + tenant exchange endpoint + audit
 - [x] 3. Payment proof review queue + approve/reject + invoice/payment ledger
-- [ ] 4. Subscription/plan change UI, credit notes, coupons
+- [x] 4. Subscription/plan change UI, credit notes, coupons
 - [ ] 5. Domain management: primary/base/fallback config, tenant domains,
       verification/TLS status, force re-check
 - [ ] 6. Usage dashboards + limit overrides
@@ -105,6 +105,32 @@ export, delete). Smoke tenant/admin were purged.
   DB ended `INV-BILL-1 PAID`, `INV-BILL-2 OPEN`, collected `1500`, both audit
   rows. Smoke rows/method/admin were purged.
 
+## Subscriptions, credit notes and coupons — DONE
+
+- **Subscriptions:** `/billing/subscriptions` lists tenant, plan version + plan,
+  status, billing period and add-ons. The Billing → Subscriptions tab lets an
+  operator pick any non-archived plan version for a tenant and applies it via
+  the existing `/tenants/:id/change-plan` path (immediate snapshot refresh;
+  effective-date/proration policy stays in Phase 7).
+- **Credit notes:** `/billing/credit-notes` list + create. A note can be linked
+  to an invoice only when the invoice belongs to the same tenant. Invoice detail
+  shows its notes and has an “Issue credit note” form; the Credit notes tab
+  lists all issued notes. Applying credits to balances is deliberately Phase 7.
+- **Coupons:** `/billing/coupons` list + create + activate/deactivate. Codes are
+  uppercased, unique, percent values capped at 100, MONTHS requires
+  durationMonths, maxRedemptions cannot drop below redeemed count. Every
+  create/update is audited.
+- Console: six Billing tabs (Proofs / Invoices / Payments / Subscriptions /
+  Credit notes / Coupons), plan selector per subscription, invoice-level credit
+  form, coupon builder + enable/disable.
+- Verification: platform **145/145**, backend unchanged **6268 passed / 10
+  skipped / 0 failed**, platform-admin build + **4/4** tests. Live browser
+  **5/5**: tenant moved Trial → Pro v1, a 100 BDT credit note was issued from
+  `INV-CREDIT-1` and appeared in the credit list, `SAVE20` was created uppercase
+  (20%, once, max 5) and disabled. Audit rows and DB state verified; smoke
+  tenant/plan/coupon/admin were purged.
+
 ## Next
 
-Item 4: subscription/plan change UI, credit notes, coupons.
+Item 5: domain management — primary/base/fallback config, tenant domains,
+verification/TLS status, force re-check.

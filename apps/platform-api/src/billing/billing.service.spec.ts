@@ -39,6 +39,45 @@ function makeService() {
       findUnique: jest.fn().mockResolvedValue(null),
     },
     paymentMethod: { findMany: jest.fn().mockResolvedValue([]) },
+    tenant: {
+      findUnique: jest.fn().mockResolvedValue({ id: TENANT_ID, name: 'Acme' }),
+    },
+    subscription: {
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(1),
+    },
+    creditNote: {
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(1),
+      create: jest.fn().mockResolvedValue({
+        id: 'note-1',
+        tenantId: TENANT_ID,
+        amount: 250,
+        currency: 'BDT',
+        reason: 'Goodwill',
+        appliedInvoiceId: null,
+      }),
+    },
+    coupon: {
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(1),
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'coupon-1',
+        code: 'SAVE10',
+        isActive: true,
+        maxRedemptions: 10,
+        redeemedCount: 2,
+        expiresAt: null,
+      }),
+      create: jest.fn().mockResolvedValue({
+        id: 'coupon-1',
+        code: 'SAVE10',
+      }),
+      update: jest.fn().mockImplementation(async ({ data }: any) => ({
+        id: 'coupon-1',
+        ...data,
+      })),
+    },
   };
   prisma.$transaction = jest.fn(async (arg: any) =>
     Array.isArray(arg) ? Promise.all(arg) : arg(prisma),
@@ -170,5 +209,142 @@ describe('BillingService', () => {
       overdueInvoices: 2,
       collectedAmount: 4200,
     });
+  });
+
+  it('lists subscriptions with tenant, plan and add-ons', async () => {
+    const { service, prisma } = makeService();
+    prisma.subscription.findMany.mockResolvedValue([
+      {
+        id: 'sub-1',
+        tenantId: TENANT_ID,
+        status: 'TRIAL',
+        tenant: { name: 'Acme' },
+        planVersion: { version: 1, plan: { name: 'Trial' } },
+        addOns: [],
+      },
+    ]);
+
+    const result = await service.subscriptions({ status: 'TRIAL' });
+
+    expect(prisma.subscription.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: 'TRIAL' },
+        include: expect.objectContaining({
+          tenant: expect.any(Object),
+          planVersion: expect.any(Object),
+          addOns: expect.any(Object),
+        }),
+      }),
+    );
+    expect(result.meta.total).toBe(1);
+  });
+
+  it('creates a credit note only for the matching tenant invoice', async () => {
+    const { service, prisma, audit } = makeService();
+    prisma.tenant.findUnique.mockResolvedValue({ id: TENANT_ID });
+    prisma.invoice.findUnique.mockResolvedValue({
+      id: INVOICE_ID,
+      tenantId: TENANT_ID,
+    });
+
+    const note = await service.createCreditNote(
+      {
+        tenantId: TENANT_ID,
+        amount: 250,
+        reason: 'Goodwill',
+        appliedInvoiceId: INVOICE_ID,
+      },
+      'admin-1',
+    );
+
+    expect(prisma.creditNote.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tenantId: TENANT_ID,
+        amount: 250,
+        currency: 'BDT',
+        appliedInvoiceId: INVOICE_ID,
+      }),
+      include: expect.any(Object),
+    });
+    expect(note.id).toBe('note-1');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'billing.credit_note.create' }),
+    );
+
+    prisma.invoice.findUnique.mockResolvedValue({
+      id: INVOICE_ID,
+      tenantId: 'other-tenant',
+    });
+    await expect(
+      service.createCreditNote({
+        tenantId: TENANT_ID,
+        amount: 250,
+        reason: 'Goodwill',
+        appliedInvoiceId: INVOICE_ID,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('validates and creates coupons', async () => {
+    const { service, prisma, audit } = makeService();
+
+    const coupon = await service.createCoupon(
+      {
+        code: 'save10',
+        type: 'PERCENT',
+        value: 10,
+        duration: 'ONCE',
+      },
+      'admin-1',
+    );
+
+    expect(prisma.coupon.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        code: 'SAVE10',
+        type: 'PERCENT',
+        value: 10,
+        isActive: true,
+      }),
+    });
+    expect(coupon.id).toBe('coupon-1');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'billing.coupon.create' }),
+    );
+
+    await expect(
+      service.createCoupon({
+        code: 'BAD',
+        type: 'PERCENT',
+        value: 120,
+        duration: 'ONCE',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createCoupon({
+        code: 'MONTHLY',
+        type: 'FIXED',
+        value: 100,
+        duration: 'MONTHS',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('toggles coupon active state', async () => {
+    const { service, prisma, audit } = makeService();
+
+    const result = await service.updateCoupon(
+      'coupon-1',
+      { isActive: false },
+      'admin-1',
+    );
+
+    expect(prisma.coupon.update).toHaveBeenCalledWith({
+      where: { id: 'coupon-1' },
+      data: { isActive: false },
+    });
+    expect(result.isActive).toBe(false);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'billing.coupon.update' }),
+    );
   });
 });

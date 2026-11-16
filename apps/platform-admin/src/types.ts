@@ -27,14 +27,7 @@ export interface PlanVersion {
   features: string[];
   limits: Record<string, unknown>;
   archivedAt?: string | null;
-}
-
-export interface Subscription {
-  id: string;
-  status: string;
-  currentPeriodEnd: string;
-  trialEndsAt?: string | null;
-  planVersion?: PlanVersion | null;
+  plan?: { id: string; name: string; slug: string };
 }
 
 export interface Tenant {
@@ -137,6 +130,7 @@ export interface InvoiceLine {
 
 export interface Invoice {
   id: string;
+  tenantId: string;
   number: string;
   status: string;
   subtotal: string | number;
@@ -178,6 +172,54 @@ export interface Payment {
   invoice?: { id: string; number: string };
   method?: { id: string; type: string; name: string };
   proof?: { id: string; transactionId: string };
+}
+
+export interface Subscription {
+  id: string;
+  tenantId: string;
+  planVersionId: string;
+  status: string;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  trialEndsAt?: string | null;
+  cancelAtPeriodEnd: boolean;
+  tenant?: { id: string; name: string; slug: string };
+  planVersion?: PlanVersion | null;
+  addOns?: Array<{
+    id: string;
+    addOnId: string;
+    startedAt: string;
+    endedAt?: string | null;
+    addOn?: { id: string; name: string; price: string | number };
+  }>;
+}
+
+export interface CreditNote {
+  id: string;
+  tenantId: string;
+  amount: string | number;
+  currency: string;
+  reason: string;
+  appliedInvoiceId?: string | null;
+  createdAt: string;
+  tenant?: { id: string; name: string; slug: string };
+  appliedInvoice?: { id: string; number: string } | null;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  type: 'PERCENT' | 'FIXED';
+  value: string | number;
+  duration: 'ONCE' | 'FOREVER' | 'MONTHS';
+  durationMonths?: number | null;
+  planIds: string[];
+  maxRedemptions?: number | null;
+  redeemedCount: number;
+  expiresAt?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  _count?: { redemptions?: number };
 }
 
 export interface Session {
