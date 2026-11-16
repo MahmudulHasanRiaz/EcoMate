@@ -42,6 +42,11 @@ function makeService() {
   };
   const provisioning = {
     startForSignup: jest.fn().mockResolvedValue({ id: 'job-1' }),
+    retry: jest.fn().mockResolvedValue({ id: 'job-1', status: 'FAILED' }),
+  };
+  const domainConfig = {
+    absoluteUrl: (slug: string, path: string) =>
+      `https://${slug}.ecomate.bd${path}`,
   };
   return {
     prisma,
@@ -49,12 +54,14 @@ function makeService() {
     rateLimit,
     mail,
     provisioning,
+    domainConfig,
     service: new SignupService(
       prisma,
       captcha as any,
       rateLimit as any,
       mail as any,
       provisioning as any,
+      domainConfig as any,
     ),
   };
 }
@@ -231,6 +238,87 @@ describe('SignupService — verify', () => {
     await expect(service.verify('nope')).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+});
+
+describe('SignupService — provisioning progress and retry', () => {
+  const token = 'b'.repeat(64);
+  const verified = {
+    id: 'signup-1',
+    slug: 'acme',
+    tenantName: 'Acme Store',
+    status: 'VERIFIED',
+    verificationExpiresAt: new Date(Date.now() + 60_000),
+    verificationTokenHash: sha256(token),
+  };
+
+  it('returns job progress and the workspace URLs', async () => {
+    const { service, prisma } = makeService();
+    prisma.signupRequest.findUnique.mockResolvedValue(verified);
+    prisma.provisioningJob.findUnique.mockResolvedValue({
+      id: 'job-1',
+      status: 'RUNNING',
+      step: 'seeding',
+      attempts: 1,
+    });
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      status: 'PROVISIONING',
+    });
+
+    const result = await service.status(token);
+
+    expect(result).toMatchObject({
+      status: 'VERIFIED',
+      tenantStatus: 'PROVISIONING',
+      urls: {
+        admin: 'https://acme.ecomate.bd/admin/',
+        storefront: 'https://acme.ecomate.bd/',
+      },
+      provisioning: { status: 'RUNNING', step: 'seeding', attempts: 1 },
+    });
+  });
+
+  it('retries a failed job in the background', async () => {
+    const { service, prisma, provisioning } = makeService();
+    prisma.signupRequest.findUnique.mockResolvedValue(verified);
+    prisma.provisioningJob.findUnique.mockResolvedValue({
+      id: 'job-1',
+      status: 'FAILED',
+      step: 'failed',
+      attempts: 2,
+    });
+
+    const result = await service.retryProvisioning(token);
+
+    expect(result.started).toBe(true);
+    expect(provisioning.retry).toHaveBeenCalledWith('job-1');
+  });
+
+  it('does not retry a job that is still running', async () => {
+    const { service, prisma, provisioning } = makeService();
+    prisma.signupRequest.findUnique.mockResolvedValue(verified);
+    prisma.provisioningJob.findUnique.mockResolvedValue({
+      id: 'job-1',
+      status: 'RUNNING',
+      step: 'seeding',
+      attempts: 1,
+    });
+
+    const result = await service.retryProvisioning(token);
+
+    expect(result.started).toBe(false);
+    expect(provisioning.retry).not.toHaveBeenCalled();
+  });
+
+  it('starts provisioning when verification never created a job', async () => {
+    const { service, prisma, provisioning } = makeService();
+    prisma.signupRequest.findUnique.mockResolvedValue(verified);
+
+    const result = await service.retryProvisioning(token);
+
+    expect(result).toEqual({ started: true, provisioning: null });
+    expect(provisioning.startForSignup).toHaveBeenCalledWith('signup-1');
   });
 });
 

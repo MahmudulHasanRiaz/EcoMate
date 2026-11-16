@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { CreateSignupDto } from './dto/create-signup.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { RetryProvisioningDto } from './dto/retry-provisioning.dto';
 import { SignupService } from './signup.service';
 
 function requestMeta(req: any) {
@@ -44,5 +45,11 @@ export class SignupController {
   @HttpCode(200)
   resend(@Body() dto: ResendVerificationDto, @Req() req: any) {
     return this.signup.resend(dto, requestMeta(req));
+  }
+
+  @Post('retry')
+  @HttpCode(202)
+  retry(@Body() dto: RetryProvisioningDto) {
+    return this.signup.retryProvisioning(dto.token);
   }
 }

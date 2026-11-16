@@ -595,6 +595,87 @@ input {
   margin-top: 6px;
 }
 
+.success-mark--danger {
+  background: #fdecea;
+  color: var(--danger);
+}
+
+.progress-list {
+  display: grid;
+  gap: 14px;
+  margin: 24px 0 20px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.progress-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  opacity: 0.55;
+}
+
+.progress-step[data-state='done'],
+.progress-step[data-state='active'],
+.progress-step[data-state='failed'] {
+  opacity: 1;
+}
+
+.progress-dot {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.progress-step[data-state='done'] .progress-dot {
+  background: var(--brand-soft);
+  border-color: transparent;
+  color: var(--brand);
+}
+
+.progress-step[data-state='active'] .progress-dot {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.progress-step[data-state='failed'] .progress-dot {
+  background: #fdecea;
+  border-color: transparent;
+  color: var(--danger);
+}
+
+.progress-step strong {
+  display: block;
+  font-size: 14px;
+}
+
+.progress-step span span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.progress-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.progress-actions .button {
+  margin-top: 0;
+}
+
 .center-note {
   text-align: center;
   color: var(--muted);

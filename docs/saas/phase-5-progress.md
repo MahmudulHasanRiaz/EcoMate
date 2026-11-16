@@ -12,7 +12,7 @@ tracked separately.
 - [x] 4. `TenantBootstrapService`: roles/permissions, order statuses, payment
       options, system settings, default warehouse/store, email templates, legal
       pages, sample data off by default
-- [ ] 5. Idempotent retries, rollback on failure, provisioning progress API/UI
+- [x] 5. Idempotent retries, rollback on failure, provisioning progress API/UI
 - [ ] 6. Tenant soft delete/export/purge job (30-day retention)
 - [ ] 7. Trial abuse controls (disposable email, phone/domain dedupe)
 
@@ -116,9 +116,37 @@ Extended `TenantBootstrapService` in the same provisioning path:
   templates, 13 pages (incl. privacy/terms/refund/shipping), 0 products; second
   call returned all-zero creates. Smoke rows were purged (2 tenants).
 
-### 5–7. Remaining lifecycle, export and abuse — NOT STARTED
-- Item 5: landing progress UI wired to the status endpoint, admin retry/rollback
-  surface, and a stale-job sweeper.
+### 5. Retries, rollback and progress — DONE
+
+- **No half-live tenants:** the primary `TenantDomain` is created `PENDING` and
+  only flips to `ACTIVE` after the tenant seed, welcome-email attempt and
+  `Tenant.status = TRIAL`. Until then the registry cannot route the host.
+- **Rollback:** on a failed bootstrap the platform calls the new tenant-internal
+  `POST /internal/provisioning/rollback`, which deletes only seed rows (pages,
+  templates, presets, gateways, statuses, settings, stores, warehouse, owner).
+  It refuses with 409 once the tenant has any order/product/employee, so real
+  data can never be erased. Platform tenant/domain/subscription and the FAILED
+  job stay for a retry.
+- **Retry:** `POST /api/public/signup/retry` (token-gated, 5/hour) resumes a
+  FAILED job in the background; retries reset the domain to PENDING and the
+  create-only seed makes every step safe to repeat.
+- **Progress API/UI:** `GET /api/public/signup/status` now returns tenant status,
+  job status/step/attempts and absolute admin/storefront URLs. The landing
+  verify page polls it every 2s, renders four steps (verified → workspace →
+  preparing → ready), shows admin/storefront links on success and a “Try again”
+  action on failure. A stale-job sweeper (`PROVISIONING_STALE_MS`, default
+  10 min, 60s interval + startup pass) turns a RUNNING job orphaned by a
+  platform restart into a retryable FAILED job.
+- Verification: platform **108/108**; backend **6257 passed / 10 skipped /
+  0 failed**; landing **10/10**, typecheck + `next build` clean. Live: bootstrap
+  → rollback returned deleted 13 pages/2 templates/2 presets/1 gateway/16
+  statuses/10 settings/1 store/1 warehouse/1 user and left zero rows; a second
+  bootstrap recreated everything. Browser E2E **8/8**: real verify→provision
+  showed four done steps + tenant admin/storefront URLs; a mocked FAILED job
+  showed retry and reached ready after “Try again”. Live platform row ended
+  TRIAL / ACTIVE domain / SUCCEEDED job. Smoke rows were purged.
+
+### 6–7. Remaining lifecycle, export and abuse — NOT STARTED
 - Item 6: soft delete/export/purge (30-day retention) with dependency-ordered
   tenant export.
 - Item 7: disposable-email list plus phone/domain dedupe before provisioning.
@@ -126,4 +154,5 @@ Extended `TenantBootstrapService` in the same provisioning path:
 **Acceptance status:** signup → email verification → automatic provisioning is
 now real end-to-end (tenant rows + seeded tenant DB + registry resolution), so a
 new user reaches a provisioned workspace without manual intervention. Phase 5 is
-still **not complete** until items 5–7 land (lifecycle/export/abuse/UI).
+still **not complete** until items 6–7 land (soft delete/export/purge and trial
+abuse controls).

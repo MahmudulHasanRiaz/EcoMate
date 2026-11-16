@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { CmsPagesService } from '../cms-pages/cms-pages.service';
 import { EMPLOYEE_DEFAULT_PERMISSIONS } from '../common/permissions/effective-permissions';
 import { getAllPermissions } from '../common/permissions/registry';
@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { tenantCompound } from '../tenancy/tenant-context';
 import { ORDER_TRANSITIONS } from '../orders/order-transitions';
 import { ProvisionTenantDto } from './dto/provision-tenant.dto';
+import { RollbackProvisioningDto } from './dto/rollback-provisioning.dto';
 
 const ORDER_STATUSES = [
   { name: 'Pending', color: '#F59E0B', isInitial: true, isFinal: false, sortOrder: 0 },
@@ -105,6 +106,52 @@ export class TenantBootstrapService {
       created++;
     }
     return created;
+  }
+
+  /**
+   * Removes a partial bootstrap seed. Deliberately refuses once business data
+   * exists; a workspace that ever had an order/product/employee is not a
+   * failed seed and must never be erased by an automated retry.
+   */
+  async rollback(dto: RollbackProvisioningDto) {
+    const [orders, products, employees] = await Promise.all([
+      this.prisma.order.count(),
+      this.prisma.product.count(),
+      this.prisma.employee.count(),
+    ]);
+    if (orders > 0 || products > 0 || employees > 0) {
+      throw new ConflictException(
+        'Tenant already contains business data; refusing to roll back the bootstrap seed',
+      );
+    }
+
+    const users = await this.prisma.userProfile.findMany({
+      select: { id: true },
+    });
+    const deleted = {
+      cmsPages: (await this.prisma.cmsPage.deleteMany()).count,
+      emailTemplates: (await this.prisma.emailTemplate.deleteMany()).count,
+      accessPresets: (await this.prisma.accessPreset.deleteMany()).count,
+      paymentGateways: (await this.prisma.paymentGateway.deleteMany()).count,
+      orderStatusTransitions: (
+        await this.prisma.orderStatusTransition.deleteMany()
+      ).count,
+      orderStatuses: (await this.prisma.orderStatus.deleteMany()).count,
+      systemSettings: (await this.prisma.systemSetting.deleteMany()).count,
+      storeLocations: (await this.prisma.storeLocation.deleteMany()).count,
+      warehouses: (await this.prisma.warehouse.deleteMany()).count,
+      userSettings:
+        users.length > 0
+          ? (
+              await this.prisma.userSettings.deleteMany({
+                where: { userId: { in: users.map((user) => user.id) } },
+              })
+            ).count
+          : 0,
+      users: (await this.prisma.userProfile.deleteMany()).count,
+    };
+
+    return { tenantId: dto.tenantId, slug: dto.slug, deleted };
   }
 
   private async ensureOwner(dto: ProvisionTenantDto): Promise<string> {

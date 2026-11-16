@@ -3,11 +3,28 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import {
+  deriveProvisioningProgress,
+  type ProvisioningInfo,
+} from '@/lib/provisioning-progress';
+
+interface StatusPayload {
+  tenantName?: string;
+  urls?: { admin?: string; storefront?: string } | null;
+  provisioning?: ProvisioningInfo | null;
+}
 
 type VerificationState =
   | { kind: 'loading' }
-  | { kind: 'ok'; title: string; body: string }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  | {
+      kind: 'verified';
+      tenantName: string;
+      status: StatusPayload | null;
+      retrying: boolean;
+      retryError: string | null;
+      pollError: string | null;
+    };
 
 function serverMessage(data: unknown): string {
   if (!data || typeof data !== 'object') {
@@ -19,9 +36,18 @@ function serverMessage(data: unknown): string {
   return 'This verification link is invalid or has expired.';
 }
 
+const STEP_ICON: Record<string, string> = {
+  done: '✓',
+  active: '•',
+  failed: '!',
+  pending: '',
+};
+
 export function VerifyEmailClient() {
   const token = useSearchParams().get('token') ?? '';
   const [state, setState] = useState<VerificationState>({ kind: 'loading' });
+  const [pollNonce, setPollNonce] = useState(0);
+  const phase = state.kind;
 
   useEffect(() => {
     if (!token) {
@@ -44,11 +70,12 @@ export function VerifyEmailClient() {
         const tenantName =
           data && typeof data.tenantName === 'string' ? data.tenantName : '';
         setState({
-          kind: 'ok',
-          title: 'Email verified',
-          body: tenantName
-            ? `${tenantName} is verified. We will continue setting up your workspace and email you when it is ready.`
-            : 'Your email is verified. We will continue setting up your workspace and email you when it is ready.',
+          kind: 'verified',
+          tenantName,
+          status: null,
+          retrying: false,
+          retryError: null,
+          pollError: null,
         });
       })
       .catch(() => {
@@ -64,6 +91,130 @@ export function VerifyEmailClient() {
       cancelled = true;
     };
   }, [token]);
+
+  useEffect(() => {
+    if (phase !== 'verified' || !token) return;
+
+    let cancelled = false;
+    let stopped = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    const tick = async () => {
+      if (cancelled || stopped) return;
+      try {
+        const response = await fetch(
+          `/api/public/signup/status?token=${encodeURIComponent(token)}`,
+        );
+        const data = await response.json().catch(() => null);
+        if (cancelled) return;
+        if (!response.ok) {
+          setState((previous) =>
+            previous.kind === 'verified'
+              ? { ...previous, pollError: serverMessage(data) }
+              : previous,
+          );
+          return;
+        }
+        const status = data as StatusPayload;
+        setState((previous) =>
+          previous.kind === 'verified'
+            ? {
+                ...previous,
+                tenantName:
+                  typeof status.tenantName === 'string' && status.tenantName
+                    ? status.tenantName
+                    : previous.tenantName,
+                status,
+                pollError: null,
+              }
+            : previous,
+        );
+        if (
+          status.provisioning?.status === 'SUCCEEDED' ||
+          status.provisioning?.status === 'FAILED'
+        ) {
+          stopped = true;
+        }
+      } catch {
+        if (!cancelled) {
+          setState((previous) =>
+            previous.kind === 'verified'
+              ? {
+                  ...previous,
+                  pollError: 'Still checking — the server is taking a moment.',
+                }
+              : previous,
+          );
+        }
+      }
+    };
+
+    void tick();
+    timer = setInterval(() => {
+      if (stopped) {
+        if (timer) clearInterval(timer);
+        return;
+      }
+      void tick();
+    }, 2_000);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [phase, token, pollNonce]);
+
+  async function retry() {
+    if (state.kind !== 'verified' || state.retrying) return;
+    setState({ ...state, retrying: true, retryError: null });
+    try {
+      const response = await fetch('/api/public/signup/retry', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setState((previous) =>
+          previous.kind === 'verified'
+            ? {
+                ...previous,
+                retrying: false,
+                retryError: serverMessage(data),
+              }
+            : previous,
+        );
+        return;
+      }
+      setState((previous) =>
+        previous.kind === 'verified'
+          ? {
+              ...previous,
+              retrying: false,
+              retryError: null,
+              status: {
+                ...(previous.status ?? {}),
+                tenantName: previous.tenantName,
+                provisioning:
+                  (data as { provisioning?: ProvisioningInfo | null })
+                    ?.provisioning ?? previous.status?.provisioning ?? null,
+              },
+            }
+          : previous,
+      );
+      setPollNonce((value) => value + 1);
+    } catch {
+      setState((previous) =>
+        previous.kind === 'verified'
+          ? {
+              ...previous,
+              retrying: false,
+              retryError: 'Could not reach the server. Please try again.',
+            }
+          : previous,
+      );
+    }
+  }
 
   if (state.kind === 'loading') {
     return (
@@ -97,17 +248,92 @@ export function VerifyEmailClient() {
     );
   }
 
+  const progress = deriveProvisioningProgress(
+    state.status?.provisioning ?? null,
+  );
+  const tenantName = state.tenantName || 'Your workspace';
+  const title = progress.ready
+    ? `${tenantName} is ready`
+    : progress.failed
+      ? 'Setup needs another try'
+      : 'Setting up your workspace';
+  const intro = progress.ready
+    ? 'Your admin and storefront are live. Sign in with the email and password you used at signup.'
+    : progress.failed
+      ? 'Your workspace was not finished. Retrying is safe — completed steps are reused.'
+      : 'This page updates automatically. You can close it and we will email you when it is ready.';
+
   return (
     <div className="wizard">
       <div className="success-panel">
-        <div className="success-mark" aria-hidden>
-          ✓
+        <div
+          className={`success-mark${progress.failed ? ' success-mark--danger' : ''}`}
+          aria-hidden
+        >
+          {progress.ready ? '✓' : progress.failed ? '!' : '…'}
         </div>
-        <h2>{state.title}</h2>
-        <p>{state.body}</p>
-        <Link className="button button--ghost" href="/">
-          Back to home
-        </Link>
+        <p className="eyebrow">
+          {progress.ready ? 'Ready' : progress.failed ? 'Action needed' : 'Provisioning'}
+        </p>
+        <h2>{title}</h2>
+        <p>{intro}</p>
+
+        <ol className="progress-list" aria-live="polite">
+          {progress.steps.map((step) => (
+            <li
+              key={step.key}
+              className="progress-step"
+              data-state={step.state}
+            >
+              <span className="progress-dot" aria-hidden>
+                {STEP_ICON[step.state]}
+              </span>
+              <span>
+                <strong>{step.label}</strong>
+                <span>{step.detail}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+
+        {state.pollError && !progress.failed ? (
+          <p className="center-note" role="status">
+            {state.pollError}
+          </p>
+        ) : null}
+
+        {progress.failed ? (
+          <div className="notice" role="alert">
+            {state.retryError || 'We could not finish the setup.'}
+          </div>
+        ) : null}
+
+        <div className="progress-actions">
+          {progress.ready && state.status?.urls?.admin ? (
+            <a className="button" href={state.status.urls.admin}>
+              Open admin
+            </a>
+          ) : null}
+          {progress.ready && state.status?.urls?.storefront ? (
+            <a className="button button--ghost" href={state.status.urls.storefront}>
+              Open storefront
+            </a>
+          ) : null}
+          {progress.failed ? (
+            <button
+              className="button"
+              type="button"
+              onClick={retry}
+              disabled={state.retrying}
+            >
+              {state.retrying ? 'Retrying…' : 'Try again'}
+            </button>
+          ) : null}
+        </div>
+
+        <p className="center-note">
+          <Link href="/">Back to home</Link>
+        </p>
       </div>
     </div>
   );

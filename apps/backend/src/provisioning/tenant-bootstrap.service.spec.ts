@@ -46,17 +46,38 @@ function makeService(existing = false) {
         .fn()
         .mockImplementation(async () => (existing ? { id: 'tpl-1' } : null)),
       create: jest.fn().mockResolvedValue({ id: 'tpl-1' }),
+      deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
     },
-    product: { create: jest.fn() },
+    product: {
+      create: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
+    },
     category: { create: jest.fn() },
+    order: { count: jest.fn().mockResolvedValue(0) },
+    employee: { count: jest.fn().mockResolvedValue(0) },
+    cmsPage: { deleteMany: jest.fn().mockResolvedValue({ count: 13 }) },
+    orderStatusTransition: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    userSettings: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     paymentOption: { upsert: jest.fn().mockResolvedValue({}) },
     paymentGateway: {
       findFirst: jest
         .fn()
         .mockImplementation(async () => (existing ? { id: 'gw-1' } : null)),
       create: jest.fn().mockResolvedValue({ id: 'gw-1' }),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
   };
+  prisma.userProfile.findMany = jest
+    .fn()
+    .mockResolvedValue([{ id: 'owner-1' }]);
+  prisma.userProfile.deleteMany = jest.fn().mockResolvedValue({ count: 1 });
+  prisma.accessPreset.deleteMany = jest.fn().mockResolvedValue({ count: 2 });
+  prisma.orderStatus.deleteMany = jest.fn().mockResolvedValue({ count: 16 });
+  prisma.systemSetting.deleteMany = jest.fn().mockResolvedValue({ count: 10 });
+  prisma.storeLocation.deleteMany = jest.fn().mockResolvedValue({ count: 1 });
+  prisma.warehouse.deleteMany = jest.fn().mockResolvedValue({ count: 1 });
   const cmsPages = {
     ensureTemplatePages: jest.fn().mockResolvedValue(13),
   };
@@ -199,5 +220,48 @@ describe('TenantBootstrapService', () => {
       data: expect.objectContaining({ username: 'owner-1' }),
       select: { id: true },
     });
+  });
+
+  it('rolls back a partial seed', async () => {
+    const { service, prisma } = makeService();
+
+    const result = await service.rollback({
+      tenantId: dto.tenantId,
+      slug: dto.slug,
+    });
+
+    expect(prisma.cmsPage.deleteMany).toHaveBeenCalled();
+    expect(prisma.emailTemplate.deleteMany).toHaveBeenCalled();
+    expect(prisma.accessPreset.deleteMany).toHaveBeenCalled();
+    expect(prisma.orderStatus.deleteMany).toHaveBeenCalled();
+    expect(prisma.systemSetting.deleteMany).toHaveBeenCalled();
+    expect(prisma.storeLocation.deleteMany).toHaveBeenCalled();
+    expect(prisma.warehouse.deleteMany).toHaveBeenCalled();
+    expect(prisma.userSettings.deleteMany).toHaveBeenCalledWith({
+      where: { userId: { in: ['owner-1'] } },
+    });
+    expect(prisma.userProfile.deleteMany).toHaveBeenCalled();
+    expect(result).toMatchObject({
+      tenantId: dto.tenantId,
+      deleted: {
+        cmsPages: 13,
+        emailTemplates: 2,
+        accessPresets: 2,
+        orderStatuses: 16,
+        systemSettings: 10,
+        users: 1,
+      },
+    });
+  });
+
+  it('refuses rollback once the tenant has business data', async () => {
+    const { service, prisma } = makeService();
+    prisma.product.count.mockResolvedValue(1);
+
+    await expect(
+      service.rollback({ tenantId: dto.tenantId, slug: dto.slug }),
+    ).rejects.toThrow('already contains business data');
+    expect(prisma.cmsPage.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.userProfile.deleteMany).not.toHaveBeenCalled();
   });
 });

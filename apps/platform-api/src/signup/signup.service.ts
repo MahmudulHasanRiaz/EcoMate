@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
+import { DomainConfigService } from '../config/domain-config.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { ProvisioningService } from '../provisioning/provisioning.service';
 import { CaptchaService } from './captcha.service';
@@ -41,6 +42,7 @@ export class SignupService {
     private readonly rateLimit: SignupRateLimitService,
     private readonly mail: PlatformMailService,
     private readonly provisioning: ProvisioningService,
+    private readonly domainConfig: DomainConfigService,
   ) {}
 
   async create(dto: CreateSignupDto, meta: SignupRequestMeta = {}) {
@@ -179,14 +181,69 @@ export class SignupService {
     const job = await this.prisma.provisioningJob.findUnique({
       where: { signupId: signup.id },
     });
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug: signup.slug },
+      select: { id: true, status: true },
+    });
 
     return {
       status: signup.status,
       slug: signup.slug,
       tenantName: signup.tenantName,
+      tenantStatus: tenant?.status ?? null,
+      urls: tenant
+        ? {
+            admin: this.domainConfig.absoluteUrl(signup.slug, '/admin/'),
+            storefront: this.domainConfig.absoluteUrl(signup.slug, '/'),
+          }
+        : null,
       provisioning: job
         ? { status: job.status, step: job.step, attempts: job.attempts }
         : null,
+    };
+  }
+
+  async retryProvisioning(rawToken: string) {
+    const token = String(rawToken || '').trim();
+    if (!/^[0-9a-f]{64}$/i.test(token)) {
+      throw new BadRequestException('Invalid verification token');
+    }
+    const tokenHash = sha256(token.toLowerCase());
+    this.rateLimit.assert(`provision-retry:${tokenHash}`, 5, 60 * 60_000);
+
+    const signup = await this.prisma.signupRequest.findUnique({
+      where: { verificationTokenHash: tokenHash },
+    });
+    if (!signup) throw new NotFoundException('Signup not found');
+    if (signup.status !== 'VERIFIED') {
+      throw new BadRequestException('Verify your email before retrying setup');
+    }
+
+    const job = await this.prisma.provisioningJob.findUnique({
+      where: { signupId: signup.id },
+    });
+    if (!job) {
+      void this.provisioning.startForSignup(signup.id).catch(() => undefined);
+      return {
+        started: true,
+        provisioning: null,
+      };
+    }
+    if (job.status === 'SUCCEEDED' || job.status === 'RUNNING') {
+      return {
+        started: false,
+        provisioning: {
+          status: job.status,
+          step: job.step,
+          attempts: job.attempts,
+        },
+      };
+    }
+
+    void this.provisioning.retry(job.id).catch(() => undefined);
+    return {
+      started: true,
+      provisioning: { status: 'PENDING', step: 'retrying', attempts: job.attempts },
     };
   }
 

@@ -51,6 +51,9 @@ function makeService() {
       create: jest.fn().mockResolvedValue(tenant),
       update: jest.fn().mockResolvedValue(tenant),
     },
+    tenantDomain: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     planVersion: {
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(planVersion),
@@ -131,7 +134,7 @@ describe('ProvisioningService', () => {
             host: 'acme.ecomate.bd',
             type: 'SUBDOMAIN',
             isPrimary: true,
-            status: 'ACTIVE',
+            status: 'PENDING',
           }),
         },
         subscription: {
@@ -171,6 +174,10 @@ describe('ProvisioningService', () => {
     expect(prisma.tenant.update).toHaveBeenCalledWith({
       where: { id: 'tenant-1' },
       data: { status: 'TRIAL' },
+    });
+    expect(prisma.tenantDomain.updateMany).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-1', isPrimary: true },
+      data: { status: 'ACTIVE' },
     });
     expect(mail.sendWelcome).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -220,26 +227,50 @@ describe('ProvisioningService', () => {
     expect(prisma.tenant.create).not.toHaveBeenCalled();
   });
 
-  it('marks the job failed when tenant bootstrap rejects the request', async () => {
+  it('marks the job failed and rolls back the partial tenant seed', async () => {
     const { service, prisma } = makeService();
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: async () => 'boom',
-    });
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: async () => 'boom',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => '{}',
+      });
 
     const job = await service.startForSignup('signup-1');
 
     expect(job).toMatchObject({ status: 'FAILED', step: 'failed' });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(
+      'http://backend:4000/api/internal/provisioning/rollback',
+    );
     expect(prisma.provisioningJob.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: 'FAILED',
-          error: expect.stringContaining('HTTP 500'),
+          error: expect.stringContaining('partial tenant seed rolled back'),
         }),
       }),
     );
     expect(prisma.tenant.update).not.toHaveBeenCalled();
+    expect(prisma.tenantDomain.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('sweeps stale RUNNING jobs into a retryable FAILED state', async () => {
+    const { service, prisma } = makeService();
+    prisma.provisioningJob.updateMany.mockResolvedValue({ count: 2 });
+
+    const swept = await service.sweepStaleJobs(Date.parse('2026-01-01T12:00:00Z'));
+
+    expect(swept).toBe(2);
+    const call = prisma.provisioningJob.updateMany.mock.calls.at(-1)[0];
+    expect(call.where.status).toBe('RUNNING');
+    expect(call.where.updatedAt.lt).toBeInstanceOf(Date);
+    expect(call.data).toMatchObject({ status: 'FAILED', step: 'failed' });
   });
 
   it('fails closed when no plan version is available', async () => {

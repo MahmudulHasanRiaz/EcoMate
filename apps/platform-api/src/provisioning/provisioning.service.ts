@@ -2,6 +2,8 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { DomainConfigService } from '../config/domain-config.service';
 import { PlatformMailService } from '../common/platform-mail.service';
@@ -9,6 +11,13 @@ import { PlatformPrismaService } from '../prisma/prisma.service';
 
 const TRIAL_DAYS_FALLBACK = 14;
 const FETCH_TIMEOUT_MS = 15_000;
+const STALE_JOB_MS = 10 * 60_000;
+const SWEEP_INTERVAL_MS = 60_000;
+
+function staleAfterMs(): number {
+  const raw = Number(process.env.PROVISIONING_STALE_MS);
+  return Number.isFinite(raw) && raw >= 60_000 ? raw : STALE_JOB_MS;
+}
 
 function apiBase(): string {
   const configured = (
@@ -28,14 +37,45 @@ function apiBase(): string {
  * with the error, ready for a retry.
  */
 @Injectable()
-export class ProvisioningService {
+export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ProvisioningService.name);
+  private sweepTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly domainConfig: DomainConfigService,
     private readonly mail: PlatformMailService,
   ) {}
+
+  onModuleInit() {
+    void this.sweepStaleJobs().catch(() => undefined);
+    this.sweepTimer = setInterval(() => {
+      void this.sweepStaleJobs().catch(() => undefined);
+    }, SWEEP_INTERVAL_MS);
+    this.sweepTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+  }
+
+  /**
+   * A platform restart mid-run would leave a job RUNNING forever. Mark it
+   * FAILED once it is older than the stale window so the owner can retry.
+   */
+  async sweepStaleJobs(now = Date.now()): Promise<number> {
+    const cutoff = new Date(now - staleAfterMs());
+    const result = await this.prisma.provisioningJob.updateMany({
+      where: { status: 'RUNNING', updatedAt: { lt: cutoff } },
+      data: {
+        status: 'FAILED',
+        step: 'failed',
+        error:
+          'Provisioning was interrupted. Retry to resume; your workspace data is safe.',
+      },
+    });
+    return result.count;
+  }
 
   async startForSignup(signupId: string) {
     const signup = await this.prisma.signupRequest.findUnique({
@@ -75,6 +115,10 @@ export class ProvisioningService {
     });
     if (!job) throw new ConflictException('Provisioning job not found');
     if (job.status === 'SUCCEEDED') return job;
+    await this.prisma.tenantDomain.updateMany({
+      where: { tenantId: job.tenantId, isPrimary: true },
+      data: { status: 'PENDING' },
+    });
     await this.prisma.provisioningJob.update({
       where: { id: jobId },
       data: { status: 'PENDING', step: 'retrying', error: null },
@@ -173,6 +217,13 @@ export class ProvisioningService {
         data: { status: 'TRIAL' },
       });
 
+      // The host becomes routable only after the workspace is fully seeded and
+      // the welcome mail has been attempted.
+      await this.prisma.tenantDomain.updateMany({
+        where: { tenantId: job.tenantId, isPrimary: true },
+        data: { status: 'ACTIVE' },
+      });
+
       return this.prisma.provisioningJob.update({
         where: { id: jobId },
         data: {
@@ -183,7 +234,41 @@ export class ProvisioningService {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Provisioning ${job.tenant.slug} failed: ${message}`);
-      return this.fail(jobId, message);
+      const rollbackError = await this.rollbackTenant(job.tenant, secret);
+      return this.fail(
+        jobId,
+        rollbackError
+          ? `${message}; tenant rollback failed: ${rollbackError}`
+          : `${message}; partial tenant seed rolled back`,
+      );
+    }
+  }
+
+  /**
+   * Best-effort cleanup of the tenant database after a failed bootstrap. The
+   * platform rows stay (tenant PROVISIONING, domain PENDING, job FAILED) so a
+   * retry can reuse them; only the partial seed is removed.
+   */
+  private async rollbackTenant(
+    tenant: { id: string; slug: string },
+    secret: string,
+  ): Promise<string | null> {
+    try {
+      const response = await fetch(`${apiBase()}/internal/provisioning/rollback`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-platform-service-token': secret,
+        },
+        body: JSON.stringify({ tenantId: tenant.id, slug: tenant.slug }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        return `HTTP ${response.status}`;
+      }
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -246,7 +331,7 @@ export class ProvisioningService {
               type: 'SUBDOMAIN',
               baseDomain: primaryDomain,
               isPrimary: true,
-              status: 'ACTIVE',
+              status: 'PENDING',
             },
           },
           subscription: {

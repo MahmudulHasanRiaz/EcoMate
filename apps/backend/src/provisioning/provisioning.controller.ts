@@ -10,6 +10,7 @@ import { SkipSubscription } from '../tenancy/skip-subscription.decorator';
 import { SkipTenant } from '../tenancy/skip-tenant.decorator';
 import { runWithTenant } from '../tenancy/tenant-context';
 import { ProvisionTenantDto } from './dto/provision-tenant.dto';
+import { RollbackProvisioningDto } from './dto/rollback-provisioning.dto';
 import { TenantBootstrapService } from './tenant-bootstrap.service';
 
 @Controller('internal/provisioning')
@@ -30,6 +31,22 @@ export class ProvisioningController {
     return runWithTenant(
       { tenantId: dto.tenantId, slug: dto.slug, status: 'active' },
       () => this.bootstrap.bootstrap(dto),
+    );
+  }
+
+  /**
+   * Cleanup after a failed bootstrap. Refuses once the tenant has any business
+   * data, so a partially live workspace can never be erased by a retry.
+   */
+  @Public()
+  @SkipTenant()
+  @SkipSubscription()
+  @UseGuards(PlatformServiceTokenGuard)
+  @Post('rollback')
+  rollback(@Body() dto: RollbackProvisioningDto) {
+    return runWithTenant(
+      { tenantId: dto.tenantId, slug: dto.slug, status: 'active' },
+      () => this.bootstrap.rollback(dto),
     );
   }
 }
