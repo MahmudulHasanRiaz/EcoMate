@@ -114,6 +114,7 @@ export function AuditPage() {
           <>
             <button
               type="button"
+              className="button button--ghost"
               onClick={() => void download('csv')}
               disabled={busy === 'export-csv'}
             >
@@ -121,6 +122,7 @@ export function AuditPage() {
             </button>
             <button
               type="button"
+              className="button button--ghost"
               onClick={() => void download('json')}
               disabled={busy === 'export-json'}
             >
@@ -193,8 +195,8 @@ export function AuditPage() {
             />
           </label>
           <div className="form-actions">
-            <button type="submit">Apply filters</button>
-            <button type="button" onClick={clearFilters}>
+            <button type="submit" className="button button--primary">Apply filters</button>
+            <button type="button" className="button button--ghost" onClick={clearFilters}>
               Clear
             </button>
           </div>
@@ -203,7 +205,7 @@ export function AuditPage() {
 
       <section className="panel">
         <h2>Entries</h2>
-        {busy === 'load' ? <Loading label="Loading audit entries…" /> : null}
+        {busy === 'load' && entries.length === 0 ? <Loading label="Loading audit entries…" /> : null}
         {entries.length === 0 && busy !== 'load' ? (
           <p className="muted-note">No audit entries match these filters.</p>
         ) : (
@@ -226,8 +228,8 @@ export function AuditPage() {
                     setExpandedId(expandedId === entry.id ? null : entry.id)
                   }
                 >
-                  <td>{formatDateTime(entry.createdAt)}</td>
-                  <td>
+                  <td className="nowrap">{formatDateTime(entry.createdAt)}</td>
+                  <td className="nowrap">
                     {entry.actor
                       ? `${entry.actor.name} (${entry.actor.email})`
                       : entry.actorId ?? 'System'}
@@ -238,7 +240,7 @@ export function AuditPage() {
                   <td>
                     {entry.entity}
                     {entry.entityId ? (
-                      <div className="muted-note">{entry.entityId}</div>
+                      <div className="muted-note mono break">{entry.entityId}</div>
                     ) : null}
                   </td>
                   <td>{entry.tenant ? entry.tenant.slug : '—'}</td>
@@ -270,7 +272,7 @@ export function AuditPage() {
                   <pre>{auditPayloadText(entry.before)}</pre>
                   <h4>After</h4>
                   <pre>{auditPayloadText(entry.after)}</pre>
-                  <button type="button" onClick={() => setExpandedId(null)}>
+                  <button type="button" className="button button--ghost" onClick={() => setExpandedId(null)}>
                     Close details
                   </button>
                 </>
@@ -282,6 +284,7 @@ export function AuditPage() {
         <div className="pagination">
           <button
             type="button"
+            className="button button--ghost"
             disabled={page <= 1}
             onClick={() => {
               setPage((p) => p - 1);
@@ -295,6 +298,7 @@ export function AuditPage() {
           </span>
           <button
             type="button"
+            className="button button--ghost"
             disabled={page >= meta.totalPages}
             onClick={() => {
               setPage((p) => p + 1);

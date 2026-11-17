@@ -154,7 +154,7 @@ export default async function Home() {
       </main>
 
       <footer className="site-footer">
-        <span>© {new Date().getFullYear()} EcoMate</span>
+        <span>{`© ${new Date().getFullYear()} EcoMate`}</span>
         <span className="footer-links">
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>

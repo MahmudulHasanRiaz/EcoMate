@@ -12,6 +12,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProductForm } from './product-form'
 import { apiClient } from '@/lib/api-client'
@@ -41,6 +42,7 @@ export function ProductDetail() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [formOpen, setFormOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const { data: product, isLoading } = useQuery({
     queryKey: ['product', id],
@@ -125,7 +127,7 @@ export function ProductDetail() {
             <Button variant='outline' size='sm' className='flex-1 sm:flex-none' onClick={() => setFormOpen(true)}>
               <Pencil className='h-4 w-4 mr-1' /> Edit
             </Button>
-            <Button variant='destructive' size='sm' className='flex-1 sm:flex-none' onClick={() => { if (confirm('Delete this product?')) deleteMut.mutate() }}>
+            <Button variant='destructive' size='sm' className='flex-1 sm:flex-none' onClick={() => setDeleteOpen(true)}>
               <Trash2 className='h-4 w-4 mr-1' /> Delete
             </Button>
           </div>
@@ -321,6 +323,16 @@ export function ProductDetail() {
         </div>
 
         <ProductForm open={formOpen} onOpenChange={setFormOpen} currentRow={product as any} mode='edit' />
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title='Delete this product?'
+          desc={`"${product.name}" will be permanently deleted, including its variants and images.`}
+          confirmText='Delete'
+          destructive
+          isLoading={deleteMut.isPending}
+          handleConfirm={() => deleteMut.mutate()}
+        />
       </Main>
     </>
   )

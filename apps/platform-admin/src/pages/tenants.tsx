@@ -56,6 +56,11 @@ export function TenantsPage() {
         eyebrow="Tenants"
         title="Workspaces"
         description="Every provisioned store and its current lifecycle state."
+        actions={
+          <Link to="/tenants/new" className="button button--primary">
+            New tenant
+          </Link>
+        }
       />
 
       <div className="toolbar">
@@ -69,7 +74,17 @@ export function TenantsPage() {
         >
           <input
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value;
+              setDraft(next);
+              // F12: clearing the box clears the filter. Previously the
+              // list stayed filtered with an empty box, so "No tenants
+              // match this filter." appeared with nothing in the search.
+              if (next.trim() === '' && search !== '') {
+                setSearch('');
+                setPage(1);
+              }
+            }}
             placeholder="Search name, slug or owner email"
             aria-label="Search tenants"
           />
@@ -77,6 +92,22 @@ export function TenantsPage() {
             Search
           </button>
         </form>
+        {search ? (
+          <span className="filter-chip">
+            Search: {search}
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => {
+                setSearch('');
+                setDraft('');
+                setPage(1);
+              }}
+            >
+              ×
+            </button>
+          </span>
+        ) : null}
         <label className="toolbar-filter">
           <span>Status</span>
           <select
@@ -109,7 +140,15 @@ export function TenantsPage() {
             </div>
           </div>
           {data.data.length === 0 ? (
-            <p className="muted-note">No tenants match this filter.</p>
+            search || status ? (
+              <p className="muted-note">No tenants match this filter.</p>
+            ) : (
+              <p className="muted-note">
+                No tenants yet.{' '}
+                <Link to="/tenants/new">Create the first tenant</Link> to
+                provision a store.
+              </p>
+            )
           ) : (
             <div className="table-wrap">
               <table>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import ImageExtension from '@tiptap/extension-image'
@@ -10,6 +10,15 @@ import TextAlignExtension from '@tiptap/extension-text-align'
 import UnderlineExtension from '@tiptap/extension-underline'
 import { Bold, Italic, Underline, Code, List, ListOrdered, Quote, Heading1, Heading2, Heading3, Undo, Redo, Link, Image, AlignLeft, AlignCenter, AlignRight, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 
 interface RichTextEditorProps {
   value: string
@@ -70,20 +79,37 @@ export function RichTextEditor({ value, onChange, placeholder = 'Start writing..
     },
   })
 
+  // In-app URL prompt (replaces the browser's native prompt dialog): the
+  // keeps the editor selection — editor.chain().focus() restores it.
+  const [urlPrompt, setUrlPrompt] = useState<{
+    kind: 'image' | 'link'
+    initial: string
+  } | null>(null)
+  const [urlValue, setUrlValue] = useState('')
+
   const addImage = useCallback(() => {
-    const url = window.prompt('Enter image URL:')
-    if (url && editor) {
-      editor.chain().focus().setImage({ src: url }).run()
-    }
-  }, [editor])
+    setUrlValue('')
+    setUrlPrompt({ kind: 'image', initial: '' })
+  }, [])
 
   const addLink = useCallback(() => {
     if (!editor) return
-    const previousUrl = editor.getAttributes('link').href
-    const url = window.prompt('Enter URL:', previousUrl || '')
-    if (url === null) return
+    const previousUrl = editor.getAttributes('link').href || ''
+    setUrlValue(previousUrl)
+    setUrlPrompt({ kind: 'link', initial: previousUrl })
+  }, [editor])
+
+  const submitUrlPrompt = useCallback(() => {
+    if (!urlPrompt || !editor) return
+    const url = urlValue.trim()
+    if (urlPrompt.kind === 'image') {
+      if (url) editor.chain().focus().setImage({ src: url }).run()
+      setUrlPrompt(null)
+      return
+    }
     if (url === '') {
       editor.chain().focus().extendMarkRange('link').unsetLink().run()
+      setUrlPrompt(null)
       return
     }
     // Auto-add https:// for external links without protocol
@@ -92,7 +118,8 @@ export function RichTextEditor({ value, onChange, placeholder = 'Start writing..
     const isRelative = url.startsWith('/') || url.startsWith('#') || url.startsWith('?')
     const finalUrl = !hasProtocol && !isRelative ? `https://${url}` : url
     editor.chain().focus().extendMarkRange('link').setLink({ href: finalUrl }).run()
-  }, [editor])
+    setUrlPrompt(null)
+  }, [editor, urlPrompt, urlValue])
 
   if (!editor) return null
 
@@ -124,6 +151,45 @@ export function RichTextEditor({ value, onChange, placeholder = 'Start writing..
         <MenuButton onClick={() => editor.chain().focus().redo().run()} title='Redo'><Redo className='h-4 w-4' /></MenuButton>
       </div>
       <EditorContent editor={editor} className='[&_.tiptap]:outline-none' />
+      <Dialog
+        open={urlPrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) setUrlPrompt(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {urlPrompt?.kind === 'image' ? 'Insert image' : 'Insert link'}
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              submitUrlPrompt()
+            }}
+          >
+            <Input
+              value={urlValue}
+              onChange={(event) => setUrlValue(event.target.value)}
+              placeholder={
+                urlPrompt?.kind === 'image'
+                  ? 'https://example.com/image.png'
+                  : 'https://example.com'
+              }
+              autoFocus
+            />
+            <DialogFooter className='mt-4'>
+              <Button type='button' variant='outline' onClick={() => setUrlPrompt(null)}>
+                Cancel
+              </Button>
+              <Button type='submit'>
+                {urlPrompt?.kind === 'image' ? 'Insert image' : 'Apply link'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

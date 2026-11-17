@@ -6,6 +6,7 @@ import {
   IsUUID,
   Matches,
   Max,
+  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
@@ -38,4 +39,17 @@ export class CreateTenantDto {
   @Min(1)
   @Max(365)
   trialDays?: number;
+
+  /**
+   * Owner password for the tenant workspace. When provided, the tenant is
+   * provisioned immediately (same flow as a verified public signup: a
+   * synthetic VERIFIED signup request is created and the provisioning job
+   * runs synchronously so the caller gets the definitive outcome). When
+   * omitted, the tenant is created unprovisioned, as before.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  ownerPassword?: string;
 }

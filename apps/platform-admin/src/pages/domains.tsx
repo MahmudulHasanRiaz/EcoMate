@@ -9,6 +9,7 @@ import type {
   TenantDomain,
 } from '../types';
 import {
+  ConfirmDialog,
   ErrorNote,
   Loading,
   PageHeader,
@@ -37,6 +38,7 @@ export function DomainsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [confirmRemove, setConfirmRemove] = useState<TenantDomain | null>(null);
 
   const load = useCallback(async () => {
     setBusy('load');
@@ -159,13 +161,6 @@ export function DomainsPage() {
 
   async function removeDomain(domain: TenantDomain) {
     if (!domain.tenantId) return;
-    if (
-      !window.confirm(
-        `Remove ${domain.host}? Traffic to this host will stop resolving.`,
-      )
-    ) {
-      return;
-    }
     setBusy(`remove:${domain.id}`);
     setError(null);
     try {
@@ -292,6 +287,8 @@ export function DomainsPage() {
         </section>
       ) : null}
 
+      {config ? (
+        <>
       <section className="card">
         <div className="card-head">
           <div>
@@ -353,7 +350,13 @@ export function DomainsPage() {
           >
             <input
               value={draftSearch}
-              onChange={(event) => setDraftSearch(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                setDraftSearch(next);
+                if (next.trim() === '' && search !== '') {
+                  setSearch('');
+                }
+              }}
               placeholder="Search host or tenant"
               aria-label="Search domains"
             />
@@ -361,6 +364,21 @@ export function DomainsPage() {
               Search
             </button>
           </form>
+          {search ? (
+            <span className="filter-chip">
+              Search: {search}
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => {
+                  setSearch('');
+                  setDraftSearch('');
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ) : null}
           <label className="toolbar-filter">
             <span>Status</span>
             <select
@@ -432,7 +450,7 @@ export function DomainsPage() {
                           <button
                             type="button"
                             className="button button--danger"
-                            onClick={() => removeDomain(domain)}
+                            onClick={() => setConfirmRemove(domain)}
                             disabled={!!busy}
                           >
                             {busy === `remove:${domain.id}`
@@ -449,6 +467,25 @@ export function DomainsPage() {
           </div>
         ) : null}
       </section>
+
+      {confirmRemove ? (
+        <ConfirmDialog
+          open
+          title={`Remove ${confirmRemove.host}?`}
+          body="Traffic to this host will stop resolving."
+          confirmLabel="Remove domain"
+          danger
+          busy={busy === `remove:${confirmRemove.id}`}
+          onConfirm={async () => {
+            const domain = confirmRemove;
+            setConfirmRemove(null);
+            await removeDomain(domain);
+          }}
+          onClose={() => setConfirmRemove(null)}
+        />
+      ) : null}
+        </>
+      ) : null}
     </>
   );
 }

@@ -6,6 +6,10 @@ import {
 } from '@nestjs/common';
 import { EncryptionService } from '../common/encryption.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import {
+  BRANDING_IMAGE_MAX_LENGTH,
+  isBrandingImageUrl,
+} from './branding-url';
 
 export interface SmtpSettings {
   host: string;
@@ -42,6 +46,7 @@ export interface BrandingSettings {
   platformName: string;
   supportEmail: string;
   logoUrl: string;
+  faviconUrl: string;
 }
 
 export interface MaintenanceSettings {
@@ -75,6 +80,7 @@ const DEFAULT_BRANDING: BrandingSettings = {
   platformName: 'EcoMate',
   supportEmail: '',
   logoUrl: '',
+  faviconUrl: '',
 };
 
 const DEFAULT_MAINTENANCE: MaintenanceSettings = {
@@ -97,6 +103,16 @@ function asString(value: unknown, fallback = ''): string {
 
 function asBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+/** Empty clears the value; a non-empty value must be an http(s) URL or a data:image/* URL. */
+function assertImageUrl(value: string, field: string): void {
+  if (!value) return;
+  if (!isBrandingImageUrl(value)) {
+    throw new BadRequestException(
+      `${field} must be an http(s) URL or a data:image/* URL no longer than ${BRANDING_IMAGE_MAX_LENGTH} characters`,
+    );
+  }
 }
 
 @Injectable()
@@ -264,11 +280,13 @@ export class SettingsService implements OnModuleInit {
     platformName?: string;
     supportEmail?: string;
     logoUrl?: string;
+    faviconUrl?: string;
   }): Promise<BrandingSettings> {
     const next: BrandingSettings = {
       platformName: (input.platformName ?? this.branding.platformName).trim(),
       supportEmail: (input.supportEmail ?? this.branding.supportEmail).trim(),
       logoUrl: (input.logoUrl ?? this.branding.logoUrl).trim(),
+      faviconUrl: (input.faviconUrl ?? this.branding.faviconUrl).trim(),
     };
     if (!next.platformName || next.platformName.length > 100) {
       throw new BadRequestException(
@@ -281,16 +299,8 @@ export class SettingsService implements OnModuleInit {
     ) {
       throw new BadRequestException('supportEmail must be a valid email');
     }
-    if (next.logoUrl) {
-      try {
-        const url = new URL(next.logoUrl);
-        if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-          throw new Error('logoUrl must use http(s)');
-        }
-      } catch {
-        throw new BadRequestException('logoUrl must be a valid http(s) URL');
-      }
-    }
+    assertImageUrl(next.logoUrl, 'logoUrl');
+    assertImageUrl(next.faviconUrl, 'faviconUrl');
     await this.store('branding', next);
     this.branding = next;
     return { ...next };
@@ -339,6 +349,7 @@ export class SettingsService implements OnModuleInit {
           asString(branding.platformName) || DEFAULT_BRANDING.platformName,
         supportEmail: asString(branding.supportEmail),
         logoUrl: asString(branding.logoUrl),
+        faviconUrl: asString(branding.faviconUrl),
       };
     }
     const maintenance = await this.readStored('maintenance');

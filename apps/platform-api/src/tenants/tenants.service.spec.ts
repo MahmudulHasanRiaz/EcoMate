@@ -20,6 +20,12 @@ const prisma: any = {
   creditNote: {
     create: jest.fn().mockResolvedValue({ id: 'note-1' }),
   },
+  signupRequest: {
+    create: jest.fn(),
+  },
+  provisioningJob: {
+    findFirst: jest.fn(),
+  },
   $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
@@ -42,6 +48,10 @@ const mail = {
 const refresh = {
   pushRefresh: jest.fn().mockResolvedValue({ ok: true }),
 };
+const provisioning = {
+  startForSignup: jest.fn(),
+  retry: jest.fn(),
+};
 
 const service = new TenantsService(
   prisma,
@@ -51,6 +61,7 @@ const service = new TenantsService(
   invoices as any,
   mail as any,
   refresh as any,
+  provisioning as any,
 );
 
 const baseTenantDto = {
@@ -438,5 +449,148 @@ describe('TenantsService', () => {
         data: expect.objectContaining({ status: 'CANCELLED' }),
       }),
     );
+  });
+
+  it('provisions immediately when an owner password is given', async () => {
+    prisma.tenant.findUnique
+      .mockResolvedValueOnce(null) // slug check
+      .mockResolvedValueOnce({
+        // detail() re-fetch after the provisioning run
+        id: 'tenant-1',
+        slug: 'acme',
+        status: 'TRIAL',
+        provisioningJobs: [
+          { id: 'job-1', status: 'SUCCEEDED', step: 'completed' },
+        ],
+      });
+    prisma.planVersion.findUnique.mockResolvedValue({
+      id: 'pv-1',
+      version: 1,
+      trialDays: 14,
+      features: ['admin_products'],
+      limits: { products: 100 },
+    });
+    prisma.tenant.create.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      name: 'Acme Store',
+      ownerEmail: 'owner@acme.test',
+      ownerPhone: null,
+      status: 'PROVISIONING',
+    });
+    prisma.signupRequest.create.mockResolvedValue({ id: 'signup-1' });
+    provisioning.startForSignup.mockResolvedValue({
+      id: 'job-1',
+      status: 'SUCCEEDED',
+      step: 'completed',
+      error: null,
+    });
+
+    const result = await service.create(
+      { ...baseTenantDto, ownerPassword: 'OwnerPass123' } as any,
+      'platform-user-1',
+    );
+
+    // The tenant starts PROVISIONING — the run flips it to TRIAL.
+    expect(prisma.tenant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'PROVISIONING' }),
+      }),
+    );
+    // A synthetic VERIFIED signup carries the hashed owner password.
+    expect(prisma.signupRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          slug: 'acme',
+          ownerEmail: 'owner@acme.test',
+          status: 'VERIFIED',
+        }),
+      }),
+    );
+    const hash = prisma.signupRequest.create.mock.calls[0][0].data
+      .passwordHash as string;
+    expect(hash).not.toBe('OwnerPass123');
+    expect(hash.startsWith('$2')).toBe(true);
+    expect(provisioning.startForSignup).toHaveBeenCalledWith('signup-1');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'tenant.provisioning',
+        tenantId: 'tenant-1',
+      }),
+    );
+    // The caller sees the post-run state, not the pre-run snapshot.
+    expect(result.status).toBe('TRIAL');
+    expect((result as any).provisioningJobs[0].status).toBe('SUCCEEDED');
+  });
+
+  it('does not provision without an owner password', async () => {
+    prisma.tenant.findUnique.mockResolvedValue(null);
+    prisma.planVersion.findUnique.mockResolvedValue({
+      id: 'pv-1',
+      version: 1,
+      trialDays: 14,
+      features: [],
+      limits: {},
+    });
+    prisma.tenant.create.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      status: 'TRIAL',
+    });
+
+    await service.create(baseTenantDto as any, 'platform-user-1');
+
+    expect(prisma.signupRequest.create).not.toHaveBeenCalled();
+    expect(provisioning.startForSignup).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed provisioning job and audits it', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      status: 'PROVISIONING',
+    });
+    prisma.provisioningJob.findFirst.mockResolvedValue({
+      id: 'job-1',
+      status: 'FAILED',
+    });
+    provisioning.retry.mockResolvedValue({
+      id: 'job-1',
+      status: 'SUCCEEDED',
+      step: 'completed',
+    });
+
+    const result = await service.retryProvisioning('tenant-1', 'u1');
+
+    expect(provisioning.retry).toHaveBeenCalledWith('job-1');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'tenant.provisioning.retry',
+        tenantId: 'tenant-1',
+      }),
+    );
+    expect(result.status).toBe('SUCCEEDED');
+  });
+
+  it('retry returns a succeeded job without re-running it', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({ id: 'tenant-1' });
+    prisma.provisioningJob.findFirst.mockResolvedValue({
+      id: 'job-1',
+      status: 'SUCCEEDED',
+    });
+
+    const result = await service.retryProvisioning('tenant-1', 'u1');
+
+    expect(provisioning.retry).not.toHaveBeenCalled();
+    expect(result.status).toBe('SUCCEEDED');
+  });
+
+  it('retry with no job fails with a clear error', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({ id: 'tenant-1' });
+    prisma.provisioningJob.findFirst.mockResolvedValue(null);
+
+    await expect(service.retryProvisioning('tenant-1', 'u1')).rejects.toThrow(
+      'no provisioning job',
+    );
+    expect(provisioning.retry).not.toHaveBeenCalled();
   });
 });

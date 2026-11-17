@@ -10,6 +10,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -37,6 +38,7 @@ export function Categories() {
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({})
   const [searchTerm, setSearchTerm] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<CategoryResponse | null>(null)
 
   const copyCategoryLink = (slug: string, id: string) => {
     navigator.clipboard.writeText(`${getStorefrontUrl()}/category/${slug}`)
@@ -58,7 +60,7 @@ export function Categories() {
 
   const deleteMut = useMutation({
     mutationFn: categoriesApi.delete,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['categories'] }); toast.success('Deleted') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['categories'] }); setDeleteTarget(null); toast.success('Deleted') },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Delete failed'),
   })
 
@@ -194,11 +196,7 @@ export function Categories() {
             <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openEdit(cat)}>
               <Pencil className='h-3.5 w-3.5' />
             </Button>
-            <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => {
-              if (confirm(`Are you sure you want to delete "${cat.name}"?`)) {
-                deleteMut.mutate(cat.id)
-              }
-            }}>
+            <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => setDeleteTarget(cat)}>
               <Trash2 className='h-3.5 w-3.5 text-destructive' />
             </Button>
           </div>
@@ -253,11 +251,7 @@ export function Categories() {
           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openEdit(cat)}>
             <Pencil className='h-3.5 w-3.5' />
           </Button>
-          <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => {
-            if (confirm(`Are you sure you want to delete "${cat.name}"?`)) {
-              deleteMut.mutate(cat.id)
-            }
-          }}>
+          <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => setDeleteTarget(cat)}>
             <Trash2 className='h-3.5 w-3.5 text-destructive' />
           </Button>
         </div>
@@ -375,6 +369,17 @@ export function Categories() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <ConfirmDialog
+          open={deleteTarget !== null}
+          onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+          title='Delete category?'
+          desc={`"${deleteTarget?.name ?? ''}" will be permanently deleted. Products in this category will no longer be listed under it.`}
+          confirmText='Delete'
+          destructive
+          isLoading={deleteMut.isPending}
+          handleConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+        />
 
         <MediaPicker
           open={pickerOpen}

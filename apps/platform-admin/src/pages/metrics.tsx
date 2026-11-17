@@ -104,8 +104,7 @@ export function MetricsPage() {
               <span>MRR ({currency})</span>
               <strong>{formatMoney(headline?.mrr ?? 0, currency)}</strong>
               <small>
-                {headline?.subscriptions ?? 0} paying subscription
-                {(headline?.subscriptions ?? 0) === 1 ? '' : 's'}
+                {`${headline?.subscriptions ?? 0} paying subscription${(headline?.subscriptions ?? 0) === 1 ? '' : 's'}`}
               </small>
             </article>
             <article className="metric">
@@ -126,8 +125,7 @@ export function MetricsPage() {
               <span>Past due · at risk</span>
               <strong>{formatMoney(headline?.atRiskMrr ?? 0, currency)}</strong>
               <small>
-                {overview.revenue.atRisk} subscription
-                {overview.revenue.atRisk === 1 ? '' : 's'} — never counted in MRR
+                {`${overview.revenue.atRisk} subscription${overview.revenue.atRisk === 1 ? '' : 's'} — never counted in MRR`}
               </small>
             </article>
             <article className="metric">
@@ -144,18 +142,14 @@ export function MetricsPage() {
               <span>Churn rate</span>
               <strong>{churnRateLabel(overview.churn.rate)}</strong>
               <small>
-                {overview.churn.churned} of {overview.churn.base} live at window
-                start
+                {`${overview.churn.churned} of ${overview.churn.base} live at window start`}
               </small>
             </article>
             <article className="metric">
               <span>Open invoices</span>
               <strong>{outstanding?.open.count ?? 0}</strong>
               <small>
-                {formatMoney(outstanding?.open.amount ?? 0, outstanding?.open.currency ?? currency)}
-                {outstanding && outstanding.overdue.count > 0
-                  ? ` · ${outstanding.overdue.count} overdue`
-                  : ' · none overdue'}
+                {`${formatMoney(outstanding?.open.amount ?? 0, outstanding?.open.currency ?? currency)} · ${outstanding && outstanding.overdue.count > 0 ? `${outstanding.overdue.count} overdue` : 'none overdue'}`}
               </small>
             </article>
           </section>
@@ -349,13 +343,24 @@ export function MetricsPage() {
               <div>
                 <h2>Six-month trend</h2>
                 <p>
-                  Collected revenue is shown in {overview.series.primaryCurrency}
-                  ; tenant and subscription counts are currency-free.
+                  {`Collected revenue is shown in ${overview.series.primaryCurrency}; tenant and subscription counts are currency-free.`}
                 </p>
               </div>
             </div>
-            <div className="series">
-              {overview.series.months.map((row) => (
+            {overview.series.months.every(
+              (row) =>
+                row.collected === 0 &&
+                row.newTenants === 0 &&
+                row.newSubscriptions === 0 &&
+                row.churned === 0,
+            ) ? (
+              <p className="empty-state">
+                No collections, signups or churn in the last 6 months — the
+                trend appears once there is activity.
+              </p>
+            ) : (
+              <div className="series">
+                {overview.series.months.map((row) => (
                 <article key={row.month} className="series-col">
                   <div className="series-bars">
                     <span
@@ -371,12 +376,12 @@ export function MetricsPage() {
                   </span>
                   <strong>{monthLabel(row.month)}</strong>
                   <span className="sub">
-                    +{row.newTenants} tenants · +{row.newSubscriptions} subs
-                    {row.churned > 0 ? ` · −${row.churned} churned` : ''}
+                    {`+${row.newTenants} tenants · +${row.newSubscriptions} subs${row.churned > 0 ? ` · −${row.churned} churned` : ''}`}
                   </span>
                 </article>
               ))}
-            </div>
+              </div>
+            )}
           </section>
 
           <div className="detail-grid">

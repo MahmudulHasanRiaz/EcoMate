@@ -71,87 +71,95 @@ export function OverviewPage() {
         description="Live tenant state from the platform registry."
       />
       {error ? <ErrorNote message={error} /> : null}
-      {loading ? <Loading /> : null}
+      {loading ? (
+        <Loading />
+      ) : (
+        <>
+          <section className="metric-grid">
+            <article className="metric">
+              <span>Total tenants</span>
+              <strong>{total}</strong>
+              <small>Across all statuses</small>
+            </article>
+            <article className="metric">
+              <span>On trial</span>
+              <strong>{trial}</strong>
+              <small>Provisioned and evaluating</small>
+            </article>
+            <article className="metric">
+              <span>Active</span>
+              <strong>{active}</strong>
+              <small>Paying or converted</small>
+            </article>
+            <article className="metric">
+              <span>Needs attention</span>
+              <strong>{attention}</strong>
+              <small>Past due, suspended or mid-setup</small>
+            </article>
+          </section>
 
-      <section className="metric-grid">
-        <article className="metric">
-          <span>Total tenants</span>
-          <strong>{total}</strong>
-          <small>{tenants.length} newest loaded here</small>
-        </article>
-        <article className="metric">
-          <span>On trial</span>
-          <strong>{trial}</strong>
-          <small>Provisioned and evaluating</small>
-        </article>
-        <article className="metric">
-          <span>Active</span>
-          <strong>{active}</strong>
-          <small>Paying or converted</small>
-        </article>
-        <article className="metric">
-          <span>Needs attention</span>
-          <strong>{attention}</strong>
-          <small>Past due, suspended or mid-setup</small>
-        </article>
-      </section>
-
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2>Recent tenants</h2>
-            <p>Newest workspaces first.</p>
-          </div>
-          <Link to="/tenants" className="button button--ghost">
-            All tenants
-          </Link>
-        </div>
-        {tenants.length === 0 && !loading ? (
-          <p className="muted-note">No tenants yet.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Store</th>
-                  <th>Owner</th>
-                  <th>Status</th>
-                  <th>Plan</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tenants.map((tenant) => (
-                  <tr key={tenant.id}>
-                    <td>
-                      <Link
-                        to="/tenants/$tenantId"
-                        params={{ tenantId: tenant.id }}
-                        className="table-link"
-                      >
-                        {tenant.name}
-                      </Link>
-                      <span className="sub">{tenant.slug}</span>
-                    </td>
-                    <td>{tenant.ownerEmail}</td>
-                    <td>
-                      <StatusBadge status={tenant.status} />
-                    </td>
-                    <td>
-                      {planLabel(
-                        tenant.subscription?.planVersion ??
-                          tenant.planVersion ??
-                          null,
-                      )}
-                    </td>
-                    <td>{formatDate(tenant.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+          <section className="card">
+            <div className="card-head">
+              <div>
+                <h2>Recent tenants</h2>
+                <p>Newest workspaces first.</p>
+              </div>
+              <Link to="/tenants" className="button button--ghost">
+                All tenants
+              </Link>
+            </div>
+            {tenants.length === 0 ? (
+              <p className="muted-note">
+                No tenants yet.{' '}
+                <Link to="/tenants/new">Create the first tenant</Link> to
+                provision a store.
+              </p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Store</th>
+                      <th>Owner</th>
+                      <th>Status</th>
+                      <th>Plan</th>
+                      <th>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tenants.map((tenant) => (
+                      <tr key={tenant.id}>
+                        <td>
+                          <Link
+                            to="/tenants/$tenantId"
+                            params={{ tenantId: tenant.id }}
+                            className="table-link"
+                          >
+                            {tenant.name}
+                          </Link>
+                          <span className="sub">{tenant.slug}</span>
+                        </td>
+                        <td>{tenant.ownerEmail}</td>
+                        <td>
+                          <StatusBadge status={tenant.status} />
+                        </td>
+                        <td>
+                          {planLabel(
+                            tenant.subscription?.planVersion ??
+                              tenant.planVersion ??
+                              null,
+                          )}
+                        </td>
+                        <td>{formatDate(tenant.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
     </>
   );
 }

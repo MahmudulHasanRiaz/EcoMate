@@ -66,6 +66,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(() => readSession());
   const sessionRef = useRef<Session | null>(session);
   sessionRef.current = session;
+  // Single-flight refresh: concurrent 401s share ONE refresh call instead
+  // of each racing the refresh-token rotation (the API's reuse detection
+  // tolerates the race with a grace window, but not starting it is better).
+  const refreshPromiseRef = useRef<Promise<Session | null> | null>(null);
+
+  // Keep the ref in sync synchronously with every session write. The ref
+  // is only re-assigned during render (`sessionRef.current = session`
+  // above); a synchronous api() retry after a refresh would otherwise
+  // read the STALE session — the exact cause of the flaky "Invalid
+  // platform session" error on Settings saves (F9).
+  const storeSession = useCallback((next: Session | null) => {
+    sessionRef.current = next;
+    writeSession(next);
+    setSession(next);
+  }, []);
 
   const api = useCallback(async function request(
     path: string,
@@ -86,31 +101,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return response;
     }
 
-    const refresh = await fetch(`${API_BASE}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ refreshToken: current.refreshToken }),
-    }).catch(() => null);
+    if (!refreshPromiseRef.current) {
+      refreshPromiseRef.current = (async () => {
+        const refresh = await fetch(`${API_BASE}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ refreshToken: current.refreshToken }),
+        }).catch(() => null);
 
-    if (!refresh?.ok) {
-      writeSession(null);
-      setSession(null);
+        if (!refresh?.ok) return null;
+
+        const tokens = await readJson<{
+          accessToken: string;
+          refreshToken?: string;
+        }>(refresh);
+        return {
+          ...current,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken ?? current.refreshToken,
+        };
+      })();
+    }
+
+    const next = await refreshPromiseRef.current;
+    refreshPromiseRef.current = null;
+
+    if (!next) {
+      storeSession(null);
       return response;
     }
 
-    const tokens = await readJson<{
-      accessToken: string;
-      refreshToken?: string;
-    }>(refresh);
-    const next: Session = {
-      ...current,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken ?? current.refreshToken,
-    };
-    writeSession(next);
-    setSession(next);
+    storeSession(next);
     return request(path, init, false);
-  }, []);
+  }, [storeSession]);
 
   const login = useCallback(
     async (email: string, password: string): Promise<LoginOutcome> => {
@@ -131,12 +154,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           refreshToken: outcome.refreshToken,
           user: outcome.user,
         };
-        writeSession(next);
-        setSession(next);
+        storeSession(next);
       }
       return outcome;
     },
-    [],
+    [storeSession],
   );
 
   const completeMfa = useCallback(
@@ -161,10 +183,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refreshToken: data.refreshToken,
         user: data.user,
       };
-      writeSession(next);
-      setSession(next);
+      storeSession(next);
     },
-    [],
+    [storeSession],
   );
 
   const startMfaSetup = useCallback(async (mfaToken: string) => {
@@ -209,12 +230,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           refreshToken: data.refreshToken,
           user: data.user,
         };
-        writeSession(next);
-        setSession(next);
+        storeSession(next);
       }
       return { recoveryCodes: data.recoveryCodes };
     },
-    [],
+    [storeSession],
   );
 
   const logout = useCallback(() => {
@@ -226,9 +246,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ refreshToken: current.refreshToken }),
       }).catch(() => undefined);
     }
-    writeSession(null);
-    setSession(null);
-  }, []);
+    storeSession(null);
+  }, [storeSession]);
 
   const value = useMemo(
     () => ({

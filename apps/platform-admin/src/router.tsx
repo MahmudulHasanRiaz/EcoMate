@@ -15,6 +15,7 @@ import { MetricsPage } from './pages/metrics';
 import { OverviewPage } from './pages/overview';
 import { PlansPage } from './pages/plans';
 import { SettingsPage } from './pages/settings';
+import { TenantCreatePage } from './pages/tenant-create';
 import { TenantDetailPage } from './pages/tenant-detail';
 import { TenantsPage } from './pages/tenants';
 import { UsagePage } from './pages/usage';
@@ -54,6 +55,18 @@ const tenantRoute = createRoute({
   component: () => (
     <AppShell>
       <TenantDetailPage />
+    </AppShell>
+  ),
+});
+
+// Static segment wins over the $tenantId param, so /tenants/new never
+// reaches the detail page (previously it did — "uuid is expected", F1).
+const tenantCreateRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/tenants/new',
+  component: () => (
+    <AppShell>
+      <TenantCreatePage />
     </AppShell>
   ),
 });
@@ -160,6 +173,7 @@ const routeTree = rootRoute.addChildren([
   overviewRoute,
   tenantsRoute,
   tenantRoute,
+  tenantCreateRoute,
   billingRoute,
   domainsRoute,
   usageRoute,

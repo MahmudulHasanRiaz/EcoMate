@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { MapPin, Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { MapPin, Plus, Pencil, Trash2, Loader2, X } from 'lucide-react';
 import { getAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from '@/lib/api/addresses';
 import type { AddressData } from '@/lib/api/addresses';
 import { toast } from 'sonner';
@@ -64,6 +64,8 @@ export function AddressesSection() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AddressData | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchAddresses = async () => {
     setLoading(true);
@@ -87,11 +89,20 @@ export function AddressesSection() {
     fetchAddresses();
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this address?')) return;
-    await deleteAddress(id);
-    toast.success('Address deleted');
-    fetchAddresses();
+  // In-app delete confirmation (SizeChartModal pattern) — no native dialog.
+  const handleDelete = async () => {
+    if (!deleteTarget?.id || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteAddress(deleteTarget.id);
+      toast.success('Address deleted');
+      setDeleteTarget(null);
+      fetchAddresses();
+    } catch {
+      toast.error('Could not delete this address. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleSetDefault = async (id: string) => {
@@ -132,11 +143,34 @@ export function AddressesSection() {
                 <div className="flex items-center gap-2">
                   {!addr.isDefault && <button onClick={() => handleSetDefault(addr.id!)} className="text-xs text-gray-400 hover:text-brand-blue">Set Default</button>}
                   <button onClick={() => setEditingId(addr.id!)} className="p-1.5 text-gray-400 hover:text-gray-600"><Pencil size={14} /></button>
-                  <button onClick={() => handleDelete(addr.id!)} className="p-1.5 text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
+                  <button onClick={() => setDeleteTarget(addr)} className="p-1.5 text-gray-400 hover:text-red-500" aria-label={`Delete address ${addr.label}`}><Trash2 size={14} /></button>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => !deleting && setDeleteTarget(null)}>
+          <div className="bg-white rounded-xl max-w-sm w-full mx-4" onClick={e => e.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby="delete-address-title">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <h3 id="delete-address-title" className="text-[16px] font-semibold">Delete this address?</h3>
+              <button onClick={() => setDeleteTarget(null)} disabled={deleting} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors" aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-[14px] text-gray-600">
+                “{deleteTarget.label}” ({deleteTarget.street}, {deleteTarget.city}) will be permanently deleted.
+              </p>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setDeleteTarget(null)} disabled={deleting} className="flex-1 px-4 h-10 rounded-xl text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-60">Cancel</button>
+                <button onClick={handleDelete} disabled={deleting} className="flex-1 px-4 h-10 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60">
+                  {deleting ? <Loader2 className="animate-spin inline" size={16} /> : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

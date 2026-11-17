@@ -30,6 +30,8 @@ const SRC_DIR = path.resolve(__dirname, '..');
 const PUBLIC_CONTROLLERS: Record<string, string> = {
   SignupController: 'public self-serve signup (Turnstile + rate limits)',
   PublicPlansController: 'public plan catalogue for the landing page',
+  PublicBrandingController:
+    'public branding for the console login page (platform name + logo/favicon URLs only, no tenant data)',
   HealthController: 'liveness probe, no data',
   PrometheusMetricsController:
     'Prometheus scrape endpoint (Phase 8 Stage 2) — operational metrics only, no tenant data; restricted to the private network in production',
@@ -186,6 +188,7 @@ describe('authorization coverage', () => {
       'MfaController',
       'PlansController',
       'PrometheusMetricsController',
+      'PublicBrandingController',
       'PublicPlansController',
       'SettingsController',
       'SignupController',

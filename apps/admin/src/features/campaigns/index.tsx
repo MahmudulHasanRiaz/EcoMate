@@ -216,6 +216,7 @@ function CampaignsTab() {
   const [testCampaignId, setTestCampaignId] = useState<string | null>(null)
   const [testEmailInput, setTestEmailInput] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<EmailCampaign | null>(null)
+  const [sendTarget, setSendTarget] = useState<EmailCampaign | null>(null)
 
   const [form, setForm] = useState({
     name: '',
@@ -273,6 +274,7 @@ function CampaignsTab() {
     mutationFn: (id: string) => campaignsApi.send(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      setSendTarget(null)
       toast.success('Campaign sending started')
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error sending campaign'),
@@ -345,10 +347,8 @@ function CampaignsTab() {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
   }
 
-  const handleSendNow = (id: string) => {
-    if (window.confirm('Send this campaign now?')) {
-      sendMut.mutate(id)
-    }
+  const handleSendNow = (campaign: EmailCampaign) => {
+    setSendTarget(campaign)
   }
 
   const templateList = Array.isArray(templates) ? templates : []
@@ -398,7 +398,7 @@ function CampaignsTab() {
                     <div className='flex gap-1' onClick={e => e.stopPropagation()}>
                       {c.status === 'draft' && (
                         <>
-                          <Button variant='outline' size='icon' className='h-7 w-7' title='Send' onClick={() => handleSendNow(c.id)}>
+                          <Button variant='outline' size='icon' className='h-7 w-7' title='Send' onClick={() => handleSendNow(c)}>
                             <Send className='h-3.5 w-3.5' />
                           </Button>
                           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openEdit(c)}>
@@ -523,6 +523,19 @@ function CampaignsTab() {
           <DialogFooter>
             <Button variant='outline' onClick={() => setDeleteTarget(null)}>Cancel</Button>
             <Button variant='destructive' onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)} disabled={deleteMut.isPending}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!sendTarget} onOpenChange={o => { if (!o) setSendTarget(null) }}>
+        <DialogContent className='sm:max-w-[400px]'>
+          <DialogHeader><DialogTitle>Send campaign now?</DialogTitle></DialogHeader>
+          <p className='text-sm text-muted-foreground'>
+            “{sendTarget?.name}” will start sending to its recipients immediately. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setSendTarget(null)}>Cancel</Button>
+            <Button onClick={() => sendTarget && sendMut.mutate(sendTarget.id)} disabled={sendMut.isPending}>Send now</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

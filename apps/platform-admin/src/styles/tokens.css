@@ -1,0 +1,224 @@
+/**
+ * EcoMate SaaS console — semantic tokens (ONE file only).
+ *
+ * Design direction: StackMate Neon (owner decision 2026-11-17) — dark-first
+ * developer-tool aesthetic, near-black surfaces, subtle 1px borders, minimal
+ * elevation — with EcoMate's own BLUE accent (#4f6bf2) in place of Neon's
+ * green #00E599 (owner decision 2026-11-17 ~19:46). Dark is the DEFAULT
+ * theme; light is the alternate.
+ *
+ * Rules (StackMate tokens.css, adapted): no color/size/radius/shadow/
+ * duration may be hardcoded anywhere else. Typography: Inter Variable
+ * (self-hosted via @fontsource-variable/inter). Money/dates use tabular
+ * sans — mono is reserved for IDs/keys/tokens. Contrast: body text
+ * >= 4.5:1, UI >= 3:1 (both themes).
+ *
+ * Button system (Neon): exactly three variants. PRIMARY solid WHITE bg +
+ * black text (dark) / solid BLACK bg + white text (light); SECONDARY
+ * transparent bg + 1px grey border; ACCENT transparent bg + 1px BLUE
+ * border + blue text (brand CTAs only), hover fills with the LIGHT blue
+ * gradient. NO solid blue fill anywhere on buttons. DANGER is the solid
+ * red confirm action.
+ *
+ * Accent vs success: Neon conflates its green accent with success green.
+ * EcoMate does NOT — the brand accent is blue, success stays green
+ * #10b981 (EcoMate theme.css semantic hue). Danger/warning/info keep
+ * EcoMate's semantic hues (#f43f5e / #f59e0b / #0ea5e9).
+ *
+ * Radius: max 4px on every visible surface; dialogs 6px. 999px survives
+ * ONLY for true status pills (dot + word), status dots, and the spinner.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Dark theme — DEFAULT (:root). Neon.                                 */
+/* ------------------------------------------------------------------ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces & text (Neon: pure-black page, panels ~#101010). */
+  --em-bg: #000000;
+  --em-surface: #101010;
+  --em-surface-raised: #141414;
+  --em-surface-muted: #1a1a1a;
+  --em-surface-hover: #222222;
+  /* Nav ladder — page → hover → active, active is the strongest step. */
+  --em-nav-hover-bg: #212222;
+  --em-nav-active-bg: #2b2c2d;
+  --em-dialog-bg: #0b0b0b;
+  --em-border: #232323;
+  --em-border-strong: #333333;
+  --em-text: #f5f5f5;
+  --em-text-muted: #b0b1b2;
+
+  /* The one brand accent — EcoMate blue. Text on accent is white for
+     small text on dark (the #4f6bf2 fill is never used as a button bg,
+     so this token is for links, icons, focus rings, outlines). */
+  --em-accent: #4f6bf2;
+  --em-accent-hover: #6b85f5;
+  --em-accent-soft: rgba(79, 107, 242, 0.1);
+  --em-accent-04: rgba(79, 107, 242, 0.04);
+  --em-accent-05: rgba(79, 107, 242, 0.05);
+  --em-accent-08: rgba(79, 107, 242, 0.08);
+  --em-accent-10: rgba(79, 107, 242, 0.1);
+  --em-accent-15: rgba(79, 107, 242, 0.15);
+  --em-accent-20: rgba(79, 107, 242, 0.2);
+  --em-accent-30: rgba(79, 107, 242, 0.3);
+  --em-accent-40: rgba(79, 107, 242, 0.4);
+  --em-accent-50: rgba(79, 107, 242, 0.5);
+  --em-accent-60: rgba(79, 107, 242, 0.6);
+  /* Accent gradient: LIGHT blue, mixed with white — never dark-ending. */
+  --em-accent-gradient: linear-gradient(180deg, #a8b8f8 0%, #4f6bf2 100%);
+  --em-btn-accent-bg: transparent;
+  --em-btn-secondary-bg: transparent;
+  --em-tab-active: #4f6bf2;
+
+  /* Primary button — Neon: solid WHITE bg + BLACK text in dark mode.
+     Hover is a SOLID lighter-blue fill + black text. */
+  --em-btn-primary-bg: #ffffff;
+  --em-btn-primary-text: #000000;
+  --em-btn-primary-hover: #8ea2f7;
+  --em-btn-primary-hover-text: #000000;
+
+  /* Status — EcoMate semantic hues (apps/admin theme.css). */
+  --em-success-bg: rgba(16, 185, 129, 0.1);
+  --em-success-text: #10b981;
+  --em-warning-bg: rgba(245, 158, 11, 0.12);
+  --em-warning-text: #fbbf24;
+  --em-danger-bg: rgba(244, 63, 94, 0.12);
+  --em-danger-text: #fb7185;
+  --em-info-bg: rgba(14, 165, 233, 0.12);
+  --em-info-text: #38bdf8;
+  --em-danger: #f43f5e;
+  --em-danger-hover: #e11d48;
+  /* Danger CONFIRM: solid red fill + white text, BOTH themes. */
+  --em-danger-solid: #d42122;
+  --em-danger-solid-hover: #ef2e29;
+  --em-danger-warning-bg: #6d1a1a;
+
+  /* Alert borders — Neon banners are bordered panels, not tinted fills. */
+  --em-success-border: rgba(16, 185, 129, 0.35);
+  --em-warning-border: rgba(245, 158, 11, 0.35);
+  --em-danger-border: rgba(244, 63, 94, 0.35);
+  --em-info-border: rgba(14, 165, 233, 0.35);
+
+  --em-overlay: rgba(0, 0, 0, 0.7);
+  --em-focus-ring: 0 0 0 2px #000000, 0 0 0 4px #4f6bf2;
+
+  /* Typography — Inter Variable (self-hosted via npm). */
+  --em-font-sans: 'Inter Variable', sans-serif;
+  --em-font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas,
+    'Roboto Mono', monospace;
+
+  /* Spacing (4px base). */
+  --em-space-1: 4px;
+  --em-space-1-5: 6px;
+  --em-space-2: 8px;
+  --em-space-2-5: 10px;
+  --em-space-3: 12px;
+  --em-space-4: 16px;
+  --em-space-5: 20px;
+  --em-space-6: 24px;
+  --em-space-8: 32px;
+  --em-space-10: 40px;
+  --em-space-12: 48px;
+
+  /* Layout */
+  --em-content-max: 1400px;
+  --em-sidebar-width: 248px;
+  --em-topbar-height: 48px;
+
+  /* Radii — max 4px; dialogs 6px. */
+  --em-radius-sm: 4px;
+  --em-radius-md: 4px;
+  --em-radius-lg: 4px;
+  --em-radius-xl: 6px;
+
+  /* Elevation — minimal in dark (Neon: borders do the work, not shadows). */
+  --em-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --em-shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.55);
+  --em-shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+
+  /* Motion — Neon's "smooth": ~200ms. */
+  --em-transition: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Z-index scale — no other z-index values. */
+  --em-z-sticky: 30;
+  --em-z-dropdown: 40;
+  --em-z-drawer: 50;
+  --em-z-dialog: 60;
+  --em-z-toast: 70;
+}
+
+/* ------------------------------------------------------------------ */
+/* Light theme — alternate. Same blue hue, darkened for contrast on    */
+/* white (bright #4f6bf2 as text on white is readable at ~4.6:1, but   */
+/* the ink variant #3b54c4 is safer for small text).                   */
+/* ------------------------------------------------------------------ */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --em-bg: #f8fafc;
+  --em-surface: #ffffff;
+  --em-surface-raised: #ffffff;
+  --em-surface-muted: #f1f5f9;
+  --em-surface-hover: #e2e8f0;
+  --em-nav-hover-bg: #f1f5f9;
+  --em-nav-active-bg: #e2e8f0;
+  --em-dialog-bg: #ffffff;
+  --em-border: #e2e8f0;
+  --em-border-strong: #cbd5e1;
+  --em-text: #0f172a;
+  --em-text-muted: #475569;
+
+  --em-accent: #3b54c4;
+  --em-accent-hover: #2f45a3;
+  --em-accent-soft: rgba(79, 107, 242, 0.1);
+  --em-btn-accent-bg: rgba(79, 107, 242, 0.12);
+  --em-btn-secondary-bg: #ffffff;
+  --em-tab-active: #0f172a;
+
+  /* Primary button, light mode — the inversion: solid BLACK bg + WHITE
+     text. Hover is a SOLID dark-blue fill + white text. */
+  --em-btn-primary-bg: #0f172a;
+  --em-btn-primary-text: #ffffff;
+  --em-btn-primary-hover: #3b54c4;
+  --em-btn-primary-hover-text: #ffffff;
+
+  --em-success-bg: rgba(16, 185, 129, 0.08);
+  --em-success-text: #0e7c5b;
+  --em-warning-bg: #fef3c7;
+  --em-warning-text: #92400e;
+  --em-danger-bg: #fee2e2;
+  --em-danger-text: #991b1b;
+  --em-info-bg: #dbeafe;
+  --em-info-text: #1e40af;
+  --em-danger: #be123c;
+  --em-danger-hover: #9f1239;
+  --em-danger-solid: #d42122;
+  --em-danger-solid-hover: #ef2e29;
+  --em-danger-warning-bg: #fef7f6;
+
+  --em-success-border: rgba(16, 185, 129, 0.35);
+  --em-warning-border: rgba(146, 64, 14, 0.35);
+  --em-danger-border: rgba(153, 27, 27, 0.35);
+  --em-info-border: rgba(30, 64, 175, 0.35);
+
+  --em-overlay: rgba(15, 23, 42, 0.45);
+  --em-focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #3b54c4;
+
+  --em-shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --em-shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+  --em-shadow-lg: 0 12px 32px -8px rgba(15, 23, 42, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --em-transition: 0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

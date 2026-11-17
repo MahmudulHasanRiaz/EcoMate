@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth';
-import { ErrorNote, Loading, PageHeader } from '../components/ui';
+import { ConfirmDialog, ErrorNote, Loading, PageHeader } from '../components/ui';
+import { useBranding } from '../lib/branding';
 import { errorMessage, readJson } from '../lib/api';
 import {
   PAYMENT_METHOD_TYPES,
@@ -10,8 +11,45 @@ import {
 } from '../lib/settings';
 import type { PaymentMethod, PlatformSettings } from '../types';
 
+const MAX_LOGO_BYTES = 200 * 1024;
+const MAX_FAVICON_BYTES = 100 * 1024;
+
+/**
+ * Reads an uploaded image as a data URL (F11). The data URL is stored in
+ * the branding setting — no new storage infra needed. The server caps the
+ * stored value at 300_000 characters; these client caps keep uploads
+ * comfortably inside it.
+ */
+function readImageFile(file: File, maxBytes: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('Choose an image file (PNG, JPG, GIF, WebP or SVG).'));
+      return;
+    }
+    if (file.size > maxBytes) {
+      reject(
+        new Error(
+          `That file is ${Math.round(file.size / 1024)} KB — keep it under ${Math.round(maxBytes / 1024)} KB.`,
+        ),
+      );
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+type SettingsConfirm =
+  | { kind: 'method-toggle'; method: PaymentMethod }
+  | { kind: 'method-delete'; method: PaymentMethod }
+  | { kind: 'maintenance-enable' }
+  | null;
+
 export function SettingsPage() {
-  const { api } = useAuth();
+  const { api, session } = useAuth();
+  const { refresh: refreshBranding } = useBranding();
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
 
@@ -34,6 +72,8 @@ export function SettingsPage() {
   const [platformName, setPlatformName] = useState('EcoMate');
   const [supportEmail, setSupportEmail] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
+  const [faviconUrl, setFaviconUrl] = useState('');
+  const [confirm, setConfirm] = useState<SettingsConfirm>(null);
 
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
@@ -77,6 +117,7 @@ export function SettingsPage() {
       setPlatformName(nextSettings.branding.platformName);
       setSupportEmail(nextSettings.branding.supportEmail);
       setLogoUrl(nextSettings.branding.logoUrl);
+      setFaviconUrl(nextSettings.branding.faviconUrl ?? '');
       setMaintenanceEnabled(nextSettings.maintenance.enabled);
       setMaintenanceMessage(nextSettings.maintenance.message);
     } catch (err) {
@@ -96,6 +137,20 @@ export function SettingsPage() {
   }
 
   async function saveSmtp() {
+    // F8: password managers autofill this form with the CONSOLE login
+    // (same origin as /login). If the username is the operator's own login
+    // email while no SMTP user was ever saved, refuse to save it silently.
+    if (
+      smtpUser.trim() &&
+      session?.user.email &&
+      smtpUser.trim().toLowerCase() === session.user.email.toLowerCase() &&
+      !settings?.smtp.user
+    ) {
+      setError(
+        'The SMTP username is your own console login email — your password manager may have autofilled it. Check the username and password, then save again.',
+      );
+      return;
+    }
     setBusy('smtp');
     setError(null);
     setNotice(null);
@@ -193,13 +248,35 @@ export function SettingsPage() {
           platformName: platformName.trim(),
           supportEmail: supportEmail.trim(),
           logoUrl: logoUrl.trim(),
+          faviconUrl: faviconUrl.trim(),
         }),
       }).then((r) => readJson(r));
-      reloadWithNotice('Branding saved.');
+      await refreshBranding();
+      reloadWithNotice('Branding saved and applied to this console.');
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function uploadLogo(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    try {
+      setLogoUrl(await readImageFile(file, MAX_LOGO_BYTES));
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function uploadFavicon(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    try {
+      setFaviconUrl(await readImageFile(file, MAX_FAVICON_BYTES));
+    } catch (err) {
+      setError(errorMessage(err));
     }
   }
 
@@ -313,13 +390,6 @@ export function SettingsPage() {
   }
 
   async function deleteMethod(method: PaymentMethod) {
-    if (
-      !window.confirm(
-        `Delete ${method.name}? Methods referenced by proofs or payments cannot be deleted — deactivate them instead.`,
-      )
-    ) {
-      return;
-    }
     setBusy(`method-${method.id}`);
     setError(null);
     setNotice(null);
@@ -423,7 +493,7 @@ export function SettingsPage() {
                       <button
                         type="button"
                         className="button button--sm button--ghost"
-                        onClick={() => void toggleMethod(method)}
+                        onClick={() => setConfirm({ kind: 'method-toggle', method })}
                         disabled={!!busy}
                       >
                         {method.isActive ? 'Deactivate' : 'Activate'}
@@ -431,7 +501,7 @@ export function SettingsPage() {
                       <button
                         type="button"
                         className="button button--sm button--danger"
-                        onClick={() => void deleteMethod(method)}
+                        onClick={() => setConfirm({ kind: 'method-delete', method })}
                         disabled={!!busy}
                       >
                         Delete
@@ -594,6 +664,8 @@ export function SettingsPage() {
                 onChange={(event) => setSmtpUser(event.target.value)}
                 placeholder="Optional"
                 aria-label="SMTP username"
+                name="smtp-username"
+                autoComplete="off"
               />
             </label>
             <label className="inline-field">
@@ -604,6 +676,8 @@ export function SettingsPage() {
                 onChange={(event) => setSmtpPass(event.target.value)}
                 placeholder="Leave blank to keep the current password"
                 aria-label="SMTP password"
+                name="smtp-password"
+                autoComplete="new-password"
               />
             </label>
             <label className="inline-field">
@@ -652,10 +726,16 @@ export function SettingsPage() {
                 type="button"
                 className="button"
                 onClick={() => void sendTestEmail()}
-                disabled={!!busy || !settings.smtp.configured}
+                disabled={!!busy || !testEmail.trim()}
               >
                 {busy === 'smtp-test' ? 'Sending…' : 'Send test email'}
               </button>
+              {!settings.smtp.configured ? (
+                <p className="muted-note">
+                  SMTP is not configured yet — sending will show the setup
+                  error until it is.
+                </p>
+              ) : null}
             </div>
           </div>
           {testResult ? (
@@ -720,8 +800,8 @@ export function SettingsPage() {
             <div>
               <h2>Tax</h2>
               <p>
-                Default tax for invoices. It takes effect when invoice
-                generation lands in Phase 7.
+                Default tax for invoices. It applies to new invoices; the
+                label shows on the invoice itself.
               </p>
             </div>
           </div>
@@ -777,8 +857,9 @@ export function SettingsPage() {
             <div>
               <h2>Branding</h2>
               <p>
-                The platform name and support address appear in outgoing
-                platform emails.
+                The platform name, logo and favicon appear in this console —
+                sidebar, tab title, login page — and in outgoing platform
+                emails. Changes apply as soon as you save.
               </p>
             </div>
           </div>
@@ -803,13 +884,98 @@ export function SettingsPage() {
             </label>
             <label className="inline-field">
               <span>Logo URL</span>
-              <input
-                value={logoUrl}
-                onChange={(event) => setLogoUrl(event.target.value)}
-                placeholder="Optional"
-                aria-label="Logo URL"
-              />
+              {logoUrl.startsWith('data:') ? (
+                <span className="muted-note">
+                  Uploaded image — see the preview below. Clear it to use a
+                  URL again.
+                </span>
+              ) : (
+                <input
+                  value={logoUrl}
+                  onChange={(event) => setLogoUrl(event.target.value)}
+                  placeholder="https://… (optional)"
+                  aria-label="Logo URL"
+                />
+              )}
             </label>
+            <label className="inline-field">
+              <span>Favicon URL</span>
+              {faviconUrl.startsWith('data:') ? (
+                <span className="muted-note">
+                  Uploaded image — see the preview below. Clear it to use a
+                  URL again.
+                </span>
+              ) : (
+                <input
+                  value={faviconUrl}
+                  onChange={(event) => setFaviconUrl(event.target.value)}
+                  placeholder="https://… (optional, falls back to the logo)"
+                  aria-label="Favicon URL"
+                />
+              )}
+            </label>
+          </div>
+          <div className="domain-config-grid" style={{ marginTop: 14 }}>
+            <div>
+              <p className="muted-note">Logo file (max 200 KB)</p>
+              <div className="upload-box">
+                {logoUrl ? (
+                  <img
+                    className="logo-preview"
+                    src={logoUrl}
+                    alt="Logo preview"
+                  />
+                ) : null}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                  aria-label="Upload a logo file"
+                  onChange={(event) => {
+                    void uploadLogo(event.target.files?.[0]);
+                    event.target.value = '';
+                  }}
+                />
+                {logoUrl ? (
+                  <button
+                    type="button"
+                    className="button button--ghost button--sm"
+                    onClick={() => setLogoUrl('')}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <div>
+              <p className="muted-note">Favicon file (max 100 KB)</p>
+              <div className="upload-box">
+                {faviconUrl ? (
+                  <img
+                    className="logo-preview logo-preview--favicon"
+                    src={faviconUrl}
+                    alt="Favicon preview"
+                  />
+                ) : null}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                  aria-label="Upload a favicon file"
+                  onChange={(event) => {
+                    void uploadFavicon(event.target.files?.[0]);
+                    event.target.value = '';
+                  }}
+                />
+                {faviconUrl ? (
+                  <button
+                    type="button"
+                    className="button button--ghost button--sm"
+                    onClick={() => setFaviconUrl('')}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+            </div>
           </div>
           <div className="progress-actions">
             <button
@@ -865,13 +1031,70 @@ export function SettingsPage() {
             <button
               type="button"
               className="button button--primary"
-              onClick={() => void saveMaintenance()}
+              onClick={() => {
+                if (maintenanceEnabled && !settings?.maintenance.enabled) {
+                  setConfirm({ kind: 'maintenance-enable' });
+                } else {
+                  void saveMaintenance();
+                }
+              }}
               disabled={!!busy}
             >
               {busy === 'maintenance' ? 'Saving…' : 'Save maintenance'}
             </button>
           </div>
         </section>
+      ) : null}
+
+      {confirm ? (
+        <ConfirmDialog
+          open
+          title={
+            confirm.kind === 'maintenance-enable'
+              ? 'Enable maintenance mode?'
+              : confirm.kind === 'method-toggle'
+                ? confirm.method.isActive
+                  ? `Deactivate ${confirm.method.name}?`
+                  : `Activate ${confirm.method.name}?`
+                : `Delete ${confirm.method.name}?`
+          }
+          body={
+            confirm.kind === 'maintenance-enable'
+              ? 'Writes are blocked platform-wide except sign-in, health, internal sync and these settings. Reads keep working.'
+              : confirm.kind === 'method-toggle'
+                ? confirm.method.isActive
+                  ? 'Tenants will no longer see this method when they pay. Existing proofs and payments are unaffected.'
+                  : 'Tenants will see this method when they pay an invoice.'
+                : 'Methods referenced by proofs or payments cannot be deleted — deactivate them instead.'
+          }
+          confirmLabel={
+            confirm.kind === 'maintenance-enable'
+              ? 'Enable maintenance'
+              : confirm.kind === 'method-toggle'
+                ? confirm.method.isActive
+                  ? 'Deactivate'
+                  : 'Activate'
+                : 'Delete method'
+          }
+          danger={
+            confirm.kind === 'method-delete' ||
+            (confirm.kind === 'method-toggle' && confirm.method.isActive)
+          }
+          busy={
+            confirm.kind === 'maintenance-enable'
+              ? busy === 'maintenance'
+              : busy === `method-${confirm.method.id}`
+          }
+          onConfirm={async () => {
+            const current = confirm;
+            setConfirm(null);
+            if (current.kind === 'maintenance-enable') await saveMaintenance();
+            else if (current.kind === 'method-toggle')
+              await toggleMethod(current.method);
+            else await deleteMethod(current.method);
+          }}
+          onClose={() => setConfirm(null)}
+        />
       ) : null}
 
       <section className="card">

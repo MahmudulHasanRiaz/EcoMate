@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth';
-import { ErrorNote, Loading, PageHeader, StatusBadge } from '../components/ui';
+import { ConfirmDialog, ErrorNote, Loading, PageHeader, StatusBadge } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import {
@@ -14,6 +14,13 @@ import type {
   PlatformUserInvite,
   RoleMatrixEntry,
 } from '../types';
+
+type UserConfirm =
+  | { kind: 'reset'; user: PlatformUser }
+  | { kind: 'delete'; user: PlatformUser }
+  | { kind: 'status'; user: PlatformUser }
+  | { kind: 'revoke'; invite: PlatformUserInvite }
+  | null;
 
 export function UsersPage() {
   const { api, session } = useAuth();
@@ -37,6 +44,9 @@ export function UsersPage() {
 
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [tempPasswordFor, setTempPasswordFor] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
+  const [confirm, setConfirm] = useState<UserConfirm>(null);
 
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,14 +122,29 @@ export function UsersPage() {
           name: inviteName.trim(),
           role: inviteRole,
         }),
-      }).then((r) => readJson<{ delivered: boolean }>(r));
+      }).then((r) =>
+        readJson<{
+          delivered: boolean;
+          acceptUrl?: string;
+          deliveryError?: string;
+        }>(r),
+      );
       setInviteEmail('');
       setInviteName('');
-      setNotice(
-        result.delivered
-          ? 'Invite sent.'
-          : 'Invite created, but email is not configured — the link was logged on the server.',
-      );
+      setInviteLinkCopied(false);
+      if (result.delivered) {
+        setInviteLink(null);
+        setNotice('Invite sent.');
+      } else {
+        // The invite is kept server-side and the link is returned so the
+        // operator can share it manually until SMTP is configured.
+        setInviteLink(result.acceptUrl ?? null);
+        setNotice(
+          result.deliveryError
+            ? `Invite created, but the email could not be sent (${result.deliveryError}). Share the link below manually.`
+            : 'Invite created, but the email could not be sent. Share the link below manually.',
+        );
+      }
       setRefresh((n) => n + 1);
     } catch (err) {
       setError(errorMessage(err));
@@ -184,13 +209,6 @@ export function UsersPage() {
   }
 
   async function resetPassword(user: PlatformUser) {
-    if (
-      !window.confirm(
-        `Reset the password for ${user.email}? All of their sessions will be signed out.`,
-      )
-    ) {
-      return;
-    }
     setBusy(`reset-${user.id}`);
     setError(null);
     setNotice(null);
@@ -210,13 +228,6 @@ export function UsersPage() {
   }
 
   async function deleteUser(user: PlatformUser) {
-    if (
-      !window.confirm(
-        `Delete ${user.email}? This cannot be undone. Their audit history is kept, with the actor cleared.`,
-      )
-    ) {
-      return;
-    }
     setBusy(`delete-${user.id}`);
     setError(null);
     setNotice(null);
@@ -299,25 +310,32 @@ export function UsersPage() {
                   </td>
                   <td>{formatDateTime(user.lastLoginAt)}</td>
                   <td className="row-actions">
-                    <button type="button" onClick={() => startEdit(user)}>
+                    <button
+                      type="button"
+                      className="button button--ghost button--sm"
+                      onClick={() => startEdit(user)}
+                    >
                       Edit
                     </button>
                     <button
                       type="button"
+                      className="button button--ghost button--sm"
                       disabled={user.id === session?.user.id}
-                      onClick={() => void toggleStatus(user)}
+                      onClick={() => setConfirm({ kind: 'status', user })}
                     >
                       {user.status === 'DISABLED' ? 'Enable' : 'Disable'}
                     </button>
                     <button
                       type="button"
+                      className="button button--ghost button--sm"
                       disabled={user.id === session?.user.id}
-                      onClick={() => void resetPassword(user)}
+                      onClick={() => setConfirm({ kind: 'reset', user })}
                     >
                       Reset password
                     </button>
                     <button
                       type="button"
+                      className="button button--danger button--sm"
                       disabled={
                         user.id === session?.user.id ||
                         user.status !== 'DISABLED'
@@ -327,7 +345,7 @@ export function UsersPage() {
                           ? 'Disable the account first'
                           : undefined
                       }
-                      onClick={() => void deleteUser(user)}
+                      onClick={() => setConfirm({ kind: 'delete', user })}
                     >
                       Delete
                     </button>
@@ -373,10 +391,18 @@ export function UsersPage() {
               </select>
             </label>
             <div className="form-actions">
-              <button type="submit" disabled={busy === 'edit'}>
+              <button
+                type="submit"
+                className="button button--primary"
+                disabled={busy === 'edit'}
+              >
                 Save changes
               </button>
-              <button type="button" onClick={() => setEditingId(null)}>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => setEditingId(null)}
+              >
                 Cancel
               </button>
             </div>
@@ -433,7 +459,11 @@ export function UsersPage() {
             />
           </label>
           <div className="form-actions">
-            <button type="submit" disabled={busy === 'create'}>
+            <button
+              type="submit"
+              className="button button--primary"
+              disabled={busy === 'create'}
+            >
               Create user
             </button>
           </div>
@@ -478,15 +508,46 @@ export function UsersPage() {
             </select>
           </label>
           <div className="form-actions">
-            <button type="submit" disabled={busy === 'invite'}>
+            <button
+              type="submit"
+              className="button button--primary"
+              disabled={busy === 'invite'}
+            >
               Send invite
             </button>
           </div>
         </form>
+        {inviteLink ? (
+          <div className="notice notice--warning" role="status">
+            Invite link (share manually — email is not configured):{' '}
+            <code className="break">{inviteLink}</code>{' '}
+            <button
+              type="button"
+              className="button button--sm"
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(inviteLink)
+                  .then(() => setInviteLinkCopied(true))
+                  .catch(() => undefined);
+              }}
+            >
+              {inviteLinkCopied ? 'Copied' : 'Copy link'}
+            </button>{' '}
+            <button
+              type="button"
+              className="button button--ghost button--sm"
+              onClick={() => setInviteLink(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
 
-        {invites.length > 0 ? (
+        <h3>Pending invites</h3>
+        {invites.length === 0 ? (
+          <p className="muted-note">No pending invites.</p>
+        ) : (
           <>
-            <h3>Pending invites</h3>
             <table className="data-table">
               <thead>
                 <tr>
@@ -507,7 +568,8 @@ export function UsersPage() {
                     <td className="row-actions">
                       <button
                         type="button"
-                        onClick={() => void revokeInvite(invite)}
+                        className="button button--danger button--sm"
+                        onClick={() => setConfirm({ kind: 'revoke', invite })}
                       >
                         Revoke
                       </button>
@@ -517,7 +579,7 @@ export function UsersPage() {
               </tbody>
             </table>
           </>
-        ) : null}
+        )}
       </section>
 
       <section className="panel">
@@ -555,6 +617,68 @@ export function UsersPage() {
           </table>
         )}
       </section>
+
+      {confirm ? (
+        <ConfirmDialog
+          open
+          title={
+            confirm.kind === 'reset'
+              ? `Reset password for ${confirm.user.email}?`
+              : confirm.kind === 'delete'
+                ? `Delete ${confirm.user.email}?`
+                : confirm.kind === 'status'
+                  ? confirm.user.status === 'DISABLED'
+                    ? `Enable ${confirm.user.email}?`
+                    : `Disable ${confirm.user.email}?`
+                  : `Revoke the invite for ${confirm.invite.email}?`
+          }
+          body={
+            confirm.kind === 'reset'
+              ? 'All of their sessions will be signed out. A temporary password is shown once — share it out of band.'
+              : confirm.kind === 'delete'
+                ? 'This cannot be undone. Their audit history is kept, with the actor cleared.'
+                : confirm.kind === 'status'
+                  ? confirm.user.status === 'DISABLED'
+                    ? 'The account can sign in again.'
+                    : 'The account is signed out and can no longer sign in until re-enabled.'
+                  : 'The invite link stops working immediately.'
+          }
+          confirmLabel={
+            confirm.kind === 'reset'
+              ? 'Reset password'
+              : confirm.kind === 'delete'
+                ? 'Delete user'
+                : confirm.kind === 'status'
+                  ? confirm.user.status === 'DISABLED'
+                    ? 'Enable account'
+                    : 'Disable account'
+                  : 'Revoke invite'
+          }
+          danger={
+            confirm.kind === 'delete' ||
+            (confirm.kind === 'status' &&
+              confirm.user.status !== 'DISABLED')
+          }
+          busy={
+            confirm.kind === 'revoke'
+              ? busy === `revoke-${confirm.invite.id}`
+              : confirm.kind === 'reset'
+                ? busy === `reset-${confirm.user.id}`
+                : confirm.kind === 'delete'
+                  ? busy === `delete-${confirm.user.id}`
+                  : busy === `status-${confirm.user.id}`
+          }
+          onConfirm={async () => {
+            const current = confirm;
+            setConfirm(null);
+            if (current.kind === 'reset') await resetPassword(current.user);
+            else if (current.kind === 'delete') await deleteUser(current.user);
+            else if (current.kind === 'status') await toggleStatus(current.user);
+            else await revokeInvite(current.invite);
+          }}
+          onClose={() => setConfirm(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
@@ -37,6 +38,8 @@ function hashToken(token: string): string {
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly audit: AuditService,
@@ -298,6 +301,7 @@ export class UsersService {
 
     const acceptUrl = `${this.adminBaseUrl()}/accept-invite?token=${token}`;
     let delivered = false;
+    let deliveryError: string | null = null;
     try {
       ({ delivered } = await this.mail.sendInvite({
         to: email,
@@ -306,11 +310,17 @@ export class UsersService {
         acceptUrl,
       }));
     } catch (err) {
-      // A failed send leaves no orphan invite behind.
-      await this.prisma.platformUserInvite.delete({
-        where: { id: invite.id },
-      });
-      throw err;
+      // A failed send must NOT delete the invite (F5): with SMTP
+      // unconfigured the old code deleted the row and threw, so the
+      // operator saw only a red banner, the invitee got nothing, and no
+      // pending invite existed to resend or revoke. The invite is kept and
+      // the accept URL is returned so the operator can share the link
+      // manually until SMTP is configured.
+      delivered = false;
+      deliveryError = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Invite email for ${email} failed (${deliveryError}); invite kept, accept link returned to the operator`,
+      );
     }
 
     await this.audit.record({
@@ -318,7 +328,13 @@ export class UsersService {
       action: 'users.invite',
       entity: 'PlatformUserInvite',
       entityId: invite.id,
-      after: { email, name: invite.name, role: invite.role, delivered },
+      after: {
+        email,
+        name: invite.name,
+        role: invite.role,
+        delivered,
+        deliveryError,
+      },
     });
     return {
       id: invite.id,
@@ -327,6 +343,8 @@ export class UsersService {
       role: invite.role,
       expiresAt: invite.expiresAt,
       delivered,
+      // Only when undelivered: the operator shares this link manually.
+      ...(delivered ? {} : { acceptUrl, deliveryError }),
     };
   }
 

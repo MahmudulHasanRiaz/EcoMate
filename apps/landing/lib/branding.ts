@@ -2,8 +2,8 @@
  * Landing branding + returning-owner sign-in.
  *
  * The platform branding settings (platform name, logoUrl) live in the
- * control plane and have no public endpoint yet, so the landing reads
- * them from environment until a public branding endpoint exists:
+ * control plane; a public endpoint exists (GET /public/branding) but
+ * the landing still reads them from environment:
  *
  *   NEXT_PUBLIC_PLATFORM_NAME  — brand name (default "EcoMate")
  *   NEXT_PUBLIC_LOGO_URL       — logo image URL (default: text brand mark)

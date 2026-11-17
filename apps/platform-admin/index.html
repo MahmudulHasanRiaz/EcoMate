@@ -5,6 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow" />
     <title>EcoMate SaaS</title>
+    <script>
+      // Apply the saved theme BEFORE React mounts so the first paint is
+      // already the right theme (Neon is dark-first). Keep in sync with
+      // src/lib/theme.ts (THEME_STORAGE_KEY, DEFAULT_THEME_CHOICE).
+      (function () {
+        try {
+          var stored = window.localStorage.getItem('ecomate.platform.theme');
+          var choice = stored === 'system' || stored === 'dark' || stored === 'light' ? stored : 'dark';
+          var theme = choice;
+          if (choice === 'system') {
+            theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          }
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

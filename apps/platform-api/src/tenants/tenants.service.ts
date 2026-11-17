@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import { addInterval, wholeDaysBetween } from '../billing/billing-dates';
 import { InvoiceService } from '../billing/invoice.service';
 import { AuditService } from '../common/audit.service';
@@ -15,6 +16,7 @@ import {
   RESERVED_SLUGS,
 } from '../config/domain-config.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { ProvisioningService } from '../provisioning/provisioning.service';
 import {
   DEFAULT_TRIAL_DAYS,
   SettingsService,
@@ -36,6 +38,8 @@ export class TenantsService {
     private readonly invoices: InvoiceService,
     private readonly mail: PlatformMailService,
     private readonly refresh: TenantRefreshService,
+    // ProvisioningModule is @Global(), so no module wiring is needed.
+    private readonly provisioning: ProvisioningService,
   ) {}
 
   async list(query: {
@@ -92,6 +96,9 @@ export class TenantsService {
         planVersion: true,
         subscription: { include: { planVersion: true } },
         invoices: { orderBy: { createdAt: 'desc' }, take: 20 },
+        // The latest provisioning job drives the console's provisioning
+        // status banner + retry button (F1).
+        provisioningJobs: { orderBy: { createdAt: 'desc' }, take: 1 },
         _count: { select: { invoices: true, payments: true } },
       },
     });
@@ -127,7 +134,17 @@ export class TenantsService {
     }
     const trialDays = dto.trialDays ?? planVersion?.trialDays ?? defaultTrialDays;
     const trialEndsAt = new Date(now.getTime() + trialDays * 86_400_000);
-    const status = planVersion ? 'TRIAL' : 'PENDING_VERIFICATION';
+    // With an owner password the tenant is provisioned immediately (below):
+    // it starts PROVISIONING and the provisioning run flips it to TRIAL on
+    // success — or leaves it PROVISIONING with a FAILED job on failure, so
+    // the operator can retry. Without a password the old behaviour stands
+    // (TRIAL/PENDING_VERIFICATION, unprovisioned).
+    const shouldProvision = !!dto.ownerPassword;
+    const status = shouldProvision
+      ? 'PROVISIONING'
+      : planVersion
+        ? 'TRIAL'
+        : 'PENDING_VERIFICATION';
 
     const tenant = await this.prisma.tenant.create({
       data: {
@@ -184,7 +201,84 @@ export class TenantsService {
       after: { slug, name: tenant.name, status: tenant.status },
     });
 
-    return tenant;
+    if (!shouldProvision) return tenant;
+
+    // Provision through the SAME path as a verified public signup: create a
+    // synthetic VERIFIED signup request (the operator has already verified
+    // the owner by creating the tenant) and run the provisioning job
+    // synchronously so the operator gets the definitive outcome. The job's
+    // ensureTenant reuses this tenant (same slug + owner email), and run()
+    // flips the tenant to TRIAL + the primary domain to ACTIVE on success.
+    // The welcome email is best-effort inside run() — provisioning still
+    // succeeds when SMTP is unconfigured.
+    const passwordHash = await bcrypt.hash(dto.ownerPassword as string, 12);
+    const signup = await this.prisma.signupRequest.create({
+      data: {
+        tenantName: tenant.name,
+        slug,
+        ownerEmail: tenant.ownerEmail,
+        ownerPhone: tenant.ownerPhone ?? null,
+        passwordHash,
+        status: 'VERIFIED',
+        verifiedAt: now,
+      },
+    });
+    const job = await this.provisioning.startForSignup(signup.id);
+    await this.audit.record({
+      actorId,
+      tenantId: tenant.id,
+      action: 'tenant.provisioning',
+      entity: 'Tenant',
+      entityId: tenant.id,
+      after: job
+        ? {
+            jobId: job.id,
+            status: job.status,
+            step: job.step,
+            error: job.error ?? null,
+          }
+        : { status: 'NOT_STARTED' },
+    });
+
+    // Re-fetch so the caller sees the post-run status (TRIAL on success,
+    // PROVISIONING with the FAILED job on failure) instead of the
+    // pre-provisioning snapshot.
+    return this.detail(tenant.id);
+  }
+
+  /**
+   * Retry the tenant's latest provisioning job (F1). Only FAILED/PENDING
+   * jobs re-run — a SUCCEEDED job is returned as-is, and a tenant with no
+   * job (created without a password) gets a clear 400 instead of a silent
+   * no-op.
+   */
+  async retryProvisioning(id: string, actorId?: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const job = await this.prisma.provisioningJob.findFirst({
+      where: { tenantId: id },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!job) {
+      throw new BadRequestException(
+        'This tenant has no provisioning job to retry',
+      );
+    }
+    if (job.status === 'SUCCEEDED') return job;
+    const retried = await this.provisioning.retry(job.id);
+    await this.audit.record({
+      actorId,
+      tenantId: id,
+      action: 'tenant.provisioning.retry',
+      entity: 'Tenant',
+      entityId: id,
+      after: {
+        jobId: job.id,
+        status: retried?.status ?? null,
+        step: retried?.step ?? null,
+      },
+    });
+    return retried;
   }
 
   /**

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDate, formatDateTime, formatMoney } from '../lib/format';
@@ -10,12 +11,14 @@ import type {
   JobsStatus,
   Page,
   Payment,
+  PaymentMethod,
   PaymentProof,
   Plan,
   Subscription,
   Tenant,
 } from '../types';
 import {
+  ConfirmDialog,
   ErrorNote,
   Loading,
   PageHeader,
@@ -29,6 +32,7 @@ type Tab =
   | 'subscriptions'
   | 'credits'
   | 'coupons'
+  | 'methods'
   | 'jobs';
 const PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
 const INVOICE_STATUSES = [
@@ -54,6 +58,9 @@ export function BillingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tenants, setTenants] = useState<Page<Tenant> | null>(null);
   const [jobs, setJobs] = useState<JobsStatus | null>(null);
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [confirmApprove, setConfirmApprove] = useState<PaymentProof | null>(null);
+  const [confirmCoupon, setConfirmCoupon] = useState<Coupon | null>(null);
   const [invoiceTenantId, setInvoiceTenantId] = useState('');
   const [invoiceDescription, setInvoiceDescription] = useState('');
   const [invoiceAmount, setInvoiceAmount] = useState('');
@@ -84,7 +91,7 @@ export function BillingPage() {
     setBusy('load');
     setError(null);
     try {
-      const [nextSummary, nextProofs, nextInvoices, nextPayments, nextSubscriptions, nextCredits, nextCoupons, nextPlans, nextTenants, nextJobs] =
+      const [nextSummary, nextProofs, nextInvoices, nextPayments, nextSubscriptions, nextCredits, nextCoupons, nextPlans, nextTenants, nextJobs, nextMethods] =
         await Promise.all([
           api('/billing/summary').then((r) => readJson<BillingSummary>(r)),
           api(`/billing/proofs?status=${proofStatus}&limit=50`).then((r) =>
@@ -108,6 +115,7 @@ export function BillingPage() {
           api('/plans').then((r) => readJson<Plan[]>(r)),
           api('/tenants?limit=100').then((r) => readJson<Page<Tenant>>(r)),
           api('/jobs').then((r) => readJson<JobsStatus>(r)),
+          api('/billing/methods').then((r) => readJson<PaymentMethod[]>(r)),
         ]);
       setSummary(nextSummary);
       setProofs(nextProofs);
@@ -119,6 +127,7 @@ export function BillingPage() {
       setPlans(nextPlans);
       setTenants(nextTenants);
       setJobs(nextJobs);
+      setMethods(nextMethods);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -131,13 +140,6 @@ export function BillingPage() {
   }, [load, refresh]);
 
   async function approveProof(proof: PaymentProof) {
-    if (
-      !window.confirm(
-        `Approve ${formatMoney(proof.amount, proof.invoice?.currency)} for ${proof.tenant?.name}? This records a payment.`,
-      )
-    ) {
-      return;
-    }
     setBusy(`approve:${proof.id}`);
     setError(null);
     try {
@@ -535,6 +537,17 @@ export function BillingPage() {
         <button
           type="button"
           role="tab"
+          aria-selected={tab === 'methods'}
+          className="tab"
+          data-active={tab === 'methods'}
+          onClick={() => setTab('methods')}
+        >
+          Payment methods
+          <span>{methods.length}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === 'jobs'}
           className="tab"
           data-active={tab === 'jobs'}
@@ -695,7 +708,7 @@ export function BillingPage() {
               <button
                 type="button"
                 className="button button--primary"
-                onClick={() => approveProof(selectedProof)}
+                onClick={() => setConfirmApprove(selectedProof)}
                 disabled={!!busy}
               >
                 {busy === `approve:${selectedProof.id}`
@@ -759,9 +772,16 @@ export function BillingPage() {
                 </p>
               </div>
             </div>
-            <div className="form-row">
-              <label className="inline-field">
-                <span>Tenant</span>
+            {(tenants?.data ?? []).length === 0 ? (
+              <p className="muted-note">
+                No tenants exist yet.{' '}
+                <Link to="/tenants/new">Create a tenant first</Link> — an
+                invoice needs a tenant to bill.
+              </p>
+            ) : (
+              <div className="form-row">
+                <label className="inline-field">
+                  <span>Tenant</span>
                 <select
                   value={invoiceTenantId}
                   onChange={(event) => setInvoiceTenantId(event.target.value)}
@@ -811,9 +831,10 @@ export function BillingPage() {
                 onClick={() => void createInvoice()}
                 disabled={!!busy}
               >
-                {busy === 'create-invoice' ? 'Creating…' : 'Create invoice'}
-              </button>
-            </div>
+                  {busy === 'create-invoice' ? 'Creating…' : 'Create invoice'}
+                </button>
+              </div>
+            )}
           </section>
           <section className="card">
             <div className="card-head">
@@ -1437,7 +1458,7 @@ export function BillingPage() {
                           <button
                             type="button"
                             className="button button--ghost"
-                            onClick={() => toggleCoupon(coupon)}
+                            onClick={() => setConfirmCoupon(coupon)}
                             disabled={!!busy}
                           >
                             {busy === `coupon:${coupon.id}`
@@ -1530,6 +1551,100 @@ export function BillingPage() {
             )}
           </section>
         </>
+      ) : null}
+
+      {tab === 'methods' ? (
+        <section className="card">
+          <div className="card-head">
+            <div>
+              <h2>Payment methods</h2>
+              <p>
+                The manual payment methods tenants see when they pay an
+                invoice. Methods are managed in Settings.
+              </p>
+            </div>
+            <Link to="/settings" className="button">
+              Manage in Settings
+            </Link>
+          </div>
+          {methods.length === 0 ? (
+            <p className="muted-note">
+              No payment methods configured yet. Add one in Settings so
+              tenants can pay manually.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Account</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {methods.map((method) => (
+                    <tr key={method.id}>
+                      <td>{method.name}</td>
+                      <td>{method.type}</td>
+                      <td>
+                        {method.accountNumber || '—'}
+                        {method.accountName ? (
+                          <span className="sub">{method.accountName}</span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <span
+                          className={`badge ${method.isActive ? 'badge--success' : 'badge--muted'}`}
+                        >
+                          {method.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {confirmApprove ? (
+        <ConfirmDialog
+          open
+          title="Approve payment proof"
+          body={`Approve ${formatMoney(confirmApprove.amount, confirmApprove.invoice?.currency)} for ${confirmApprove.tenant?.name}? This records a payment against invoice ${confirmApprove.invoice?.number}.`}
+          confirmLabel="Approve and record payment"
+          busy={busy === `approve:${confirmApprove.id}`}
+          onConfirm={async () => {
+            const proof = confirmApprove;
+            setConfirmApprove(null);
+            await approveProof(proof);
+          }}
+          onClose={() => setConfirmApprove(null)}
+        />
+      ) : null}
+
+      {confirmCoupon ? (
+        <ConfirmDialog
+          open
+          title={confirmCoupon.isActive ? 'Disable coupon' : 'Enable coupon'}
+          body={
+            confirmCoupon.isActive
+              ? `Disable coupon ${confirmCoupon.code}? Tenants will no longer be able to redeem it.`
+              : `Enable coupon ${confirmCoupon.code}? Tenants will be able to redeem it again.`
+          }
+          confirmLabel={confirmCoupon.isActive ? 'Disable coupon' : 'Enable coupon'}
+          danger={confirmCoupon.isActive}
+          busy={busy === `coupon:${confirmCoupon.id}`}
+          onConfirm={async () => {
+            const coupon = confirmCoupon;
+            setConfirmCoupon(null);
+            await toggleCoupon(coupon);
+          }}
+          onClose={() => setConfirmCoupon(null)}
+        />
       ) : null}
     </>
   );

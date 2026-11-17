@@ -43,13 +43,28 @@ export interface PlanVersion {
   price: string | number;
   currency: string;
   interval: string;
+  intervalDays?: number | null;
+  effectiveFrom?: string;
   trialDays: number;
+  graceDays?: number | null;
   features: string[];
   limits: Record<string, unknown>;
   archivedAt?: string | null;
   /** The signup default: new signups provision onto this version. */
   isDefault?: boolean;
   plan?: { id: string; name: string; slug: string };
+}
+
+/** Latest provisioning job (from tenant detail) — drives the console's provisioning banner + retry. */
+export interface ProvisioningJob {
+  id: string;
+  tenantId: string;
+  status: 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+  step: string;
+  error?: string | null;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Tenant {
@@ -66,6 +81,8 @@ export interface Tenant {
   domains?: TenantDomain[];
   planVersion?: PlanVersion | null;
   subscription?: Subscription | null;
+  invoices?: Invoice[];
+  provisioningJobs?: ProvisioningJob[];
   _count?: { invoices?: number; payments?: number };
 }
 
@@ -471,6 +488,7 @@ export interface BrandingSettings {
   platformName: string;
   supportEmail: string;
   logoUrl: string;
+  faviconUrl: string;
 }
 
 export interface MaintenanceSettings {

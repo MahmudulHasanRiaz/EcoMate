@@ -412,3 +412,215 @@ started. Do not start them without Boss.
 - **Build Images run #3** (commit 8e404ee, 18m 4s): all 8 images built and pushed to GHCR; unit tests fully passed; guards + RLS gates + caddy validate passed. Only the OSV security scan failed — one real Medium finding: Next.js 16.4.1, GHSA-mfr8-8qww-v76h (CVSS 6.3), fixed in 16.4.5. Fixed by bumping `next` 16.4.1 → 16.4.5 in storefront + landing (+ lockfile).
 - **JS obfuscation removed** (Boss decision, 2026-11-17): it was a single-tenant measure (code shipped to clients' servers). In the SaaS model the code never leaves our servers, so obfuscation only slowed the backend build and mangled stack traces. Removed the `obfuscator` stage from `apps/backend/Dockerfile` (backend is 2-stage again), deleted `apps/backend/obfuscator.config.json`, updated the platform-api D15 comment + README. Frontend minification (Next/Vite defaults) is unchanged.
 - **No unnecessary rebuilds** (Boss, 2026-11-17): GHA layer caching (`cache-from`/`cache-to`, `mode=max`, per-service scope) was already wired in `build-service-image.yml` — run #3 was the first run where all 8 builds actually ran, so it populated the cache from scratch. From run #4 on, images whose inputs did not change rebuild from cache in seconds. The stale "per-service path filtering" comment in `build-service-image.yml` was corrected (ci.yml is dispatch-only with per-service toggles; there is no path filtering).
+
+## Staging fix round (2026-11-17)
+
+Staging deployed 2026-11-17 (stack `ecomate-staging`, temp VPS, expires
+19 Nov 2026) and swept hands-on for 24 minutes: 17 functional (F1–F17),
+11 design (D1–D11) and 5 responsive (R1–R5) problems, plus MFA QR (#1),
+native dialogs (#2) and Bitwarden interference (#3). Full sweep log:
+`~/workspace/ecomate-review/staging-sweep-notes.md` (workspace only).
+This round fixes all of them in one commit; staging redeploy + live
+re-verification follow separately.
+
+### Console redesign — StackMate Neon, blue accent
+
+Boss direction: the SaaS admin console must look like StackMate's Neon UI
+(`feat/stackmate-full-implementation`), with Neon's green #00E599 replaced
+by EcoMate's brand blue #4f6bf2 (success stays green #10b981). New token
+system `apps/platform-admin/src/styles/tokens.css` (`--em-*`, dark default
+page #000 / surface #101010, light alternate), theme toggle (dark/light/
+system, localStorage `ecomate.platform.theme`, applied before React
+mounts), primary button solid white/black per Neon (never blue fill), max
+4px radius, Inter Variable. The rewrite also defines the CSS classes the
+pages already used but that never existed (`panel`, `inline-form`,
+`data-table`, `row-actions`, `detail-list`, `form-actions`, `pagination`,
+`clickable-row`, `notice--warning`) — their absence was the root cause of
+the broken Users/Account/Audit form layouts (D3/D4/D5). New shared
+primitives in `components/ui.tsx`: toast system, ConfirmDialog, Modal.
+Mobile: real drawer + hamburger under 900px (R2); tabs scroll instead of
+wrapping (D6/R5); tables get sticky headers + nowrap dates/UUIDs (D8).
+
+### Functional fixes (root causes verified in code first)
+
+- **F1 tenant create (blocking).** New `/tenants/new` page (name, slug
+  auto-derived, owner email/phone/password, plan, trial-days override).
+  The API gap went beyond the missing UI: `POST /tenants` created the
+  tenant but never provisioned it. `CreateTenantDto` gained optional
+  `ownerPassword` (min 8); when provided, the service creates a VERIFIED
+  synthetic signup request (bcrypt, 12 rounds — same as signup) and
+  awaits `provisioning.startForSignup`, sets status PROVISIONING first
+  (run flips to TRIAL on success, stays PROVISIONING + FAILED job on
+  failure), and audits `tenant.provisioning`. New
+  `POST /tenants/:id/provisioning/retry` (SUPERADMIN/BILLING/SUPPORT)
+  + retry button on the tenant detail provisioning banner.
+- **F2 plan management.** Plans page rewritten: create plan (+ first
+  version), edit plan, new version, archive — all in-app modals with
+  shared version fields (price/currency/interval/CUSTOM days/trial/
+  grace/features/limits JSON validated as numbers). Preview-apply and
+  set-default kept.
+- **F3 payment methods in Billing.** New 8th Billing tab listing the
+  methods (fetched from `/billing/methods`) with a "Manage in Settings"
+  link — discoverable without duplicating CRUD.
+- **F4 invoice creation.** Resolves with F1; the invoice form also shows
+  "Create a tenant first" + link when no tenants exist.
+- **F5 invite feedback (blocking).** Root cause: `UsersService.invite()`
+  deleted the invite and threw when mail failed (no SMTP in production),
+  so the console's `{delivered: false}` handling and pending-invites list
+  were unreachable. The invite is now kept on mail failure, the attempt
+  is audited with `delivered: false` + error, and the API returns
+  `{delivered, acceptUrl, deliveryError}` so the operator can share the
+  link. Console shows the link in a warning notice with Copy; the
+  pending-invites section is always visible with an explicit empty state.
+- **F6 audit gaps.** Jobs controller now audits operator-triggered runs
+  (`jobs.run`, `jobs.run-all`, `jobs.tls-health.run` with counts/errors)
+  — scheduled ticks are deliberately NOT audited (5 jobs x 24/day would
+  flood the log). Invite attempts are covered by the F5 fix.
+- **F7 test email disabled.** The button was `disabled` while SMTP was
+  unconfigured — exactly when it is needed. Now enabled whenever an
+  address is entered; the API surfaces its clear "not configured" error
+  in-app, with a hint under the button.
+- **F8 Bitwarden autofill hazard.** SMTP username/password had no
+  `autocomplete`/`name`, so Bitwarden treated them as a login form and
+  offered the superadmin's Gmail creds. Now `autoComplete="off"` /
+  `"new-password"` + smtp-scoped names, and save refuses when the entered
+  username equals the session user's email while no SMTP user was ever
+  saved (with an in-app explanation).
+- **F9 flaky trial-defaults save.** Root cause: after a token refresh the
+  console retried with the STALE access token (`sessionRef` only updated
+  during render), so the first save after expiry 401'd with "Invalid
+  platform session" and the retry succeeded. Refresh now updates the ref
+  synchronously (single `storeSession` path) and concurrent 401s share
+  one in-flight refresh.
+- **F10/F11 branding takes effect.** Branding (platform name, logo URL,
+  NEW favicon URL) now drives the console: sidebar brand, tab title, and
+  favicon via a `BrandingProvider` reading the new public endpoint
+  `GET /public/branding` (no auth — branding is public info; registered
+  in the authorization-coverage allowlist). Logo/favicon upload: file
+  input -> FileReader data URL (200KB/100KB caps) stored in the branding
+  JSON — no new storage infra. The DTO accepts http(s) URLs or
+  `data:image/*;base64` (validated pattern + 300k length cap).
+  Sidebar/login show the configured logo or a platform-initial
+  lettermark, never the bare blue square (D2).
+- **F12 search sync.** Clearing the search box now clears the applied
+  filter; an applied-filter chip with x-clear shows the active filter
+  (tenants + domains).
+- **F13 confirmations.** In-app confirms added where actions executed on
+  one click: coupon disable/enable, payment-method deactivate, tenant
+  suspend/reactivate, cancel subscription, change plan (financial),
+  user disable/enable, revoke invite, maintenance-ENABLE. Left without
+  confirm deliberately: reset-owner-password (sends a code), job runs
+  (idempotent), domain config save (reversible), reject-proof/credit-note
+  (already require a reason form), apply-version (has a preview step).
+- **F14 two dashboard layouts — NOT a code bug.** The strings of the
+  first layout ("Monthly revenue", "Tenant growth", …) do not exist
+  anywhere in `apps/platform-admin/src`; the only dashboard is
+  `overview.tsx` (the second layout the sweep saw). No code fix;
+  documented here.
+- **F15 stale "Loading…".** Loading indicators rendered ALONGSIDE content
+  (overview, account, domains) and tenant-detail usage showed
+  "Loading usage…" forever on fetch failure. All loading states are now
+  exclusive; usage failure shows an error + "Try again".
+- **F16/F17 missing spaces.** JSX whitespace class: captions split across
+  expressions/newlines lost their spaces ("0paying subscriptions",
+  "BDT0· none overdue"). All converted to single template literals
+  (metrics, landing footer "©2026EcoMate" -> "© 2026 EcoMate").
+  "0 newest loaded here" was meaningless microcopy (D10), reworded to
+  "Across all statuses".
+- **D9 metrics chart.** The six-month trend bars ARE real data — they
+  only look like placeholders when every value is 0. Now an honest empty
+  state ("No collections in the last 6 months") when all zero, real chart
+  otherwise. D10 casing: labels are sentence-case now (the Neon system
+  drops the CSS uppercase transform).
+
+### #1 MFA QR
+
+`otpauthUrl` was returned by the API and present in the frontend types
+but never rendered — no QR dependency existed. `react-qr-code@2.2.0`
+(chosen over qrcode-generator 2.0.4 and qrcode 1.5.4: purpose-built React
+SVG component, most recently maintained 2026-06-09, same qrcode-generator
+engine StackMate uses; Boss allows better-than-StackMate choices).
+Shared `QrCode` component (180px SVG, white card like StackMate's
+`.sm-qr`) renders in both login setup and account setup, manual key +
+copy kept as fallback. Live-verified locally (headless Chrome against the
+dev console + local API): the QR renders on the setup screen and a TOTP
+code computed from the displayed secret completes enrollment.
+**Bug found by that verification (pre-existing, fixed here):** after
+mid-login MFA enrollment, `verifyMfaSetup` stores the session, so the
+login page's `if (session) return <Navigate to="/" />` guard fired
+before the recovery-codes step could render — the user never saw their
+10 recovery codes (they existed; the account page counted them). Fixed
+with `if (session && step !== 'recovery')`; verified live: enrollment
+now shows the codes and "Continue to the console" reaches the dashboard.
+
+### #2 Native dialogs — all 15 sites replaced
+
+- Console (7x `window.confirm`): billing approve-proof, domains remove,
+  tenant-detail impersonate/delete, settings delete-method, users
+  reset-password/delete-user -> in-app ConfirmDialog; console previously
+  had NO toast/modal system at all.
+- Tenant admin (7 sites): campaigns send-now (Dialog, file's own
+  delete-dialog pattern), payslip approve, categories delete x2,
+  product delete (shared ConfirmDialog), rich-text-editor image/link
+  prompts x2 (Dialog-based URL prompt with input).
+- Storefront (1 site): account address delete -> in-app modal following
+  the SizeChartModal pattern.
+- Grep gates (CI workflows cannot be pushed by the GitHub App, so the
+  gates are tests): `no-native-dialogs.test.ts` in platform-admin
+  (node:fs walk), admin (`import.meta.glob` + `?raw` — browser-mode
+  suite has no node:fs, same pattern as the existing `?raw` guards),
+  storefront (node:fs walk). Each gate strips comments/strings and was
+  negative-tested with a probe file. No `window.alert` existed anywhere.
+
+### #3 Bitwarden interference — evidence, not a guess
+
+Live headers checked: the console host serves NO CSP/security headers
+(helmet's strict CSP is only on the API host, not the page Bitwarden
+injects into); no platform-admin code touches `document.body` (except the
+standard transient download link in audit export) or wipes the DOM;
+index.html has no CSP meta. The known trigger surface — the SMTP form's
+unattributed password fields — is removed by the F8 fix. Root cause is
+NOT conclusively provable without reproducing with the extension; verify
+on staging with Boss's Bitwarden after deploy.
+
+### Responsive (R1–R5)
+
+R1 metrics overflow at 768px: min-width:0 chains + overflow guards in
+the redesign. R2 mobile drawer under 900px. R5 tabs/buttons fixed by
+scrollable tabs + nowrap buttons. 375px was untestable in the sweep
+browser (zoom capped ~225%) — verified locally instead: headless Chrome
+(Chrome for Testing) against the dev console + local API, logging in as
+the seed superadmin with real TOTP enrollment: **all 21 page x viewport
+combinations (login, overview, tenants, billing, metrics, settings,
+plans x 375/768/1160px) show zero horizontal overflow**
+(`documentElement.scrollWidth == clientWidth`). Screenshots + report:
+`~/workspace/ecomate-review/responsive-check/`. Visual checks confirm
+the Neon look, the mobile topbar + hamburger, single-column metric cards
+at 375px, scrollable (not wrapping) billing tabs at 1160px, and the MFA
+QR card.
+
+### Tests (this round)
+
+- platform-api jest: **514/514** (was 502; +12: tenants +5, jobs
+  controller +4, settings +1 service +1 public-branding, users +1 net),
+  `nest build` clean. The authorization-coverage spec caught the new
+  public controller (3 failures) and was updated per its own design
+  (allowlist entry + controller list).
+- platform-admin vitest: **26/26** (was 25; +1 no-native-dialogs gate),
+  `tsc --noEmit` clean.
+- tenant admin vitest: **1676/1676** (was 1675; +1 gate), `tsc --noEmit` clean.
+- storefront vitest: **711/711** (was 710; +1 gate), `tsc --noEmit` clean.
+- landing vitest: **36/36**, `tsc --noEmit` clean.
+- Live E2E on staging (tenant create -> provisioning -> subdomain + TLS
+  -> storefront/admin/POS) is NOT done in this commit — it needs the
+  redeploy; see Next. The 375px responsive check IS done locally (above);
+  re-confirm on staging after the redeploy.
+
+## Next
+
+- Redeploy staging (Portainer stack `ecomate-staging`) from the new
+  images after CI goes green, then re-run staging E2E end to end and
+  verify every fix live: tenant create + provisioning, MFA QR with a
+  fresh enrollment, Bitwarden behavior with Boss, 375px responsive.
+- Still blocked on Boss: SMTP + Turnstile keys (public signup test);
+  Deploy Client deletion call; SMTP billing rate/top-up decisions.

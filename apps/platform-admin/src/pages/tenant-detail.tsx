@@ -22,11 +22,20 @@ import type {
   UsageMetricRow,
 } from '../types';
 import {
+  ConfirmDialog,
   ErrorNote,
   Loading,
   PageHeader,
   StatusBadge,
 } from '../components/ui';
+
+type ConfirmKind =
+  | 'impersonate'
+  | 'delete'
+  | 'suspend'
+  | 'cancel'
+  | 'plan'
+  | null;
 
 interface PlanOption {
   version: PlanVersion;
@@ -58,8 +67,10 @@ export function TenantDetailPage() {
   const [refresh, setRefresh] = useState(0);
   const [usage, setUsage] = useState<TenantUsage | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
   const [usageBusy, setUsageBusy] = useState<string | null>(null);
   const [usageReload, setUsageReload] = useState(0);
+  const [confirm, setConfirm] = useState<ConfirmKind>(null);
   const [overrideInputs, setOverrideInputs] = useState<
     Record<string, string>
   >({});
@@ -120,6 +131,7 @@ export function TenantDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setUsageLoading(true);
     api(`/usage/tenants/${tenantId}?days=14`)
       .then((response) => readJson<TenantUsage>(response))
       .then((result) => {
@@ -137,6 +149,9 @@ export function TenantDetailPage() {
       })
       .catch((err) => {
         if (!cancelled) setUsageError(errorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setUsageLoading(false);
       });
     return () => {
       cancelled = true;
@@ -362,15 +377,21 @@ export function TenantDetailPage() {
     );
   }
 
+  async function retryProvisioning() {
+    await runAction(
+      'provision',
+      async () => {
+        const response = await api(`/tenants/${tenantId}/provisioning/retry`, {
+          method: 'POST',
+        });
+        await readJson<unknown>(response);
+      },
+      'Provisioning retried.',
+    );
+  }
+
   async function impersonateTenant() {
     if (!tenant) return;
-    if (
-      !window.confirm(
-        `Sign in to "${tenant.name}" as its owner for 15 minutes? This is audited.`,
-      )
-    ) {
-      return;
-    }
     setBusy('impersonate');
     setNotice(null);
     setImpersonationUrl(null);
@@ -420,13 +441,6 @@ export function TenantDetailPage() {
 
   async function deleteTenant() {
     if (!tenant) return;
-    if (
-      !window.confirm(
-        `Soft-delete "${tenant.name}"? Data stays recoverable for 30 days, then the purge job removes it.`,
-      )
-    ) {
-      return;
-    }
     await runAction(
       'delete',
       async () => {
@@ -446,6 +460,70 @@ export function TenantDetailPage() {
 
   const version = tenant.subscription?.planVersion ?? tenant.planVersion ?? null;
   const deleted = tenant.status === 'DELETED';
+  const provisioningJob = tenant.provisioningJobs?.[0];
+  const selectedPlan = plans.find(
+    (option) => option.version.id === planVersionId,
+  );
+
+  async function confirmAction() {
+    const kind = confirm;
+    setConfirm(null);
+    if (kind === 'impersonate') await impersonateTenant();
+    else if (kind === 'delete') await deleteTenant();
+    else if (kind === 'suspend') await toggleSuspension();
+    else if (kind === 'cancel') await cancelTenant();
+    else if (kind === 'plan') await changePlan();
+  }
+
+  const suspending = tenant.status !== 'SUSPENDED';
+  const confirmCopy: Record<
+    Exclude<ConfirmKind, null>,
+    { title: string; body: string; confirmLabel: string; danger: boolean }
+  > = {
+    impersonate: {
+      title: 'Impersonate tenant',
+      body: `Sign in to "${tenant.name}" as its owner for 15 minutes? This is audited.`,
+      confirmLabel: 'Impersonate',
+      danger: false,
+    },
+    delete: {
+      title: 'Soft-delete tenant',
+      body: `Soft-delete "${tenant.name}"? Data stays recoverable for 30 days, then the purge job removes it.`,
+      confirmLabel: 'Soft-delete',
+      danger: true,
+    },
+    suspend: suspending
+      ? {
+          title: 'Suspend tenant',
+          body: `Suspend "${tenant.name}"? The store stops immediately and the owner is emailed.`,
+          confirmLabel: 'Suspend',
+          danger: true,
+        }
+      : {
+          title: 'Reactivate tenant',
+          body: `Reactivate "${tenant.name}"? The store and its subscription resume.`,
+          confirmLabel: 'Reactivate',
+          danger: false,
+        },
+    cancel: {
+      title: 'Cancel subscription',
+      body: cancelAtPeriodEnd
+        ? 'The subscription cancels at the end of the current period; the tenant keeps access until then.'
+        : 'Cancels immediately — the tenant loses access now.',
+      confirmLabel: 'Cancel subscription',
+      danger: true,
+    },
+    plan: {
+      title: 'Change plan',
+      body: selectedPlan
+        ? planEffectiveAt === 'next_period'
+          ? `Switch "${tenant.name}" to ${selectedPlan.planName} v${selectedPlan.version.version} at the next billing period. Nothing changes until renewal.`
+          : `Switch "${tenant.name}" to ${selectedPlan.planName} v${selectedPlan.version.version} immediately. Unused paid days become credit and a new billing period starts.`
+        : 'Switch the plan for this tenant.',
+      confirmLabel: 'Change plan',
+      danger: false,
+    },
+  };
 
   return (
     <>
@@ -483,7 +561,7 @@ export function TenantDetailPage() {
                 <button
                   type="button"
                   className="button button--ghost"
-                  onClick={impersonateTenant}
+                  onClick={() => setConfirm('impersonate')}
                   disabled={!!busy}
                 >
                   {busy === 'impersonate' ? 'Issuing…' : 'Impersonate'}
@@ -491,7 +569,7 @@ export function TenantDetailPage() {
                 <button
                   type="button"
                   className="button button--ghost"
-                  onClick={toggleSuspension}
+                  onClick={() => setConfirm('suspend')}
                   disabled={!!busy}
                 >
                   {busy === 'status'
@@ -505,7 +583,7 @@ export function TenantDetailPage() {
             <button
               type="button"
               className="button button--danger"
-              onClick={deleteTenant}
+              onClick={() => setConfirm('delete')}
               disabled={!!busy || deleted}
             >
               {busy === 'delete' ? 'Deleting…' : 'Delete'}
@@ -528,6 +606,49 @@ export function TenantDetailPage() {
             </>
           ) : null}
         </div>
+      ) : null}
+
+      {provisioningJob && provisioningJob.status !== 'SUCCEEDED' ? (
+        <div
+          className={`provision-banner${provisioningJob.status === 'FAILED' ? ' provision-banner--failed' : ''}`}
+          role={provisioningJob.status === 'FAILED' ? 'alert' : 'status'}
+        >
+          <p>
+            {provisioningJob.status === 'FAILED'
+              ? `Provisioning failed at step "${provisioningJob.step}"${provisioningJob.error ? `: ${provisioningJob.error}` : ''} The store is not live yet — retry to resume.`
+              : `Provisioning is ${provisioningJob.status.toLowerCase()} (step: ${provisioningJob.step}). The store becomes live once it succeeds.`}
+          </p>
+          {provisioningJob.status === 'FAILED' ? (
+            <button
+              type="button"
+              className="button"
+              onClick={retryProvisioning}
+              disabled={!!busy}
+            >
+              {busy === 'provision' ? 'Retrying…' : 'Retry provisioning'}
+            </button>
+          ) : null}
+        </div>
+      ) : tenant.status === 'PROVISIONING' ? (
+        <div className="provision-banner" role="status">
+          <p>
+            This tenant is still provisioning. The store becomes live once
+            provisioning succeeds.
+          </p>
+        </div>
+      ) : null}
+
+      {confirm ? (
+        <ConfirmDialog
+          open
+          title={confirmCopy[confirm].title}
+          body={confirmCopy[confirm].body}
+          confirmLabel={confirmCopy[confirm].confirmLabel}
+          danger={confirmCopy[confirm].danger}
+          busy={!!busy}
+          onConfirm={confirmAction}
+          onClose={() => setConfirm(null)}
+        />
       ) : null}
 
       <section className="card">
@@ -575,7 +696,7 @@ export function TenantDetailPage() {
             <button
               type="button"
               className="button"
-              onClick={changePlan}
+              onClick={() => setConfirm('plan')}
               disabled={!!busy || !planVersionId}
             >
               {busy === 'plan' ? 'Changing…' : 'Change plan'}
@@ -602,7 +723,7 @@ export function TenantDetailPage() {
             <button
               type="button"
               className="button button--danger"
-              onClick={cancelTenant}
+              onClick={() => setConfirm('cancel')}
               disabled={
                 !!busy ||
                 !tenant?.subscription ||
@@ -663,7 +784,7 @@ export function TenantDetailPage() {
             <button
               type="button"
               className="button button--danger"
-              onClick={deleteTenant}
+              onClick={() => setConfirm('delete')}
               disabled={!!busy || deleted}
             >
               {busy === 'delete' ? 'Deleting…' : 'Soft-delete tenant'}
@@ -790,8 +911,19 @@ export function TenantDetailPage() {
             {usageNotice}
           </div>
         ) : null}
-        {!usage ? (
+        {usageLoading ? (
           <Loading label="Loading usage…" />
+        ) : !usage ? (
+          <p className="muted-note">
+            Usage is unavailable right now.{' '}
+            <button
+              type="button"
+              className="button button--ghost button--sm"
+              onClick={() => setUsageReload((value) => value + 1)}
+            >
+              Try again
+            </button>
+          </p>
         ) : (
           <div className="table-wrap">
             <table className="usage-detail-table">

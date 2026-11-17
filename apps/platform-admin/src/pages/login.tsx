@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from '@tanstack/react-router';
 import { useAuth, type MfaSetup } from '../auth';
+import { QrCode } from '../components/qr-code';
+import { useBranding } from '../lib/branding';
 import { errorMessage, ApiError } from '../lib/api';
 import { groupSecret } from '../lib/mfa';
 
@@ -14,6 +16,7 @@ type Step =
 export function LoginPage() {
   const { session, login, completeMfa, startMfaSetup, verifyMfaSetup } =
     useAuth();
+  const { platformName, logoUrl } = useBranding();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,7 +29,12 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (session) return <Navigate to="/" />;
+  // Mid-login MFA enrollment stores the session as soon as the setup code
+  // verifies — but the user must still see the recovery-codes step before
+  // leaving. Without the step check the redirect below fires first and the
+  // codes are never shown (they exist — the account page counts them — but
+  // the user never gets to save them).
+  if (session && step !== 'recovery') return <Navigate to="/" />;
 
   async function submitPassword(event: FormEvent) {
     event.preventDefault();
@@ -108,8 +116,18 @@ export function LoginPage() {
   return (
     <div className="login-page">
       <section className="login-brand">
-        <span className="brand-mark brand-mark--large" aria-hidden />
-        <p className="eyebrow">EcoMate</p>
+        {logoUrl ? (
+          <img
+            className="brand-logo-img brand-mark--large"
+            src={logoUrl}
+            alt={`${platformName} logo`}
+          />
+        ) : (
+          <span className="brand-mark brand-mark--large" aria-hidden>
+            {platformName.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <p className="eyebrow">{platformName}</p>
         <h1>Run the platform behind every store.</h1>
         <p>
           Tenants, plans, trials and domains — one operator console, separate
@@ -222,8 +240,13 @@ export function LoginPage() {
               signing in.
             </p>
             <p className="muted-note">
-              Enter this key manually in your authenticator app:
+              Scan the code with your authenticator app, or enter the key
+              manually:
             </p>
+            <QrCode
+              value={setup.otpauthUrl}
+              label="Scan this QR code with your authenticator app"
+            />
             <p className="mono">{groupSecret(setup.secret)}</p>
             <div className="button-row">
               <button
@@ -264,8 +287,8 @@ export function LoginPage() {
             <p className="eyebrow">Two-factor authentication</p>
             <h2>Confirm the setup</h2>
             <p className="muted-note">
-              Enter the 6-digit code your authenticator app shows for EcoMate
-              to prove the setup works.
+              Enter the 6-digit code your authenticator app shows for{' '}
+              {platformName} to prove the setup works.
             </p>
             <label className="field">
               <span>Code</span>

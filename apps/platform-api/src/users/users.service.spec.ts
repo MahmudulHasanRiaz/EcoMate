@@ -364,8 +364,8 @@ describe('UsersService', () => {
     );
   });
 
-  it('refuses to invite an existing user and cleans up after a failed send', async () => {
-    const { service, prisma, mail, admin } = makeService();
+  it('refuses to invite an existing user', async () => {
+    const { service, prisma, admin } = makeService();
     prisma.platformUser.findUnique.mockResolvedValue(admin);
 
     await expect(
@@ -374,18 +374,32 @@ describe('UsersService', () => {
         ADMIN_ID,
       ),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
 
+  it('keeps the invite and returns the accept link when the send fails', async () => {
+    const { service, prisma, mail, audit } = makeService();
     prisma.platformUser.findUnique.mockResolvedValue(null);
     mail.sendInvite.mockRejectedValue(new Error('SMTP down'));
-    await expect(
-      service.invite(
-        { email: 'new@ecomate.test', name: 'X', role: 'SUPPORT' } as any,
-        ADMIN_ID,
-      ),
-    ).rejects.toThrow('SMTP down');
-    expect(prisma.platformUserInvite.delete).toHaveBeenCalledWith({
-      where: { id: 'invite-1' },
-    });
+
+    const result = await service.invite(
+      { email: 'new@ecomate.test', name: 'X', role: 'SUPPORT' } as any,
+      ADMIN_ID,
+    );
+
+    // The invite is NOT deleted and the call does NOT throw (F5): the
+    // operator gets the link to share manually until SMTP is configured.
+    expect(prisma.platformUserInvite.delete).not.toHaveBeenCalled();
+    expect(result.delivered).toBe(false);
+    expect(result.acceptUrl).toMatch(
+      /^https:\/\/saas\.ecomate\.test\/accept-invite\?token=[a-f0-9]{64}$/,
+    );
+    expect(result.deliveryError).toBe('SMTP down');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'users.invite',
+        after: expect.objectContaining({ delivered: false }),
+      }),
+    );
   });
 
   it('accepts an invite, creates the user and marks the invite used', async () => {

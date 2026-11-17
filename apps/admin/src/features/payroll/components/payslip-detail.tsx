@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { formatDhakaDate } from '@/lib/dhaka-time'
 import { PAYSLIP_STATUS_BADGE } from './payslip-status-badge'
 import { usePayslipQuery, useSetPayslipStatusMutation } from '../hooks'
@@ -49,6 +51,7 @@ export function PayslipDetail({ payslipId }: { payslipId: string }) {
   const { data: payslip, isLoading } = usePayslipQuery(payslipId)
   const employeeId = payslip?.employeeId ?? ''
   const statusMut = useSetPayslipStatusMutation(employeeId)
+  const [approveOpen, setApproveOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -83,12 +86,12 @@ export function PayslipDetail({ payslipId }: { payslipId: string }) {
 
   function handleApprove() {
     if (!payslip) return
-    if (!window.confirm('Approve this payslip? Approved payslips become locked.'))
-      return
     statusMut.mutate({ id: payslip.id, status: 'approved' })
+    setApproveOpen(false)
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <div className='flex flex-wrap items-center justify-between gap-2'>
@@ -150,7 +153,7 @@ export function PayslipDetail({ payslipId }: { payslipId: string }) {
               <Button
                 size='sm'
                 disabled={statusMut.isPending}
-                onClick={handleApprove}
+                onClick={() => setApproveOpen(true)}
               >
                 {statusMut.isPending && statusMut.variables?.status === 'approved' && (
                   <Loader2 className='h-3.5 w-3.5 animate-spin mr-1' />
@@ -168,5 +171,15 @@ export function PayslipDetail({ payslipId }: { payslipId: string }) {
         )}
       </CardContent>
     </Card>
+    <ConfirmDialog
+      open={approveOpen}
+      onOpenChange={setApproveOpen}
+      title='Approve this payslip?'
+      desc='Approved payslips become locked and can no longer be edited. Payments can then be recorded against this payslip.'
+      confirmText='Approve'
+      handleConfirm={handleApprove}
+      isLoading={statusMut.isPending}
+    />
+    </>
   )
 }

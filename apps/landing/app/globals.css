@@ -71,7 +71,13 @@ input {
   height: 22px;
   border-radius: 7px;
   background: var(--brand);
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .nav-actions {

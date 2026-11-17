@@ -161,6 +161,15 @@ export class TenantsController {
     return this.tenants.create(dto, user?.id);
   }
 
+  @Post(':id/provisioning/retry')
+  @Roles('SUPERADMIN', 'BILLING', 'SUPPORT')
+  retryProvisioning(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.tenants.retryProvisioning(id, user?.id);
+  }
+
   @Patch(':id/status')
   @Roles('SUPERADMIN', 'BILLING', 'SUPPORT')
   updateStatus(

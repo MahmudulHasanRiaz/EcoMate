@@ -297,6 +297,29 @@ describe('SettingsService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('accepts data-URL logos/favicons and rejects non-image data URLs', async () => {
+    const { service } = buildService();
+    await service.onModuleInit();
+
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
+    const next = await service.updateBranding({
+      logoUrl: dataUrl,
+      faviconUrl: 'data:image/svg+xml;base64,PHN2Zz4=',
+    });
+    expect(next.logoUrl).toBe(dataUrl);
+    expect(next.faviconUrl).toBe('data:image/svg+xml;base64,PHN2Zz4=');
+    expect(service.getBranding().faviconUrl).toBe(
+      'data:image/svg+xml;base64,PHN2Zz4=',
+    );
+
+    await expect(
+      service.updateBranding({ logoUrl: 'data:text/html;base64,PHNjcmlwdD4=' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.updateBranding({ faviconUrl: 'javascript:alert(1)' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('persists maintenance toggles and applies them immediately', async () => {
     const { service } = buildService();
     await service.onModuleInit();

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth';
+import { QrCode } from '../components/qr-code';
 import { ErrorNote, Loading, PageHeader, StatusBadge } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDateTime } from '../lib/format';
@@ -186,7 +187,7 @@ export function AccountPage() {
 
       {notice ? <div className="notice notice--success">{notice}</div> : null}
       {error ? <ErrorNote message={error} /> : null}
-      {busy === 'load' ? <Loading label="Loading profile…" /> : null}
+      {busy === 'load' && !mfaStatus ? <Loading label="Loading profile…" /> : null}
 
       {user ? (
         <section className="panel">
@@ -225,7 +226,7 @@ export function AccountPage() {
             </p>
             {!mfaStatus.enabled && !mfaSetup ? (
               <div className="form-actions">
-                <button type="button" onClick={() => void startSetup()} disabled={busy === 'mfa-setup'}>
+                <button type="button" className="button button--primary" onClick={() => void startSetup()} disabled={busy === 'mfa-setup'}>
                   {busy === 'mfa-setup' ? 'Starting…' : 'Set up two-factor authentication'}
                 </button>
               </div>
@@ -233,9 +234,13 @@ export function AccountPage() {
             {!mfaStatus.enabled && mfaSetup ? (
               <>
                 <p className="muted-note">
-                  Add this key to your authenticator app, then enter a code to
-                  confirm:
+                  Scan the code with your authenticator app, or add the key
+                  manually, then enter a code to confirm:
                 </p>
+                <QrCode
+                  value={mfaSetup.otpauthUrl}
+                  label="Scan this QR code with your authenticator app"
+                />
                 <p className="mono">{groupSecret(mfaSetup.secret)}</p>
                 <div className="button-row">
                   <button
@@ -267,7 +272,7 @@ export function AccountPage() {
                     />
                   </label>
                   <div className="form-actions">
-                    <button type="submit" disabled={busy === 'mfa-verify'}>
+                    <button type="submit" className="button button--primary" disabled={busy === 'mfa-verify'}>
                       {busy === 'mfa-verify' ? 'Verifying…' : 'Verify and enable'}
                     </button>
                   </div>
@@ -290,7 +295,7 @@ export function AccountPage() {
                     />
                   </label>
                   <div className="form-actions">
-                    <button type="submit" disabled={busy === 'mfa-codes'}>
+                    <button type="submit" className="button" disabled={busy === 'mfa-codes'}>
                       {busy === 'mfa-codes'
                         ? 'Issuing…'
                         : 'Issue new recovery codes'}
@@ -306,7 +311,7 @@ export function AccountPage() {
                 ) : (
                   <form className="inline-form" onSubmit={disableMfa}>
                     <div className="form-actions">
-                      <button type="submit" disabled={busy === 'mfa-disable'}>
+                      <button type="submit" className="button button--danger" disabled={busy === 'mfa-disable'}>
                         {busy === 'mfa-disable'
                           ? 'Disabling…'
                           : 'Disable two-factor authentication'}
@@ -377,7 +382,7 @@ export function AccountPage() {
             />
           </label>
           <div className="form-actions">
-            <button type="submit" disabled={busy === 'password'}>
+            <button type="submit" className="button button--primary" disabled={busy === 'password'}>
               Change password
             </button>
           </div>
