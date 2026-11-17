@@ -5,8 +5,9 @@ name: Build Images
 #   runner:  self-hosted (default — warm caches, no Hub rate-limit risk) or
 #            github (ubuntu-latest, native amd64 = no emulation, but cold
 #            cache on first run and shared-IP Docker Hub limits can bite)
-#   all + backend/storefront/admin/pos: which images to build.
-# Deployment stays manual too (Deploy Client workflow pulls these images).
+#   all + backend/storefront/admin/pos/platform-api/platform-admin/landing/
+#   caddy: which images to build.
+# Deployment stays manual too (Deploy SaaS workflow pulls these images).
 on:
   workflow_dispatch:
     inputs:
@@ -43,6 +44,26 @@ on:
         required: false
         default: false
         type: boolean
+      platform-api:
+        description: 'Build platform-api image?'
+        required: false
+        default: false
+        type: boolean
+      platform-admin:
+        description: 'Build platform-admin image?'
+        required: false
+        default: false
+        type: boolean
+      landing:
+        description: 'Build landing image?'
+        required: false
+        default: false
+        type: boolean
+      caddy:
+        description: 'Build caddy (edge) image?'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -55,14 +76,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Static data-safety gates. These run BEFORE the backend image is built, so a
-  # destructive migration (DROP COLUMN / DELETE FROM / TRUNCATE on a post-P0
-  # migration) can never reach the published image (deployment itself is manual,
-  # so the gate only needs to protect the image).
-  # Only needed when the backend image will actually rebuild.
+  # Static data-safety gates. These run BEFORE the backend/platform-api
+  # images are built, so a destructive migration (DROP COLUMN / DELETE FROM /
+  # TRUNCATE on a post-P0 migration) can never reach the published image
+  # (deployment itself is manual, so the gate only needs to protect the image).
+  # Only needed when the backend or platform-api image will actually rebuild.
   guards:
     name: static guards
-    if: inputs.all == true || inputs.backend == true
+    if: inputs.all == true || inputs.backend == true || inputs.platform-api == true
     # fromJSON array literal: runs-on accepts an expression evaluating to labels.
     runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
     timeout-minutes: 30
@@ -76,13 +97,164 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        if: inputs.all == true || inputs.backend == true
         run: npm ci --ignore-scripts
 
       - name: Migration-safety gate (no destructive post-P0 migrations)
+        if: inputs.all == true || inputs.backend == true
         working-directory: apps/backend
         # Both suites are fs-only reads (no DB): migration-safety locks the
         # additive-migration rule, deploy-safety locks seed/boot repair gates.
         run: npx jest "(migration-safety|deploy-safety)"
+
+      - name: Platform migration-safety gate (no destructive platform migrations)
+        if: inputs.all == true || inputs.platform-api == true
+        # fs-only grep (no DB, no node_modules needed): migration.sql files
+        # must stay additive. rollback.sql files are EXCLUDED — they undo
+        # by design, so DROP/TRUNCATE there is correct, not a violation.
+        run: |
+          if grep -rniE 'DROP[[:space:]]+(TABLE|COLUMN)|TRUNCATE[[:space:]]+(TABLE[[:space:]]+)?|DELETE[[:space:]]+FROM' apps/platform-api/prisma/migrations/*/migration.sql; then
+            echo "::error::Destructive statement in a platform migration.sql — migrations must stay additive (put the undo in rollback.sql)."
+            exit 1
+          fi
+          echo "Platform migrations additive: OK"
+
+      - name: Plan §8 tenancy guards (PrismaClient / raw SQL / schema)
+        if: inputs.all == true || inputs.backend == true
+        # fs-only node script (no DB, no node_modules needed): fails on a
+        # new PrismaClient outside the tenancy layer, on $queryRawUnsafe
+        # outside the tenant-scoped client, and on a Prisma model without
+        # tenantId. Allowlists live in the script with reasons.
+        run: node scripts/saas/ci-guards.mjs
+
+  # RLS gates. Spins up a DISPOSABLE Postgres 16 (docker, so it works on
+  # both runners), applies the tenant migrations, creates the runtime app
+  # role with its grants, then runs the two SQL gates: check_rls.sql must
+  # return zero rows (every tenant-scoped table has RLS + force + policy +
+  # trigger) and rls_smoke_test.sql must pass (two-tenant isolation as
+  # ecomate_tenant_app). The container is removed afterwards, always.
+  # Port 55433 avoids the dev cluster on 55432 (self-hosted runner).
+  rls-gates:
+    name: RLS gates
+    if: inputs.all == true || inputs.backend == true
+    runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
+    timeout-minutes: 30
+    env:
+      CI_RLS_URL: postgresql://postgres:ci-rls-only@127.0.0.1:55433/ecomate_rls_ci
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.22.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Start disposable Postgres 16
+        run: |
+          docker rm -f ci-rls-pg 2>/dev/null || true
+          # Throwaway password for a disposable container (removed below).
+          docker run -d --name ci-rls-pg -e POSTGRES_PASSWORD=ci-rls-only -e POSTGRES_DB=ecomate_rls_ci -p 55433:5432 postgres:16-alpine
+          for i in $(seq 1 60); do
+            docker exec ci-rls-pg pg_isready -U postgres && break
+            sleep 1
+          done
+          docker exec ci-rls-pg pg_isready -U postgres
+
+      - name: Create app role
+        run: |
+          docker exec -i ci-rls-pg psql -U postgres -d ecomate_rls_ci -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ecomate_tenant_app') THEN
+              CREATE ROLE ecomate_tenant_app LOGIN;
+            END IF;
+          END $$;
+          SQL
+
+      - name: Migrate disposable DB
+        working-directory: apps/backend
+        run: DATABASE_URL="${{ env.CI_RLS_URL }}" npx prisma migrate deploy
+
+      - name: Grant app role (after migrate — tables must exist)
+        run: |
+          docker exec -i ci-rls-pg psql -U postgres -d ecomate_rls_ci -v ON_ERROR_STOP=1 <<'SQL'
+          GRANT USAGE ON SCHEMA public TO ecomate_tenant_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ecomate_tenant_app;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ecomate_tenant_app;
+          GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO ecomate_tenant_app;
+          SQL
+
+      - name: RLS coverage gate (check_rls.sql must return zero rows)
+        run: |
+          docker cp scripts/saas/check_rls.sql ci-rls-pg:/tmp/check_rls.sql
+          rows=$(docker exec ci-rls-pg psql -U postgres -d ecomate_rls_ci -t -A -v ON_ERROR_STOP=1 -f /tmp/check_rls.sql)
+          if [ -n "$rows" ]; then
+            echo "::error::Tables missing RLS coverage (rls_coverage view):"
+            echo "$rows"
+            exit 1
+          fi
+          echo "RLS coverage: every tenant-scoped table has RLS + force + policy + trigger"
+
+      - name: RLS smoke test (two-tenant isolation as ecomate_tenant_app)
+        run: |
+          docker cp scripts/saas/rls_smoke_test.sql ci-rls-pg:/tmp/rls_smoke_test.sql
+          docker exec ci-rls-pg psql -U postgres -d ecomate_rls_ci -v ON_ERROR_STOP=1 -f /tmp/rls_smoke_test.sql
+
+      - name: Stop disposable Postgres
+        if: always()
+        run: docker rm -f ci-rls-pg 2>/dev/null || true
+
+  # Dependency + secret scans. Runs on every dispatch (repo-wide, no
+  # service tick needed). Deliberately NOT in any build's `needs`: a new
+  # advisory in an unrelated package must not block an image build — the
+  # job is a visible red/green signal, and the coordinator tightens it
+  # to a gate once the baseline is clean.
+  security-scan:
+    name: security scan
+    runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.22.1
+          cache: npm
+
+      - name: npm audit (high and above)
+        # Reads package-lock.json; no install needed.
+        run: npm audit --audit-level=high
+
+      - name: OSV scan (all lockfiles)
+        uses: google/osv-scanner-action@v2
+        with:
+          scan-args: |-
+            --recursive
+            .
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+
+  # Edge config gate. Catches Caddyfile syntax errors before they reach the
+  # VPS (a bad Caddyfile takes the whole stack's public edge down).
+  caddy-validate:
+    name: caddy validate
+    if: inputs.all == true || inputs.caddy == true
+    runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate Caddyfile
+        # caddy:2-alpine runs on both runners (amd64 natively on github,
+        # emulated on the arm64 Mac — validate is fast either way).
+        # The Caddyfile's {$VAR:default} env vars all carry production
+        # defaults, so no env file is needed to validate the shape.
+        run: docker run --rm -v "$PWD/portainer/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
   # Unit quality gate. Each suite runs only when its service was ticked.
   # Backend jest excludes the two `.integration.spec.ts` files, which need a
@@ -91,7 +263,7 @@ jobs:
   # cannot pollute dev data.
   unit:
     name: unit tests
-    if: ${{ inputs.all == true || inputs.backend == true || inputs.storefront == true || inputs.admin == true || inputs.pos == true }}
+    if: ${{ inputs.all == true || inputs.backend == true || inputs.storefront == true || inputs.admin == true || inputs.pos == true || inputs.platform-api == true || inputs.platform-admin == true || inputs.landing == true }}
     runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
     timeout-minutes: 30
     steps:
@@ -118,6 +290,37 @@ jobs:
           npx tsc -p ../../packages/feature-flags/tsconfig.json
           npx nest build
           npx jest --no-coverage --testPathIgnorePatterns "integration"
+
+      - name: Platform API unit tests
+        if: inputs.all == true || inputs.platform-api == true
+        working-directory: apps/platform-api
+        # Mirrors the backend step. The suite is unit-only with mocked
+        # Prisma (no live DB) — if a spec ever needs Postgres, add a
+        # postgres:16-alpine service container to this job first.
+        run: |
+          npx prisma generate
+          npx tsc -p ../../packages/shared-types/tsconfig.json
+          npx nest build
+          npx jest --no-coverage
+
+      - name: Platform admin unit tests
+        if: inputs.all == true || inputs.platform-admin == true
+        working-directory: apps/platform-admin
+        # Node-environment vitest, no browser needed (unlike tenant admin,
+        # no Playwright step).
+        run: |
+          npx tsc -b
+          npx vitest run
+
+      - name: Landing unit tests
+        if: inputs.all == true || inputs.landing == true
+        working-directory: apps/landing
+        # The build step catches next.config.ts rewrite errors the
+        # typecheck cannot (mirrors the pos step's build check).
+        run: |
+          npx tsc --noEmit
+          npm test
+          npm run build
 
       - name: Storefront unit tests
         if: inputs.all == true || inputs.storefront == true
@@ -162,7 +365,7 @@ jobs:
   # raised 360min timeout (slow ghcr.io uplink from the Mac), frontends 120.
   # All builds wait for the gates, so broken tests can no longer ship.
   build-backend:
-    needs: [guards, unit]
+    needs: [guards, unit, rls-gates]
     if: inputs.all == true || inputs.backend == true
     uses: ./.github/workflows/build-service-image.yml
     with:
@@ -192,4 +395,39 @@ jobs:
     uses: ./.github/workflows/build-service-image.yml
     with:
       service: pos
+      runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
+
+  build-platform-api:
+    needs: [guards, unit]
+    if: inputs.all == true || inputs.platform-api == true
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: platform-api
+      timeout-minutes: 120
+      runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
+
+  build-platform-admin:
+    needs: [unit]
+    if: inputs.all == true || inputs.platform-admin == true
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: platform-admin
+      runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
+
+  build-landing:
+    needs: [unit]
+    if: inputs.all == true || inputs.landing == true
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: landing
+      runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
+
+  build-caddy:
+    # The edge image has no tests of its own — the caddy-validate job is
+    # its gate (a bad Caddyfile must never reach GHCR).
+    needs: [caddy-validate]
+    if: inputs.all == true || inputs.caddy == true
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: caddy
       runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
