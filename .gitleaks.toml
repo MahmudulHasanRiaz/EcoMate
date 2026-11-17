@@ -1,0 +1,60 @@
+# Gitleaks configuration for EcoMate.
+#
+# CI runs `gitleaks git .` over the FULL history (fetch-depth: 0), so every
+# entry below must cover both the current tree and old commits. History is
+# never rewritten, so reviewed findings are allowlisted here instead of
+# deleted from the past.
+#
+# Every entry documents a finding that was reviewed file-by-file after
+# Build Images run #5 (2026-11-17) flagged 26 leaks. None of the 26 is a
+# live secret. Do NOT add an entry without the same review: name the
+# finding, why it is safe, and which run/commit it came from.
+
+title = "EcoMate gitleaks configuration"
+
+# 19 findings: fake keys/tokens in test files — TEST_KEY / OTHER_KEY
+# ('0123...abcdef' patterns), temporaryPassword, CARRYBEE_SECRET,
+# idempotencyKey values, pathaoIntegrationSecret, attribution KEY,
+# secureToken, encryption.spec key, and the VALID_JWT fixture in
+# packages/license-engine/test. Test values only; never used in production.
+[[allowlists]]
+description = "Test fixtures: spec/test files contain fake keys and tokens"
+rules = ["generic-api-key", "jwt"]
+paths = ['''.*\.(spec|test)\.(ts|tsx|js|jsx)$''']
+
+# 4 findings: example values in docs and scripts — the Caddy on-demand-TLS
+# ask URL in the multi-tenant conversion plan, the old license-key example
+# quoted in the license-activation-ui plan doc, the 'e2e-revalidation-secret'
+# placeholder in scripts/saas/phase4-host-e2e.mjs, and the shields badge
+# token in apps/backend/README.md.
+[[allowlists]]
+description = "Docs and E2E scripts quote example/placeholder values"
+rules = ["generic-api-key", "jwt"]
+paths = ['''docs/.*''', '''scripts/saas/.*''', '''apps/backend/README\.md''']
+
+# 1 finding: PATHAO_WEBHOOK_INTEGRATION_SECRET in the production webhook
+# controller. Pathao's published, merchant-independent integration token
+# (identical for all merchants) — see the comment above the constant. It is
+# echoed in a response header, never used to validate inbound signatures.
+[[allowlists]]
+description = "Pathao integration token is a published merchant-independent constant, not a secret"
+rules = ["generic-api-key"]
+paths = ['''apps/backend/src/courier-manager/courier-webhook\.controller\.ts''']
+
+# 1 finding: const KEY = 'ecomate_attribution_v1' in the storefront. A
+# sessionStorage key name, not a credential.
+[[allowlists]]
+description = "attribution.ts KEY is a sessionStorage key name, not a credential"
+rules = ["generic-api-key"]
+paths = ['''apps/storefront/lib/attribution\.ts''']
+
+# 1 finding: the hard-coded LICENSE_ENCRYPTION_KEY fallback in
+# apps/backend/src/common/utils/encryption.ts (commit ac9e829, 2026-06-30).
+# The fallback was REMOVED from the current code on both branches — the
+# service now throws when the key is unset — so the value lives only in old
+# commits and protects nothing live. Nothing to rotate; do not reintroduce
+# a fallback. (Verified 2026-11-17: main's copy also has no fallback.)
+[[allowlists]]
+description = "Historical hardcoded LICENSE_ENCRYPTION_KEY fallback, removed from current code; value is dead"
+rules = ["generic-api-key"]
+paths = ['''apps/backend/src/common/utils/encryption\.ts''']

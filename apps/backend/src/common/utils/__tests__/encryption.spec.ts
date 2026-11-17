@@ -38,7 +38,12 @@ describe('EncryptionService', () => {
 
   it('throws on tampered ciphertext', () => {
     const encrypted = service.encrypt(plaintext);
-    const tampered = encrypted.slice(0, -4) + 'ffff';
+    // Flip the last hex digit to a guaranteed-different value. Replacing the
+    // tail with a fixed value ('ffff') is a no-op whenever the ciphertext
+    // already ends that way (~1/65536 runs) — the same flake class that
+    // failed CI run #5 in the platform-api twin of this test.
+    const last = encrypted.slice(-1);
+    const tampered = encrypted.slice(0, -1) + (last === '0' ? '1' : '0');
     expect(() => service.decrypt(tampered)).toThrow();
   });
 

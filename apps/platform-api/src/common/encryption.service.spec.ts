@@ -33,7 +33,11 @@ describe('EncryptionService', () => {
   it('detects tampering instead of returning garbage', () => {
     const service = new EncryptionService();
     const ciphertext = service.encrypt('secret');
-    const tampered = ciphertext.slice(0, -2) + '00';
+    // Flip the last hex digit to a guaranteed-different value. Replacing it
+    // with a fixed value ('00') is a no-op whenever the ciphertext already
+    // ends that way (~1/256 runs) — a flake that failed CI run #5.
+    const last = ciphertext.slice(-1);
+    const tampered = ciphertext.slice(0, -1) + (last === '0' ? '1' : '0');
     expect(() => service.decrypt(tampered)).toThrow();
   });
 
