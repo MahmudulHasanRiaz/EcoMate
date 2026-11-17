@@ -260,10 +260,10 @@ jobs:
         # action lives in osv-scanner-action/ (run #2 failed on the root).
         uses: google/osv-scanner-action/osv-scanner-action@v2.7.1
         with:
-      scan-args: |-
-                      --recursive
-              --config .osv-scanner.toml
-              .
+          scan-args: |-
+            --recursive
+            --config .osv-scanner.toml
+            .
 
       - name: Secret scan (gitleaks CLI)
         # gitleaks-action v2 requires a paid GITLEAKS_LICENSE secret since
