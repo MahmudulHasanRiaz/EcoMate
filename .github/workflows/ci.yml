@@ -238,6 +238,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          # gitleaks scans git history — a shallow checkout would hide it.
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v5
@@ -261,10 +264,24 @@ jobs:
             --recursive
             .
 
-      - name: Secret scan (gitleaks)
-        # Pinned: gitleaks-action has NO floating `v2` tag either
-        # (only `v3` floats; latest v2 is v2.3.9).
-        uses: gitleaks/gitleaks-action@v2.3.9
+      - name: Secret scan (gitleaks CLI)
+        # gitleaks-action v2 requires a paid GITLEAKS_LICENSE secret since
+        # the licensing change (run #4 failed on it — no leak, the action
+        # refuses to run without a license). The CLI is the same free
+        # open-source engine, so run it directly. Pinned to v8.30.1
+        # (latest, 2026-03-21). OS/arch detected: this job runs on either
+        # ubuntu-24.04 (github runner) or macos arm64 (self-hosted).
+        run: |
+          set -euo pipefail
+          OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64) ARCH="x64" ;;
+            aarch64|arm64) ARCH="arm64" ;;
+          esac
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_${OS}_${ARCH}.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks git . --verbose --redact
 
   # Edge config gate. Catches Caddyfile syntax errors before they reach the
   # VPS (a bad Caddyfile takes the whole stack's public edge down).
