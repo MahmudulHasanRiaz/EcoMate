@@ -1,9 +1,15 @@
 import 'dotenv/config';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcryptjs';
 import { FEATURES } from '@ecomate/shared-types';
 import { PrismaClient } from '../src/generated/prisma';
+import {
+  seedLandingContent,
+  type LandingContentSeedRow,
+} from '../src/landing-content/landing-content-seed';
 
 const connectionString = process.env.PLATFORM_DATABASE_URL;
 if (!connectionString) {
@@ -152,10 +158,35 @@ async function seedTrialPlan(): Promise<void> {
   console.log('[seed] trial plan ready');
 }
 
+async function seedLandingContentFromJson(): Promise<void> {
+  // The ported reference content (generated from
+  // apps/landing/data/landingContent.ts by
+  // prisma/seed/generate-landing-content-seed.mjs) is the DEFAULT for the
+  // console-managed landing content. The seed is create-if-not-exists
+  // ONLY — an existing row is never overwritten, so admin edits in the
+  // console survive a re-seed. A missing/unreadable JSON file skips
+  // quietly (the landing falls back to its built-in content).
+  const seedPath = join(__dirname, 'seed', 'landing-content.json');
+  let rows: LandingContentSeedRow[];
+  try {
+    rows = JSON.parse(readFileSync(seedPath, 'utf8'));
+  } catch {
+    console.warn(
+      '[seed] landing-content.json missing or invalid — skipped landing content',
+    );
+    return;
+  }
+  const { created, skipped } = await seedLandingContent(prisma, rows);
+  console.log(
+    `[seed] landing content: ${created} created, ${skipped} already present`,
+  );
+}
+
 async function main(): Promise<void> {
   await seedPlatformAdmin();
   await seedFeatureCatalog();
   await seedTrialPlan();
+  await seedLandingContentFromJson();
 }
 
 main()

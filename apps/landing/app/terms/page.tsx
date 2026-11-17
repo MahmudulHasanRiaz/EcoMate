@@ -13,11 +13,12 @@ export default function TermsPage() {
   return (
     <>
       <SiteHeader />
-      <main className="legal-page">
+      <main className="mk-legal">
         <p className="eyebrow">Terms of Service</p>
         <h1>Terms of Service</h1>
         <p className="legal-updated">Last updated: 17 November 2026.</p>
 
+        <div className="mk-prose">
         <h2>1. The service</h2>
         <p>
           {platformName} provides a multi-tenant commerce workspace: a
@@ -111,6 +112,7 @@ export default function TermsPage() {
           Questions about these terms: contact support from your workspace
           admin or by email to the support address shown in your workspace.
         </p>
+        </div>
       </main>
     </>
   );

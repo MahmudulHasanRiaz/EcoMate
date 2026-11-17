@@ -17,6 +17,9 @@ describe('format', () => {
     expect(statusTone('ACTIVE')).toBe('success');
     expect(statusTone('PAST_DUE')).toBe('warning');
     expect(statusTone('DELETED')).toBe('muted');
+    expect(statusTone('NEW')).toBe('info');
+    expect(statusTone('CONTACTED')).toBe('success');
+    expect(statusTone('CLOSED')).toBe('muted');
     expect(statusTone('UNKNOWN')).toBe('neutral');
   });
 

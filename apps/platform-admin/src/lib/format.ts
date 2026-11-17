@@ -7,6 +7,10 @@ const TONES: Record<string, string> = {
   SUSPENDED: 'danger',
   CANCELLED: 'danger',
   DELETED: 'muted',
+  // Lead triage statuses.
+  NEW: 'info',
+  CONTACTED: 'success',
+  CLOSED: 'muted',
 };
 
 export function formatStatus(status: string): string {

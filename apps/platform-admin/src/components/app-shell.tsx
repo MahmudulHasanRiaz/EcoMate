@@ -13,11 +13,13 @@ import {
 const NAV = [
   { to: '/', label: 'Overview', end: true },
   { to: '/tenants', label: 'Tenants' },
+  { to: '/leads', label: 'Leads' },
   { to: '/billing', label: 'Billing' },
   { to: '/domains', label: 'Domains' },
   { to: '/usage', label: 'Usage' },
   { to: '/metrics', label: 'Metrics' },
   { to: '/plans', label: 'Plans' },
+  { to: '/landing', label: 'Landing' },
   { to: '/settings', label: 'Settings' },
   { to: '/users', label: 'Users' },
   { to: '/audit', label: 'Audit' },

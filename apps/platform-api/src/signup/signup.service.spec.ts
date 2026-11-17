@@ -3,6 +3,7 @@ import {
   ConflictException,
   GoneException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { SignupService } from './signup.service';
@@ -34,7 +35,7 @@ function makeService() {
       delete: jest.fn().mockResolvedValue({}),
     },
   };
-  const captcha = { verify: jest.fn().mockResolvedValue(true) };
+  const captcha = { verify: jest.fn().mockResolvedValue({ ok: true }) };
   const rateLimit = { assert: jest.fn() };
   const mail = {
     sendVerification: jest.fn().mockResolvedValue({ delivered: true }),
@@ -178,9 +179,26 @@ describe('SignupService — create', () => {
 
   it('rejects a failed CAPTCHA', async () => {
     const { service, captcha, prisma } = makeService();
-    captcha.verify.mockResolvedValue(false);
+    captcha.verify.mockResolvedValue({ ok: false, reason: 'failed' });
     await expect(service.create(dto as any)).rejects.toBeInstanceOf(
       BadRequestException,
+    );
+    expect(prisma.signupRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 with captcha_not_configured when the secret is unset in production', async () => {
+    const { service, captcha, prisma } = makeService();
+    captcha.verify.mockResolvedValue({
+      ok: false,
+      reason: 'not_configured',
+    });
+    const error = await service
+      .create(dto as any)
+      .catch((err) => err);
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect(error.getStatus()).toBe(503);
+    expect(error.getResponse()).toEqual(
+      expect.objectContaining({ code: 'captcha_not_configured' }),
     );
     expect(prisma.signupRequest.create).not.toHaveBeenCalled();
   });
@@ -412,6 +430,23 @@ describe('SignupService — resend', () => {
     const result = await service.resend({ email: 'nobody@example.com' } as any);
     expect(result.message).toContain('If a pending signup exists');
     expect(prisma.signupRequest.update).not.toHaveBeenCalled();
+    expect(mail.sendVerification).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 with captcha_not_configured when the secret is unset in production', async () => {
+    const { service, captcha, mail } = makeService();
+    captcha.verify.mockResolvedValue({
+      ok: false,
+      reason: 'not_configured',
+    });
+    const error = await service
+      .resend({ email: 'owner@example.com' } as any)
+      .catch((err) => err);
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect(error.getStatus()).toBe(503);
+    expect(error.getResponse()).toEqual(
+      expect.objectContaining({ code: 'captcha_not_configured' }),
+    );
     expect(mail.sendVerification).not.toHaveBeenCalled();
   });
 

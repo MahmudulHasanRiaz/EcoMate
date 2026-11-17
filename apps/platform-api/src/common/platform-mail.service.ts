@@ -409,6 +409,49 @@ export class PlatformMailService {
     );
   }
 
+  /**
+   * Lead notification to the sales inbox (landing lead form). The caller
+   * (LeadsService) checks isConfigured() first and never fails the lead
+   * submit when delivery throws — a lead is a low-privilege record and
+   * the form must work with mail down or unconfigured.
+   */
+  async sendLeadNotification(input: {
+    to: string;
+    name: string;
+    contact: string;
+    contactType: 'email' | 'phone';
+    message?: string | null;
+    monthlyOrders?: string | null;
+  }): Promise<{ delivered: boolean }> {
+    const platformName = this.settings.getBranding().platformName;
+    const name = escapeHtml(input.name);
+    const contact = escapeHtml(input.contact);
+    const contactLabel = input.contactType === 'email' ? 'Email' : 'Phone';
+    const orders = input.monthlyOrders?.trim()
+      ? escapeHtml(input.monthlyOrders.trim())
+      : 'Not shared';
+    const ordersText = input.monthlyOrders?.trim()
+      ? input.monthlyOrders.trim()
+      : 'Not shared';
+    const message = input.message?.trim() ?? '';
+    const messageHtml = message
+      ? `<p>Message:<br/>${escapeHtml(message).replace(/\n/g, '<br/>')}</p>`
+      : '<p>No message.</p>';
+    const messageText = message ? `\n\nMessage:\n${message}` : '\n\nNo message.';
+    return this.deliver(
+      input.to,
+      `New lead: ${input.name} — ${platformName}`,
+      `Hi,\n\nA new lead came in from the landing page.\n\n` +
+        `Name: ${input.name}\n${contactLabel}: ${input.contact}\n` +
+        `Monthly orders: ${ordersText}${messageText}`,
+      `<p>Hi,</p><p>A new lead came in from the landing page.</p>` +
+        `<p>Name: <strong>${name}</strong><br/>` +
+        `${contactLabel}: <strong>${contact}</strong><br/>` +
+        `Monthly orders: <strong>${orders}</strong></p>${messageHtml}`,
+      `lead notification for ${input.name} (${input.contact})`,
+    );
+  }
+
   async sendWelcome(input: {
     to: string;
     tenantName: string;

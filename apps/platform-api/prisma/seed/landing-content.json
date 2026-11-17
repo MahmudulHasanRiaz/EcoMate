@@ -1,0 +1,806 @@
+[
+  {
+    "section": "capabilities",
+    "key": "fragmented",
+    "locale": "bn",
+    "value": {
+      "heading": "আপনার ব্যবসা বাড়ছে। টুলগুলো তাল মেলাতে পারছে না।",
+      "subheading": "",
+      "beforeItems": [
+        "শোরুমে বিক্রি, ওয়েবসাইটে স্টক একই",
+        "প্যাকিংয়ে ভুল সাইজ, রিটার্ন চার্জের ক্ষতি",
+        "৪টি কুরিয়ার প্যানেল, ৪টি পাসওয়ার্ড",
+        "ভুয়া অর্ডারে পিক্সেল ফায়ার, অ্যাড খরচ দ্বিগুণ"
+      ],
+      "afterItems": [
+        "প্রতিটি স্ক্যান ভেরিফাইড",
+        "কাস্টমারের অতীত রেকর্ড স্ক্রিনে",
+        "এক ক্লিকে সব কুরিয়ারে বুকিং",
+        "টিমের প্রতিটি ক্লিকের অডিট ট্রেইল"
+      ]
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "packing",
+    "locale": "bn",
+    "value": {
+      "heading": "প্যাকিং টেবিলেই ভুল আটকান।",
+      "subheading": "নিচের বাটনে স্ক্যান করে দেখুন।",
+      "features": [
+        "বারকোড গান বা ফোন ক্যামেরা — দুটোতেই",
+        "ইনভয়েস, স্টিকার, লেবেল — ১ ক্লিকে প্রিন্ট",
+        "প্যাকার কমিশন অটো: ৳১৫",
+        "আইটেম না পেলে এক ক্লিকে হোল্ড"
+      ]
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "revenue",
+    "locale": "bn",
+    "value": {
+      "heading": "পার্সেল পাঠানোর আগেই জানুন কাস্টমারের আসল কুরিয়ার অতীত।",
+      "subheading": ""
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "logistics",
+    "locale": "bn",
+    "value": {
+      "heading": "এক ক্লিকে সব কুরিয়ারে বুকিং, অটো-ট্র্যাকিং।",
+      "subheading": "Carrybee · Steadfast · Pathao · RedX · Custom API"
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "adDefense",
+    "locale": "bn",
+    "value": {
+      "heading": "ফেক অর্ডারে আর পিক্সেল ফায়ার হবে না।",
+      "subheading": "Meta / TikTok CAPI"
+    },
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "stores",
+    "locale": "bn",
+    "value": {
+      "heading": "একটি প্রোডাক্ট। কোন স্টোরে যাবে, আপনি ঠিক করুন।",
+      "subheading": "সুইচ চেপে দেখুন।",
+      "whyItems": [
+        "একটি সেন্ট্রাল ক্যাটালগ",
+        "চ্যানেলভিত্তিক দাম ও প্রকাশ",
+        "অনলাইনে বিক্রি, শোরুম স্টক আপডেট"
+      ]
+    },
+    "sortOrder": 5,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "omnichannel",
+    "locale": "bn",
+    "value": {
+      "heading": "র‍্যাক-বিন থেকে শোরুমের এনবিআর ভ্যাট চালান।",
+      "subheading": ""
+    },
+    "sortOrder": 6,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "finance",
+    "locale": "bn",
+    "value": {
+      "heading": "দিনশেষে পকেটে আসল লাভ কত?",
+      "subheading": "",
+      "paymentsRows": [
+        "bKash / Nagad ম্যানুয়াল TrxID অ্যাপ্রুভাল",
+        "লাইভ bKash API; SSLCommerz আসছে",
+        "ক্যাটাগরি অনুযায়ী খরচ"
+      ]
+    },
+    "sortOrder": 7,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "team",
+    "locale": "bn",
+    "value": {
+      "heading": "শুধু ব্যবসা নয়, পুরো টিম এক প্ল্যাটফর্মে।",
+      "subheading": "",
+      "features": [
+        "সেলফি/বায়োমেট্রিক হাজিরা",
+        "টেলিসেলস কনফার্ম রেট",
+        "প্যাকিং স্পিড ও এরর রেট",
+        "অটো কমিশন রুল"
+      ]
+    },
+    "sortOrder": 8,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "infra",
+    "locale": "bn",
+    "value": {
+      "heading": "আপনার ডেটা শুধু আপনার নিয়ন্ত্রণে।",
+      "subheading": "",
+      "features": [
+        "বিল্ট-ইন ল্যান্ডিং পেজ ও ওপেন API",
+        "১–৫ মিনিটে Cloudflare R2 ব্যাকআপ",
+        "Android, iOS ও PWA",
+        "পাবলিক ট্র্যাকিং"
+      ]
+    },
+    "sortOrder": 9,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "phone",
+    "locale": "bn",
+    "value": "+880 1894-828290",
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "email",
+    "locale": "bn",
+    "value": "sales@ecomate.bd",
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "address",
+    "locale": "bn",
+    "value": "লেভেল ৭, এন্টারপ্রাইজ টাওয়ার, গুলশান-২, ঢাকা ১২১২",
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "whatsapp",
+    "locale": "bn",
+    "value": "8801894828290",
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "messengerUrl",
+    "locale": "bn",
+    "value": "https://m.me/ecomate.bd",
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "callNumber",
+    "locale": "bn",
+    "value": "+8801894828290",
+    "sortOrder": 5,
+    "isActive": true
+  },
+  {
+    "section": "faq",
+    "key": "faq-1",
+    "locale": "bn",
+    "value": {
+      "question": "পুরোনো সফটওয়্যার থেকে ডেটা আনতে কত দিন?",
+      "answer": "Free trial শুরু করুন — আপনার বর্তমান system থেকে প্রোডাক্ট, কাস্টমার ও অর্ডার import করতে guided onboarding সাহায্য করে। সময় ডেটার পরিমাণের ওপর নির্ভর করে।"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "faq",
+    "key": "faq-2",
+    "locale": "bn",
+    "value": {
+      "question": "ইন্টারনেট না থাকলে POS-এ বিল কাটা যাবে?",
+      "answer": "সংযোগ না থাকলে POS কীভাবে কাজ করবে তা আপনার setup-এর ওপর নির্ভর করে। Trial-এ নিজের device দিয়ে test করুন, অথবা demo বুক করুন — আমরা আপনার setup confirm করে দেবো।"
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "faq",
+    "key": "faq-3",
+    "locale": "bn",
+    "value": {
+      "question": "স্টাফদের কি প্রশিক্ষণ লাগবে?",
+      "answer": "প্যাকার, ক্যাশিয়ার ও অ্যাকাউন্টস — প্রতিটি role-এর জন্য আলাদা screen, তাই যার যা দরকার সে তাই দেখে। Trial workspace-এ আপনার team-এর জন্য guided setup আছে।"
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "faq",
+    "key": "faq-4",
+    "locale": "bn",
+    "value": {
+      "question": "নিজস্ব ওয়েবসাইটে কানেক্ট হবে?",
+      "answer": "WooCommerce ও custom store ওপেন API-র মাধ্যমে কানেক্ট করা যায়। Trial শুরু করে নিজের store কানেক্ট করুন, অথবা demo বুক করুন — আমরা আপনার stack confirm করে দেবো।"
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "badge",
+    "locale": "bn",
+    "value": "আধুনিক কমার্স অপারেটিং সিস্টেম",
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "headlinePart1",
+    "locale": "bn",
+    "value": "১০টি বিচ্ছিন্ন টুলের ঝামেলা শেষ। ",
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "headlineHighlight",
+    "locale": "bn",
+    "value": "একটি সেন্ট্রাল সিস্টেম থেকে চালান।",
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "headlinePart2",
+    "locale": "bn",
+    "value": "",
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "subtitle",
+    "locale": "bn",
+    "value": "অনলাইন, শোরুম, প্যাকিং, কুরিয়ার, অ্যাড ট্র্যাকিং ও এইচআর — সব এক জায়গায়।",
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "primaryCta",
+    "locale": "bn",
+    "value": "Trial শুরু করুন",
+    "sortOrder": 5,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "secondaryCta",
+    "locale": "bn",
+    "value": "ওয়ার্কস্পেস দেখুন ↓",
+    "sortOrder": 6,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-aranya",
+    "locale": "bn",
+    "value": {
+      "name": "ARANYA"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-meghna-co",
+    "locale": "bn",
+    "value": {
+      "name": "Meghna&Co"
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-tarango",
+    "locale": "bn",
+    "value": {
+      "name": "TARANGO"
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-shonali",
+    "locale": "bn",
+    "value": {
+      "name": "Shonali"
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-pathik-goods",
+    "locale": "bn",
+    "value": {
+      "name": "Pathik Goods"
+    },
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "testimonials",
+    "key": "story-aranya-apparel",
+    "locale": "bn",
+    "value": {
+      "businessName": "Aranya Apparel",
+      "founderName": "Founder",
+      "role": "Founder · Fashion",
+      "location": "ঢাকা",
+      "website": "aranya-apparel.example",
+      "quote": "আমাদের প্যাকিং টেবিলে এখন আর কোন সাইজ গেল তা নিয়ে তর্ক হয় না।",
+      "metrics": [],
+      "videoDuration": "02:41",
+      "videoTitle": "Customer story"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "testimonials",
+    "key": "story-meghna-living",
+    "locale": "bn",
+    "value": {
+      "businessName": "Meghna Home & Living",
+      "founderName": "Operations Manager",
+      "role": "Operations Manager · Home",
+      "location": "ঢাকা",
+      "website": "meghna-living.example",
+      "quote": "অনলাইন আর শোরুমের স্টক এক জায়গায় দেখতে পাওয়াটাই আমাদের সবচেয়ে বড় স্বস্তি।",
+      "metrics": [],
+      "videoDuration": "02:41",
+      "videoTitle": "Customer story"
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "testimonials",
+    "key": "story-tarango-electronics",
+    "locale": "bn",
+    "value": {
+      "businessName": "Tarango Electronics",
+      "founderName": "Head of E-commerce",
+      "role": "Head of E-commerce · Electronics",
+      "location": "সারা দেশ",
+      "website": "tarango.example",
+      "quote": "কুরিয়ারের হিসাব মেলানো এখন আর মাসের শেষের দুশ্চিন্তা না।",
+      "metrics": [],
+      "videoDuration": "02:41",
+      "videoTitle": "Customer story"
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "fragmented",
+    "locale": "en",
+    "value": {
+      "heading": "Your business is growing. Your tools can’t keep up.",
+      "subheading": "",
+      "beforeItems": [
+        "Showroom sells, website stock lags",
+        "Wrong size packed, return charges",
+        "4 courier panels, 4 logins",
+        "Fake orders fire pixels, ad spend doubles"
+      ],
+      "afterItems": [
+        "Every scan verified",
+        "Customer history on screen",
+        "One click, every courier",
+        "Audit trail for every click"
+      ]
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "packing",
+    "locale": "en",
+    "value": {
+      "heading": "Stop wrong parcels at the packing table.",
+      "subheading": "Try the scan buttons below.",
+      "features": [
+        "Barcode gun or phone camera",
+        "1-click invoice, sticker, label print",
+        "Packer commission auto: ৳15",
+        "One-click hold if an item is missing"
+      ]
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "revenue",
+    "locale": "en",
+    "value": {
+      "heading": "Know a customer’s real courier history before you ship.",
+      "subheading": ""
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "logistics",
+    "locale": "en",
+    "value": {
+      "heading": "Book every courier in one click, with auto-tracking.",
+      "subheading": "Carrybee · Steadfast · Pathao · RedX · Custom API"
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "adDefense",
+    "locale": "en",
+    "value": {
+      "heading": "Fake orders no longer fire your pixel.",
+      "subheading": "Meta / TikTok CAPI"
+    },
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "stores",
+    "locale": "en",
+    "value": {
+      "heading": "One product. You decide which store gets it.",
+      "subheading": "Flip the switches.",
+      "whyItems": [
+        "One central catalog",
+        "Per-channel price and publishing",
+        "Online sale updates showroom stock"
+      ]
+    },
+    "sortOrder": 5,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "omnichannel",
+    "locale": "en",
+    "value": {
+      "heading": "From warehouse rack and bin to NBR VAT at the showroom counter.",
+      "subheading": ""
+    },
+    "sortOrder": 6,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "finance",
+    "locale": "en",
+    "value": {
+      "heading": "What is your real profit at the end of the day?",
+      "subheading": "",
+      "paymentsRows": [
+        "bKash / Nagad manual TrxID approval",
+        "Live bKash API; SSLCommerz coming",
+        "Category-wise expenses"
+      ]
+    },
+    "sortOrder": 7,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "team",
+    "locale": "en",
+    "value": {
+      "heading": "Run your whole team on one platform.",
+      "subheading": "",
+      "features": [
+        "Selfie or biometric attendance",
+        "Tele-sales confirmation rate",
+        "Packing speed and error rate",
+        "Auto commission rules"
+      ]
+    },
+    "sortOrder": 8,
+    "isActive": true
+  },
+  {
+    "section": "capabilities",
+    "key": "infra",
+    "locale": "en",
+    "value": {
+      "heading": "Your data stays under your control.",
+      "subheading": "",
+      "features": [
+        "Built-in landing pages and open API",
+        "Cloudflare R2 backup every 1–5 min",
+        "Android, iOS and PWA",
+        "Public tracking"
+      ]
+    },
+    "sortOrder": 9,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "phone",
+    "locale": "en",
+    "value": "+880 1894-828290",
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "email",
+    "locale": "en",
+    "value": "sales@ecomate.bd",
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "address",
+    "locale": "en",
+    "value": "Level 7, Enterprise Tower, Gulshan-2, Dhaka 1212",
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "whatsapp",
+    "locale": "en",
+    "value": "8801894828290",
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "messengerUrl",
+    "locale": "en",
+    "value": "https://m.me/ecomate.bd",
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "contact",
+    "key": "callNumber",
+    "locale": "en",
+    "value": "+8801894828290",
+    "sortOrder": 5,
+    "isActive": true
+  },
+  {
+    "section": "faq",
+    "key": "faq-1",
+    "locale": "en",
+    "value": {
+      "question": "How long to migrate old data?",
+      "answer": "Start a free trial and import products, customers and orders from your current system with the guided onboarding. Timing depends on your data size."
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "faq",
+    "key": "faq-2",
+    "locale": "en",
+    "value": {
+      "question": "Can POS bill offline?",
+      "answer": "How POS behaves without connectivity depends on your setup. Start a trial to test it with your own devices, or book a walkthrough and we will confirm your exact setup."
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "faq",
+    "key": "faq-3",
+    "locale": "en",
+    "value": {
+      "question": "Does staff need training?",
+      "answer": "Each role (packer, cashier, accounts) gets its own screens, so people see only what they need. The trial workspace includes guided setup for your team."
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "faq",
+    "key": "faq-4",
+    "locale": "en",
+    "value": {
+      "question": "Can it connect to my own website?",
+      "answer": "WooCommerce and custom stores connect through the open API. Start a trial to connect your store, or book a walkthrough and we will confirm your stack."
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "badge",
+    "locale": "en",
+    "value": "The modern commerce operating system",
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "headlinePart1",
+    "locale": "en",
+    "value": "Ten disconnected tools, done. ",
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "headlineHighlight",
+    "locale": "en",
+    "value": "Run it all from one central OS.",
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "headlinePart2",
+    "locale": "en",
+    "value": "",
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "subtitle",
+    "locale": "en",
+    "value": "Online, showroom, packing, couriers, ad tracking and HR — in one place.",
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "primaryCta",
+    "locale": "en",
+    "value": "Start a trial",
+    "sortOrder": 5,
+    "isActive": true
+  },
+  {
+    "section": "hero",
+    "key": "secondaryCta",
+    "locale": "en",
+    "value": "Explore workspaces ↓",
+    "sortOrder": 6,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-aranya",
+    "locale": "en",
+    "value": {
+      "name": "ARANYA"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-meghna-co",
+    "locale": "en",
+    "value": {
+      "name": "Meghna&Co"
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-tarango",
+    "locale": "en",
+    "value": {
+      "name": "TARANGO"
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-shonali",
+    "locale": "en",
+    "value": {
+      "name": "Shonali"
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "partners",
+    "key": "partner-pathik-goods",
+    "locale": "en",
+    "value": {
+      "name": "Pathik Goods"
+    },
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "testimonials",
+    "key": "story-aranya-apparel",
+    "locale": "en",
+    "value": {
+      "businessName": "Aranya Apparel",
+      "founderName": "Founder",
+      "role": "Founder · Fashion",
+      "location": "Dhaka",
+      "website": "aranya-apparel.example",
+      "quote": "Our packing table no longer argues about which size went out.",
+      "metrics": [],
+      "videoDuration": "02:41",
+      "videoTitle": "Customer story"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "testimonials",
+    "key": "story-meghna-living",
+    "locale": "en",
+    "value": {
+      "businessName": "Meghna Home & Living",
+      "founderName": "Operations Manager",
+      "role": "Operations Manager · Home",
+      "location": "Dhaka",
+      "website": "meghna-living.example",
+      "quote": "Seeing online and showroom stock in one place is our biggest relief.",
+      "metrics": [],
+      "videoDuration": "02:41",
+      "videoTitle": "Customer story"
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "testimonials",
+    "key": "story-tarango-electronics",
+    "locale": "en",
+    "value": {
+      "businessName": "Tarango Electronics",
+      "founderName": "Head of E-commerce",
+      "role": "Head of E-commerce · Electronics",
+      "location": "Nationwide",
+      "website": "tarango.example",
+      "quote": "Courier reconciliation is no longer a month-end worry.",
+      "metrics": [],
+      "videoDuration": "02:41",
+      "videoTitle": "Customer story"
+    },
+    "sortOrder": 2,
+    "isActive": true
+  }
+]

@@ -4,6 +4,7 @@ import {
   GoneException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
@@ -323,12 +324,21 @@ export class SignupService {
   }
 
   private async assertCaptcha(token?: string, ip?: string) {
-    const ok = await this.captcha.verify(token, ip);
-    if (!ok) {
-      throw new BadRequestException(
-        'Human verification failed. Please complete the challenge and try again.',
-      );
+    const result = await this.captcha.verify(token, ip);
+    if (result.ok) return;
+    if (result.reason === 'not_configured') {
+      // Fail-closed, but honest: no challenge ever appeared (no secret
+      // on the server), so a "verification failed" 400 would blame the
+      // user for a server-side gap. The landing keys its unavailable
+      // state off the `captcha_not_configured` code.
+      throw new ServiceUnavailableException({
+        code: 'captcha_not_configured',
+        message: 'Human verification is not configured on this server.',
+      });
     }
+    throw new BadRequestException(
+      'Human verification failed. Please complete the challenge and try again.',
+    );
   }
 
   private async expireStale() {

@@ -3,10 +3,12 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '../generated/prisma';
 import { PlansService } from './plans.service';
 
 const prisma: any = {
   plan: {
+    findMany: jest.fn(),
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -58,6 +60,29 @@ describe('PlansService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     audit.record.mockResolvedValue(undefined);
+  });
+
+  it('lists plans with Decimal prices converted to JSON numbers', async () => {
+    prisma.plan.findMany.mockResolvedValue([
+      {
+        id: 'plan-1',
+        slug: 'growth',
+        versions: [
+          { id: 'v2', version: 2, price: new Prisma.Decimal('1500.50') },
+          { id: 'v1', version: 1, price: new Prisma.Decimal('999') },
+        ],
+      },
+    ]);
+
+    const result = await service.list();
+
+    expect(result[0].versions[0].price).toBe(1500.5);
+    expect(typeof result[0].versions[0].price).toBe('number');
+    expect(result[0].versions[1].price).toBe(999);
+    expect(result[0].currentVersion.price).toBe(1500.5);
+    expect(JSON.parse(JSON.stringify(result))[0].versions[0].price).toBe(
+      1500.5,
+    );
   });
 
   it('creates a plan with version 1 and writes an audit row', async () => {

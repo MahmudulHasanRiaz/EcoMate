@@ -13,11 +13,12 @@ export default function PrivacyPage() {
   return (
     <>
       <SiteHeader />
-      <main className="legal-page">
+      <main className="mk-legal">
         <p className="eyebrow">Privacy Policy</p>
         <h1>Privacy Policy</h1>
         <p className="legal-updated">Last updated: 17 November 2026.</p>
 
+        <div className="mk-prose">
         <h2>1. What we collect</h2>
         <p>We collect only what the service needs to run:</p>
         <ul>
@@ -121,6 +122,7 @@ export default function PrivacyPage() {
           support from your workspace admin or by email to the support
           address shown in your workspace.
         </p>
+        </div>
       </main>
     </>
   );

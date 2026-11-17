@@ -36,7 +36,7 @@ export function Turnstile({
       if (cancelled || !window.turnstile || !container.current) return;
       widgetId = window.turnstile.render(container.current, {
         sitekey: siteKey,
-        theme: 'light',
+        theme: 'auto',
         callback: (token: string) => onToken(token),
         'expired-callback': () => onToken(''),
         'error-callback': () => onToken(''),

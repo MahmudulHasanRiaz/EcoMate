@@ -14,6 +14,9 @@ import { SignupService } from './signup.service';
     CaptchaService,
     SignupRateLimitService,
   ],
-  exports: [SignupService, SignupRateLimitService],
+  // CaptchaService is exported for the leads module: lead capture verifies
+  // a Turnstile token only when one is provided (verify-if-present), unlike
+  // signup which fails closed.
+  exports: [SignupService, SignupRateLimitService, CaptchaService],
 })
 export class SignupModule {}

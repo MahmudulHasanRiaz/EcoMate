@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { decimalToNumber } from './plan-price';
 
 @Controller('public/plans')
 export class PublicPlansController {
@@ -28,7 +29,9 @@ export class PublicPlansController {
         isFree: plan.isFree,
         badge: plan.badge,
         sortOrder: plan.sortOrder,
-        price: currentVersion?.price ?? null,
+        // Decimal serializes to a JSON string ("1500"); the contract
+        // (landing PublicPlan) says number — normalize at the source.
+        price: decimalToNumber(currentVersion?.price),
         currency: currentVersion?.currency ?? 'BDT',
         interval: currentVersion?.interval ?? 'MONTHLY',
         trialDays: currentVersion?.trialDays ?? 0,

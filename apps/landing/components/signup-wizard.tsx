@@ -10,6 +10,13 @@ import {
   type FieldErrors,
 } from '@/lib/signup-validation';
 import { Turnstile } from './turnstile';
+import {
+  RESEND_UNAVAILABLE_MESSAGE,
+  SIGNUP_UNAVAILABLE_BODY,
+  SIGNUP_UNAVAILABLE_HEADING,
+  isCaptchaNotConfiguredError,
+  isSignupVerificationAvailable,
+} from '@/lib/verification';
 
 type Step = 1 | 2 | 3;
 
@@ -41,7 +48,43 @@ function serverMessage(data: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Honest unavailable state: verification is not configured, so there is
+ * no challenge to complete — never show the fake "complete the
+ * challenge" error. Links to the lead form so visitors can still reach
+ * us (a human can set their store up).
+ */
+function SignupUnavailable() {
+  return (
+    <div className="wizard">
+      <div className="success-panel">
+        <div className="success-mark success-mark--danger" aria-hidden>
+          !
+        </div>
+        <h2>{SIGNUP_UNAVAILABLE_HEADING}</h2>
+        <p>{SIGNUP_UNAVAILABLE_BODY}</p>
+        <p className="center-note">
+          In a hurry?{' '}
+          <Link className="inline-link" href="/#demo">
+            Contact us
+          </Link>{' '}
+          and we will set your store up for you.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function SignupWizard() {
+  // Mirrors the platform's fail-closed rule: in production without a
+  // Turnstile site key no challenge can render, so the wizard never
+  // opens (see lib/verification.ts). Direct member accesses — only
+  // these are inlined into the client bundle at build time.
+  const verificationAvailable = isSignupVerificationAvailable({
+    NODE_ENV: process.env.NODE_ENV,
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY:
+      process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+  });
   const [step, setStep] = useState<Step>(1);
   const [form, setForm] = useState<FormState>(INITIAL);
   const [slugTouched, setSlugTouched] = useState(false);
@@ -51,6 +94,7 @@ export function SignupWizard() {
   const [website, setWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [verificationUnavailable, setVerificationUnavailable] = useState(false);
   const [result, setResult] = useState<{ email: string } | null>(null);
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState('');
@@ -120,6 +164,13 @@ export function SignupWizard() {
       });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
+        // The platform distinguishes "verification not configured" from
+        // a genuine challenge failure: the former shows the honest
+        // unavailable state, never the fake challenge error.
+        if (isCaptchaNotConfiguredError(data)) {
+          setVerificationUnavailable(true);
+          return;
+        }
         setServerError(
           serverMessage(data, 'Signup could not be completed. Please try again.'),
         );
@@ -150,6 +201,10 @@ export function SignupWizard() {
       });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
+        if (isCaptchaNotConfiguredError(data)) {
+          setResendError(RESEND_UNAVAILABLE_MESSAGE);
+          return;
+        }
         setResendError(
           serverMessage(data, 'Could not resend the email. Please try again.'),
         );
@@ -167,6 +222,13 @@ export function SignupWizard() {
       setResending(false);
     }
   };
+
+  // No challenge can render (no site key in this build) or the server
+  // said verification is not configured: show the honest state instead
+  // of the form. No submit is ever attempted from this state.
+  if (!verificationAvailable || verificationUnavailable) {
+    return <SignupUnavailable />;
+  }
 
   if (result) {
     return (

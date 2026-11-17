@@ -10,6 +10,8 @@ import { AccountPage } from './pages/account';
 import { AuditPage } from './pages/audit';
 import { BillingPage } from './pages/billing';
 import { DomainsPage } from './pages/domains';
+import { LandingPage } from './pages/landing';
+import { LeadsPage } from './pages/leads';
 import { LoginPage } from './pages/login';
 import { MetricsPage } from './pages/metrics';
 import { OverviewPage } from './pages/overview';
@@ -77,6 +79,26 @@ const plansRoute = createRoute({
   component: () => (
     <AppShell>
       <PlansPage />
+    </AppShell>
+  ),
+});
+
+const leadsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/leads',
+  component: () => (
+    <AppShell>
+      <LeadsPage />
+    </AppShell>
+  ),
+});
+
+const landingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/landing',
+  component: () => (
+    <AppShell>
+      <LandingPage />
     </AppShell>
   ),
 });
@@ -174,11 +196,13 @@ const routeTree = rootRoute.addChildren([
   tenantsRoute,
   tenantRoute,
   tenantCreateRoute,
+  leadsRoute,
   billingRoute,
   domainsRoute,
   usageRoute,
   metricsRoute,
   plansRoute,
+  landingRoute,
   settingsRoute,
   usersRoute,
   auditRoute,

@@ -16,6 +16,10 @@ import {
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { CreatePlanVersionDto } from './dto/create-plan-version.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import {
+  normalizePlanPrices,
+  normalizeVersionPrice,
+} from './plan-price';
 
 @Injectable()
 export class PlansService {
@@ -48,10 +52,13 @@ export class PlansService {
       },
     });
 
-    return plans.map((plan) => ({
-      ...plan,
-      currentVersion: plan.versions[0] ?? null,
-    }));
+    return plans.map((plan) => {
+      const normalized = normalizePlanPrices(plan);
+      return {
+        ...normalized,
+        currentVersion: normalized.versions[0] ?? null,
+      };
+    });
   }
 
   async detail(id: string) {
@@ -62,9 +69,10 @@ export class PlansService {
       },
     });
     if (!plan) throw new NotFoundException('Plan not found');
+    const normalized = normalizePlanPrices(plan);
     return {
-      ...plan,
-      currentVersion: plan.versions[0] ?? null,
+      ...normalized,
+      currentVersion: normalized.versions[0] ?? null,
     };
   }
 
@@ -109,7 +117,7 @@ export class PlansService {
       after: { slug: plan.slug, name: plan.name, version: 1 },
     });
 
-    return plan;
+    return normalizePlanPrices(plan);
   }
 
   async addVersion(
@@ -150,7 +158,7 @@ export class PlansService {
       after: { planId, version },
     });
 
-    return created;
+    return normalizeVersionPrice(created);
   }
 
   async update(planId: string, dto: UpdatePlanDto, actorId?: string) {

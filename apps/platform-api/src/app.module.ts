@@ -13,6 +13,8 @@ import { DomainsModule } from './domains/domains.module';
 import { HealthModule } from './health/health.module';
 import { InternalModule } from './internal/internal.module';
 import { JobsModule } from './jobs/jobs.module';
+import { LandingContentModule } from './landing-content/landing-content.module';
+import { LeadsModule } from './leads/leads.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { PlansModule } from './plans/plans.module';
@@ -41,6 +43,8 @@ import { UsersModule } from './users/users.module';
     HealthModule,
     InternalModule,
     JobsModule,
+    LandingContentModule,
+    LeadsModule,
     MetricsModule,
     ObservabilityModule,
     PlansModule,

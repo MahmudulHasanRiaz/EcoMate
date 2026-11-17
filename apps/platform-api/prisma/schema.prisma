@@ -116,6 +116,19 @@ enum ProvisioningStatus {
   FAILED
 }
 
+/// How a lead can be reached. Lowercase values: the public lead form and
+/// the console both use 'email' | 'phone' verbatim.
+enum LeadContactType {
+  email
+  phone
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
 model PlatformUser {
   id           String             @id @default(uuid())
   email        String             @unique
@@ -668,4 +681,52 @@ model OutboxEvent {
   createdAt   DateTime  @default(now())
 
   @@index([processedAt, createdAt])
+}
+
+/// A contact request from the public landing lead form (POST /public/leads).
+/// Low-privilege record: no account, no auth. Triaged from the console
+/// (GET/PATCH /leads) by operators.
+model Lead {
+  id            String          @id @default(uuid())
+  name          String
+  contact       String
+  contactType   LeadContactType
+  message       String?         @db.Text
+  monthlyOrders String?
+  source        String          @default("landing_page_lead_form")
+  status        LeadStatus      @default(NEW)
+  ip            String?
+  userAgent     String?         @db.Text
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([status, createdAt])
+}
+
+/// One manageable piece of the public SaaS landing content (plan §13:
+/// a SINGLE flexible model, not per-section models — the managed types
+/// vary in shape: scalars, lists, nested objects).
+///
+/// section: hero | capabilities | faq | testimonials | partners | contact.
+/// key: hero/contact = field name (e.g. headlinePart1); capabilities =
+/// section id (e.g. packing); faq/testimonials/partners = item slug.
+/// locale: 'en' | 'bn'. value: a JSON string (hero/contact scalars) or a
+/// JSON object (capability/faq/testimonial/partner item); arrays and null
+/// are rejected at the API layer.
+/// Public GET /public/landing-content groups active rows by locale then
+/// section; the landing falls back to built-in content for missing
+/// sections, so an empty table is a valid state.
+model LandingContent {
+  id        String   @id @default(uuid())
+  section   String
+  key       String
+  locale    String
+  value     Json
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([section, key, locale])
+  @@index([section, locale, sortOrder])
 }

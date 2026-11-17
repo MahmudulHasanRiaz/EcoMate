@@ -519,3 +519,32 @@ export interface JobRun {
 export interface JobsStatus {
   jobs: JobRun[];
 }
+
+export type LeadStatus = 'NEW' | 'CONTACTED' | 'CLOSED';
+
+export interface Lead {
+  id: string;
+  name: string;
+  contact: string;
+  contactType: 'email' | 'phone';
+  message?: string | null;
+  monthlyOrders?: string | null;
+  source: string;
+  status: LeadStatus;
+  ip?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LandingContentRow {
+  id: string;
+  section: string;
+  key: string;
+  locale: string;
+  value: unknown;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

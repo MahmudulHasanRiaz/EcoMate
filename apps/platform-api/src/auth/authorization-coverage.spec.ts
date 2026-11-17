@@ -29,6 +29,10 @@ const SRC_DIR = path.resolve(__dirname, '..');
 /** Whole controllers that are public or service-token guarded by design. */
 const PUBLIC_CONTROLLERS: Record<string, string> = {
   SignupController: 'public self-serve signup (Turnstile + rate limits)',
+  PublicLeadsController:
+    'public lead capture (per-IP rate limit + verify-if-present Turnstile; low-privilege record)',
+  PublicLandingContentController:
+    'public landing content for the landing page (active rows only, cacheable)',
   PublicPlansController: 'public plan catalogue for the landing page',
   PublicBrandingController:
     'public branding for the console login page (platform name + logo/favicon URLs only, no tenant data)',
@@ -106,6 +110,8 @@ const AREA_CONTROLLERS: Record<string, string[]> = {
   Settings: ['SettingsController'],
   Users: ['UsersController'],
   Audit: ['AuditController'],
+  Leads: ['LeadsController'],
+  Landing: ['LandingContentController'],
 };
 
 interface HandlerInfo {
@@ -184,11 +190,15 @@ describe('authorization coverage', () => {
       'HealthController',
       'InternalController',
       'JobsController',
+      'LandingContentController',
+      'LeadsController',
       'MetricsController',
       'MfaController',
       'PlansController',
       'PrometheusMetricsController',
       'PublicBrandingController',
+      'PublicLandingContentController',
+      'PublicLeadsController',
       'PublicPlansController',
       'SettingsController',
       'SignupController',
@@ -240,7 +250,7 @@ describe('authorization coverage', () => {
     expect(unguarded).toEqual([]);
   });
 
-  it('the role matrix covers exactly the four roles and all nine areas', () => {
+  it('the role matrix covers exactly the four roles and all eleven areas', () => {
     expect(ROLE_MATRIX.map((r) => r.role).sort()).toEqual([
       'BILLING',
       'READONLY',
