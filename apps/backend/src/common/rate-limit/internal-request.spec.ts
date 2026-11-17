@@ -1,4 +1,8 @@
-import { isInternalRequest, isPrivateIp } from './internal-request';
+import {
+  isInternalRequest,
+  isPlatformServiceRequest,
+  isPrivateIp,
+} from './internal-request';
 
 /**
  * F1+F2 (owner decisions, avelto follow-ups): the rate-limit exemption for
@@ -72,5 +76,61 @@ describe('isInternalRequest', () => {
   it('is OFF entirely when the env secret is not configured', () => {
     delete process.env.INTERNAL_SHARED_SECRET;
     expect(isInternalRequest(makeReq('127.0.0.1', SECRET))).toBe(false);
+  });
+});
+
+describe('isPlatformServiceRequest', () => {
+  const SECRET = 'test-platform-service-secret';
+  const SERVICE_KEY = 'INTERNAL_SERVICE_SECRET';
+  const makeReq = (peer: string, header?: string, xff?: string) =>
+    ({
+      headers: {
+        ...(header !== undefined ? { 'x-platform-service-token': header } : {}),
+        ...(xff ? { 'x-forwarded-for': xff } : {}),
+      },
+      socket: { remoteAddress: peer },
+      ip: xff || peer,
+    }) as any;
+
+  beforeEach(() => {
+    process.env[SERVICE_KEY] = SECRET;
+  });
+  afterEach(() => {
+    delete process.env.INTERNAL_SERVICE_SECRET;
+  });
+
+  it('accepts a valid platform token + private peer', () => {
+    expect(isPlatformServiceRequest(makeReq('172.18.0.3', SECRET))).toBe(true);
+  });
+
+  it('rejects a valid token from a PUBLIC peer', () => {
+    expect(isPlatformServiceRequest(makeReq('203.0.113.9', SECRET))).toBe(false);
+  });
+
+  it('rejects a private peer without the token', () => {
+    expect(isPlatformServiceRequest(makeReq('10.0.0.2'))).toBe(false);
+  });
+
+  it('rejects a wrong token', () => {
+    expect(
+      isPlatformServiceRequest(makeReq('10.0.0.2', 'wrong-token-value-here')),
+    ).toBe(false);
+  });
+
+  it('does not accept the x-internal-secret header as a platform token', () => {
+    const req = {
+      headers: { 'x-internal-secret': SECRET },
+      socket: { remoteAddress: '127.0.0.1' },
+    } as any;
+    expect(isPlatformServiceRequest(req)).toBe(false);
+  });
+
+  it('never trusts x-forwarded-for', () => {
+    expect(isPlatformServiceRequest(makeReq('203.0.113.9', SECRET, '10.0.0.1'))).toBe(false);
+  });
+
+  it('is OFF entirely when the env secret is not configured', () => {
+    delete process.env.INTERNAL_SERVICE_SECRET;
+    expect(isPlatformServiceRequest(makeReq('127.0.0.1', SECRET))).toBe(false);
   });
 });

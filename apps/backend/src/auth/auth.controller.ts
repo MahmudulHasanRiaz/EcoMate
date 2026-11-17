@@ -28,6 +28,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { SecurityService } from '../security/security.service';
 import { SkipSubscription } from '../tenancy/skip-subscription.decorator';
+import { assertNotImpersonated } from '../common/utils/impersonation';
 
 @SkipSubscription()
 @Controller('auth')
@@ -177,6 +178,11 @@ export class AuthController {
     @CurrentUser() user: { userId: string },
     @Body() dto: ChangePasswordDto,
   ) {
+    // An impersonated platform operator must never be able to change the
+    // tenant owner's password — that would lock the owner out of their
+    // own account. Owner password resets go through the platform console
+    // (audited there) instead.
+    assertNotImpersonated(user, 'Password changes');
     return this.authService.changePassword(user.userId, dto);
   }
 

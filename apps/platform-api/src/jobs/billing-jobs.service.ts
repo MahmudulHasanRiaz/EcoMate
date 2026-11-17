@@ -37,6 +37,15 @@ const DEFAULT_INTERVAL_MS = 3_600_000; // 1 hour
 const RENEWAL_NOTICE_DAYS = 3;
 const TRIAL_ENDING_NOTICE_DAYS = 3;
 const DEFAULT_CANCEL_AFTER_DAYS = 30;
+/**
+ * Max rows a single job scan processes per tick. Every scan is bounded by
+ * this (with an orderBy on the date column so the oldest-due rows go
+ * first); when a scan hits the cap it logs a warning and the next hourly
+ * tick picks up the rest — all jobs are idempotent, so a partial tick is
+ * safe. Without the cap a large tenant base turns each hourly tick into
+ * an unbounded memory load.
+ */
+export const BILLING_JOB_BATCH_SIZE = 500;
 
 /**
  * Billing lifecycle jobs. No external scheduler: a setInterval runner ticks
@@ -229,6 +238,20 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
     return invoice;
   }
 
+  /**
+   * A scan that returns exactly the batch size probably left rows behind.
+   * The next hourly tick picks them up (jobs are idempotent), but the
+   * operator should know the backlog is growing — a full batch every tick
+   * means the cap, not the workload, is the bottleneck.
+   */
+  private warnIfCapped(job: string, scan: string, rows: unknown[]): void {
+    if (rows.length >= BILLING_JOB_BATCH_SIZE) {
+      this.logger.warn(
+        `Billing job ${job}: ${scan} scan hit the ${BILLING_JOB_BATCH_SIZE}-row cap; remaining rows will be picked up on the next tick`,
+      );
+    }
+  }
+
   private async trialExpiry(result: JobResult): Promise<void> {
     const now = new Date();
     const counts = { trialsExpired: 0, invoicesCreated: 0, trialEndingReminders: 0 };
@@ -242,11 +265,14 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
           lte: new Date(now.getTime() + TRIAL_ENDING_NOTICE_DAYS * DAY_MS),
         },
       },
+      orderBy: { trialEndsAt: 'asc' },
+      take: BILLING_JOB_BATCH_SIZE,
       include: {
         tenant: { select: { id: true, name: true, ownerEmail: true, status: true } },
         planVersion: { include: { plan: { select: { name: true } } } },
       },
     });
+    this.warnIfCapped('trial-expiry', 'trial-ending reminders', endingSoon);
     for (const subscription of endingSoon) {
       if (subscription.tenant.status === 'DELETED') continue;
       const sent = await this.prisma.invoiceReminder.findUnique({
@@ -285,11 +311,14 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
     // Expired trials: first renewal invoice + PAST_DUE with a grace window.
     const expired = await this.prisma.subscription.findMany({
       where: { status: 'TRIAL', trialEndsAt: { lte: now } },
+      orderBy: { trialEndsAt: 'asc' },
+      take: BILLING_JOB_BATCH_SIZE,
       include: {
         tenant: { select: { id: true, name: true, ownerEmail: true, status: true } },
         planVersion: { include: { plan: { select: { name: true } } } },
       },
     });
+    this.warnIfCapped('trial-expiry', 'expired trials', expired);
     for (const subscription of expired) {
       if (subscription.tenant.status === 'DELETED') continue;
       const price = Number(subscription.planVersion.price);
@@ -377,12 +406,15 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
           lte: new Date(now.getTime() + RENEWAL_NOTICE_DAYS * DAY_MS),
         },
       },
+      orderBy: { currentPeriodEnd: 'asc' },
+      take: BILLING_JOB_BATCH_SIZE,
       include: {
         tenant: { select: { id: true, name: true, ownerEmail: true, status: true } },
         planVersion: { include: { plan: { select: { name: true } } } },
         pendingPlanVersion: { include: { plan: { select: { name: true } } } },
       },
     });
+    this.warnIfCapped('renewal-invoices', 'renewals due soon', dueSoon);
     for (const subscription of dueSoon) {
       if (subscription.tenant.status === 'DELETED') continue;
       const periodEnded = subscription.currentPeriodEnd <= now;
@@ -508,12 +540,22 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
   private async reminders(result: JobResult): Promise<void> {
     const now = new Date();
     const counts = { dueSoon: 0, overdue: 0 };
+    // Push the dueAt window into the query: the old code loaded EVERY open
+    // invoice and filtered in memory. The (status, dueAt) index serves this
+    // shape. The in-memory classifier below still decides OVERDUE vs
+    // DUE_SOON per invoice.
     const open = await this.prisma.invoice.findMany({
-      where: { status: 'OPEN' },
+      where: {
+        status: 'OPEN',
+        dueAt: { lte: new Date(now.getTime() + RENEWAL_NOTICE_DAYS * DAY_MS) },
+      },
+      orderBy: { dueAt: 'asc' },
+      take: BILLING_JOB_BATCH_SIZE,
       include: {
         tenant: { select: { id: true, name: true, ownerEmail: true, status: true } },
       },
     });
+    this.warnIfCapped('reminders', 'open invoices due soon/overdue', open);
     for (const invoice of open) {
       if (invoice.tenant.status === 'DELETED') continue;
       const kind =
@@ -568,8 +610,11 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
         status: 'PAST_DUE',
         graceEndsAt: { lte: now },
       },
+      orderBy: { graceEndsAt: 'asc' },
+      take: BILLING_JOB_BATCH_SIZE,
       select: { id: true, slug: true },
     });
+    this.warnIfCapped('grace-suspend', 'tenants past grace', pastGrace);
     for (const tenant of pastGrace) {
       try {
         await this.tenants.updateStatus(
@@ -583,13 +628,20 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    // No dedicated (status, suspendedAt) index: the existing
+    // (status, createdAt) index narrows to the SUSPENDED subset (tiny by
+    // nature), and the sort runs over that subset only. Revisit if
+    // suspended tenants ever number in the thousands.
     const stale = await this.prisma.tenant.findMany({
       where: {
         status: 'SUSPENDED',
         suspendedAt: { lte: new Date(now.getTime() - cancelAfterDays * DAY_MS) },
       },
+      orderBy: { suspendedAt: 'asc' },
+      take: BILLING_JOB_BATCH_SIZE,
       select: { id: true },
     });
+    this.warnIfCapped('grace-suspend', 'stale suspended tenants', stale);
     for (const tenant of stale) {
       try {
         await this.tenants.updateStatus(
@@ -610,8 +662,11 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
     const counts = { cancelled: 0 };
     const due = await this.prisma.subscription.findMany({
       where: { cancelAtPeriodEnd: true, currentPeriodEnd: { lte: now } },
+      orderBy: { currentPeriodEnd: 'asc' },
+      take: BILLING_JOB_BATCH_SIZE,
       include: { tenant: { select: { id: true, status: true } } },
     });
+    this.warnIfCapped('cancel-at-period-end', 'subscriptions due to cancel', due);
     for (const subscription of due) {
       if (subscription.tenant.status === 'DELETED') continue;
       await this.prisma.$transaction([

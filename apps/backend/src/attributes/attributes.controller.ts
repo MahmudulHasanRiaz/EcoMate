@@ -22,10 +22,16 @@ import {
 export class AttributesController {
   constructor(private readonly svc: AttributesService) {}
 
-  @Get() findAll() {
+  // Staff-only, like the writes below: the only caller is the admin
+  // attributes UI. The storefront never calls these reads.
+  @Roles('superadmin', 'admin', 'employee')
+  @Get()
+  findAll() {
     return this.svc.findAll();
   }
-  @Get(':id') findOne(@Param('id') id: string) {
+  @Roles('superadmin', 'admin', 'employee')
+  @Get(':id')
+  findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
   @Roles('superadmin', 'admin', 'employee')

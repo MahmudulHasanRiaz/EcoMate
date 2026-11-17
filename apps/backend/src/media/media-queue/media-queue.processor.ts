@@ -24,10 +24,12 @@ export class MediaQueueProcessor extends TenantWorkerHost<MediaJob> {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly mediaQueue: MediaQueueService,
+    // Plain parameter (not a property): the base class owns the
+    // `tenantRegistry` property; `this.tenantRegistry` below resolves to it.
     @Optional()
-    private readonly tenantRegistry?: TenantRegistryService,
+    tenantRegistry?: TenantRegistryService,
   ) {
-    super();
+    super(tenantRegistry);
   }
 
   private async loadSharp() {
@@ -35,7 +37,7 @@ export class MediaQueueProcessor extends TenantWorkerHost<MediaJob> {
     return mod.default;
   }
 
-  async process(job: Job): Promise<void> {
+  async process(job: Job): Promise<unknown> {
     if (job.name === 'recover') {
       await runPerTenant(this.tenantRegistry, async () => {
         await this.mediaQueue.recoverStuck();
@@ -43,7 +45,9 @@ export class MediaQueueProcessor extends TenantWorkerHost<MediaJob> {
       return;
     }
 
-    await super.process(job);
+    // Return the base result: the skip marker ({ skipped: ... }) is the
+    // job's returnvalue, and BullMQ only records what process() returns.
+    return super.process(job);
   }
 
   protected async handle(job: Job<MediaJob>): Promise<void> {

@@ -5,6 +5,8 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Inject,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,22 +14,22 @@ import { StorageService, type UploadFile } from '../storage/storage.service';
 import { createHash } from 'crypto';
 import { extname } from 'path';
 import { readFile, unlink } from 'fs/promises';
-import { lookup } from 'dns/promises';
-import { isIP } from 'net';
 import { validateMagicBytes } from '../common/utils/file-validation';
 import { MediaQueueService } from './media-queue/media-queue.service';
+import {
+  SecureFetcher,
+  defaultHttpTransport,
+} from '../images/secure-fetcher';
+import { defaultDns } from '../images/ip-classifier';
 
-const PRIVATE_CIDRS: Array<(ip: string) => boolean> = [
-  (ip) => ip.startsWith('10.'),
-  (ip) => ip.startsWith('127.'),
-  (ip) => ip.startsWith('169.254.'),
-  (ip) => ip.startsWith('192.168.'),
-  (ip) => /^172\.(1[6-9]|2\d|3[01])\./.test(ip),
-  (ip) => ip === '0.0.0.0',
-  (ip) => ip === '::1',
-  (ip) => ip.startsWith('fc') || ip.startsWith('fd'),
-  (ip) => ip.startsWith('fe80:'),
-];
+const REMOTE_INGEST_MAX_BYTES = 25 * 1024 * 1024;
+const REMOTE_INGEST_TIMEOUT_MS = 20_000;
+/** Some CDNs refuse non-browser user agents; media ingest uses a browser UA. */
+const REMOTE_INGEST_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+const REMOTE_INGEST_ACCEPT =
+  'image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*;q=0.8,*/*;q=0.5';
+
 
 function sha256(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
@@ -40,12 +42,22 @@ function isLocalUrl(url: string): boolean {
 @Injectable()
 export class MediaService {
   private readonly logger = new Logger(MediaService.name);
+  private readonly secureFetcher: SecureFetcher;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly mediaQueue: MediaQueueService,
-  ) {}
+    @Optional()
+    @Inject(SecureFetcher)
+    secureFetcher?: SecureFetcher,
+  ) {
+    // Default: the shared DNS-pinned fetcher. Tests inject a mock; the
+    // module does not register SecureFetcher as a provider, so @Optional
+    // resolves to undefined in production and this default applies.
+    this.secureFetcher =
+      secureFetcher ?? new SecureFetcher(defaultDns, defaultHttpTransport);
+  }
 
   async findAll(query: {
     page?: number;
@@ -278,47 +290,15 @@ export class MediaService {
   }
 
   /**
-   * SSRF & protocol validation for arbitrary remote URLs.
-   * Blocks loopback, private ranges, link-local, and non-http(s) schemes.
-   */
-  private async assertSafeRemoteUrl(rawUrl: string): Promise<URL> {
-    let url: URL;
-    try {
-      url = new URL(rawUrl);
-    } catch {
-      throw new BadRequestException('Invalid URL');
-    }
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      throw new BadRequestException('Only http(s) URLs are allowed');
-    }
-
-    const host = url.hostname;
-    if (!host) throw new BadRequestException('Invalid host');
-
-    const candidates: string[] = [];
-    if (isIP(host)) {
-      candidates.push(host);
-    } else {
-      try {
-        const records = await lookup(host, { all: true });
-        for (const r of records) candidates.push(r.address);
-      } catch {
-        throw new BadRequestException('Failed to resolve URL host');
-      }
-    }
-    for (const ip of candidates) {
-      if (PRIVATE_CIDRS.some((p) => p(ip))) {
-        throw new BadRequestException(
-          'Refusing to fetch URL pointing to a private or loopback address',
-        );
-      }
-    }
-    return url;
-  }
-
-  /**
    * Public — used by UploadController.uploadFromUrl AND internal auto-migration.
    * Downloads remote content, deduplicates by sha256 hash, persists to Media library.
+   *
+   * The download goes through SecureFetcher.fetchRaw (DNS-pinned): the old
+   * code resolved the host, checked the IPs, then fetched with a fresh
+   * unpinned lookup — a DNS TOCTOU that let a rebinding host answer the
+   * check with a public IP and the fetch with a private one. The pinned
+   * fetcher resolves once, connects only to the pinned address, and
+   * verifies the socket's connected address matches.
    */
   async ingestFromUrl(
     rawUrl: string,
@@ -342,59 +322,29 @@ export class MediaService {
     });
     if (known) return known;
 
-    let currentUrlStr = rawUrl;
-    let redirectCount = 0;
-    const maxRedirects = 5;
-    let resp: Response;
-    let url: URL;
-
-    while (true) {
-      url = await this.assertSafeRemoteUrl(currentUrlStr);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20_000);
-      try {
-        resp = await fetch(url.toString(), {
-          signal: controller.signal,
-          redirect: 'manual',
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            Accept:
-              'image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*;q=0.8,*/*;q=0.5',
-          },
-        });
-      } catch (err) {
-        throw new BadRequestException(
-          `Failed to fetch URL: ${(err as Error).message}`,
-        );
-      } finally {
-        clearTimeout(timeout);
+    let fetched: {
+      buffer: Buffer;
+      contentType: string;
+      statusCode: number;
+      finalUrl: string;
+    };
+    try {
+      fetched = await this.secureFetcher.fetchRaw(rawUrl, {
+        maxBytes: REMOTE_INGEST_MAX_BYTES,
+        totalTimeoutMs: REMOTE_INGEST_TIMEOUT_MS,
+        userAgent: REMOTE_INGEST_USER_AGENT,
+        accept: REMOTE_INGEST_ACCEPT,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('exceeds maximum size')) {
+        throw new BadRequestException('Remote file too large (>25MB)');
       }
-
-      if (resp.status >= 300 && resp.status < 400) {
-        if (redirectCount >= maxRedirects) {
-          throw new BadRequestException('Too many redirects');
-        }
-        const location = resp.headers.get('location');
-        if (!location) {
-          throw new BadRequestException(
-            `Redirect response missing Location header (status ${resp.status})`,
-          );
-        }
-        // Resolve relative redirects against current URL
-        const nextUrl = new URL(location, url.toString());
-        currentUrlStr = nextUrl.toString();
-        redirectCount++;
-        continue;
-      }
-      break;
+      throw new BadRequestException(`Failed to fetch URL: ${message}`);
     }
 
-    if (!resp.ok) {
-      throw new BadRequestException(`Failed to fetch URL: ${resp.status}`);
-    }
     const contentType =
-      resp.headers.get('content-type')?.split(';')[0].trim().toLowerCase() ||
+      fetched.contentType.split(';')[0].trim().toLowerCase() ||
       'application/octet-stream';
     if (
       !contentType.startsWith('image/') &&
@@ -402,14 +352,10 @@ export class MediaService {
     ) {
       throw new BadRequestException('URL must point to an image or video');
     }
-    const lenHeader = resp.headers.get('content-length');
-    const declaredSize = lenHeader ? parseInt(lenHeader, 10) : 0;
-    if (declaredSize > 25 * 1024 * 1024) {
-      throw new BadRequestException('Remote file too large (>25MB)');
-    }
-
-    const buffer = Buffer.from(await resp.arrayBuffer());
-    if (buffer.length > 25 * 1024 * 1024) {
+    // Size is enforced by the fetcher (Content-Length pre-check + streaming
+    // cap); this is a defense-in-depth re-check on the received bytes.
+    const buffer = fetched.buffer;
+    if (buffer.length > REMOTE_INGEST_MAX_BYTES) {
       throw new BadRequestException('Remote file too large (>25MB)');
     }
     validateMagicBytes(buffer, contentType);
@@ -457,10 +403,14 @@ export class MediaService {
       };
     }
 
+    // The filename comes from the final URL (after redirects), not the
+    // requested one — a redirect to a different filename must not keep
+    // the old name.
+    const finalPath = new URL(fetched.finalUrl).pathname;
     const inferredName =
       opts.filename?.trim() ||
-      url.pathname.split('/').pop()?.split('?')[0] ||
-      `download${extname(url.pathname) || '.jpg'}`;
+      finalPath.split('/').pop()?.split('?')[0] ||
+      `download${extname(finalPath) || '.jpg'}`;
 
     const result = await this.storage.uploadFromBuffer(
       buffer,

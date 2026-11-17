@@ -123,7 +123,21 @@ model PlatformUser {
   name         String
   role         PlatformUserRole   @default(READONLY)
   status       PlatformUserStatus @default(ACTIVE)
+  /// TOTP secret, AES-256-GCM encrypted with APP_ENCRYPTION_KEY (enc:v1:
+  /// prefix). Null until MFA is set up; inert until mfaEnabledAt is set.
   mfaSecret    String?
+  /// Secret being enrolled, encrypted like mfaSecret. Only moved to
+  /// mfaSecret once the user proves it with a valid code, so re-enrolling
+  /// never locks the user out of the still-working old secret.
+  mfaPendingSecret String?
+  /// When MFA was enabled. Null = MFA not active (even if a secret exists).
+  mfaEnabledAt DateTime?
+  /// SHA-256 hashes of single-use recovery codes; a used code is removed.
+  mfaRecoveryCodes String[]       @default([])
+  /// Consecutive failed logins; reset on success. Drives progressive lockout.
+  failedLoginCount Int             @default(0)
+  /// Account is locked until this instant (progressive lockout, Phase 8).
+  lockedUntil  DateTime?
   lastLoginAt  DateTime?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
@@ -156,11 +170,15 @@ model PlatformRefreshToken {
   userId    String
   user      PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash String       @unique
+  /// Rotation family: one login mints a family; every refresh keeps it.
+  /// A replayed (already-rotated) token revokes its whole family.
+  familyId  String       @default(uuid())
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime     @default(now())
 
   @@index([userId, expiresAt])
+  @@index([familyId])
 }
 
 model Tenant {
@@ -293,8 +311,14 @@ model PlanVersion {
   graceDays     Int             @default(7)
   effectiveFrom DateTime        @default(now())
   archivedAt    DateTime?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  /// The signup default (Phase 8, D3): provisioning prefers the isDefault
+  /// version over newest-wins. At most one version may be the default —
+  /// enforced by the PARTIAL unique index in migration
+  /// 20261116223521_phase8_stage0_platform_security (Prisma has no
+  /// partial-index support), not by a schema attribute.
+  isDefault     Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   tenants       Tenant[]
   subscriptions Subscription[]

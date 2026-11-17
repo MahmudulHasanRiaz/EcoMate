@@ -142,7 +142,14 @@ export default defineConfig(({ mode }) => {
         '/assets': 'http://localhost:4000',
         '/api': {
           target: 'http://localhost:4000',
-          changeOrigin: true,
+          // Do NOT set changeOrigin here: the backend resolves the tenant
+          // from the request Host header, and the admin is served on the
+          // tenant subdomain (http://<slug>.ecomate.bd:5173/). With
+          // changeOrigin the proxy rewrites Host to localhost:4000 and the
+          // backend sees no tenant — owner sign-in 401s ("user not found")
+          // because the RLS context is empty. Production Caddy preserves
+          // the incoming Host, so dev must too.
+          changeOrigin: false,
         },
       },
     },

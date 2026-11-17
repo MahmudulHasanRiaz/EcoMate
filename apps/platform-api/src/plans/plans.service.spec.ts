@@ -1,4 +1,8 @@
-import { ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PlansService } from './plans.service';
 
 const prisma: any = {
@@ -11,6 +15,7 @@ const prisma: any = {
     findFirst: jest.fn(),
     findUnique: jest.fn(),
     create: jest.fn(),
+    update: jest.fn().mockResolvedValue({}),
   },
   subscription: {
     findMany: jest.fn(),
@@ -19,7 +24,12 @@ const prisma: any = {
   tenant: {
     update: jest.fn().mockResolvedValue({}),
   },
-  $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
+  // Handles both the array form (other methods) and the callback form
+  // (setDefaultVersion): the callback receives the same mock as its tx client.
+  $transaction: jest.fn(async (arg: any) =>
+    typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+  ),
+  $executeRaw: jest.fn().mockResolvedValue(1),
 };
 
 const audit = { record: jest.fn() };
@@ -279,6 +289,103 @@ describe('PlansService', () => {
       await expect(
         service.applyVersion('plan-1', 'v2', { dryRun: true }),
       ).rejects.toThrow('This plan version is archived');
+    });
+  });
+
+  describe('setDefaultVersion', () => {
+    const versionRow = {
+      id: 'v2',
+      planId: 'plan-1',
+      version: 2,
+      archivedAt: null,
+      plan: { id: 'plan-1', name: 'Starter', isActive: true },
+    };
+
+    it('flips the default in one locked transaction and audits the previous default', async () => {
+      prisma.planVersion.findUnique.mockResolvedValue(versionRow);
+      prisma.planVersion.findFirst.mockResolvedValue({ id: 'v1' });
+
+      const result = await service.setDefaultVersion(
+        'plan-1',
+        'v2',
+        'actor-1',
+      );
+
+      expect(result).toEqual({
+        id: 'v2',
+        planId: 'plan-1',
+        version: 2,
+        isDefault: true,
+      });
+      // One transaction: advisory lock, clear-all, then set the new default.
+      // A single UPDATE flipping every row at once violates the partial
+      // unique index (Postgres checks it per row — found live 2026-11-17).
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+      const sql = prisma.$executeRaw.mock.calls
+        .map(([strings]: any[]) => strings.join(''))
+        .join('\n');
+      expect(sql).toContain('pg_advisory_xact_lock');
+      expect(sql).toContain('SET "isDefault" = false');
+      expect(prisma.planVersion.update).toHaveBeenCalledWith({
+        where: { id: 'v2' },
+        data: { isDefault: true },
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'actor-1',
+          action: 'plan.version.setDefault',
+          entity: 'PlanVersion',
+          entityId: 'v2',
+          before: { previousDefaultId: 'v1' },
+          after: { planId: 'plan-1', version: 2, isDefault: true },
+        }),
+      );
+    });
+
+    it('maps a concurrent-flip unique violation to a 409, not a 500', async () => {
+      prisma.planVersion.findUnique.mockResolvedValue(versionRow);
+      prisma.planVersion.findFirst.mockResolvedValue({ id: 'v1' });
+      prisma.$transaction.mockRejectedValueOnce(
+        new Error(
+          'duplicate key value violates unique constraint "PlanVersion_single_default_idx"',
+        ),
+      );
+      await expect(
+        service.setDefaultVersion('plan-1', 'v2', 'actor-1'),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('refuses a missing version, a foreign version, an archived version and an inactive plan', async () => {
+      prisma.planVersion.findUnique.mockResolvedValue(null);
+      await expect(
+        service.setDefaultVersion('plan-1', 'ghost'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      prisma.planVersion.findUnique.mockResolvedValue({
+        ...versionRow,
+        planId: 'other-plan',
+      });
+      await expect(
+        service.setDefaultVersion('plan-1', 'v2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      prisma.planVersion.findUnique.mockResolvedValue({
+        ...versionRow,
+        archivedAt: new Date(),
+      });
+      await expect(
+        service.setDefaultVersion('plan-1', 'v2'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      prisma.planVersion.findUnique.mockResolvedValue({
+        ...versionRow,
+        plan: { ...versionRow.plan, isActive: false },
+      });
+      await expect(
+        service.setDefaultVersion('plan-1', 'v2'),
+      ).rejects.toThrow('inactive');
+      expect(prisma.$executeRaw).not.toHaveBeenCalled();
     });
   });
 });

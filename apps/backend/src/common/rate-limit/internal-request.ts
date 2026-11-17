@@ -42,10 +42,18 @@ export function isPrivateIp(ip: string | null | undefined): boolean {
   return false;
 }
 
-export function isInternalRequest(request: FastifyRequest): boolean {
-  const secret = process.env.INTERNAL_SHARED_SECRET;
+/**
+ * Shared two-factor check: the named header must match the secret
+ * (timing-safe compare) AND the TCP peer must be private/loopback.
+ * Returns false when the secret is not configured (feature OFF).
+ */
+function matchesSecretFromPrivatePeer(
+  request: FastifyRequest,
+  headerName: string,
+  secret: string | undefined,
+): boolean {
   if (!secret) return false;
-  const header = request.headers[INTERNAL_SECRET_HEADER];
+  const header = request.headers[headerName];
   const provided = Array.isArray(header) ? header[0] : header;
   if (!provided) return false;
   const a = Buffer.from(provided);
@@ -55,4 +63,33 @@ export function isInternalRequest(request: FastifyRequest): boolean {
     request.socket?.remoteAddress ||
     (request as any).raw?.socket?.remoteAddress;
   return isPrivateIp(peer);
+}
+
+export function isInternalRequest(request: FastifyRequest): boolean {
+  return matchesSecretFromPrivatePeer(
+    request,
+    INTERNAL_SECRET_HEADER,
+    process.env.INTERNAL_SHARED_SECRET,
+  );
+}
+
+export const PLATFORM_SERVICE_TOKEN_HEADER = 'x-platform-service-token';
+
+/**
+ * Platform control-plane calls (provisioning, chunked export, purge, usage,
+ * entitlement refresh) authenticate with `x-platform-service-token` +
+ * INTERNAL_SERVICE_SECRET — the platform never sends `x-internal-secret`,
+ * so without this the backend's own rate limiter 429s the platform's
+ * bursty internal calls (a chunked export is many rapid requests from one
+ * peer; a purge that 429s on its export-first step never deletes anything).
+ * Same two-factor model as isInternalRequest: valid token AND a
+ * private/loopback TCP peer. Used ONLY by the rate-limit guard; the
+ * landing-page preview gate keeps using isInternalRequest.
+ */
+export function isPlatformServiceRequest(request: FastifyRequest): boolean {
+  return matchesSecretFromPrivatePeer(
+    request,
+    PLATFORM_SERVICE_TOKEN_HEADER,
+    process.env.INTERNAL_SERVICE_SECRET,
+  );
 }

@@ -1,5 +1,5 @@
 import ThankYouContent, { type PaymentStatus } from './ThankYouContent';
-import { getOrderForThankYou } from '@/lib/api/orders';
+import { serverFetch } from '@/lib/api-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,15 +71,27 @@ export default async function ThankYouPage({
   let errorMessage: string | undefined;
 
   try {
-    const fetched = (await getOrderForThankYou(
-      orderId,
-      token || undefined,
-    )) as AnyOrder;
+    // Tenant-aware fetch: serverFetch forwards the request's tenant host
+    // (x-tenant-host + internal secret) to the backend. A raw fetch to
+    // the backend origin carries no tenant context, so the backend 403s
+    // ("Tenant context is required") and every customer saw
+    // "Order not found" on their own thank-you page.
+    const safeToken =
+      token && token !== 'undefined' && token !== 'null' && token.trim() !== ''
+        ? token
+        : undefined;
+    const path = safeToken
+      ? `/orders/${encodeURIComponent(orderId)}?t=${encodeURIComponent(safeToken)}`
+      : `/orders/${encodeURIComponent(orderId)}`;
+    const fetched = await serverFetch<AnyOrder>(path, { cache: 'no-store' });
     order = fetched;
     paymentStatus = derivePaymentStatus(fetched);
   } catch (err) {
-    errorMessage =
-      (err as Error)?.message || 'We could not find this order.';
+    // Never render the raw backend error to the customer: it echoes the
+    // requested URL, including the order view token. Log it server-side
+    // and show the generic message.
+    console.error(`[thank-you] failed to load order ${orderId}:`, err);
+    errorMessage = 'We could not find this order.';
   }
 
   return (

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { Roles } from '../auth/roles.decorator';
+import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { CreatePlanVersionDto } from './dto/create-plan-version.dto';
@@ -23,11 +23,13 @@ export class PlansController {
   constructor(private readonly plans: PlansService) {}
 
   @Get()
+  @Roles(...READ_ROLES)
   list() {
     return this.plans.list();
   }
 
   @Get(':id')
+  @Roles(...READ_ROLES)
   detail(@Param('id', ParseUUIDPipe) id: string) {
     return this.plans.detail(id);
   }
@@ -79,5 +81,15 @@ export class PlansController {
     @CurrentPlatformUser() user?: { id: string },
   ) {
     return this.plans.applyVersion(id, versionId, { dryRun: body?.dryRun }, user?.id);
+  }
+
+  @Post(':id/versions/:versionId/set-default')
+  @Roles('SUPERADMIN', 'BILLING')
+  setDefaultVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('versionId', ParseUUIDPipe) versionId: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.plans.setDefaultVersion(id, versionId, user?.id);
   }
 }

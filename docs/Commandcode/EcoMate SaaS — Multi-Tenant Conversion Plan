@@ -267,9 +267,9 @@ Flow:
 - Verify via DNS lookup; on success mark `VERIFIED`, enqueue TLS.
 - TLS with Caddy on-demand TLS:
   ```
-  on_demand_tls { ask http://platform-api:4000/internal/tls/ask }
+  on_demand_tls { ask http://platform-api:4100/api/internal/tls/allow }
   ```
-  `/internal/tls/ask` returns 200 only for verified, active tenant domains.
+  `/api/internal/tls/allow` returns 200 only for verified, active tenant domains.
 - Ingress routes all hosts to storefront; `/api` to backend; host resolution picks tenant.
 - Primary domain: one per tenant; custom domain wins over the base-domain subdomain for canonical URLs, sitemap and email links. Subdomain 301s to the custom domain for storefront; admin login uses the canonical host.
 - Removal disables cert/routing and audits.
@@ -720,7 +720,7 @@ Paginate tenants; never load all at once.
 - [ ] Audit log service.
 - [ ] Scaffold `apps/platform-admin` (Vite + TanStack Router + existing UI kit): login, shell, dashboard, tenants list/detail, plans, subscriptions, invoices, payments, domains, settings.
 - [ ] Scaffold `apps/landing` (Next.js): layout, pricing page fed by `/public/plans`, signup shell, legal pages.
-- [ ] Internal signed API client (`x-service-token` HMAC) + `/internal/registry`, `/internal/entitlements/:tenantId`, `/internal/tls/ask`, `/internal/usage`.
+- [ ] Internal signed API client (`x-service-token` HMAC) + `/internal/registry`, `/internal/entitlements/:tenantId`, `/api/internal/tls/allow`, `/internal/usage`.
 
 **Acceptance:** dynamic plan created in SaaS admin appears on landing; manual tenant created and visible in admin; domain config (primary + alias + fallback) validates and resolves; platform auth works; audit rows written.
 

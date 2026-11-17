@@ -79,6 +79,13 @@ function normaliseDomain(domain: string): string {
 export class DomainConfigService implements OnModuleInit {
   private readonly logger = new Logger(DomainConfigService.name);
   private config!: DomainConfig;
+  /**
+   * Phase 8 Stage 2 item 25 (D12): live primary-domain probe state, set by
+   * TlsHealthService. null = no probe result yet. This is runtime state
+   * only — never persisted to PlatformSetting.domains (a stale persisted
+   * "unhealthy" would survive restarts and pin the platform to fallback).
+   */
+  private probeHealthy: boolean | null = null;
 
   constructor(private readonly prisma: PlatformPrismaService) {}
 
@@ -330,7 +337,31 @@ export class DomainConfigService implements OnModuleInit {
       : `${slug}.${this.config.primaryDomain}`;
   }
 
+  /**
+   * Live probe result for the primary domain (null = no probe has run
+   * yet). Set by TlsHealthService; read by the health endpoint and the
+   * TLS status endpoint.
+   */
+  getPrimaryProbeResult(): boolean | null {
+    return this.probeHealthy;
+  }
+
+  /** Record a primary-domain probe outcome (TLS health job only). */
+  setPrimaryProbeResult(healthy: boolean): void {
+    this.probeHealthy = healthy;
+  }
+
+  /**
+   * Whether the primary domain is currently usable. Precedence:
+   *   1. SAAS_PRIMARY_UNHEALTHY=true (manual operator override) → false.
+   *   2. A live probe reporting unhealthy → false.
+   *   3. Otherwise the configured value (env bootstrap / stored setting).
+   * The manual flag therefore still forces fallback even when the probe
+   * says healthy — it is the operator's kill switch, not dead config.
+   */
   isPrimaryHealthy(): boolean {
+    if (process.env.SAAS_PRIMARY_UNHEALTHY === 'true') return false;
+    if (this.probeHealthy === false) return false;
     return this.config.primaryHealthy !== false;
   }
 

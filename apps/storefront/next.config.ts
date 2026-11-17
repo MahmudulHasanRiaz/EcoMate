@@ -132,17 +132,26 @@ export default async function (phase: string) {
         {
           source: '/:path*',
           headers: [
-            // SECURITY (2026-10-25, F22): report-only CSP for the main
-            // storefront. Deliberately permissive where the app needs it
-            // (inline scripts/styles exist throughout: TrackingScripts,
-            // JSON-LD, CustomRenderer) and strict where it costs nothing
-            // (object-src 'none', base-uri 'self'). Enforcing a strict
-            // policy today would break tracking embeds and inline UI, so
-            // this only REPORTS — violations land in /api/csp-report and
-            // are the evidence for a future enforcing policy. Landing
-            // pages are excluded from this round (Q5 decision pending:
-            // their raw-HTML feature needs its own policy).
-            { key: 'Content-Security-Policy-Report-Only', value: "default-src 'self'; script-src 'self' 'unsafe-inline' https://connect.facebook.net https://www.googletagmanager.com https://analytics.tiktok.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src https://www.facebook.com https://www.youtube.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; report-uri /api/csp-report" },
+            // SECURITY (2026-10-25, F22; ENFORCING since Phase 8, 2026-11-17):
+            // enforcing CSP for the main storefront. Reviewed before
+            // promotion — the policy is deliberately permissive where the
+            // app needs it and strict where it costs nothing:
+            // - script-src keeps 'unsafe-inline' (Next.js RSC flight
+            //   payloads, JSON-LD, TrackingScripts init, and the browser
+            //   trust snippet are all inline) and the four tracking
+            //   origins the app actually loads (Facebook, GTM, TikTok,
+            //   Cloudflare Insights — grep-verified, no other external
+            //   script origin exists in app/components/lib).
+            // - frame-src covers the only embeds (YouTube + Facebook).
+            // - connect-src/img-src stay permissive (https:) — store
+            //   media and payment/tracking calls use arbitrary https
+            //   origins, and tightening them would break tenants.
+            // - object-src 'none', base-uri 'self' cost nothing.
+            // Violations still land in /api/csp-report (report-uri kept).
+            // Landing pages keep their own stricter enforcing CSP from
+            // proxy.ts; where both apply, the browser enforces the
+            // intersection, so landing behaviour is unchanged.
+            { key: 'Content-Security-Policy', value: "default-src 'self'; script-src 'self' 'unsafe-inline' https://connect.facebook.net https://www.googletagmanager.com https://analytics.tiktok.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src https://www.facebook.com https://www.youtube.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; report-uri /api/csp-report" },
             { key: 'X-Frame-Options', value: 'DENY' },
             { key: 'X-Content-Type-Options', value: 'nosniff' },
             { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

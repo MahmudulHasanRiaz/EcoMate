@@ -36,6 +36,9 @@ export class TenantMiddleware implements NestMiddleware {
         if (resolution.isAlias && typeof res?.header === 'function') {
           res.header('X-Robots-Tag', 'noindex');
         }
+        // Stash for the structured access log: the Fastify onResponse hook
+        // runs outside this ALS scope, so it reads the id off the request.
+        (req as any).tenantId = tenant.id;
         runWithTenant(
           {
             tenantId: tenant.id,
@@ -54,6 +57,8 @@ export class TenantMiddleware implements NestMiddleware {
     if (resolution.kind === 'custom') {
       const tenant = this.registry.resolveByHost(host);
       if (tenant) {
+        // Stash for the structured access log (see above).
+        (req as any).tenantId = tenant.id;
         runWithTenant(
           {
             tenantId: tenant.id,
@@ -71,6 +76,8 @@ export class TenantMiddleware implements NestMiddleware {
     // single-tenant bridge, but never allow an unmatched host in production.
     const defaultTenantId = process.env.DEFAULT_TENANT_ID;
     if (defaultTenantId && process.env.NODE_ENV !== 'production') {
+      // Stash for the structured access log (see above).
+      (req as any).tenantId = defaultTenantId;
       runWithTenant(
         {
           tenantId: defaultTenantId,

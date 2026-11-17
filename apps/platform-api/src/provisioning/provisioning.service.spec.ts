@@ -24,6 +24,7 @@ const planVersion = {
   limits: { products: 100 },
   trialDays: 14,
   archivedAt: null,
+  effectiveFrom: new Date('2026-01-01T00:00:00Z'),
   plan: { name: 'Trial', isActive: true },
 };
 
@@ -189,6 +190,41 @@ describe('ProvisioningService', () => {
     expect(job).toMatchObject({ status: 'SUCCEEDED', step: 'completed' });
   });
 
+  it('pushes a registry refresh to the backend after provisioning succeeds', async () => {
+    const { service } = makeService();
+
+    await service.startForSignup('signup-1');
+
+    // The bootstrap call is first; the refresh push follows the SUCCEEDED
+    // update so the new host is routable without the 60s poll wait.
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect((global.fetch as jest.Mock).mock.calls[1]).toEqual([
+      'http://backend:4000/api/internal/tenants/registry/refresh',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'x-platform-service-token': 'platform-secret',
+        }),
+      }),
+    ]);
+  });
+
+  it('still succeeds provisioning when the registry refresh push fails', async () => {
+    const { service } = makeService();
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => '{"ok":true}',
+    });
+    (global.fetch as jest.Mock).mockRejectedValueOnce(
+      new Error('backend unreachable'),
+    );
+
+    const job = await service.startForSignup('signup-1');
+
+    expect(job).toMatchObject({ status: 'SUCCEEDED', step: 'completed' });
+  });
+
   it('is idempotent once the job succeeded', async () => {
     const { service, prisma } = makeService();
     prisma.provisioningJob.findUnique.mockReset();
@@ -281,6 +317,92 @@ describe('ProvisioningService', () => {
       'No plan version',
     );
     expect(prisma.tenant.create).not.toHaveBeenCalled();
+  });
+
+  it('provisions onto the isDefault version even when a newer version exists', async () => {
+    const { service, prisma } = makeService();
+    const defaultVersion = {
+      ...planVersion,
+      id: 'pv-default',
+      effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+    };
+    const newestVersion = {
+      ...planVersion,
+      id: 'pv-newest',
+      effectiveFrom: new Date('2026-06-01T00:00:00Z'),
+    };
+    // First findFirst call is the isDefault lookup; the newest lookup must
+    // never run once a default is found.
+    prisma.planVersion.findFirst
+      .mockResolvedValueOnce(defaultVersion)
+      .mockResolvedValue(newestVersion);
+
+    const job = await service.startForSignup('signup-1');
+
+    expect(job).toMatchObject({ status: 'SUCCEEDED' });
+    expect(prisma.planVersion.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.planVersion.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { isDefault: true } }),
+    );
+    expect(prisma.tenant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ planVersionId: 'pv-default' }),
+      }),
+    );
+  });
+
+  it('falls back to newest-wins only when no default is set', async () => {
+    const { service, prisma } = makeService();
+    const newestVersion = {
+      ...planVersion,
+      id: 'pv-newest',
+      effectiveFrom: new Date('2026-06-01T00:00:00Z'),
+    };
+    prisma.planVersion.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(newestVersion);
+
+    const job = await service.startForSignup('signup-1');
+
+    expect(job).toMatchObject({ status: 'SUCCEEDED' });
+    expect(prisma.tenant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ planVersionId: 'pv-newest' }),
+      }),
+    );
+  });
+
+  it('fails closed when the configured default is unusable (no silent fallback)', async () => {
+    const { service, prisma } = makeService();
+    prisma.planVersion.findFirst.mockResolvedValue({
+      ...planVersion,
+      id: 'pv-default',
+      archivedAt: new Date('2026-06-01T00:00:00Z'),
+    });
+
+    await expect(service.startForSignup('signup-1')).rejects.toThrow(
+      'default plan version is not usable',
+    );
+    expect(prisma.tenant.create).not.toHaveBeenCalled();
+  });
+
+  it('the env override still wins over the isDefault version', async () => {
+    const { service, prisma } = makeService();
+    process.env.DEFAULT_PLAN_VERSION_ID = 'pv-explicit';
+    prisma.planVersion.findUnique.mockResolvedValue({
+      ...planVersion,
+      id: 'pv-explicit',
+    });
+
+    const job = await service.startForSignup('signup-1');
+
+    expect(job).toMatchObject({ status: 'SUCCEEDED' });
+    expect(prisma.planVersion.findFirst).not.toHaveBeenCalled();
+    expect(prisma.tenant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ planVersionId: 'pv-explicit' }),
+      }),
+    );
   });
 
   it('fails closed without the internal service secret', async () => {

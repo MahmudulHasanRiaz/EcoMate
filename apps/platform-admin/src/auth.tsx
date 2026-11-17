@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { PlatformUser, Session } from './types';
 import { ApiError, readJson } from './lib/api';
+import { classifyLoginResponse, type LoginOutcome } from './lib/mfa';
 
 const API_BASE = (import.meta.env.VITE_PLATFORM_API_URL || '/api').replace(
   /\/+$/,
@@ -16,15 +17,24 @@ const API_BASE = (import.meta.env.VITE_PLATFORM_API_URL || '/api').replace(
 );
 const STORAGE_KEY = 'ecomate.platform.session';
 
-interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
-  user: PlatformUser;
+export interface MfaSetup {
+  secret: string;
+  otpauthUrl: string;
 }
 
 interface AuthValue {
   session: Session | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<LoginOutcome>;
+  /** Complete the login second step for an MFA-enrolled account. */
+  completeMfa: (mfaToken: string, code: string) => Promise<void>;
+  /** Start MFA enrollment with a short-lived MFA token (mid-login). */
+  startMfaSetup: (mfaToken: string) => Promise<MfaSetup>;
+  /** Verify the new secret; on success the login completes and the
+   * recovery codes are returned (shown once). */
+  verifyMfaSetup: (
+    mfaToken: string,
+    code: string,
+  ) => Promise<{ recoveryCodes: string[] }>;
   logout: () => void;
   api: (path: string, init?: RequestInit) => Promise<Response>;
 }
@@ -103,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string): Promise<LoginOutcome> => {
       let response: Response;
       try {
         response = await fetch(`${API_BASE}/auth/login`, {
@@ -114,7 +124,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         throw new ApiError('Cannot reach the platform API.', 0);
       }
-      const data = await readJson<LoginResponse>(response);
+      const outcome = classifyLoginResponse(await readJson(response));
+      if (outcome.kind === 'session') {
+        const next: Session = {
+          accessToken: outcome.accessToken,
+          refreshToken: outcome.refreshToken,
+          user: outcome.user,
+        };
+        writeSession(next);
+        setSession(next);
+      }
+      return outcome;
+    },
+    [],
+  );
+
+  const completeMfa = useCallback(
+    async (mfaToken: string, code: string) => {
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE}/auth/mfa/challenge`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ mfaToken, code }),
+        });
+      } catch {
+        throw new ApiError('Cannot reach the platform API.', 0);
+      }
+      const data = await readJson<{
+        accessToken: string;
+        refreshToken: string;
+        user: PlatformUser;
+      }>(response);
       const next: Session = {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
@@ -122,6 +163,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       writeSession(next);
       setSession(next);
+    },
+    [],
+  );
+
+  const startMfaSetup = useCallback(async (mfaToken: string) => {
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/auth/mfa/setup`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${mfaToken}` },
+      });
+    } catch {
+      throw new ApiError('Cannot reach the platform API.', 0);
+    }
+    return readJson<MfaSetup>(response);
+  }, []);
+
+  const verifyMfaSetup = useCallback(
+    async (mfaToken: string, code: string) => {
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE}/auth/mfa/verify`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${mfaToken}`,
+          },
+          body: JSON.stringify({ code }),
+        });
+      } catch {
+        throw new ApiError('Cannot reach the platform API.', 0);
+      }
+      const data = await readJson<{
+        enabled: boolean;
+        recoveryCodes: string[];
+        accessToken?: string;
+        refreshToken?: string;
+        user?: PlatformUser;
+      }>(response);
+      // Mid-login enrollment completes the login with session tokens.
+      if (data.accessToken && data.refreshToken && data.user) {
+        const next: Session = {
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+          user: data.user,
+        };
+        writeSession(next);
+        setSession(next);
+      }
+      return { recoveryCodes: data.recoveryCodes };
     },
     [],
   );
@@ -140,8 +231,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ session, login, logout, api }),
-    [session, login, logout, api],
+    () => ({
+      session,
+      login,
+      completeMfa,
+      startMfaSetup,
+      verifyMfaSetup,
+      logout,
+      api,
+    }),
+    [session, login, completeMfa, startMfaSetup, verifyMfaSetup, logout, api],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

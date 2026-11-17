@@ -59,8 +59,6 @@ import { Route as AuthenticatedMonAnalyticsHelpRouteImport } from './routes/_aut
 import { Route as AuthenticatedMonAnalyticsInventoryRouteImport } from './routes/_authenticated/mon/analytics/inventory'
 import { Route as AuthenticatedMonAnalyticsMarketingRouteImport } from './routes/_authenticated/mon/analytics/marketing'
 import { Route as AuthenticatedMonAnalyticsSalesRouteImport } from './routes/_authenticated/mon/analytics/sales'
-import { Route as AuthenticatedMonBackupIndexRouteImport } from './routes/_authenticated/mon/backup/index'
-import { Route as AuthenticatedMonBackupSettingsRouteImport } from './routes/_authenticated/mon/backup/settings'
 import { Route as AuthenticatedMonHelpCenterIndexRouteImport } from './routes/_authenticated/mon/help-center/index'
 import { Route as AuthenticatedMonNotificationsIndexRouteImport } from './routes/_authenticated/mon/notifications/index'
 import { Route as AuthenticatedMonPagesIndexRouteImport } from './routes/_authenticated/mon/pages/index'
@@ -467,18 +465,6 @@ const AuthenticatedMonAnalyticsSalesRoute =
   AuthenticatedMonAnalyticsSalesRouteImport.update({
     id: '/mon/analytics/sales',
     path: '/mon/analytics/sales',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedMonBackupIndexRoute =
-  AuthenticatedMonBackupIndexRouteImport.update({
-    id: '/mon/backup/',
-    path: '/mon/backup/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedMonBackupSettingsRoute =
-  AuthenticatedMonBackupSettingsRouteImport.update({
-    id: '/mon/backup/settings',
-    path: '/mon/backup/settings',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedMonHelpCenterIndexRoute =
@@ -1304,7 +1290,6 @@ export interface FileRoutesByFullPath {
   '/mon/analytics/inventory': typeof AuthenticatedMonAnalyticsInventoryRoute
   '/mon/analytics/marketing': typeof AuthenticatedMonAnalyticsMarketingRoute
   '/mon/analytics/sales': typeof AuthenticatedMonAnalyticsSalesRoute
-  '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/mon/users/create': typeof AuthenticatedMonUsersCreateRoute
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
@@ -1346,7 +1331,6 @@ export interface FileRoutesByFullPath {
   '/hr/users/': typeof AuthenticatedHrUsersIndexRoute
   '/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
-  '/mon/backup/': typeof AuthenticatedMonBackupIndexRoute
   '/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
   '/mon/notifications/': typeof AuthenticatedMonNotificationsIndexRoute
   '/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
@@ -1487,7 +1471,6 @@ export interface FileRoutesByTo {
   '/mon/analytics/inventory': typeof AuthenticatedMonAnalyticsInventoryRoute
   '/mon/analytics/marketing': typeof AuthenticatedMonAnalyticsMarketingRoute
   '/mon/analytics/sales': typeof AuthenticatedMonAnalyticsSalesRoute
-  '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/mon/users/create': typeof AuthenticatedMonUsersCreateRoute
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
@@ -1529,7 +1512,6 @@ export interface FileRoutesByTo {
   '/hr/users': typeof AuthenticatedHrUsersIndexRoute
   '/mon/activity-logs': typeof AuthenticatedMonActivityLogsIndexRoute
   '/mon/analytics': typeof AuthenticatedMonAnalyticsIndexRoute
-  '/mon/backup': typeof AuthenticatedMonBackupIndexRoute
   '/mon/help-center': typeof AuthenticatedMonHelpCenterIndexRoute
   '/mon/notifications': typeof AuthenticatedMonNotificationsIndexRoute
   '/mon/pages': typeof AuthenticatedMonPagesIndexRoute
@@ -1672,7 +1654,6 @@ export interface FileRoutesById {
   '/_authenticated/mon/analytics/inventory': typeof AuthenticatedMonAnalyticsInventoryRoute
   '/_authenticated/mon/analytics/marketing': typeof AuthenticatedMonAnalyticsMarketingRoute
   '/_authenticated/mon/analytics/sales': typeof AuthenticatedMonAnalyticsSalesRoute
-  '/_authenticated/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
   '/_authenticated/mon/users/create': typeof AuthenticatedMonUsersCreateRoute
   '/_authenticated/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
@@ -1714,7 +1695,6 @@ export interface FileRoutesById {
   '/_authenticated/hr/users/': typeof AuthenticatedHrUsersIndexRoute
   '/_authenticated/mon/activity-logs/': typeof AuthenticatedMonActivityLogsIndexRoute
   '/_authenticated/mon/analytics/': typeof AuthenticatedMonAnalyticsIndexRoute
-  '/_authenticated/mon/backup/': typeof AuthenticatedMonBackupIndexRoute
   '/_authenticated/mon/help-center/': typeof AuthenticatedMonHelpCenterIndexRoute
   '/_authenticated/mon/notifications/': typeof AuthenticatedMonNotificationsIndexRoute
   '/_authenticated/mon/pages/': typeof AuthenticatedMonPagesIndexRoute
@@ -1857,7 +1837,6 @@ export interface FileRouteTypes {
     | '/mon/analytics/inventory'
     | '/mon/analytics/marketing'
     | '/mon/analytics/sales'
-    | '/mon/backup/settings'
     | '/mon/users/$id'
     | '/mon/users/create'
     | '/mon/users/presets'
@@ -1899,7 +1878,6 @@ export interface FileRouteTypes {
     | '/hr/users/'
     | '/mon/activity-logs/'
     | '/mon/analytics/'
-    | '/mon/backup/'
     | '/mon/help-center/'
     | '/mon/notifications/'
     | '/mon/pages/'
@@ -2040,7 +2018,6 @@ export interface FileRouteTypes {
     | '/mon/analytics/inventory'
     | '/mon/analytics/marketing'
     | '/mon/analytics/sales'
-    | '/mon/backup/settings'
     | '/mon/users/$id'
     | '/mon/users/create'
     | '/mon/users/presets'
@@ -2082,7 +2059,6 @@ export interface FileRouteTypes {
     | '/hr/users'
     | '/mon/activity-logs'
     | '/mon/analytics'
-    | '/mon/backup'
     | '/mon/help-center'
     | '/mon/notifications'
     | '/mon/pages'
@@ -2224,7 +2200,6 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/analytics/inventory'
     | '/_authenticated/mon/analytics/marketing'
     | '/_authenticated/mon/analytics/sales'
-    | '/_authenticated/mon/backup/settings'
     | '/_authenticated/mon/users/$id'
     | '/_authenticated/mon/users/create'
     | '/_authenticated/mon/users/presets'
@@ -2266,7 +2241,6 @@ export interface FileRouteTypes {
     | '/_authenticated/hr/users/'
     | '/_authenticated/mon/activity-logs/'
     | '/_authenticated/mon/analytics/'
-    | '/_authenticated/mon/backup/'
     | '/_authenticated/mon/help-center/'
     | '/_authenticated/mon/notifications/'
     | '/_authenticated/mon/pages/'
@@ -2729,20 +2703,6 @@ declare module '@tanstack/react-router' {
       path: '/mon/analytics/sales'
       fullPath: '/mon/analytics/sales'
       preLoaderRoute: typeof AuthenticatedMonAnalyticsSalesRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/mon/backup/': {
-      id: '/_authenticated/mon/backup/'
-      path: '/mon/backup'
-      fullPath: '/mon/backup/'
-      preLoaderRoute: typeof AuthenticatedMonBackupIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/mon/backup/settings': {
-      id: '/_authenticated/mon/backup/settings'
-      path: '/mon/backup/settings'
-      fullPath: '/mon/backup/settings'
-      preLoaderRoute: typeof AuthenticatedMonBackupSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/help-center/': {
@@ -3817,7 +3777,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonAnalyticsInventoryRoute: typeof AuthenticatedMonAnalyticsInventoryRoute
   AuthenticatedMonAnalyticsMarketingRoute: typeof AuthenticatedMonAnalyticsMarketingRoute
   AuthenticatedMonAnalyticsSalesRoute: typeof AuthenticatedMonAnalyticsSalesRoute
-  AuthenticatedMonBackupSettingsRoute: typeof AuthenticatedMonBackupSettingsRoute
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
   AuthenticatedMonUsersCreateRoute: typeof AuthenticatedMonUsersCreateRoute
   AuthenticatedMonUsersPresetsRoute: typeof AuthenticatedMonUsersPresetsRoute
@@ -3859,7 +3818,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedHrUsersIndexRoute: typeof AuthenticatedHrUsersIndexRoute
   AuthenticatedMonActivityLogsIndexRoute: typeof AuthenticatedMonActivityLogsIndexRoute
   AuthenticatedMonAnalyticsIndexRoute: typeof AuthenticatedMonAnalyticsIndexRoute
-  AuthenticatedMonBackupIndexRoute: typeof AuthenticatedMonBackupIndexRoute
   AuthenticatedMonHelpCenterIndexRoute: typeof AuthenticatedMonHelpCenterIndexRoute
   AuthenticatedMonNotificationsIndexRoute: typeof AuthenticatedMonNotificationsIndexRoute
   AuthenticatedMonPagesIndexRoute: typeof AuthenticatedMonPagesIndexRoute
@@ -3972,7 +3930,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonAnalyticsMarketingRoute:
     AuthenticatedMonAnalyticsMarketingRoute,
   AuthenticatedMonAnalyticsSalesRoute: AuthenticatedMonAnalyticsSalesRoute,
-  AuthenticatedMonBackupSettingsRoute: AuthenticatedMonBackupSettingsRoute,
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
   AuthenticatedMonUsersCreateRoute: AuthenticatedMonUsersCreateRoute,
   AuthenticatedMonUsersPresetsRoute: AuthenticatedMonUsersPresetsRoute,
@@ -4031,7 +3988,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonActivityLogsIndexRoute:
     AuthenticatedMonActivityLogsIndexRoute,
   AuthenticatedMonAnalyticsIndexRoute: AuthenticatedMonAnalyticsIndexRoute,
-  AuthenticatedMonBackupIndexRoute: AuthenticatedMonBackupIndexRoute,
   AuthenticatedMonHelpCenterIndexRoute: AuthenticatedMonHelpCenterIndexRoute,
   AuthenticatedMonNotificationsIndexRoute:
     AuthenticatedMonNotificationsIndexRoute,

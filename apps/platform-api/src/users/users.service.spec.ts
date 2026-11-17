@@ -74,12 +74,14 @@ function makeService() {
   const mail = {
     sendInvite: jest.fn().mockResolvedValue({ delivered: true }),
   };
+  const mfa = { clearMfa: jest.fn().mockResolvedValue(undefined) };
   return {
     prisma,
     audit,
     mail,
+    mfa,
     admin,
-    service: new UsersService(prisma as any, audit as any, mail as any),
+    service: new UsersService(prisma as any, audit as any, mail as any, mfa as any),
   };
 }
 
@@ -293,6 +295,37 @@ describe('UsersService', () => {
     await expect(
       service.resetPassword(ADMIN_ID, ADMIN_ID),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('resets MFA for another user and audits it; refuses self-reset', async () => {
+    const { service, prisma, audit, mfa, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+
+    const result = await service.resetMfa(USER_ID, ADMIN_ID);
+
+    expect(result).toEqual({ success: true });
+    expect(mfa.clearMfa).toHaveBeenCalledWith(USER_ID);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: ADMIN_ID,
+        action: 'users.mfa.reset',
+        entityId: USER_ID,
+      }),
+    );
+    await expect(
+      service.resetMfa(ADMIN_ID, ADMIN_ID),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses an MFA reset for a missing user', async () => {
+    const { service, prisma } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue(null);
+    await expect(service.resetMfa(USER_ID, ADMIN_ID)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('invites a user, replaces a pending invite and emails the accept link', async () => {

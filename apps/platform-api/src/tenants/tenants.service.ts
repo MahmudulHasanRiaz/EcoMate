@@ -206,7 +206,7 @@ export class TenantsService {
     const now = new Date();
     const data: any = { status: dto.status as any };
     if (dto.status === 'SUSPENDED') data.suspendedAt = now;
-    if (dto.status === 'ACTIVE') {
+    if (dto.status === 'ACTIVE' || dto.status === 'TRIAL') {
       data.suspendedAt = null;
       data.graceEndsAt = null;
     }
@@ -238,6 +238,19 @@ export class TenantsService {
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: { status: 'ACTIVE' },
+        });
+      } else if (
+        dto.status === 'TRIAL' &&
+        subscription.status === 'SUSPENDED'
+      ) {
+        // Restoring a suspended trial tenant to TRIAL must restore its
+        // subscription too — otherwise the tenant stays write-blocked
+        // forever: the subscription guard blocks SUSPENDED subscriptions
+        // regardless of tenant status, and no other operator path moves
+        // a subscription out of SUSPENDED for a trial tenant.
+        await this.prisma.subscription.update({
+          where: { id: subscription.id },
+          data: { status: 'TRIAL' },
         });
       } else if (dto.status === 'CANCELLED') {
         await this.prisma.subscription.update({

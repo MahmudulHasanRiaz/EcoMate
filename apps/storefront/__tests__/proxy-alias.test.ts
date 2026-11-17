@@ -162,6 +162,26 @@ describe('storefront proxy unknown/custom hosts (production)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('evicts the oldest entry when the host cache fills — never clears it all', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
+
+    // Fill the 1,000-entry cache with distinct unknown hosts.
+    for (let i = 0; i < 1000; i++) {
+      await proxy(request(`host-${i}.example.com`, '/products'));
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1000);
+
+    // One more host evicts ONLY the oldest entry (host-0).
+    await proxy(request('host-1000.example.com', '/products'));
+    expect(fetchMock).toHaveBeenCalledTimes(1001);
+
+    // host-0 was evicted: re-fetch. host-999 was NOT: still cached.
+    await proxy(request('host-0.example.com', '/products'));
+    expect(fetchMock).toHaveBeenCalledTimes(1002);
+    await proxy(request('host-999.example.com', '/products'));
+    expect(fetchMock).toHaveBeenCalledTimes(1002);
+  });
+
   it('falls open when the registry is unreachable (availability)', async () => {
     fetchMock.mockRejectedValue(new Error('ECONNREFUSED'));
 
@@ -199,5 +219,60 @@ describe('storefront proxy unknown/custom hosts (production)', () => {
     expect(res.headers.get('x-middleware-request-x-tenant-id')).toBe(
       'tenant-1',
     );
+  });
+});
+
+describe('storefront proxy /api rewrite tenant forwarding', () => {
+  beforeEach(() => {
+    process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd,alias.example';
+    delete process.env.SAAS_FALLBACK_DOMAIN;
+    delete process.env.SAAS_ALLOW_EXTERNAL_FALLBACK;
+    process.env.INTERNAL_SHARED_SECRET = 'test-internal-secret';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('forwards x-tenant-host AND the internal secret for /api/* requests', async () => {
+    // The /api rewrite replaces Host with the backend origin, so the
+    // backend can only resolve the tenant from x-tenant-host — which it
+    // trusts only together with the internal secret from a private peer.
+    const res = await proxy(request('acme.ecomate.bd', '/api/products'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-middleware-request-x-tenant-host')).toBe(
+      'acme.ecomate.bd',
+    );
+    expect(res.headers.get('x-middleware-request-x-internal-secret')).toBe(
+      'test-internal-secret',
+    );
+  });
+
+  it('does not forward the internal secret for non-/api requests', async () => {
+    const res = await proxy(request('acme.ecomate.bd', '/products/x'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-middleware-request-x-tenant-host')).toBe(
+      'acme.ecomate.bd',
+    );
+    expect(
+      res.headers.get('x-middleware-request-x-internal-secret'),
+    ).toBeNull();
+  });
+
+  it('forwards only the tenant host when no secret is configured', async () => {
+    delete process.env.INTERNAL_SHARED_SECRET;
+
+    const res = await proxy(request('acme.ecomate.bd', '/api/products'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-middleware-request-x-tenant-host')).toBe(
+      'acme.ecomate.bd',
+    );
+    expect(
+      res.headers.get('x-middleware-request-x-internal-secret'),
+    ).toBeNull();
   });
 });

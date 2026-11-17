@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { Suspense } from 'react';
+import { SiteHeader } from '@/components/site-header';
 import { VerifyEmailClient } from '@/components/verify-email';
 
 export const metadata: Metadata = {
@@ -11,12 +11,7 @@ export const metadata: Metadata = {
 export default function VerifyEmailPage() {
   return (
     <>
-      <header className="site-header">
-        <Link className="brand" href="/">
-          <span className="brand-mark" aria-hidden />
-          EcoMate
-        </Link>
-      </header>
+      <SiteHeader />
       <main className="auth-page">
         <div className="auth-head">
           <p className="eyebrow">One last check</p>

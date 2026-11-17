@@ -50,4 +50,14 @@ describe('TenantRegistryService', () => {
     expect(registry.resolveBySlug('acme')).toBeUndefined();
     expect(registry.resolveByHost('new.example.com')).toBeUndefined();
   });
+
+  it('resolves by id and drops the id index on remove', () => {
+    registry.replace([
+      { id: 't1', slug: 'acme', status: 'ACTIVE', hosts: [] },
+    ]);
+    expect(registry.resolveById('t1')?.slug).toBe('acme');
+    expect(registry.resolveById('missing')).toBeUndefined();
+    registry.remove('acme');
+    expect(registry.resolveById('t1')).toBeUndefined();
+  });
 });

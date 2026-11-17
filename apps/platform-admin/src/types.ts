@@ -47,6 +47,8 @@ export interface PlanVersion {
   features: string[];
   limits: Record<string, unknown>;
   archivedAt?: string | null;
+  /** The signup default: new signups provision onto this version. */
+  isDefault?: boolean;
   plan?: { id: string; name: string; slug: string };
 }
 
@@ -95,6 +97,10 @@ export interface PlatformUser {
   status?: string;
   lastLoginAt?: string | null;
   createdAt?: string;
+  /** TOTP MFA enrolled (from /auth/me). */
+  mfaEnabled?: boolean;
+  /** True for SUPERADMIN: MFA enrollment is enforced at login. */
+  mfaRequired?: boolean;
 }
 
 export interface PlatformUserInvite {

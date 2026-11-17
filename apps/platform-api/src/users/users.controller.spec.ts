@@ -12,6 +12,7 @@ function makeController() {
     resetPassword: jest
       .fn()
       .mockResolvedValue({ temporaryPassword: 'temp-123456789012' }),
+    resetMfa: jest.fn().mockResolvedValue({ success: true }),
     invite: jest.fn().mockResolvedValue({ id: 'i1', delivered: true }),
     revokeInvite: jest.fn().mockResolvedValue({ success: true }),
     acceptInvite: jest.fn().mockResolvedValue({ success: true }),
@@ -46,6 +47,10 @@ describe('UsersController', () => {
     const reset = await controller.resetPassword('u1', ACTOR);
     expect(users.resetPassword).toHaveBeenCalledWith('u1', 'admin-1');
     expect(reset.temporaryPassword).toBe('temp-123456789012');
+
+    const mfaReset = await controller.resetMfa('u1', ACTOR);
+    expect(users.resetMfa).toHaveBeenCalledWith('u1', 'admin-1');
+    expect(mfaReset).toEqual({ success: true });
   });
 
   it('delegates invites, revoke and public accept', async () => {

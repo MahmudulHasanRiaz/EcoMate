@@ -49,7 +49,7 @@ export class SignupService {
 
   async create(dto: CreateSignupDto, meta: SignupRequestMeta = {}) {
     const ipKey = meta.ip || 'unknown';
-    this.rateLimit.assert(`signup:ip:${ipKey}`, IP_LIMIT, IP_WINDOW_MS);
+    await this.rateLimit.assert(`signup:ip:${ipKey}`, IP_LIMIT, IP_WINDOW_MS);
     this.assertHoneypot(dto.website);
     await this.assertCaptcha(dto.captchaToken, meta.ip);
 
@@ -67,7 +67,7 @@ export class SignupService {
 
     await this.expireStale();
     await this.assertAvailable(slug, ownerEmail, ownerPhone);
-    this.rateLimit.assert(`signup:email:${ownerEmail}`, EMAIL_LIMIT, EMAIL_WINDOW_MS);
+    await this.rateLimit.assert(`signup:email:${ownerEmail}`, EMAIL_LIMIT, EMAIL_WINDOW_MS);
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const token = randomBytes(32).toString('hex');
@@ -218,7 +218,7 @@ export class SignupService {
       throw new BadRequestException('Invalid verification token');
     }
     const tokenHash = sha256(token.toLowerCase());
-    this.rateLimit.assert(`provision-retry:${tokenHash}`, 5, 60 * 60_000);
+    await this.rateLimit.assert(`provision-retry:${tokenHash}`, 5, 60 * 60_000);
 
     const signup = await this.prisma.signupRequest.findUnique({
       where: { verificationTokenHash: tokenHash },
@@ -258,12 +258,12 @@ export class SignupService {
 
   async resend(dto: ResendVerificationDto, meta: SignupRequestMeta = {}) {
     const ipKey = meta.ip || 'unknown';
-    this.rateLimit.assert(`resend:ip:${ipKey}`, IP_LIMIT, RESEND_WINDOW_MS);
+    await this.rateLimit.assert(`resend:ip:${ipKey}`, IP_LIMIT, RESEND_WINDOW_MS);
     this.assertHoneypot(dto.website);
     await this.assertCaptcha(dto.captchaToken, meta.ip);
 
     const ownerEmail = dto.email.trim().toLowerCase();
-    this.rateLimit.assert(`resend:email:${ownerEmail}`, RESEND_LIMIT, RESEND_WINDOW_MS);
+    await this.rateLimit.assert(`resend:email:${ownerEmail}`, RESEND_LIMIT, RESEND_WINDOW_MS);
     await this.expireStale();
 
     const signup = await this.prisma.signupRequest.findFirst({

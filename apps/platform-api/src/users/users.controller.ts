@@ -28,7 +28,8 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Get('roles')
-  @UseGuards(PlatformAuthGuard)
+  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @Roles('SUPERADMIN')
   roles() {
     return this.users.getRoles();
   }
@@ -103,6 +104,17 @@ export class UsersController {
     @CurrentPlatformUser() user: PlatformRequestUser,
   ) {
     return this.users.resetPassword(id, user.id);
+  }
+
+  @Post(':id/mfa/reset')
+  @HttpCode(200)
+  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @Roles('SUPERADMIN')
+  resetMfa(
+    @Param('id') id: string,
+    @CurrentPlatformUser() user: PlatformRequestUser,
+  ) {
+    return this.users.resetMfa(id, user.id);
   }
 
   @Post('invite')

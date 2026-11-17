@@ -1,64 +1,627 @@
 {
   "version": "2",
   "name": "ecomate",
-  "description": "EcoMate E-Commerce Platform - Full Stack Deployment",
-  "note": "Deploy via Portainer UI. Configure unique local ports if running multiple clients on the same server.",
+  "description": "EcoMate SaaS Platform \u2014 multi-tenant single deployment (platform API + console + landing + tenant backend/storefront/admin/POS + Caddy edge)",
+  "note": "SaaS stack \u2014 create from the EcoMate repo at ref feat/saas-multitenant (until the branch merges to main). First deploy in the Portainer UI until green; only then wire the deploy-saas.yml webhook. GHCR images are private: register a GHCR registry (PAT with read:packages) in Portainer first. Never delete the license-data volume (holds APP_ENCRYPTION_KEY). Staging and production are two stacks from this same template, differing only in env.",
   "repository": {
-    "url": "https://github.com/MahmudulHasanRiaz/EcoMate-Web",
-    "stackfile": "docker-compose.yml"
+    "stackfile": "docker-compose.yml",
+    "url": "https://github.com/MahmudulHasanRiaz/EcoMate"
   },
   "env": [
-    { "name": "CLIENT_DOMAIN", "label": "⭐ Client Domain — e.g. example.com (NO https://)", "default": "" },
-    { "name": "DOCKER_REGISTRY_OWNER", "label": "⭐ GitHub Username/Org (for Docker Registry images)", "default": "mahmudulhasanriaz" },
-    { "name": "SAAS_PRIMARY_DOMAIN", "label": "Primary SaaS domain (tenant canonical host: {slug}.<this>)", "default": "ecomate.bd" },
-    { "name": "SAAS_BASE_DOMAINS", "label": "Ordered base domains for tenant subdomains (comma-separated; first must equal the primary)", "default": "ecomate.bd" },
-    { "name": "SAAS_FALLBACK_DOMAIN", "label": "Fallback domain for absolute URLs when the primary is unavailable (optional)", "default": "" },
-    { "name": "SAAS_PRIMARY_UNHEALTHY", "label": "Primary domain/TLS outage mode (true = new links + redirects use the fallback; canonical URLs unchanged)", "default": "false" },
-
-    { "name": "JWT_SECRET", "label": "⭐ JWT Secret (strong random string)", "default": "" },
-    { "name": "JWT_REFRESH_SECRET", "label": "⭐ JWT Refresh Secret (different from JWT_SECRET)", "default": "" },
-    { "name": "BETTER_AUTH_SECRET", "label": "⭐ Better-Auth Secret", "default": "" },
-    { "name": "INTERNAL_SHARED_SECRET", "label": "Internal service secret (optional — same value on backend + storefront exempts internal calls from rate limiting, and authenticates POST /api/entitlements/refresh)", "default": "" },
-    { "name": "APP_ENCRYPTION_KEY", "label": "App encryption key (optional — 64 hex chars; empty = generated once on the license-data/app-data volume and reused on every boot)", "default": "" },
-    { "name": "REVALIDATION_SECRET", "label": "Storefront revalidation secret (optional — enables POST /api/revalidate on-demand cache invalidation; empty = endpoint disabled)", "default": "" },
-    { "name": "CLOUDFLARE_API_TOKEN", "label": "Cloudflare API token for the Purge all cache button (optional — Zone:Cache Purge on this tenant's zone only; empty = Cloudflare layer reports 'not configured')", "default": "" },
-    { "name": "CLOUDFLARE_ZONE_ID", "label": "Cloudflare Zone ID for this tenant's domain (optional — comma-separated if several zones; empty = Cloudflare layer reports 'not configured')", "default": "" },
-    { "name": "UPLOADS_URL", "label": "Media static server URL (optional — empty = default http://media-static:80 nginx; set http://backend:4000 to roll back to backend-served images)", "default": "" },
-    { "name": "ADMIN_EMAIL", "label": "First admin email (seed)", "default": "" },
-    { "name": "ADMIN_PASSWORD", "label": "First admin password (seed)", "default": "" },
-    { "name": "RUN_SEED", "label": "Run seeding on startup? (true/false)", "default": "false" },
-
-    { "name": "POSTGRES_PASSWORD", "label": "⭐ PostgreSQL Password (strong password)", "default": "" },
-    { "name": "POSTGRES_USER", "label": "PostgreSQL User", "default": "postgres" },
-    { "name": "POSTGRES_DB", "label": "PostgreSQL Database", "default": "ecomate_web" },
-
-    { "name": "STOREFRONT_PORT", "label": "Storefront Host Port (localhost)", "default": "3000" },
-    { "name": "BACKEND_PORT", "label": "Backend Host Port (localhost)", "default": "4000" },
-    { "name": "ADMIN_PORT", "label": "Admin Host Port (localhost)", "default": "8080" },
-    { "name": "POS_PORT", "label": "POS Host Port (localhost)", "default": "8081" },
-
-    { "name": "CORS_ORIGIN", "label": "CORS Origins (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
-    { "name": "APP_URL", "label": "App URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
-    { "name": "STOREFRONT_URL", "label": "Storefront URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
-    { "name": "STORE_NEXT_PUBLIC_API_URL", "label": "Storefront API URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
-    { "name": "STORE_NEXT_PUBLIC_STOREFRONT_URL", "label": "Storefront Public URL (auto-set from CLIENT_DOMAIN if left empty)", "default": "" },
-    { "name": "ADMIN_VITE_API_URL", "label": "Admin API URL", "default": "/api" },
-    { "name": "ADMIN_VITE_POS_URL", "label": "POS Terminal URL (e.g. https://pos.xyz.com/pos, empty = auto-detect)", "default": "" },
-
-    { "name": "SEED_DUMMY_DATA", "label": "Seed Dummy Data on first deploy? (true/false)", "default": "false" },
-    { "name": "RUN_SEED", "label": "Run Seeding on startup? (true/false)", "default": "false" },
-    { "name": "RETENTION_ENABLED", "label": "Tracking retention sweep enabled? (true/false — false keeps raw tracking data)", "default": "true" },
-    { "name": "NODE_MAX_OLD_SPACE_SIZE", "label": "Backend Node heap in MB (keep below the backend memory limit of 1536M)", "default": "1280" },
-
-    { "name": "META_PIXEL_ID", "label": "Meta Pixel ID (Optional)", "default": "" },
-    { "name": "META_ACCESS_TOKEN", "label": "Meta Access Token (Optional)", "default": "" },
-    { "name": "TIKTOK_PIXEL_CODE", "label": "TikTok Pixel Code (Optional)", "default": "" },
-    { "name": "TIKTOK_ACCESS_TOKEN", "label": "TikTok Access Token (Optional)", "default": "" },
-    { "name": "GA_MEASUREMENT_ID", "label": "GA4 Measurement ID (Optional)", "default": "" },
-    { "name": "GA_API_SECRET", "label": "GA4 API Secret (Optional)", "default": "" },
-    { "name": "GA_ADS_CONVERSION_ID", "label": "Google Ads Conversion ID (Optional)", "default": "" },
-    { "name": "GA_ADS_CONVERSION_LABEL", "label": "Google Ads Conversion Label (Optional)", "default": "" },
-    { "name": "NEXT_PUBLIC_GA_MEASUREMENT_ID", "label": "GA4 Measurement ID (storefront, Optional)", "default": "" },
-    { "name": "NEXT_PUBLIC_GA_ADS_CONVERSION_ID", "label": "Google Ads Conversion ID (storefront, Optional)", "default": "" }
+    {
+      "default": "",
+      "label": "Legacy client domain (single-tenant fallback for URL defaults \u2014 SaaS uses SAAS_PRIMARY_DOMAIN; keep set until compose stops deriving URLs from it)",
+      "name": "CLIENT_DOMAIN"
+    },
+    {
+      "default": "mahmudulhasanriaz",
+      "label": "\u2b50 GitHub Username/Org (for Docker Registry images)",
+      "name": "DOCKER_REGISTRY_OWNER"
+    },
+    {
+      "default": "ecomate.bd",
+      "label": "\u2b50 Primary SaaS domain (tenant canonical host: {slug}.<this>)",
+      "name": "SAAS_PRIMARY_DOMAIN"
+    },
+    {
+      "default": "ecomate.bd",
+      "label": "Ordered base domains for tenant subdomains (comma-separated; first must equal the primary)",
+      "name": "SAAS_BASE_DOMAINS"
+    },
+    {
+      "default": "",
+      "label": "Fallback domain for absolute URLs when the primary is unavailable (optional)",
+      "name": "SAAS_FALLBACK_DOMAIN"
+    },
+    {
+      "default": "cname.ecomate.bd",
+      "label": "CNAME target tenants point custom domains at",
+      "name": "SAAS_CUSTOM_DOMAIN_CNAME"
+    },
+    {
+      "default": "false",
+      "label": "Allow a fallback domain outside SAAS_BASE_DOMAINS? (true/false)",
+      "name": "SAAS_ALLOW_EXTERNAL_FALLBACK"
+    },
+    {
+      "default": "false",
+      "label": "Primary domain/TLS outage mode (true = new links + redirects use the fallback; canonical URLs unchanged)",
+      "name": "SAAS_PRIMARY_UNHEALTHY"
+    },
+    {
+      "default": "",
+      "label": "Landing host (Caddy; empty = www.<primary>)",
+      "name": "PLATFORM_LANDING_HOST"
+    },
+    {
+      "default": "",
+      "label": "Platform console host (Caddy; empty = saas.<primary>)",
+      "name": "PLATFORM_ADMIN_HOST"
+    },
+    {
+      "default": "",
+      "label": "Platform API host (Caddy; empty = api.<primary>)",
+      "name": "PLATFORM_API_HOST"
+    },
+    {
+      "default": "support@ecomate.bd",
+      "label": "Let's Encrypt account email for Caddy (expiry notices; Caddy rejects an empty email)",
+      "name": "ACME_EMAIL"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 Platform JWT secret (strong random string; openssl rand -hex 64)",
+      "name": "PLATFORM_JWT_SECRET"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 Platform JWT refresh secret (different from PLATFORM_JWT_SECRET)",
+      "name": "PLATFORM_JWT_REFRESH_SECRET"
+    },
+    {
+      "default": "900",
+      "label": "Platform access-token lifetime in seconds",
+      "name": "PLATFORM_JWT_EXPIRES_IN_SECONDS"
+    },
+    {
+      "default": "604800",
+      "label": "Platform refresh-token lifetime in seconds",
+      "name": "PLATFORM_JWT_REFRESH_EXPIRES_IN_SECONDS"
+    },
+    {
+      "name": "PLATFORM_MFA_TOKEN_TTL_SECONDS",
+      "label": "MFA second-step token lifetime (seconds)",
+      "default": "300"
+    },
+    {
+      "name": "PLATFORM_REFRESH_REUSE_GRACE_MS",
+      "label": "Refresh-token reuse grace window (ms; replay inside it is a plain 401, not a family revoke)",
+      "default": "30000"
+    },
+    {
+      "name": "REDIS_URL",
+      "label": "Redis for the platform rate limiter (empty = redis://redis:6379; falls back to in-memory counters when unreachable)",
+      "default": ""
+    },
+    {
+      "default": "",
+      "label": "\u2b50 Internal service secret \u2014 backend\u2194platform auth + TLS ask fallback (openssl rand -hex 64; same value everywhere)",
+      "name": "INTERNAL_SERVICE_SECRET"
+    },
+    {
+      "default": "",
+      "label": "Caddy on-demand TLS ask token (optional \u2014 falls back to INTERNAL_SERVICE_SECRET; set a distinct value for least privilege)",
+      "name": "TLS_ASK_TOKEN"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 First platform superadmin email (seed, first deploy only)",
+      "name": "PLATFORM_ADMIN_EMAIL"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 First platform superadmin password (seed, min 12 chars)",
+      "name": "PLATFORM_ADMIN_PASSWORD"
+    },
+    {
+      "default": "Platform Admin",
+      "label": "First platform superadmin name (seed)",
+      "name": "PLATFORM_ADMIN_NAME"
+    },
+    {
+      "default": "false",
+      "label": "Seed platform superadmin + plans on startup? (true ONLY on first deploy)",
+      "name": "RUN_PLATFORM_SEED"
+    },
+    {
+      "default": "",
+      "label": "Public landing origin for verification emails (empty = https://www.<primary>)",
+      "name": "PLATFORM_LANDING_URL"
+    },
+    {
+      "default": "",
+      "label": "Platform console origin for invite emails (empty = https://saas.<primary>)",
+      "name": "PLATFORM_ADMIN_URL"
+    },
+    {
+      "default": "",
+      "label": "Platform API base for backend + landing (empty = http://platform-api:4100/api)",
+      "name": "PLATFORM_API_URL"
+    },
+    {
+      "name": "PLATFORM_PORT",
+      "label": "Platform API listen port (internal; Caddy + backend use this)",
+      "default": "4100"
+    },
+    {
+      "default": "",
+      "label": "Tenant backend for the provisioning job (empty = http://backend:4000/api)",
+      "name": "TENANT_BACKEND_URL"
+    },
+    {
+      "default": "",
+      "label": "Explicit plan version for self-serve trials (empty = newest active version; set explicitly before launch)",
+      "name": "DEFAULT_PLAN_VERSION_ID"
+    },
+    {
+      "default": "60000",
+      "label": "Backend tenant-registry poll interval (ms)",
+      "name": "TENANT_REGISTRY_REFRESH_MS"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 SMTP host (signup verification fails closed in production without it)",
+      "name": "SMTP_HOST"
+    },
+    {
+      "default": "587",
+      "label": "SMTP port",
+      "name": "SMTP_PORT"
+    },
+    {
+      "default": "false",
+      "label": "SMTP TLS? (true/false)",
+      "name": "SMTP_SECURE"
+    },
+    {
+      "default": "",
+      "label": "SMTP username",
+      "name": "SMTP_USER"
+    },
+    {
+      "default": "",
+      "label": "SMTP password",
+      "name": "SMTP_PASS"
+    },
+    {
+      "default": "EcoMate <no-reply@ecomate.bd>",
+      "label": "From header for platform mail",
+      "name": "PLATFORM_MAIL_FROM"
+    },
+    {
+      "name": "SMTP_FROM",
+      "label": "Explicit From header override (empty = PLATFORM_MAIL_FROM)",
+      "default": ""
+    },
+    {
+      "default": "",
+      "label": "\u2b50 Cloudflare Turnstile secret key (production signup fails closed without it)",
+      "name": "TURNSTILE_SECRET_KEY"
+    },
+    {
+      "name": "TURNSTILE_VERIFY_URL",
+      "label": "Turnstile verify-endpoint override (testing only; empty = Cloudflare default)",
+      "default": ""
+    },
+    {
+      "default": "",
+      "label": "Extra disposable email domains for trial signup (comma-separated)",
+      "name": "SIGNUP_DISPOSABLE_DOMAINS"
+    },
+    {
+      "default": "true",
+      "label": "Billing lifecycle jobs enabled? (trial expiry, renewal invoices, grace/suspend \u2014 single instance only)",
+      "name": "BILLING_JOBS_ENABLED"
+    },
+    {
+      "default": "3600000",
+      "label": "Billing jobs interval (ms)",
+      "name": "BILLING_JOBS_INTERVAL_MS"
+    },
+    {
+      "default": "30",
+      "label": "Days in SUSPENDED before auto-cancel",
+      "name": "BILLING_CANCEL_AFTER_DAYS"
+    },
+    {
+      "default": "30",
+      "label": "Deleted-tenant data retention before purge (days; purge always exports first)",
+      "name": "TENANT_RETENTION_DAYS"
+    },
+    {
+      "default": "true",
+      "label": "Tenant purge sweep enabled? (true/false)",
+      "name": "TENANT_PURGE_ENABLED"
+    },
+    {
+      "default": "21600000",
+      "label": "Tenant purge sweep interval (ms)",
+      "name": "TENANT_PURGE_INTERVAL_MS"
+    },
+    {
+      "default": "250000",
+      "label": "Tenant export safety cap per table (abort, never truncate silently)",
+      "name": "TENANT_EXPORT_MAX_ROWS"
+    },
+    {
+      "default": "600000",
+      "label": "A RUNNING provisioning job older than this is made retryable (ms)",
+      "name": "PROVISIONING_STALE_MS"
+    },
+    {
+      "default": "900",
+      "label": "One-time tenant impersonation link lifetime (60\u20133600 seconds)",
+      "name": "IMPERSONATION_TTL_SECONDS"
+    },
+    {
+      "default": "60000",
+      "label": "Custom-domain DNS re-check interval (ms)",
+      "name": "CUSTOM_DOMAIN_POLL_MS"
+    },
+    {
+      "default": "true",
+      "label": "Custom-domain DNS polling enabled? (true/false)",
+      "name": "CUSTOM_DOMAIN_POLL_ENABLED"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 JWT Secret (strong random string)",
+      "name": "JWT_SECRET"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 JWT Refresh Secret (different from JWT_SECRET)",
+      "name": "JWT_REFRESH_SECRET"
+    },
+    {
+      "name": "JWT_EXPIRES_IN",
+      "label": "Tenant access-token lifetime (e.g. 15m)",
+      "default": "15m"
+    },
+    {
+      "name": "JWT_REFRESH_EXPIRES_IN",
+      "label": "Tenant refresh-token lifetime (e.g. 7d)",
+      "default": "7d"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 Better-Auth Secret",
+      "name": "BETTER_AUTH_SECRET"
+    },
+    {
+      "name": "BETTER_AUTH_URL",
+      "label": "Better-Auth URL (auto-set from CLIENT_DOMAIN if left empty)",
+      "default": ""
+    },
+    {
+      "default": "",
+      "label": "Internal service secret (optional \u2014 same value on backend + storefront exempts internal calls from rate limiting, and authenticates POST /api/entitlements/refresh)",
+      "name": "INTERNAL_SHARED_SECRET"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 App encryption key \u2014 64 hex chars (openssl rand -hex 32; empty = generated once on the license-data/app-data volume and reused on every boot; set explicitly so a volume loss doesn't brick encrypted data)",
+      "name": "APP_ENCRYPTION_KEY"
+    },
+    {
+      "default": "",
+      "label": "Storefront revalidation secret (optional \u2014 enables POST /api/revalidate on-demand cache invalidation; empty = endpoint disabled)",
+      "name": "REVALIDATION_SECRET"
+    },
+    {
+      "default": "",
+      "label": "Cloudflare API token for the Purge all cache button (optional \u2014 Zone:Cache Purge on this tenant's zone only; empty = Cloudflare layer reports 'not configured')",
+      "name": "CLOUDFLARE_API_TOKEN"
+    },
+    {
+      "default": "",
+      "label": "Cloudflare Zone ID for this tenant's domain (optional \u2014 comma-separated if several zones; empty = Cloudflare layer reports 'not configured')",
+      "name": "CLOUDFLARE_ZONE_ID"
+    },
+    {
+      "default": "",
+      "label": "Media static server URL (optional \u2014 empty = default http://media-static:80 nginx; set http://backend:4000 to roll back to backend-served images)",
+      "name": "UPLOADS_URL"
+    },
+    {
+      "default": "",
+      "label": "First tenant admin email (backend seed)",
+      "name": "ADMIN_EMAIL"
+    },
+    {
+      "default": "",
+      "label": "First tenant admin password (backend seed)",
+      "name": "ADMIN_PASSWORD"
+    },
+    {
+      "default": "false",
+      "label": "Run tenant seeding on startup? (true ONLY on first deploy)",
+      "name": "RUN_SEED"
+    },
+    {
+      "default": "false",
+      "label": "Seed dummy data on first deploy? (true/false)",
+      "name": "SEED_DUMMY_DATA"
+    },
+    {
+      "default": "",
+      "label": "\u2b50 PostgreSQL Password (strong password)",
+      "name": "POSTGRES_PASSWORD"
+    },
+    {
+      "default": "postgres",
+      "label": "PostgreSQL User",
+      "name": "POSTGRES_USER"
+    },
+    {
+      "default": "ecomate",
+      "label": "Tenant PostgreSQL Database",
+      "name": "POSTGRES_DB"
+    },
+    {
+      "default": "",
+      "label": "Platform database DSN (empty = compose default postgresql://<user>:<pass>@postgres:5432/ecomate_platform)",
+      "name": "PLATFORM_DATABASE_URL"
+    },
+    {
+      "default": "",
+      "label": "Tenant runtime DSN override (empty = compose builds ecomate_app DSN from TENANT_APP_DB_PASSWORD + POSTGRES_DB)",
+      "name": "TENANT_DATABASE_URL"
+    },
+    {
+      "name": "TENANT_APP_DB_PASSWORD",
+      "label": "Password for the ecomate_app tenant runtime role (REQUIRED, no default; URL-safe only). The backend fails closed without it.",
+      "default": ""
+    },
+    {
+      "default": "30",
+      "label": "Per-tenant Prisma client cache cap (30 = 60 max tenant conns, inside the 300 max_connections; k6-measured: each client costs ~25-40 MB heap, 60 does not fit)",
+      "name": "TENANT_PRISMA_MAX_CLIENTS"
+    },
+    {
+      "name": "DEFAULT_TENANT_ID",
+      "label": "Default tenant UUID for context-less backend paths (boot, health, jobs). Required: the backend cannot boot without it. Default targets an empty tenant scope.",
+      "default": "00000000-0000-4000-8000-000000000000"
+    },
+    {
+      "name": "DEFAULT_TENANT_SLUG",
+      "label": "Slug for the default tenant (used in fallback URLs).",
+      "default": "default"
+    },
+    {
+      "default": "3000",
+      "label": "Storefront Host Port (localhost)",
+      "name": "STOREFRONT_PORT"
+    },
+    {
+      "default": "4000",
+      "label": "Backend Host Port (localhost)",
+      "name": "BACKEND_PORT"
+    },
+    {
+      "default": "8080",
+      "label": "Admin Host Port (localhost)",
+      "name": "ADMIN_PORT"
+    },
+    {
+      "default": "8081",
+      "label": "POS Host Port (localhost)",
+      "name": "POS_PORT"
+    },
+    {
+      "default": "",
+      "label": "CORS Origins (auto-set from CLIENT_DOMAIN if left empty)",
+      "name": "CORS_ORIGIN"
+    },
+    {
+      "default": "",
+      "label": "App URL (auto-set from CLIENT_DOMAIN if left empty)",
+      "name": "APP_URL"
+    },
+    {
+      "default": "",
+      "label": "Storefront URL (auto-set from CLIENT_DOMAIN if left empty)",
+      "name": "STOREFRONT_URL"
+    },
+    {
+      "default": "",
+      "label": "Storefront API URL (auto-set from CLIENT_DOMAIN if left empty)",
+      "name": "STORE_NEXT_PUBLIC_API_URL"
+    },
+    {
+      "default": "",
+      "label": "Storefront Public URL (auto-set from CLIENT_DOMAIN if left empty)",
+      "name": "STORE_NEXT_PUBLIC_STOREFRONT_URL"
+    },
+    {
+      "default": "/api",
+      "label": "Admin API URL",
+      "name": "ADMIN_VITE_API_URL"
+    },
+    {
+      "default": "",
+      "label": "POS Terminal URL (e.g. https://pos.xyz.com/pos, empty = auto-detect)",
+      "name": "ADMIN_VITE_POS_URL"
+    },
+    {
+      "default": "true",
+      "label": "Tracking retention sweep enabled? (true/false \u2014 false keeps raw tracking data)",
+      "name": "RETENTION_ENABLED"
+    },
+    {
+      "default": "2048",
+      "label": "Backend Node heap in MB (keep below the backend memory limit of 2560M)",
+      "name": "NODE_MAX_OLD_SPACE_SIZE"
+    },
+    {
+      "default": "",
+      "label": "Meta Pixel ID (Optional)",
+      "name": "META_PIXEL_ID"
+    },
+    {
+      "default": "",
+      "label": "Meta Access Token (Optional)",
+      "name": "META_ACCESS_TOKEN"
+    },
+    {
+      "default": "",
+      "label": "TikTok Pixel Code (Optional)",
+      "name": "TIKTOK_PIXEL_CODE"
+    },
+    {
+      "default": "",
+      "label": "TikTok Access Token (Optional)",
+      "name": "TIKTOK_ACCESS_TOKEN"
+    },
+    {
+      "default": "",
+      "label": "GA4 Measurement ID (Optional)",
+      "name": "GA_MEASUREMENT_ID"
+    },
+    {
+      "default": "",
+      "label": "GA4 API Secret (Optional)",
+      "name": "GA_API_SECRET"
+    },
+    {
+      "default": "",
+      "label": "Google Ads Conversion ID (Optional)",
+      "name": "GA_ADS_CONVERSION_ID"
+    },
+    {
+      "default": "",
+      "label": "Google Ads Conversion Label (Optional)",
+      "name": "GA_ADS_CONVERSION_LABEL"
+    },
+    {
+      "default": "",
+      "label": "GA4 Measurement ID (storefront, Optional)",
+      "name": "NEXT_PUBLIC_GA_MEASUREMENT_ID"
+    },
+    {
+      "default": "",
+      "label": "Google Ads Conversion ID (storefront, Optional)",
+      "name": "NEXT_PUBLIC_GA_ADS_CONVERSION_ID"
+    },
+    {
+      "default": "info",
+      "label": "Log level (Phase 8 observability; backend + platform-api)",
+      "name": "LOG_LEVEL"
+    },
+    {
+      "default": "",
+      "label": "Sentry DSN (Phase 8; empty = error tracking disabled)",
+      "name": "SENTRY_DSN"
+    },
+    {
+      "default": "",
+      "label": "Ops alert recipients, comma-separated (Phase 8; empty = alerts skipped)",
+      "name": "OPS_ALERT_EMAIL"
+    },
+    {
+      "default": "900000",
+      "label": "Minimum ms between alerts of the same kind (Phase 8)",
+      "name": "OPS_ALERT_MIN_INTERVAL_MS"
+    },
+    {
+      "default": "",
+      "label": "SMTP host for ops alerts, direct (Phase 8; bypasses the email queue)",
+      "name": "ALERT_SMTP_HOST"
+    },
+    {
+      "default": "587",
+      "label": "SMTP port for ops alerts (Phase 8)",
+      "name": "ALERT_SMTP_PORT"
+    },
+    {
+      "default": "false",
+      "label": "SMTP TLS for ops alerts (Phase 8)",
+      "name": "ALERT_SMTP_SECURE"
+    },
+    {
+      "default": "",
+      "label": "SMTP user for ops alerts (Phase 8)",
+      "name": "ALERT_SMTP_USER"
+    },
+    {
+      "default": "",
+      "label": "SMTP password for ops alerts (Phase 8)",
+      "name": "ALERT_SMTP_PASS"
+    },
+    {
+      "default": "",
+      "label": "From address for ops alerts (Phase 8)",
+      "name": "ALERT_SMTP_FROM"
+    },
+    {
+      "default": "true",
+      "label": "BullMQ queue watcher enabled (Phase 8; alerts on depth/failed jobs)",
+      "name": "QUEUE_WATCHER_ENABLED"
+    },
+    {
+      "default": "60000",
+      "label": "Queue watcher interval ms (Phase 8)",
+      "name": "QUEUE_WATCHER_INTERVAL_MS"
+    },
+    {
+      "default": "1000",
+      "label": "Queue depth alert threshold (Phase 8)",
+      "name": "QUEUE_DEPTH_ALERT_THRESHOLD"
+    },
+    {
+      "default": "true",
+      "label": "Bull Board dashboard at /api/admin/queues (Phase 8; superadmin only)",
+      "name": "BULL_BOARD_ENABLED"
+    },
+    {
+      "default": "true",
+      "label": "Billing-job failure watcher enabled (Phase 8)",
+      "name": "JOB_WATCHER_ENABLED"
+    },
+    {
+      "default": "300000",
+      "label": "Job watcher interval ms (Phase 8)",
+      "name": "JOB_WATCHER_INTERVAL_MS"
+    },
+    {
+      "default": "true",
+      "label": "TLS/domain health job enabled (Phase 8; probes verified custom domains)",
+      "name": "TLS_PROBE_ENABLED"
+    },
+    {
+      "default": "3600000",
+      "label": "TLS probe interval ms (Phase 8)",
+      "name": "TLS_PROBE_INTERVAL_MS"
+    },
+    {
+      "default": "14",
+      "label": "Alert when a cert expires within this many days (Phase 8)",
+      "name": "TLS_EXPIRY_ALERT_DAYS"
+    },
+    {
+      "default": "443",
+      "label": "Port the TLS probe connects to (Phase 8)",
+      "name": "TLS_PROBE_PORT"
+    },
+    {
+      "default": "10000",
+      "label": "Per-probe timeout ms (Phase 8)",
+      "name": "TLS_PROBE_TIMEOUT_MS"
+    },
+    {
+      "default": "",
+      "label": "Primary-domain probe enabled (Phase 8; empty = default)",
+      "name": "TLS_PRIMARY_PROBE_ENABLED"
+    }
   ]
 }

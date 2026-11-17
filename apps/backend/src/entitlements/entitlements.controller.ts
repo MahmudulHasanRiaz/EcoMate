@@ -1,5 +1,6 @@
 import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import { SkipTenant } from '../tenancy/skip-tenant.decorator';
 import { SkipSubscription } from '../tenancy/skip-subscription.decorator';
 import { TenantEntitlementsService } from '../tenancy/tenant-entitlements.service';
@@ -16,11 +17,15 @@ export class EntitlementsController {
     private readonly registrySync: TenantRegistrySyncService,
   ) {}
 
+  // Staff-only: tenant plan/usage metadata, read by the admin layout. No
+  // storefront or POS caller; customers have no use for it.
+  @Roles('superadmin', 'admin', 'employee')
   @Get('me')
   getMine() {
     return this.entitlements.getSnapshot();
   }
 
+  @Roles('superadmin', 'admin', 'employee')
   @Get('usage')
   getUsage() {
     return this.limits.getUsageSnapshot();

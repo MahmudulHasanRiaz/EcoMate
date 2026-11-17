@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
@@ -13,14 +14,23 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { PlatformAuthGuard } from './platform-auth.guard';
 
+function requestMeta(req: any) {
+  return {
+    ip: req?.ip || req?.socket?.remoteAddress || undefined,
+    userAgent: Array.isArray(req?.headers?.['user-agent'])
+      ? req.headers['user-agent'][0]
+      : req?.headers?.['user-agent'],
+  };
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('login')
   @HttpCode(200)
-  login(@Body() dto: LoginDto) {
-    return this.auth.login(dto);
+  login(@Body() dto: LoginDto, @Req() req: any) {
+    return this.auth.login(dto, requestMeta(req));
   }
 
   @Post('refresh')

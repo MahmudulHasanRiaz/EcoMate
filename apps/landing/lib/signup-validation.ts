@@ -60,8 +60,8 @@ export function validateAccountStep(input: {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     errors.ownerEmail = 'Enter a valid email address.';
   }
-  if (input.password.length < 8) {
-    errors.password = 'Use at least 8 characters.';
+  if (input.password.length < 12) {
+    errors.password = 'Use at least 12 characters.';
   } else if (input.password.length > 72) {
     errors.password = 'Keep the password under 72 characters.';
   }

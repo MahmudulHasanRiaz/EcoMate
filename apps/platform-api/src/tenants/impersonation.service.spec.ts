@@ -20,6 +20,7 @@ const session = {
   expiresAt: new Date(Date.now() + 60_000),
   revokedAt: null,
   tenant,
+  platformUser: { id: 'platform-1', email: 'admin@example.com' },
 };
 
 function makeService() {
@@ -100,6 +101,9 @@ describe('ImpersonationService', () => {
             ownerEmail: true,
           },
         },
+        platformUser: {
+          select: { id: true, email: true },
+        },
       },
     });
     expect(prisma.impersonationSession.updateMany).toHaveBeenCalledWith({
@@ -114,6 +118,8 @@ describe('ImpersonationService', () => {
       tenantId: TENANT_ID,
       slug: 'acme',
       email: 'owner@example.com',
+      actorId: 'platform-1',
+      actorEmail: 'admin@example.com',
     });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'tenant.impersonate.consume' }),

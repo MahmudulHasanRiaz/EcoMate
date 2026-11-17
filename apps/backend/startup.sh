@@ -47,6 +47,28 @@ echo "[Startup] Resolving failed migrations (self-heal before migrate deploy)...
 npx prisma migrate deploy 2>&1
 echo "[Startup] Migrations applied successfully"
 
+# Tenant runtime role (SaaS): the app must NOT run as the superuser —
+# superusers bypass RLS entirely, and the boot-time RLS coverage gate
+# refuses to start when connected as one (proven live, 2026-11-17).
+# The runtime connects as `ecomate_app` (LOGIN, NOSUPERUSER, NOBYPASSRLS)
+# via TENANT_DATABASE_URL; migrations keep running as the owner via
+# DATABASE_URL. The 0002 migration creates the role (NOLOGIN) and grants
+# it DML + default privileges; this step gives it LOGIN + the password
+# from TENANT_APP_DB_PASSWORD (idempotent — safe on every boot, and it
+# rotates the password when the env value changes). Fail closed when the
+# password is unset: a missing app-role password must never silently fall
+# back to the superuser DSN.
+if [ -z "$TENANT_APP_DB_PASSWORD" ]; then
+  echo "[Startup] ERROR: TENANT_APP_DB_PASSWORD is not set (the tenant runtime role ecomate_app needs a password; refusing to run as the superuser)"
+  exit 1
+fi
+echo "[Startup] Ensuring tenant runtime role ecomate_app (LOGIN, NOSUPERUSER, NOBYPASSRLS)..."
+ESCAPED_APP_PW=$(printf '%s' "$TENANT_APP_DB_PASSWORD" | sed "s/'/''/g")
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ecomate_app') THEN CREATE ROLE ecomate_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS; END IF; END \$\$;" \
+  -c "ALTER ROLE ecomate_app WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '$ESCAPED_APP_PW';"
+echo "[Startup] Tenant runtime role ready."
+
 if [ "$RUN_SEED" = "true" ]; then
   echo "[Startup] Running database seeding..."
   npx prisma db seed

@@ -1,27 +1,28 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { SignupWizard } from '@/components/signup-wizard';
+import { SiteHeader } from '@/components/site-header';
+import {
+  fetchPublicPlans,
+  trialCtaCopy,
+  trialDaysForPlans,
+} from '@/lib/plans';
 
-export const metadata: Metadata = {
-  title: 'Start your store — EcoMate',
-  description:
-    'Reserve your store address and verify your email to start a 14-day EcoMate trial.',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const plans = await fetchPublicPlans();
+  const trialDays = trialDaysForPlans(
+    plans,
+    process.env.NEXT_PUBLIC_TRIAL_DAYS,
+  );
+  return {
+    title: 'Start your store — EcoMate',
+    description: `Reserve your store address and verify your email to ${trialCtaCopy(trialDays).toLowerCase()}.`,
+  };
+}
 
 export default function SignupPage() {
   return (
     <>
-      <header className="site-header">
-        <Link className="brand" href="/">
-          <span className="brand-mark" aria-hidden />
-          EcoMate
-        </Link>
-        <nav className="nav-actions" aria-label="Primary">
-          <Link className="button button--ghost" href="/">
-            Back to home
-          </Link>
-        </nav>
-      </header>
+      <SiteHeader action="home" />
 
       <main className="auth-page">
         <div className="auth-head">

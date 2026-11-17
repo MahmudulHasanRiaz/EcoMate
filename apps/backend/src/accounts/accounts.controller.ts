@@ -60,6 +60,7 @@ export class AccountsController {
   }
 
   @Get('tree')
+  @Permissions('view_accounts')
   getChartOfAccounts() {
     return this.accountsService.getChartOfAccounts();
   }

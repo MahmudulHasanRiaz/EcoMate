@@ -16,6 +16,7 @@ import {
   BACKUP_FORMAT_VERSION,
   BACKUP_MANIFEST_FILENAME,
   BACKUP_SQL_FILENAME,
+  PLATFORM_BACKUP_SQL_FILENAME,
   finalizeInterruptedContentRestore,
   isTolerableTarExit,
   listInterruptedContentRestoreIds,
@@ -217,8 +218,69 @@ describe('backup archive helpers', () => {
         ),
         contentBytes: BigInt(original.length),
         hasManifest: true,
+        hasPlatformDump: false,
         layout: 'uploads',
       });
+    });
+
+    it('accepts a Phase 8 archive with platform.sql and reports it (item 22)', async () => {
+      const sourceRoot = await makeTempRoot();
+      const dump = 'SELECT 1;\n';
+      const platformDump = 'SELECT 2;\n';
+      const serializedManifest = JSON.stringify({
+        ...manifest,
+        platformDumpIncluded: true,
+        platformDbDumpSize: Buffer.byteLength(platformDump),
+      });
+      const original = Buffer.from('full-resolution-original-image');
+      await writeFixture(sourceRoot, BACKUP_SQL_FILENAME, dump);
+      await writeFixture(sourceRoot, PLATFORM_BACKUP_SQL_FILENAME, platformDump);
+      await writeFixture(
+        sourceRoot,
+        BACKUP_MANIFEST_FILENAME,
+        serializedManifest,
+      );
+      await writeFixture(sourceRoot, 'uploads/products/original.jpg', original);
+      const archivePath = await createArchive(sourceRoot, [
+        BACKUP_SQL_FILENAME,
+        PLATFORM_BACKUP_SQL_FILENAME,
+        BACKUP_MANIFEST_FILENAME,
+        'uploads',
+      ]);
+
+      // platform.sql must NOT trip the mixed-layout check (it is a
+      // first-class archive member, not legacy content).
+      await expect(
+        validateTarBackup(archivePath, validationLimits),
+      ).resolves.toEqual({
+        entryCount: 6,
+        expandedBytes: BigInt(
+          Buffer.byteLength(dump) +
+            Buffer.byteLength(platformDump) +
+            Buffer.byteLength(serializedManifest) +
+            original.length,
+        ),
+        contentBytes: BigInt(original.length),
+        hasManifest: true,
+        hasPlatformDump: true,
+        layout: 'uploads',
+      });
+    });
+
+    it('rejects a platform.sql directory entry', async () => {
+      const sourceRoot = await makeTempRoot();
+      await writeFixture(sourceRoot, BACKUP_SQL_FILENAME, 'SELECT 1;\n');
+      await mkdir(join(sourceRoot, PLATFORM_BACKUP_SQL_FILENAME), {
+        recursive: true,
+      });
+      const archivePath = await createArchive(sourceRoot, [
+        BACKUP_SQL_FILENAME,
+        PLATFORM_BACKUP_SQL_FILENAME,
+      ]);
+
+      await expect(
+        validateTarBackup(archivePath, validationLimits),
+      ).rejects.toThrow('platform.sql must be a file');
     });
 
     it('rejects an archive entry that traverses above the extraction root', async () => {
@@ -659,6 +721,25 @@ describe('backup archive helpers', () => {
       ).rejects.toMatchObject({ code: 'ENOENT' });
       await expect(
         access(join(uploadRoot, BACKUP_MANIFEST_FILENAME)),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('does not promote platform.sql into uploads (Phase 8 item 22)', async () => {
+      const extractRoot = await makeTempRoot();
+      const uploadRoot = await makeTempRoot();
+      await writeFixture(extractRoot, BACKUP_SQL_FILENAME, 'SELECT 1;\n');
+      await writeFixture(
+        extractRoot,
+        PLATFORM_BACKUP_SQL_FILENAME,
+        'SELECT 2;\n',
+      );
+      await writeFixture(extractRoot, 'products/product.jpg', 'image');
+
+      await expect(
+        promoteBackupContent(extractRoot, uploadRoot, 'legacy'),
+      ).resolves.toEqual({ files: 1, bytes: 5n });
+      await expect(
+        access(join(uploadRoot, PLATFORM_BACKUP_SQL_FILENAME)),
       ).rejects.toMatchObject({ code: 'ENOENT' });
     });
   });

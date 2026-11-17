@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { ServerResponse } from 'node:http';
+import { captureError } from '../../observability/sentry';
 
 const PRISMA_USER_MESSAGES: Record<string, string> = {
   P2000: 'The provided value is too long for the column.',
@@ -128,6 +129,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         `Unhandled Exception at ${request.method} ${request.url}`,
         exception instanceof Error ? exception.stack : exception,
       );
+      // Phase 8 Stage 2 item 20: report 500s to Sentry when enabled; a
+      // no-op without a real SENTRY_DSN.
+      captureError(exception);
     }
 
     const payload = typeof message === 'string' ? { message } : message;

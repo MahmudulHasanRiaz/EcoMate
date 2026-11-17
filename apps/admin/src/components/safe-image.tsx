@@ -38,9 +38,11 @@ function resizeUrl(
   if (src.startsWith('http')) return src
   if (!src.startsWith('/uploads/')) return src
 
-  const base = import.meta.env.DEV
-    ? 'http://localhost:4000/api/images/resize'
-    : '/api/images/resize'
+  // Always relative: the vite dev proxy and production Caddy both route
+  // /api to the backend with the tenant Host preserved. An absolute
+  // localhost:4000 URL drops the tenant host, so the backend 403s the
+  // resize (and Chrome ORB-blocks the cross-origin JSON error).
+  const base = '/api/images/resize'
   const params = new URLSearchParams()
   params.set('path', src)
   if (thumbWidth) params.set('w', String(thumbWidth))

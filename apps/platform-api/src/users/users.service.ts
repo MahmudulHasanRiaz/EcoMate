@@ -8,6 +8,7 @@ import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
 import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
+import { MfaService } from '../auth/mfa.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -40,6 +41,7 @@ export class UsersService {
     private readonly prisma: PlatformPrismaService,
     private readonly audit: AuditService,
     private readonly mail: PlatformMailService,
+    private readonly mfa: MfaService,
   ) {}
 
   getRoles() {
@@ -238,6 +240,34 @@ export class UsersService {
     });
     // Returned once — the admin shares it out of band. Never audited/logged.
     return { temporaryPassword };
+  }
+
+  /**
+   * SUPERADMIN-only MFA reset for a lost device / locked-out operator.
+   * Clears all MFA state and revokes sessions; a SUPERADMIN target must
+   * re-enroll at next login (enforced), other roles log in without MFA
+   * until they enroll again. Self-reset is refused — use the account page.
+   */
+  async resetMfa(id: string, actorId: string) {
+    const current = await this.prisma.platformUser.findUnique({
+      where: { id },
+    });
+    if (!current) throw new NotFoundException('Platform user not found');
+    if (id === actorId) {
+      throw new BadRequestException(
+        'Use the MFA section on your own account page to manage your own MFA',
+      );
+    }
+
+    await this.mfa.clearMfa(id);
+    await this.audit.record({
+      actorId,
+      action: 'users.mfa.reset',
+      entity: 'PlatformUser',
+      entityId: id,
+      after: { sessionsRevoked: true },
+    });
+    return { success: true };
   }
 
   async invite(dto: InviteUserDto, actorId: string) {

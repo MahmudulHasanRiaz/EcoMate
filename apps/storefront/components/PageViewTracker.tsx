@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { syncContext } from "@/lib/tracking-client";
 import { isTrackingAllowed, trackPageView } from "@/lib/tracking";
+import { newSessionId } from "@/lib/session-id";
 
 const API_URL = typeof window !== "undefined" && !window.location.hostname.includes("localhost")
   ? "/api"
@@ -20,7 +21,7 @@ function PageViewTrackerInner() {
     if (!sidRef.current) {
       let sid = localStorage.getItem("pv_sid");
       if (!sid) {
-        sid = crypto.randomUUID();
+        sid = newSessionId();
         localStorage.setItem("pv_sid", sid);
       }
       sidRef.current = sid;

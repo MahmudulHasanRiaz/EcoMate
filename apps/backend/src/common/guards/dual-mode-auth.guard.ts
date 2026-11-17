@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { fromNodeHeaders } from 'better-auth/node';
 import { auth } from '../../better-auth/auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { getTenantContext } from '../../tenancy/tenant-context';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import {
   computeEffectivePermissions,
@@ -49,11 +50,34 @@ export class DualModeAuthGuard {
           if (user.lockoutUntil && user.lockoutUntil > new Date()) {
             throw new UnauthorizedException('Account is temporarily locked');
           }
+          // Impersonated sessions mint `imp: true` (see
+          // AuthService.impersonate). Surface it on the request user so
+          // handlers can restrict sensitive actions, and stamp it into
+          // the ALS tenant context so the security-event emitter records
+          // it in the tenant audit trail for every audited action taken
+          // with this token. `impActor` carries the platform operator
+          // identity when the impersonation exchange supplied one.
+          const impersonated = (payload as any)?.imp === true;
+          const impersonationActor =
+            (payload as any)?.impActor ?? null;
           request.user = {
             ...user,
             userId: user.id,
             permissions: await this.loadPermissionsFor(user),
+            impersonated,
+            ...(impersonationActor
+              ? { impersonationActor }
+              : {}),
           };
+          if (impersonated) {
+            const tenantContext = getTenantContext();
+            if (tenantContext) {
+              tenantContext.impersonation = {
+                impersonated: true,
+                actor: impersonationActor,
+              };
+            }
+          }
           return true;
         }
       } catch {

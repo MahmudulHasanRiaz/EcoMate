@@ -190,6 +190,85 @@ export class PlansService {
   }
 
   /**
+   * Make a plan version the signup default (Phase 8, D3): new signups
+   * provision onto this version instead of the newest one. Exactly one
+   * version is the default at a time — the flip runs in one transaction
+   * (advisory lock + clear-all + set) so concurrent flips queue instead of
+   * racing the partial unique index. Audited.
+   */
+  async setDefaultVersion(
+    planId: string,
+    versionId: string,
+    actorId?: string,
+  ) {
+    const version = await this.prisma.planVersion.findUnique({
+      where: { id: versionId },
+      include: {
+        plan: { select: { id: true, name: true, isActive: true } },
+      },
+    });
+    if (!version || version.planId !== planId) {
+      throw new NotFoundException('Plan version not found');
+    }
+    if (version.archivedAt) {
+      throw new BadRequestException('This plan version is archived');
+    }
+    if (!version.plan.isActive) {
+      throw new BadRequestException(
+        'This plan is inactive; its versions cannot be the signup default',
+      );
+    }
+
+    const previous = await this.prisma.planVersion.findFirst({
+      where: { isDefault: true },
+      select: { id: true },
+    });
+    // Flip inside one transaction, serialized by an advisory lock. A single
+    // UPDATE setting every row at once is NOT safe: Postgres checks the
+    // partial unique index per row as it updates, so flipping to the
+    // physically-first row sets it true while the old default is still true
+    // (23505 — found live 2026-11-17). Clear-then-set inside one statement
+    // each is safe (the index is checked per statement), and the lock makes
+    // concurrent flips queue instead of racing.
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('ecomate:plan-version-default'))`;
+        await tx.$executeRaw`UPDATE "PlanVersion" SET "isDefault" = false WHERE "isDefault" = true`;
+        await tx.planVersion.update({
+          where: { id: versionId },
+          data: { isDefault: true },
+        });
+      });
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        err.message.includes('PlanVersion_single_default_idx')
+      ) {
+        throw new ConflictException(
+          'The signup default changed concurrently; please retry',
+        );
+      }
+      throw err;
+    }
+
+    await this.audit.record({
+      actorId,
+      action: 'plan.version.setDefault',
+      entity: 'PlanVersion',
+      entityId: versionId,
+      before: { previousDefaultId: previous?.id ?? null },
+      after: { planId, version: version.version, isDefault: true },
+    });
+
+    return {
+      id: version.id,
+      planId,
+      version: version.version,
+      isDefault: true,
+    };
+  }
+
+  /**
    * Apply a plan version to the existing subscriptions on OTHER versions of
    * the SAME plan — an explicit operator action, never silent. A new plan
    * version never moves existing subscribers by itself (see 6.10 finding

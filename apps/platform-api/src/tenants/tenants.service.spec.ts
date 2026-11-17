@@ -202,6 +202,48 @@ describe('TenantsService', () => {
     });
   });
 
+  it('restores a suspended trial subscription when the tenant returns to TRIAL', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      status: 'SUSPENDED',
+      suspendedAt: new Date(),
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'SUSPENDED',
+    });
+
+    await service.updateStatus('tenant-1', { status: 'TRIAL' } as any, 'u1');
+
+    expect(prisma.tenant.update).toHaveBeenCalledWith({
+      where: { id: 'tenant-1' },
+      data: expect.objectContaining({
+        status: 'TRIAL',
+        suspendedAt: null,
+        graceEndsAt: null,
+      }),
+    });
+    expect(prisma.subscription.update).toHaveBeenCalledWith({
+      where: { id: 'sub-1' },
+      data: { status: 'TRIAL' },
+    });
+  });
+
+  it('leaves a non-suspended subscription alone on a TRIAL restore', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      status: 'TRIAL',
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'TRIAL',
+    });
+
+    await service.updateStatus('tenant-1', { status: 'TRIAL' } as any, 'u1');
+
+    expect(prisma.subscription.update).not.toHaveBeenCalled();
+  });
+
   it('extends a trial from the later of now and the current end', async () => {
     const future = new Date(Date.now() + 86_400_000);
     prisma.tenant.findUnique.mockResolvedValue({

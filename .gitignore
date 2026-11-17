@@ -2,6 +2,10 @@ node_modules
 .DS_Store
 dist
 .env
+# Every env file is local-only (dev/staging/prod secrets live outside the
+# repo) — except the committed templates that document the variables.
+.env.*
+!.env.example
 .next
 .vite
 *.log

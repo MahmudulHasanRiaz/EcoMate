@@ -12,12 +12,11 @@ import {
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
-import { Roles } from '../auth/roles.decorator';
+import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { SetLimitOverrideDto } from './dto/set-limit-override.dto';
 import { UsageService } from './usage.service';
 
-const READ_ROLES = ['SUPERADMIN', 'BILLING', 'SUPPORT'] as const;
 const WRITE_ROLES = ['SUPERADMIN', 'BILLING'] as const;
 
 @Controller('usage')

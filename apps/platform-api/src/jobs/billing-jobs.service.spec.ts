@@ -1,4 +1,4 @@
-import { BillingJobsService } from './billing-jobs.service';
+import { BILLING_JOB_BATCH_SIZE, BillingJobsService } from './billing-jobs.service';
 
 const DAY_MS = 86_400_000;
 
@@ -453,6 +453,109 @@ describe('BillingJobsService', () => {
       const status = service.status();
       expect(status.jobs).toHaveLength(5);
       expect(status.jobs.every((j) => j.lastRunAt !== null)).toBe(true);
+    });
+  });
+
+  describe('scan bounds', () => {
+    it('bounds every scan with take + an orderBy on the date column', async () => {
+      const { service, prisma } = makeService();
+      await service.runAll();
+
+      // subscription.findMany: trial endingSoon, trial expired, renewal
+      // dueSoon, cancel-at-period-end — in JOB_NAMES order.
+      expect(prisma.subscription.findMany).toHaveBeenCalledTimes(4);
+      expect(prisma.subscription.findMany).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          take: BILLING_JOB_BATCH_SIZE,
+          orderBy: { trialEndsAt: 'asc' },
+        }),
+      );
+      expect(prisma.subscription.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          take: BILLING_JOB_BATCH_SIZE,
+          orderBy: { trialEndsAt: 'asc' },
+        }),
+      );
+      expect(prisma.subscription.findMany).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          take: BILLING_JOB_BATCH_SIZE,
+          orderBy: { currentPeriodEnd: 'asc' },
+        }),
+      );
+      expect(prisma.subscription.findMany).toHaveBeenNthCalledWith(
+        4,
+        expect.objectContaining({
+          take: BILLING_JOB_BATCH_SIZE,
+          orderBy: { currentPeriodEnd: 'asc' },
+        }),
+      );
+
+      // tenant.findMany: past-grace suspend, stale-suspended cancel.
+      expect(prisma.tenant.findMany).toHaveBeenCalledTimes(2);
+      expect(prisma.tenant.findMany).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          take: BILLING_JOB_BATCH_SIZE,
+          orderBy: { graceEndsAt: 'asc' },
+        }),
+      );
+      expect(prisma.tenant.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          take: BILLING_JOB_BATCH_SIZE,
+          orderBy: { suspendedAt: 'asc' },
+        }),
+      );
+    });
+
+    it('pushes the dueAt window into the reminders query', async () => {
+      const { service, prisma } = makeService();
+      const before = Date.now();
+      await service.runJob('reminders');
+      const after = Date.now();
+
+      expect(prisma.invoice.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: BILLING_JOB_BATCH_SIZE,
+          orderBy: { dueAt: 'asc' },
+        }),
+      );
+      const where = prisma.invoice.findMany.mock.calls[0][0].where;
+      expect(where.status).toBe('OPEN');
+      const lte = where.dueAt.lte as Date;
+      // dueAt <= now + 3 days (RENEWAL_NOTICE_DAYS), measured around the run.
+      expect(lte.getTime()).toBeGreaterThanOrEqual(before + 3 * DAY_MS);
+      expect(lte.getTime()).toBeLessThanOrEqual(after + 3 * DAY_MS);
+    });
+
+    it('warns when a scan hits the batch cap', async () => {
+      const { service, prisma } = makeService();
+      const warn = jest.spyOn((service as any).logger, 'warn');
+      const pastGrace = Array.from({ length: BILLING_JOB_BATCH_SIZE }, (_, i) => ({
+        id: `tenant-${i}`,
+        slug: `tenant-${i}`,
+      }));
+      prisma.tenant.findMany
+        .mockResolvedValueOnce(pastGrace)
+        .mockResolvedValueOnce([]);
+
+      await service.runJob('grace-suspend');
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('hit the 500-row cap'),
+      );
+      warn.mockRestore();
+    });
+
+    it('does not warn when scans are under the cap', async () => {
+      const { service } = makeService();
+      const warn = jest.spyOn((service as any).logger, 'warn');
+      await service.runAll();
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
     });
   });
 });

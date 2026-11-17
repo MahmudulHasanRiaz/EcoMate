@@ -4,7 +4,7 @@ import {
   RefreshCw, Truck, AlertTriangle, Coins, Settings, Upload, FileText,
   Building2, ShoppingCart, Receipt, Bell,
   Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert,
-  HardDrive, Target, Plug, Wallet, BarChart3, CreditCard, CalendarDays,
+  Target, Plug, Wallet, BarChart3, CreditCard, CalendarDays,
   CalendarCheck, LifeBuoy, ScanLine, KeyRound, Clock, TrendingUp, Briefcase,
   MapPin, MailOpen,
 } from 'lucide-react'
@@ -214,7 +214,9 @@ export const sidebarData: SidebarData = {
           ],
         }, 'Access', 'violet'),
         // ── System ──
-        inSection({ title: 'Backup & Restore', url: '/mon/backup', icon: HardDrive }, 'System', 'neutral'),
+        // NOTE (Phase 8): the Backup & Restore nav entry was removed with the
+        // tenant backup UI — backups are a platform/ops-only job now (the
+        // tenant-facing backup endpoints dumped the whole shared DB).
         inSection({ title: 'Pages', url: '/mon/pages', icon: FileText, feature: 'admin_cms_pages' }, 'System', 'neutral'),
         inSection({ title: 'Store Locations', url: '/mon/settings/store-locations', icon: MapPin, feature: 'admin_cms_pages' }, 'System', 'neutral'),
         inSection({ title: 'Notifications', url: '/mon/notifications', icon: Bell, feature: 'admin_notifications' }, 'System', 'neutral'),

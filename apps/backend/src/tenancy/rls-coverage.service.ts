@@ -10,6 +10,12 @@ interface CoverageRow {
   has_trigger: boolean;
 }
 
+interface RoleRow {
+  rolname: string;
+  rolsuper: boolean;
+  rolbypassrls: boolean;
+}
+
 const FALLBACK_TENANT_ID = '00000000-0000-4000-8000-000000000000';
 
 /**
@@ -29,6 +35,33 @@ export class RlsCoverageService implements OnModuleInit {
     const client = this.manager.getClient(
       process.env.DEFAULT_TENANT_ID || FALLBACK_TENANT_ID,
     );
+
+    // A superuser or BYPASSRLS role bypasses RLS entirely — FORCE RLS,
+    // policies, and triggers are all moot. Assert the connected role
+    // cannot bypass before trusting any of the coverage flags below.
+    // Fail closed in production; warn-only in test/dev (the test role
+    // ecomate_tenant_app is non-superuser without BYPASSRLS and passes).
+    const roleRows = await client.$queryRawUnsafe<RoleRow[]>(
+      `SELECT rolname, rolsuper, rolbypassrls
+         FROM pg_roles
+        WHERE rolname = current_user`,
+    );
+    const role = roleRows[0];
+    if (role && (role.rolsuper || role.rolbypassrls)) {
+      const detail =
+        `connected DB role "${role.rolname}" ` +
+        (role.rolsuper
+          ? 'is a superuser'
+          : 'has BYPASSRLS') +
+        ' — RLS is bypassed entirely for this role, so tenant isolation is not enforced by the database';
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`DB role bypass check failed: ${detail}`);
+      }
+      this.logger.warn(
+        `DB role bypass check: ${detail} (warn-only outside production)`,
+      );
+    }
+
     const rows = await client.$queryRawUnsafe<CoverageRow[]>(
       `SELECT table_name, tenant_scoped, rls_enabled, rls_forced,
               has_policy, has_trigger

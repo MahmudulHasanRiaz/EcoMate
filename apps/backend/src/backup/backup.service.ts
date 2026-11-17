@@ -2,6 +2,7 @@ import { tenantCompound } from '../tenancy/tenant-context';
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   HttpException,
   HttpStatus,
@@ -9,6 +10,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Prisma } from '@prisma/client';
@@ -38,6 +40,7 @@ import { promisify } from 'util';
 import { createGzip, createGunzip } from 'zlib';
 import { CacheService } from '../cache/cache.service';
 import { MediaQueueService } from '../media/media-queue/media-queue.service';
+import { OpsAlertsService } from '../observability/ops-alerts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -45,6 +48,7 @@ import {
   BACKUP_FORMAT_VERSION,
   BACKUP_MANIFEST_FILENAME,
   BACKUP_SQL_FILENAME,
+  PLATFORM_BACKUP_SQL_FILENAME,
   type ArchiveValidation,
   type BackupManifest,
   extractValidatedTarBackup,
@@ -223,6 +227,12 @@ export class BackupService implements OnModuleInit {
     private readonly securityEventsQueue: Queue,
     @InjectQueue('security-aggregate')
     private readonly securityAggregateQueue: Queue,
+    // @Optional: older specs construct BackupService positionally with the
+    // 10 original args; alerts are a best-effort channel, never a
+    // constructor hard dependency.
+    @Optional()
+    @Inject(OpsAlertsService)
+    private readonly alerts?: OpsAlertsService,
   ) {}
 
   private maintenanceQueues(): Queue[] {
@@ -352,6 +362,15 @@ export class BackupService implements OnModuleInit {
   private async getActiveRestoreControl(
     client: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<{ operationId: string; phase: RestoreControlPhase } | null> {
+    // The journal table is created by migration 0003. On a database where
+    // that migration has not run yet there cannot be an active restore
+    // (restores INSERT into this table first), so a missing table means
+    // "no active restore" — not a backup failure. Same to_regclass guard
+    // as main.ts and media-queue.service.ts use for this table.
+    const exists = await client.$queryRaw<Array<{ exists: boolean }>>(
+      Prisma.sql`SELECT to_regclass('ecomate_control.backup_restore_operation') IS NOT NULL AS "exists"`,
+    );
+    if (!exists[0]?.exists) return null;
     const rows = await client.$queryRaw<
       Array<{ operationId: string; phase: RestoreControlPhase }>
     >(
@@ -994,6 +1013,14 @@ export class BackupService implements OnModuleInit {
       await rm(workDir, { recursive: true, force: true });
       await mkdir(workDir, { recursive: true });
       const { dumpPath, dumpSize } = await this.createDbDump(workDir);
+      // Phase 8 Stage 2 item 22: db_files backups also carry the platform
+      // database (tenants, plans, subscriptions, invoices). db_only stays
+      // tenant-only — a bare .sql.gz has no manifest and no room for a
+      // second dump, and its consumers expect exactly one database.
+      const platformDump =
+        record.scope === 'db_files'
+          ? await this.createPlatformDbDump(workDir)
+          : null;
       let finalPath: string;
       let finalName: string;
       let filesSize: bigint | null = null;
@@ -1013,7 +1040,9 @@ export class BackupService implements OnModuleInit {
         const storageConfig = await this.storage.getConfig();
         await this.assertWorkingSpace(
           workDir,
-          content.filesSize * 2n + dumpSize * 3n,
+          content.filesSize * 2n +
+            dumpSize * 3n +
+            (platformDump?.dumpSize ?? 0n) * 3n,
           'Full backup',
         );
 
@@ -1029,6 +1058,10 @@ export class BackupService implements OnModuleInit {
             path ? `uploads/${path}` : 'uploads',
           ),
           excludedPaths: ['uploads/backups'],
+          platformDumpIncluded: platformDump !== null,
+          platformDbDumpSize: platformDump
+            ? Number(platformDump.dumpSize)
+            : null,
         };
         await writeFile(
           join(workDir, BACKUP_MANIFEST_FILENAME),
@@ -1140,6 +1173,17 @@ export class BackupService implements OnModuleInit {
           },
         })
         .catch(() => {});
+      // Phase 8 Stage 2 item 20: a failed backup used to be a lone log
+      // line. Alert ops (throttled per kind); sendAlert never throws.
+      await this.alerts?.sendAlert({
+        kind: 'backup-failure',
+        subject: `Backup ${backupId} failed (${record.scope})`,
+        text:
+          `Backup ${backupId} (scope ${record.scope}, type ${record.type}) ` +
+          `failed: ${safeErrorMessage(pipelineFailure)}\n\n` +
+          `The next scheduled backup will retry on its normal schedule; ` +
+          `check the backend logs and the backup queue before then.`,
+      });
       // BullMQ retries only when the worker receives a rejection.
       throw pipelineFailure;
     }
@@ -1164,10 +1208,105 @@ export class BackupService implements OnModuleInit {
     }
   }
 
+  /**
+   * Phase 8 Stage 2 item 22: dump the platform database (tenants, plans,
+   * subscriptions, invoices) into platform.sql. Returns null — with a
+   * warning, not a failure — when PLATFORM_DATABASE_URL is unset (e.g. a
+   * legacy single-tenant deployment that has no platform DB yet); the
+   * manifest records the absence so a restore never guesses.
+   */
+  private async createPlatformDbDump(
+    workDir: string,
+  ): Promise<{ dumpPath: string; dumpSize: bigint } | null> {
+    const platformUrl = process.env.PLATFORM_DATABASE_URL;
+    if (!platformUrl) {
+      this.logger.warn(
+        'PLATFORM_DATABASE_URL is not configured; this backup will not contain the platform database',
+      );
+      return null;
+    }
+    // No Prisma client for the platform DB exists in the backend, so there
+    // is no row-size estimate to scale from — the 256MB minimum floor from
+    // the tenant path applies, plus the pipeline's dumpSize*3 check.
+    await this.assertWorkingSpace(
+      workDir,
+      positiveBigInt(process.env.BACKUP_MIN_DUMP_FREE_BYTES, 256n * 1024n * 1024n),
+      'Platform database dump',
+    );
+    return this.dumpDatabase(
+      platformUrl,
+      workDir,
+      PLATFORM_BACKUP_SQL_FILENAME,
+      'platform',
+    );
+  }
+
+  /**
+   * Shared pg_dump driver for both databases: plain format, --clean
+   * --if-exists, public schema only, no owners/ACLs (same flags the tenant
+   * dump has always used). The platform DB has no ecomate_control schema,
+   * so --exclude-schema is harmless there.
+   */
+  private async dumpDatabase(
+    dbUrl: string,
+    workDir: string,
+    filename: string,
+    label: string,
+  ): Promise<{ dumpPath: string; dumpSize: bigint }> {
+    const dumpPath = join(workDir, filename);
+    const parsed = parseDbUrl(dbUrl);
+    // NOTE: no --schema=public here, deliberately. pg_dump SKIPS the
+    // CREATE EXTENSION statements when --schema is given (verified live
+    // 2026-11-17: with --schema=public the dump has zero CREATE EXTENSION
+    // lines; without it, pg_trgm is emitted). The restore drops the public
+    // schema CASCADE — which drops pg_trgm — then replays this dump, so a
+    // dump without CREATE EXTENSION fails at the first trigram index with
+    // 'operator class "public.gin_trgm_ops" does not exist'. Dumping every
+    // schema except ecomate_control keeps the dump self-contained: the
+    // restore control journal must never be resurrected from a backup.
+    const args = [
+      '--format=plain',
+      '--no-owner',
+      '--no-acl',
+      '--clean',
+      '--if-exists',
+      '--exclude-schema=ecomate_control',
+      '--host',
+      parsed.host,
+      '--port',
+      parsed.port,
+      '--username',
+      parsed.user,
+      '--dbname',
+      parsed.database,
+      '--file',
+      dumpPath,
+    ];
+
+    const { stderr } = await execFileAsync('pg_dump', args, {
+      env: postgresEnv(parsed),
+      timeout: this.dbDumpTimeout,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    if (stderr && !stderr.includes('deprecated')) {
+      this.logger.warn(`pg_dump (${label}) warning: ${stderr.slice(0, 4000)}`);
+    }
+
+    const dumpStat = await stat(dumpPath);
+    if (dumpStat.size === 0) {
+      throw new Error(`pg_dump (${label}) produced an empty file`);
+    }
+    if (BigInt(dumpStat.size) > this.maxRestoreBytes) {
+      throw new Error(
+        `Database dump (${label}) exceeds the configured restore limit of ${this.maxRestoreBytes.toString()} bytes`,
+      );
+    }
+    return { dumpPath, dumpSize: BigInt(dumpStat.size) };
+  }
+
   private async createDbDump(
     workDir: string,
   ): Promise<{ dumpPath: string; dumpSize: bigint }> {
-    const dumpPath = join(workDir, BACKUP_SQL_FILENAME);
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) {
       throw new InternalServerErrorException('DATABASE_URL not configured');
@@ -1202,44 +1341,7 @@ export class BackupService implements OnModuleInit {
       'Database dump',
     );
 
-    const parsed = parseDbUrl(dbUrl);
-    const args = [
-      '--format=plain',
-      '--no-owner',
-      '--no-acl',
-      '--clean',
-      '--if-exists',
-      '--schema=public',
-      '--exclude-schema=ecomate_control',
-      '--host',
-      parsed.host,
-      '--port',
-      parsed.port,
-      '--username',
-      parsed.user,
-      '--dbname',
-      parsed.database,
-      '--file',
-      dumpPath,
-    ];
-
-    const { stderr } = await execFileAsync('pg_dump', args, {
-      env: postgresEnv(parsed),
-      timeout: this.dbDumpTimeout,
-      maxBuffer: 8 * 1024 * 1024,
-    });
-    if (stderr && !stderr.includes('deprecated')) {
-      this.logger.warn(`pg_dump warning: ${stderr.slice(0, 4000)}`);
-    }
-
-    const dumpStat = await stat(dumpPath);
-    if (dumpStat.size === 0) throw new Error('pg_dump produced an empty file');
-    if (BigInt(dumpStat.size) > this.maxRestoreBytes) {
-      throw new Error(
-        `Database dump exceeds the configured restore limit of ${this.maxRestoreBytes.toString()} bytes`,
-      );
-    }
-    return { dumpPath, dumpSize: BigInt(dumpStat.size) };
+    return this.dumpDatabase(dbUrl, workDir, BACKUP_SQL_FILENAME, 'tenant');
   }
 
   private async createTarArchive(
@@ -1274,6 +1376,14 @@ export class BackupService implements OnModuleInit {
       BACKUP_SQL_FILENAME,
       BACKUP_MANIFEST_FILENAME,
     ];
+    // Phase 8 item 22: platform.sql rides in the same archive when the
+    // pipeline produced it (db_files with PLATFORM_DATABASE_URL set).
+    try {
+      await stat(join(workDir, PLATFORM_BACKUP_SQL_FILENAME));
+      args.push(PLATFORM_BACKUP_SQL_FILENAME);
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
     if (contentPaths.length > 0) {
       const uploadRoot = join(process.cwd(), 'uploads');
       await symlink(await realpath(uploadRoot), join(workDir, 'uploads'));
@@ -2401,6 +2511,42 @@ export class BackupService implements OnModuleInit {
       }
 
       try {
+        // Phase 8 Stage 2 item 22: platform FIRST. If the platform replay
+        // fails, the tenant database is still untouched and the prepared
+        // content rolls back with it (the catch below). A platform dump
+        // with no PLATFORM_DATABASE_URL is a configuration error and fails
+        // loudly here rather than silently restoring half a system.
+        // Uploaded archives are SKIPPED deliberately: platform.sql there is
+        // untrusted SQL and the platform DB has no sandbox-role story (the
+        // tenant path's sandbox relies on a superuser tenant URL). An
+        // operator restoring an uploaded archive replays platform.sql
+        // manually — see the DB-restore runbook.
+        if (extractRoot && sourceSnapshot.type !== 'uploaded') {
+          const platformSqlPath = join(
+            extractRoot,
+            PLATFORM_BACKUP_SQL_FILENAME,
+          );
+          try {
+            const platformStat = await stat(platformSqlPath);
+            if (platformStat.size === 0) {
+              throw new Error('Platform SQL dump is empty');
+            }
+            await this.restorePlatformDatabase(platformSqlPath, backupId);
+          } catch (error: any) {
+            if (error?.code !== 'ENOENT') throw error;
+            // No platform.sql in this archive (pre-Phase-8 or db_only
+            // lineage): tenant-only restore, as before.
+          }
+        } else if (extractRoot && sourceSnapshot.type === 'uploaded') {
+          try {
+            await stat(join(extractRoot, PLATFORM_BACKUP_SQL_FILENAME));
+            this.logger.warn(
+              'Uploaded archive contains platform.sql, but platform restores from uploaded archives are skipped (untrusted SQL). Replay platform.sql manually if the platform database also needs restoring.',
+            );
+          } catch (error: any) {
+            if (error?.code !== 'ENOENT') throw error;
+          }
+        }
         await this.restoreDatabase(
           sqlDumpPath,
           backupId,
@@ -2690,6 +2836,175 @@ export class BackupService implements OnModuleInit {
         );
       });
     }
+
+    // The replay above dropped the public schema CASCADE (destroying every
+    // grant) and the dump carries no GRANTs (--no-acl), so the tenant app
+    // role must be re-granted before any post-restore bookkeeping runs.
+    await this.regrantTenantAppRole();
+  }
+
+  /**
+   * Phase 8 Stage 2 item 23: re-apply the tenant app role's grants after a
+   * restore. Without this, the non-superuser tenant role (TENANT_DATABASE_URL)
+   * cannot read or write anything after a restore — the pipeline's own
+   * post-restore bookkeeping dies with 'permission denied for schema public'
+   * (42501), the failure cannot even be persisted (the upsert uses the same
+   * role), and the app stays broken until an operator re-grants by hand.
+   * Found live 2026-11-17 during the Phase 8 restore drill. Mirrors the
+   * grants in test-env-setup.sh (and the production deploy): schema USAGE,
+   * DML on all tables, USAGE/SELECT on all sequences, EXECUTE on all
+   * functions, plus the restore-control journal. No-op when
+   * TENANT_DATABASE_URL is unset, uses the same role as DATABASE_URL, or
+   * points at a different database. A failure here is fatal to the restore
+   * on purpose: a restored database the app cannot use is not a restore.
+   */
+  private async regrantTenantAppRole(): Promise<void> {
+    const tenantUrl = process.env.TENANT_DATABASE_URL;
+    const dbUrl = process.env.DATABASE_URL;
+    if (!tenantUrl || !dbUrl) return;
+    const tenant = parseDbUrl(tenantUrl);
+    const control = parseDbUrl(dbUrl);
+    if (!tenant.user || tenant.user === control.user) return;
+    if (
+      tenant.database !== control.database ||
+      tenant.host !== control.host ||
+      tenant.port !== control.port
+    ) {
+      return;
+    }
+    const role = quotePgIdentifier(tenant.user);
+    const grants = [
+      `GRANT USAGE ON SCHEMA public TO ${role}`,
+      `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${role}`,
+      `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${role}`,
+      `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO ${role}`,
+      `GRANT USAGE ON SCHEMA ${quotePgIdentifier(RESTORE_CONTROL_SCHEMA)} TO ${role}`,
+      `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${quotePgIdentifier(RESTORE_CONTROL_SCHEMA)}.${quotePgIdentifier(RESTORE_CONTROL_TABLE)} TO ${role}`,
+    ].join('; ');
+    const { stderr } = await execFileAsync(
+      'psql',
+      [
+        '--no-psqlrc',
+        '--quiet',
+        '--set=ON_ERROR_STOP=1',
+        '--host',
+        control.host,
+        '--port',
+        control.port,
+        '--username',
+        control.user,
+        '--dbname',
+        control.database,
+        '--command',
+        grants,
+      ],
+      {
+        env: postgresEnv(control),
+        timeout: 30_000,
+        maxBuffer: 8 * 1024 * 1024,
+      },
+    );
+    if (stderr && !stderr.includes('deprecated')) {
+      this.logger.warn(`psql re-grant warning: ${stderr.slice(0, 4000)}`);
+    }
+    this.logger.log(
+      `Re-applied tenant app role grants for ${tenant.user} after restore`,
+    );
+  }
+
+  /**
+   * Phase 8 Stage 2 item 22: replay the platform.sql dump into
+   * PLATFORM_DATABASE_URL. Mirrors restoreDatabase's shape (terminate other
+   * sessions, single psql transaction, DROP/CREATE public first) but has no
+   * ecomate_control journal — the platform DB carries no control schema, and
+   * the tenant restore's control row already gates re-entry for the whole
+   * restore operation. Runs BEFORE the tenant replay so a platform failure
+   * aborts before the tenant database is touched.
+   */
+  private async restorePlatformDatabase(
+    platformSqlPath: string,
+    operationId: string,
+  ): Promise<void> {
+    const platformUrl = process.env.PLATFORM_DATABASE_URL;
+    if (!platformUrl) {
+      throw new Error(
+        'PLATFORM_DATABASE_URL is not configured; cannot restore the platform database from this backup',
+      );
+    }
+    const parsed = parseDbUrl(platformUrl);
+    const escapedDatabase = parsed.database.replace(/'/g, "''");
+
+    try {
+      const { stdout } = await execFileAsync(
+        'psql',
+        [
+          '--no-psqlrc',
+          '--quiet',
+          '--tuples-only',
+          '--no-align',
+          '--host',
+          parsed.host,
+          '--port',
+          parsed.port,
+          '--username',
+          parsed.user,
+          '--dbname',
+          parsed.database,
+          '--command',
+          `SELECT COALESCE(bool_and(pg_terminate_backend(pid)), true) FROM pg_stat_activity WHERE datname='${escapedDatabase}' AND pid <> pg_backend_pid() AND application_name NOT LIKE 'ecomate-backup-%'`,
+        ],
+        {
+          env: postgresEnv(parsed),
+          timeout: 30_000,
+          maxBuffer: 8 * 1024 * 1024,
+        },
+      );
+      if (stdout.trim() !== 't') {
+        throw new Error('PostgreSQL refused to terminate one or more sessions');
+      }
+    } catch (error) {
+      throw new Error(
+        `Could not establish an exclusive platform restore window: ${safeErrorMessage(error)}`,
+      );
+    }
+
+    const resetPublicSchema =
+      'DROP SCHEMA IF EXISTS public CASCADE; ' +
+      'CREATE SCHEMA public AUTHORIZATION CURRENT_USER;';
+    const { stderr } = await execFileAsync(
+      'psql',
+      [
+        '--no-psqlrc',
+        '--quiet',
+        '--set=ON_ERROR_STOP=1',
+        '--single-transaction',
+        '--host',
+        parsed.host,
+        '--port',
+        parsed.port,
+        '--username',
+        parsed.user,
+        '--dbname',
+        parsed.database,
+        '--command',
+        resetPublicSchema,
+        '--file',
+        platformSqlPath,
+      ],
+      {
+        env: postgresEnv(parsed),
+        timeout: this.restoreTimeout,
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    if (stderr && !stderr.includes('deprecated')) {
+      this.logger.warn(
+        `psql platform restore warning: ${stderr.slice(0, 4000)}`,
+      );
+    }
+    this.logger.log(
+      `Platform database restored from backup ${operationId}`,
+    );
   }
 
   private pgClient(parsed: ParsedDbUrl, applicationName: string): Client {
@@ -2992,6 +3307,16 @@ export class BackupService implements OnModuleInit {
       this.logger.error(
         `Could not persist restore failure: ${safeErrorMessage(persistError)}`,
       );
+    });
+    // Phase 8 Stage 2 item 20: a failed restore is an operator emergency,
+    // not a log line. sendAlert never throws.
+    await this.alerts?.sendAlert({
+      kind: 'restore-failure',
+      subject: `Restore of backup ${snapshot.id} failed`,
+      text:
+        `${message}\n\n` +
+        `The backup source was ${preserveSource ? 'preserved' : 'marked failed'}. ` +
+        `Check the backend logs and the restore control row before retrying.`,
     });
   }
 
@@ -3388,7 +3713,11 @@ export class BackupService implements OnModuleInit {
   }
 
   private async reregisterRepeatableJob(): Promise<void> {
-    const enabled = await this.getSetting('backup_schedule_enabled', 'false');
+    // Phase 8 Stage 2 item 22: scheduled backups are ON by default with
+    // db_files scope (was OFF / db_only). Tenants that explicitly set
+    // backup_schedule_enabled=false or backup_default_scope=db_only keep
+    // their choice — these are only the defaults when no setting exists.
+    const enabled = await this.getSetting('backup_schedule_enabled', 'true');
     if (enabled !== 'true') {
       const repeats = await this.backupQueue.getRepeatableJobs();
       for (const repeat of repeats) {
@@ -3405,7 +3734,7 @@ export class BackupService implements OnModuleInit {
     this.validateBackupScheduleCron(cron);
     const configuredScope = await this.getSetting(
       'backup_default_scope',
-      'db_only',
+      'db_files',
     );
     const scope: 'db_only' | 'db_files' =
       configuredScope === 'db_files' ? 'db_files' : 'db_only';

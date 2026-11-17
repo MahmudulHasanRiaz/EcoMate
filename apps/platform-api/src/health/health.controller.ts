@@ -26,6 +26,7 @@ export class HealthController {
         fallbackDomain: domains.fallbackDomain ?? null,
         allowExternalFallback: domains.allowExternalFallback,
         primaryHealthy: this.domainConfig.isPrimaryHealthy(),
+        primaryProbe: this.domainConfig.getPrimaryProbeResult(),
         effectiveBaseDomain: this.domainConfig.effectiveBaseDomain(),
         customDomainCname: domains.customDomainCname,
         platformHosts: domains.platformHosts,

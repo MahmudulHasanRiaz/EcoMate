@@ -1,10 +1,11 @@
 import { Processor } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SecurityEventCategory, SecurityEventSeverity } from '@prisma/client';
 import { dhakaDayKey, dhakaHourBucket } from '../../common/utils/dhaka-time';
 import { TenantJobData, TenantWorkerHost } from '../../tenancy/tenant-job';
+import { TenantRegistryService } from '../../tenancy/tenant-registry.service';
 
 interface EventJobData extends TenantJobData {
   id: string;
@@ -35,8 +36,11 @@ interface EventJobData extends TenantJobData {
 export class SecurityEventProcessor extends TenantWorkerHost<EventJobData> {
   private readonly logger = new Logger(SecurityEventProcessor.name);
 
-  constructor(private readonly prisma: PrismaService) {
-    super();
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() tenantRegistry?: TenantRegistryService,
+  ) {
+    super(tenantRegistry);
   }
 
   protected async handle(job: Job<EventJobData>): Promise<void> {

@@ -12,7 +12,7 @@ import { TrustTierService } from './trust-tier.service';
 import { RateLimitCounterService } from './rate-limit-counter.service';
 import { RiskContextService } from './risk-context.service';
 import { RiskScoreService } from './risk-score.service';
-import { isInternalRequest } from './internal-request';
+import { isInternalRequest, isPlatformServiceRequest } from './internal-request';
 import { SecurityEventEmitterService } from '../../security-dashboard/services/security-event-emitter.service';
 import { SecurityEventType } from '../../security-dashboard/registries/event-type.registry';
 import { SecurityEventSource } from '../../security-dashboard/registries/source.registry';
@@ -59,8 +59,12 @@ export class AdaptiveRateLimiterGuard {
     // F1+F2: verified internal service-to-service calls (shared secret +
     // private TCP peer) are exempt from rate limiting. See
     // internal-request.ts — both factors are required, and the peer is the
-    // socket address, never the spoofable x-forwarded-for header.
-    if (isInternalRequest(request)) return true;
+    // socket address, never the spoofable x-forwarded-for header. The
+    // platform control plane authenticates with its own service token
+    // (x-platform-service-token), not x-internal-secret, so it gets the
+    // same exemption via isPlatformServiceRequest — otherwise the
+    // platform's bursty internal calls (chunked export, purge) 429.
+    if (isInternalRequest(request) || isPlatformServiceRequest(request)) return true;
 
     const handler = context.getHandler();
     const controllerClass = context.getClass();

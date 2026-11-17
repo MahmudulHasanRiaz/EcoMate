@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
-import { Roles } from '../auth/roles.decorator';
+import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AuditService } from '../common/audit.service';
 import { DomainConfigService } from '../config/domain-config.service';
@@ -28,6 +28,7 @@ export class DomainsAdminController {
   ) {}
 
   @Get('config')
+  @Roles(...READ_ROLES)
   config() {
     return this.domainConfig.getConfig();
   }
@@ -52,6 +53,7 @@ export class DomainsAdminController {
   }
 
   @Get('tenants')
+  @Roles(...READ_ROLES)
   list(
     @Query('status') status?: string,
     @Query('search') search?: string,

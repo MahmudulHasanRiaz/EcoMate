@@ -207,6 +207,34 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(global.fetch).not.toHaveBeenCalled();
     });
+
+    it('carries the platform actor identity when the consume response supplies it', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tenantId: 'tenant-1',
+          email: mockUser.email,
+          actorEmail: 'ops@ecomate.bd',
+        }),
+      });
+      await runWithTenant(tenant, () => service.impersonate(token));
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: mockUser.id,
+          imp: true,
+          impActor: 'ops@ecomate.bd',
+        }),
+        expect.objectContaining({ secret: 'tenant-jwt-secret', expiresIn: 900 }),
+      );
+    });
+
+    it('omits the actor claim when the consume response has no actor', async () => {
+      await runWithTenant(tenant, () => service.impersonate(token));
+      const claims = (jwtService.sign as jest.Mock).mock.calls[0][0];
+      expect(claims.imp).toBe(true);
+      expect(claims).not.toHaveProperty('impActor');
+    });
   });
 
   describe('register', () => {

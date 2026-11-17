@@ -78,6 +78,7 @@ export class MobileBuilderController {
 
   // ── Generic compile-time metadata (for admin UI preview) ──
   @Get('metadata')
+  @Permissions('view_mobile_builder')
   @RequiresFeature('mobile_distribution')
   async getGenericMetadata() {
     const settings = await this.prisma.systemSetting.findMany({
@@ -125,6 +126,7 @@ export class MobileBuilderController {
 
   // ── Ready check — validates prerequisites ──
   @Get('ready')
+  @Permissions('view_mobile_builder')
   @RequiresFeature('mobile_distribution')
   async getReadyStatus() {
     const missing: string[] = [];
@@ -158,6 +160,7 @@ export class MobileBuilderController {
 
   // ── Build history ──
   @Get('builds')
+  @Permissions('view_mobile_builder')
   @RequiresFeature('mobile_distribution')
   async getBuildHistory() {
     const builds = await this.prisma.mobileBuild.findMany({
@@ -181,6 +184,7 @@ export class MobileBuilderController {
 
   // ── Single build detail ──
   @Get('builds/:id')
+  @Permissions('view_mobile_builder')
   @RequiresFeature('mobile_distribution')
   async getBuildDetail(@Param('id') id: string) {
     const build = await this.prisma.mobileBuild.findFirst({ where: { id } });

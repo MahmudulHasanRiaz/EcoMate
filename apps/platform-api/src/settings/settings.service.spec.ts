@@ -1,5 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
+import { EncryptionService } from '../common/encryption.service';
 import { SettingsService } from './settings.service';
+
+const TEST_KEY =
+  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const OTHER_KEY =
+  'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -16,12 +22,17 @@ function buildService(stored: Record<string, unknown> = {}) {
       }),
     },
   } as any;
-  return { prisma, stored, service: new SettingsService(prisma) };
+  return {
+    prisma,
+    stored,
+    service: new SettingsService(prisma, new EncryptionService()),
+  };
 }
 
 describe('SettingsService', () => {
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
+    process.env.APP_ENCRYPTION_KEY = TEST_KEY;
     delete process.env.SMTP_HOST;
     delete process.env.SMTP_PORT;
     delete process.env.SMTP_SECURE;
@@ -145,7 +156,73 @@ describe('SettingsService', () => {
       secure: true,
       pass: 'original-secret',
     });
-    expect((stored.smtp as any).pass).toBe('original-secret');
+    // At rest the kept password is ciphertext — decrypting once (not twice)
+    // yields the original, proving updateSmtp did not double-encrypt it.
+    const storedPass = (stored.smtp as any).pass as string;
+    expect(EncryptionService.isEncrypted(storedPass)).toBe(true);
+    expect(new EncryptionService().decrypt(storedPass)).toBe(
+      'original-secret',
+    );
+  });
+
+  it('stores a new SMTP password as ciphertext, never plaintext', async () => {
+    const { service, stored } = buildService({
+      smtp: { host: 'smtp.example.test' },
+    });
+    await service.onModuleInit();
+
+    await service.updateSmtp({ pass: 'brand-new-secret' });
+
+    const storedPass = (stored.smtp as any).pass as string;
+    expect(EncryptionService.isEncrypted(storedPass)).toBe(true);
+    expect(storedPass).not.toContain('brand-new-secret');
+    expect(service.getSmtp()?.pass).toBe('brand-new-secret');
+  });
+
+  it('lazily migrates a legacy plaintext SMTP password on boot', async () => {
+    const { service, stored } = buildService({
+      smtp: { host: 'smtp.example.test', pass: 'legacy-plaintext' },
+    });
+    await service.onModuleInit();
+
+    // Still usable this boot…
+    expect(service.getSmtp()?.pass).toBe('legacy-plaintext');
+    // …and the row at rest is ciphertext now.
+    const storedPass = (stored.smtp as any).pass as string;
+    expect(EncryptionService.isEncrypted(storedPass)).toBe(true);
+    expect(storedPass).not.toContain('legacy-plaintext');
+  });
+
+  it('fails closed when the stored SMTP password cannot be decrypted', async () => {
+    const encryption = new EncryptionService();
+    const { service } = buildService({
+      smtp: {
+        host: 'smtp.example.test',
+        pass: encryption.encrypt('secret-under-old-key'),
+      },
+    });
+    // Simulate a rotated/lost key before boot.
+    process.env.APP_ENCRYPTION_KEY = OTHER_KEY;
+    await service.onModuleInit();
+
+    expect(service.getSmtp()).toBeNull();
+    expect(service.getSmtpPublic()).toMatchObject({
+      configured: false,
+      source: 'none',
+    });
+  });
+
+  it('refuses to store an SMTP password with no encryption key', async () => {
+    delete process.env.APP_ENCRYPTION_KEY;
+    delete process.env.LICENSE_ENCRYPTION_KEY;
+    const { service } = buildService({
+      smtp: { host: 'smtp.example.test' },
+    });
+    await service.onModuleInit();
+
+    await expect(
+      service.updateSmtp({ pass: 'cannot-protect-this' }),
+    ).rejects.toThrow('APP_ENCRYPTION_KEY is not set');
   });
 
   it('replaces the stored password when an SMTP update provides one', async () => {

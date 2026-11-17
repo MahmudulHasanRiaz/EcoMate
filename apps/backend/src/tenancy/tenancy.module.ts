@@ -8,10 +8,11 @@ import { RlsCoverageService } from './rls-coverage.service';
 import { TenantEntitlementsService } from './tenant-entitlements.service';
 import { TenantSubscriptionGuard } from './tenant-subscription.guard';
 import { TenantResolveController } from './tenant-resolve.controller';
+import { InternalRegistryController } from './internal-registry.controller';
 
 @Global()
 @Module({
-  controllers: [TenantResolveController],
+  controllers: [TenantResolveController, InternalRegistryController],
   providers: [
     TenantRegistryService,
     TenantRegistrySyncService,

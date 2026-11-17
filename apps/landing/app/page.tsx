@@ -1,4 +1,11 @@
 import Link from 'next/link';
+import { PricingSection } from '@/components/pricing-section';
+import { SiteHeader } from '@/components/site-header';
+import {
+  fetchPublicPlans,
+  trialCtaCopy,
+  trialDaysForPlans,
+} from '@/lib/plans';
 
 const features = [
   {
@@ -30,20 +37,17 @@ const steps = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const plans = await fetchPublicPlans();
+  const trialDays = trialDaysForPlans(
+    plans,
+    process.env.NEXT_PUBLIC_TRIAL_DAYS,
+  );
+  const trialCta = trialCtaCopy(trialDays);
+
   return (
     <>
-      <header className="site-header">
-        <Link className="brand" href="/">
-          <span className="brand-mark" aria-hidden />
-          EcoMate
-        </Link>
-        <nav className="nav-actions" aria-label="Primary">
-          <Link className="button button--ghost" href="/signup">
-            Start a trial
-          </Link>
-        </nav>
-      </header>
+      <SiteHeader />
 
       <main className="page">
         <section className="hero">
@@ -57,7 +61,7 @@ export default function Home() {
             </p>
             <div className="hero-actions">
               <Link className="button" href="/signup">
-                Start a 14-day trial
+                {trialCta}
               </Link>
               <span className="fine-print">
                 Email verification first. No card required.
@@ -117,6 +121,8 @@ export default function Home() {
           </div>
         </section>
 
+        <PricingSection plans={plans} />
+
         <section className="section" aria-labelledby="steps-heading">
           <h2 id="steps-heading">From signup to a working store</h2>
           <p className="section-lede">
@@ -149,6 +155,11 @@ export default function Home() {
 
       <footer className="site-footer">
         <span>© {new Date().getFullYear()} EcoMate</span>
+        <span className="footer-links">
+          <Link href="/terms">Terms</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/sign-in">Sign in</Link>
+        </span>
         <span>Commerce infrastructure for independent stores.</span>
       </footer>
     </>

@@ -76,6 +76,24 @@ export function PlansPage() {
     }
   }
 
+  async function setDefaultVersion(planId: string, versionId: string) {
+    setBusy(`default:${versionId}`);
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/plans/${planId}/versions/${versionId}/set-default`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }).then((r) => readJson(r));
+      setNotice('Signup default updated. New signups provision onto this version.');
+      load();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -101,8 +119,8 @@ export function PlansPage() {
               <p>
                 {preview.affected} subscription
                 {preview.affected === 1 ? '' : 's'} on older versions of this
-                plan will move to the selected version. New signups already
-                follow the newest version; this only moves existing tenants.
+                plan will move to the selected version. New signups follow the
+                signup-default version; this only moves existing tenants.
               </p>
             </div>
             <div className="button-row">
@@ -185,6 +203,28 @@ export function PlansPage() {
               <p className="muted-note">
                 {plan.versions.length} version{plan.versions.length === 1 ? '' : 's'}
               </p>
+              <ul className="muted-note">
+                {plan.versions.map((v) => (
+                  <li key={v.id}>
+                    v{v.version} — {formatMoney(v.price, v.currency)}
+                    {v.archivedAt ? ' (archived)' : ''}
+                    {v.isDefault ? (
+                      <span className="badge badge--success"> Signup default</span>
+                    ) : !v.archivedAt ? (
+                      <button
+                        type="button"
+                        className="button button--ghost button--sm"
+                        onClick={() => void setDefaultVersion(plan.id, v.id)}
+                        disabled={!!busy}
+                      >
+                        {busy === `default:${v.id}`
+                          ? 'Setting…'
+                          : 'Set as signup default'}
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
               {plan.versions.length > 1 && version ? (
                 <div className="button-row">
                   <button

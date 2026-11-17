@@ -35,8 +35,8 @@ describe('landing signup validation', () => {
     expect(
       validateAccountStep({
         ownerEmail: 'owner@example.com',
-        password: 'long-enough',
-        confirmPassword: 'long-enough',
+        password: 'long-enough-password',
+        confirmPassword: 'long-enough-password',
       }),
     ).toEqual({});
     expect(
@@ -52,14 +52,31 @@ describe('landing signup validation', () => {
     });
   });
 
+  it('requires a 12-character minimum password', () => {
+    expect(
+      validateAccountStep({
+        ownerEmail: 'owner@example.com',
+        password: 'eleven-char',
+        confirmPassword: 'eleven-char',
+      }).password,
+    ).toMatch(/12 characters/);
+    expect(
+      validateAccountStep({
+        ownerEmail: 'owner@example.com',
+        password: 'twelve-chars',
+        confirmPassword: 'twelve-chars',
+      }),
+    ).toEqual({});
+  });
+
   it('requires accepting the terms', () => {
     expect(
       validateSignup({
         tenantName: 'Acme Store',
         slug: 'acme-store',
         ownerEmail: 'owner@example.com',
-        password: 'long-enough',
-        confirmPassword: 'long-enough',
+        password: 'long-enough-password',
+        confirmPassword: 'long-enough-password',
         acceptTerms: false,
       }).acceptTerms,
     ).toBeTruthy();

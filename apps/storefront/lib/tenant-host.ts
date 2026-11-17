@@ -123,7 +123,13 @@ export function resolveBaseDomainAlias(
     if (!host.endsWith(suffix)) continue;
 
     const slug = host.slice(0, -suffix.length);
-    if (!slug || slug.includes('.') || RESERVED_TENANT_SLUGS.has(slug)) {
+    // A dotted slug means this base matched only as a SUFFIX of a longer
+    // base (e.g. `shop.ecomate.bd` ends with `.ecomate.bd`, leaving the
+    // dotted slug `acme.shop`) — try the next, more-specific base instead
+    // of giving up. A reserved slug is reserved on every base, so it
+    // still resolves as null immediately.
+    if (!slug || slug.includes('.')) continue;
+    if (RESERVED_TENANT_SLUGS.has(slug)) {
       return null;
     }
 

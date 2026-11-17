@@ -1,8 +1,12 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { HttpException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
-import { AuthService } from './auth.service';
+import {
+  AuthService,
+  LOGIN_LOCKOUT_THRESHOLD,
+  lockoutMinutesFor,
+} from './auth.service';
 
 const prisma: any = {
   platformUser: {
@@ -29,12 +33,31 @@ function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+function activeUser(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'user-1',
+    email: 'admin@ecomate.test',
+    name: 'Platform Admin',
+    role: 'BILLING',
+    status: 'ACTIVE',
+    passwordHash: '',
+    failedLoginCount: 0,
+    lockedUntil: null,
+    mfaEnabledAt: null,
+    mfaSecret: null,
+    mfaRecoveryCodes: [],
+    ...overrides,
+  };
+}
+
 describe('AuthService', () => {
   beforeAll(() => {
     process.env.PLATFORM_JWT_SECRET = 'test-platform-access-secret';
     process.env.PLATFORM_JWT_REFRESH_SECRET = 'test-platform-refresh-secret';
     process.env.PLATFORM_JWT_EXPIRES_IN_SECONDS = '900';
     process.env.PLATFORM_JWT_REFRESH_EXPIRES_IN_SECONDS = '604800';
+    process.env.PLATFORM_MFA_TOKEN_TTL_SECONDS = '300';
+    process.env.PLATFORM_REFRESH_REUSE_GRACE_MS = '30000';
   });
 
   afterAll(() => {
@@ -49,119 +72,349 @@ describe('AuthService', () => {
     prisma.platformRefreshToken.updateMany.mockResolvedValue({ count: 1 });
   });
 
-  it('logs in an active platform user and stores a refresh-token hash', async () => {
-    const passwordHash = await bcrypt.hash('correct-password', 4);
-    prisma.platformUser.findUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'admin@ecomate.test',
-      name: 'Platform Admin',
-      role: 'SUPERADMIN',
-      status: 'ACTIVE',
-      passwordHash,
+  describe('lockout schedule', () => {
+    it('locks progressively: 5 min, doubling, capped at 240', () => {
+      expect(lockoutMinutesFor(4)).toBe(0);
+      expect(lockoutMinutesFor(5)).toBe(5);
+      expect(lockoutMinutesFor(6)).toBe(10);
+      expect(lockoutMinutesFor(7)).toBe(20);
+      expect(lockoutMinutesFor(10)).toBe(160);
+      expect(lockoutMinutesFor(11)).toBe(240);
+      expect(lockoutMinutesFor(99)).toBe(240);
     });
+  });
 
-    const result = await service.login({
-      email: 'ADMIN@ecomate.test',
-      password: 'correct-password',
-    });
+  describe('login', () => {
+    it('logs in an active non-SUPERADMIN without MFA, audits success, resets the counter', async () => {
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ passwordHash, failedLoginCount: 2 }),
+      );
 
-    expect(result.accessToken).toBeDefined();
-    expect(result.refreshToken).toBeDefined();
-    expect(result.user).toMatchObject({
-      id: 'user-1',
-      email: 'admin@ecomate.test',
-      role: 'SUPERADMIN',
-    });
-    expect(prisma.platformUser.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'user-1' } }),
-    );
-    expect(prisma.platformRefreshToken.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          userId: 'user-1',
-          tokenHash: expect.any(String),
+      const result = await service.login(
+        { email: 'ADMIN@ecomate.test', password: 'correct-password' },
+        { ip: '1.2.3.4', userAgent: 'spec' },
+      );
+
+      expect('accessToken' in result).toBe(true);
+      const tokens = result as { accessToken: string; refreshToken: string };
+      expect(tokens.accessToken).toBeDefined();
+      expect(tokens.refreshToken).toBeDefined();
+      expect(prisma.platformUser.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'user-1' },
+          data: expect.objectContaining({
+            failedLoginCount: 0,
+            lockedUntil: null,
+            lastLoginAt: expect.any(Date),
+          }),
         }),
-      }),
-    );
+      );
+      expect(prisma.platformRefreshToken.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'user-1',
+            tokenHash: expect.any(String),
+            familyId: expect.any(String),
+          }),
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'user-1',
+          action: 'auth.login.success',
+          ip: '1.2.3.4',
+          userAgent: 'spec',
+        }),
+      );
+    });
+
+    it('returns an MFA challenge for an enrolled user instead of tokens', async () => {
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ passwordHash, mfaEnabledAt: new Date() }),
+      );
+
+      const result = await service.login({
+        email: 'admin@ecomate.test',
+        password: 'correct-password',
+      });
+
+      expect(result).toMatchObject({
+        mfaRequired: true,
+        mfaSetupRequired: false,
+      });
+      expect((result as { mfaToken: string }).mfaToken).toBeDefined();
+      expect(prisma.platformRefreshToken.create).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'auth.login.success' }),
+      );
+    });
+
+    it('forces a SUPERADMIN without MFA into setup instead of logging in', async () => {
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ passwordHash, role: 'SUPERADMIN' }),
+      );
+
+      const result = await service.login({
+        email: 'admin@ecomate.test',
+        password: 'correct-password',
+      });
+
+      expect(result).toMatchObject({
+        mfaRequired: true,
+        mfaSetupRequired: true,
+      });
+      expect(prisma.platformRefreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a wrong password, counts the failure and audits it', async () => {
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ passwordHash, failedLoginCount: 1 }),
+      );
+
+      await expect(
+        service.login({
+          email: 'admin@ecomate.test',
+          password: 'wrong-password',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.platformUser.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { failedLoginCount: 2, lockedUntil: null },
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'user-1',
+          action: 'auth.login.failed',
+          after: expect.objectContaining({
+            reason: 'bad_password',
+            failedLoginCount: 2,
+          }),
+        }),
+      );
+    });
+
+    it('locks the account at the threshold and refuses logins with 423', async () => {
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({
+          passwordHash,
+          failedLoginCount: LOGIN_LOCKOUT_THRESHOLD - 1,
+        }),
+      );
+
+      await expect(
+        service.login({
+          email: 'admin@ecomate.test',
+          password: 'wrong-password',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      const data = prisma.platformUser.update.mock.calls[0][0].data;
+      expect(data.failedLoginCount).toBe(LOGIN_LOCKOUT_THRESHOLD);
+      expect(data.lockedUntil).toBeInstanceOf(Date);
+      expect(data.lockedUntil.getTime()).toBeGreaterThan(Date.now());
+
+      // Locked: even the correct password gets 423, without a bcrypt check
+      // against the stored hash (no new audit of the password itself).
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({
+          passwordHash,
+          failedLoginCount: LOGIN_LOCKOUT_THRESHOLD,
+          lockedUntil: new Date(Date.now() + 60_000),
+        }),
+      );
+      const err = await service
+        .login({ email: 'admin@ecomate.test', password: 'correct-password' })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(HttpException);
+      expect(err.status).toBe(423);
+    });
+
+    it('rejects an unknown email with 401 and audits it without an actor', async () => {
+      prisma.platformUser.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.login({ email: 'ghost@ecomate.test', password: 'anything' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: null,
+          action: 'auth.login.failed',
+          after: expect.objectContaining({ reason: 'unknown' }),
+        }),
+      );
+    });
+
+    it('rejects a disabled platform user', async () => {
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ status: 'DISABLED', passwordHash: 'irrelevant' }),
+      );
+
+      await expect(
+        service.login({ email: 'admin@ecomate.test', password: 'anything' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
   });
 
-  it('rejects a wrong password', async () => {
-    const passwordHash = await bcrypt.hash('correct-password', 4);
-    prisma.platformUser.findUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'admin@ecomate.test',
-      name: 'Platform Admin',
-      role: 'SUPERADMIN',
-      status: 'ACTIVE',
-      passwordHash,
+  describe('completeMfaLogin', () => {
+    it('issues tokens, resets the counter and audits success', async () => {
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ failedLoginCount: 3, mfaEnabledAt: new Date() }),
+      );
+
+      const result = await service.completeMfaLogin('user-1', {
+        ip: '1.2.3.4',
+      });
+
+      expect(result.accessToken).toBeDefined();
+      expect(result.refreshToken).toBeDefined();
+      expect(prisma.platformUser.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            failedLoginCount: 0,
+            lockedUntil: null,
+          }),
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'user-1',
+          action: 'auth.login.success',
+        }),
+      );
     });
 
-    await expect(
-      service.login({ email: 'admin@ecomate.test', password: 'wrong-password' }),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-  });
-
-  it('rejects a disabled platform user', async () => {
-    prisma.platformUser.findUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'admin@ecomate.test',
-      name: 'Platform Admin',
-      role: 'SUPERADMIN',
-      status: 'DISABLED',
-      passwordHash: 'irrelevant',
-    });
-
-    await expect(
-      service.login({ email: 'admin@ecomate.test', password: 'anything' }),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-  });
-
-  it('rotates a valid refresh token and revokes the old row', async () => {
-    const refreshToken = await jwt.signAsync(
-      { sub: 'user-1', jti: 'jti-1', type: 'platform-refresh' },
-      { secret: process.env.PLATFORM_JWT_REFRESH_SECRET, expiresIn: 60 },
-    );
-    prisma.platformRefreshToken.findUnique.mockResolvedValue({
-      id: 'row-1',
-      userId: 'user-1',
-      tokenHash: hashToken(refreshToken),
-      revokedAt: null,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
-    prisma.platformUser.findUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'admin@ecomate.test',
-      name: 'Platform Admin',
-      role: 'SUPERADMIN',
-      status: 'ACTIVE',
-    });
-
-    const result = await service.refresh(refreshToken);
-
-    expect(result.accessToken).toBeDefined();
-    expect(result.refreshToken).not.toBe(refreshToken);
-    expect(prisma.platformRefreshToken.update).toHaveBeenCalledWith({
-      where: { id: 'row-1' },
-      data: { revokedAt: expect.any(Date) },
+    it('refuses a locked account', async () => {
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ lockedUntil: new Date(Date.now() + 60_000) }),
+      );
+      const err = await service
+        .completeMfaLogin('user-1')
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(HttpException);
+      expect(err.status).toBe(423);
     });
   });
 
-  it('rejects a revoked refresh token', async () => {
-    const refreshToken = await jwt.signAsync(
-      { sub: 'user-1', jti: 'jti-1', type: 'platform-refresh' },
-      { secret: process.env.PLATFORM_JWT_REFRESH_SECRET, expiresIn: 60 },
-    );
-    prisma.platformRefreshToken.findUnique.mockResolvedValue({
-      id: 'row-1',
-      userId: 'user-1',
-      tokenHash: hashToken(refreshToken),
-      revokedAt: new Date(),
-      expiresAt: new Date(Date.now() + 60_000),
+  describe('mfa tokens', () => {
+    it('mints and verifies a platform-mfa token, rejects other types', async () => {
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ passwordHash, mfaEnabledAt: new Date() }),
+      );
+      const result = (await service.login({
+        email: 'admin@ecomate.test',
+        password: 'correct-password',
+      })) as { mfaToken: string };
+      await expect(service.verifyMfaToken(result.mfaToken)).resolves.toBe(
+        'user-1',
+      );
+      await expect(service.verifyMfaToken('garbage')).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      // A session access token is not an MFA token.
+      const access = await jwt.signAsync(
+        { sub: 'user-1', type: 'platform' },
+        { secret: process.env.PLATFORM_JWT_SECRET, expiresIn: 60 },
+      );
+      await expect(service.verifyMfaToken(access)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+  });
+
+  describe('refresh', () => {
+    function signedRefresh() {
+      return jwt.signAsync(
+        { sub: 'user-1', jti: 'jti-1', type: 'platform-refresh' },
+        { secret: process.env.PLATFORM_JWT_REFRESH_SECRET, expiresIn: 60 },
+      );
+    }
+
+    it('rotates a valid refresh token, revokes the old row, keeps the family', async () => {
+      const refreshToken = await signedRefresh();
+      prisma.platformRefreshToken.findUnique.mockResolvedValue({
+        id: 'row-1',
+        userId: 'user-1',
+        familyId: 'family-1',
+        tokenHash: hashToken(refreshToken),
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      prisma.platformUser.findUnique.mockResolvedValue(activeUser());
+
+      const result = await service.refresh(refreshToken);
+
+      expect(result.accessToken).toBeDefined();
+      expect(result.refreshToken).not.toBe(refreshToken);
+      expect(prisma.platformRefreshToken.update).toHaveBeenCalledWith({
+        where: { id: 'row-1' },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(prisma.platformRefreshToken.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ familyId: 'family-1' }),
+        }),
+      );
     });
 
-    await expect(service.refresh(refreshToken)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    it('revokes the whole family when a long-revoked token is replayed', async () => {
+      const refreshToken = await signedRefresh();
+      prisma.platformRefreshToken.findUnique.mockResolvedValue({
+        id: 'row-1',
+        userId: 'user-1',
+        familyId: 'family-1',
+        tokenHash: hashToken(refreshToken),
+        revokedAt: new Date(Date.now() - 120_000),
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+      await expect(service.refresh(refreshToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(prisma.platformRefreshToken.updateMany).toHaveBeenCalledWith({
+        where: { familyId: 'family-1', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'user-1',
+          action: 'auth.refresh.reuse',
+          after: expect.objectContaining({ familyId: 'family-1' }),
+        }),
+      );
+    });
+
+    it('does NOT revoke the family for a replay inside the grace window', async () => {
+      const refreshToken = await signedRefresh();
+      prisma.platformRefreshToken.findUnique.mockResolvedValue({
+        id: 'row-1',
+        userId: 'user-1',
+        familyId: 'family-1',
+        tokenHash: hashToken(refreshToken),
+        revokedAt: new Date(Date.now() - 5_000),
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+      await expect(service.refresh(refreshToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(prisma.platformRefreshToken.updateMany).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'auth.refresh.reuse' }),
+      );
+    });
+
+    it('rejects an unknown refresh token', async () => {
+      const refreshToken = await signedRefresh();
+      prisma.platformRefreshToken.findUnique.mockResolvedValue(null);
+      await expect(service.refresh(refreshToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
   });
 
   it('revokes a refresh token on logout', async () => {
@@ -174,11 +427,9 @@ describe('AuthService', () => {
 
   it('changes a password, revokes all sessions and audits it', async () => {
     const passwordHash = await bcrypt.hash('old-password-123', 4);
-    prisma.platformUser.findUnique.mockResolvedValue({
-      id: 'user-1',
-      status: 'ACTIVE',
-      passwordHash,
-    });
+    prisma.platformUser.findUnique.mockResolvedValue(
+      activeUser({ passwordHash }),
+    );
 
     const result = await service.changePassword('user-1', {
       currentPassword: 'old-password-123',
@@ -205,11 +456,9 @@ describe('AuthService', () => {
 
   it('rejects a wrong current password and a reused password', async () => {
     const passwordHash = await bcrypt.hash('old-password-123', 4);
-    prisma.platformUser.findUnique.mockResolvedValue({
-      id: 'user-1',
-      status: 'ACTIVE',
-      passwordHash,
-    });
+    prisma.platformUser.findUnique.mockResolvedValue(
+      activeUser({ passwordHash }),
+    );
 
     await expect(
       service.changePassword('user-1', {
@@ -224,5 +473,35 @@ describe('AuthService', () => {
         newPassword: 'old-password-123',
       }),
     ).rejects.toThrow('must be different');
+  });
+
+  it('me() reports MFA state and the SUPERADMIN requirement', async () => {
+    prisma.platformUser.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@ecomate.test',
+      name: 'Platform Admin',
+      role: 'SUPERADMIN',
+      status: 'ACTIVE',
+      lastLoginAt: null,
+      mfaEnabledAt: new Date(),
+    });
+    await expect(service.me('user-1')).resolves.toMatchObject({
+      mfaEnabled: true,
+      mfaRequired: true,
+    });
+
+    prisma.platformUser.findUnique.mockResolvedValue({
+      id: 'user-2',
+      email: 'billing@ecomate.test',
+      name: 'Billing',
+      role: 'BILLING',
+      status: 'ACTIVE',
+      lastLoginAt: null,
+      mfaEnabledAt: null,
+    });
+    await expect(service.me('user-2')).resolves.toMatchObject({
+      mfaEnabled: false,
+      mfaRequired: false,
+    });
   });
 });

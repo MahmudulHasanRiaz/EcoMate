@@ -8,7 +8,9 @@
 
 \set ON_ERROR_STOP on
 
-SET ROLE ecomate_app;
+-- The runtime app role (non-superuser, no BYPASSRLS). The smoke test runs
+-- as a superuser and SET ROLEs to it, exactly like the RLS gates CI job.
+SET ROLE ecomate_tenant_app;
 
 -- Tenant A and B. The trigger sets tenant_id from app.tenant_id; an explicit
 -- tenant_id is overwritten, so a caller cannot write into another tenant.

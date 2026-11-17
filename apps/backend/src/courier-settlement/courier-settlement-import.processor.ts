@@ -9,13 +9,14 @@
 // (already imported) and is treated as success.
 
 import { Processor } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Optional } from '@nestjs/common';
 import type { Job } from 'bullmq';
 import type { CourierSettlementInvoiceState } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConflictException } from '@nestjs/common';
 import { CourierSettlementImportService } from './courier-settlement-import.service';
 import { TenantJobData, TenantWorkerHost } from '../tenancy/tenant-job';
+import { TenantRegistryService } from '../tenancy/tenant-registry.service';
 
 export interface CourierSettlementImportJob extends TenantJobData {
   invoiceId: string;
@@ -30,8 +31,9 @@ export class CourierSettlementImportProcessor extends TenantWorkerHost<CourierSe
   constructor(
     private readonly prisma: PrismaService,
     private readonly imports: CourierSettlementImportService,
+    @Optional() tenantRegistry?: TenantRegistryService,
   ) {
-    super();
+    super(tenantRegistry);
   }
 
   protected async handle(job: Job<CourierSettlementImportJob>): Promise<void> {

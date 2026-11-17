@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { FeatureGuard } from '@ecomate/feature-flags';
 import { NoStoreMiddleware } from './common/middleware/no-store.middleware';
+import { ObservabilityModule } from './observability/observability.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -125,6 +126,7 @@ import { TenantLimitGuard } from './entitlements/tenant-limit.guard';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     RateLimitModule,
+    ObservabilityModule,
     SecurityDashboardModule,
     PrismaModule,
     FeatureFlagsModule,

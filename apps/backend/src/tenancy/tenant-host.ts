@@ -106,15 +106,27 @@ export function resolveTenantHost(
     if (host === platformHost) return { kind: 'platform', role, host };
   }
 
+  // A host that matched a base suffix but yielded no valid tenant slug is
+  // UNKNOWN — it must not fall through to 'custom', or a dotted host
+  // under our own base (foo.bar.ecomate.bd) could be attached as a
+  // "custom" domain. Track the match separately from the slug validity.
+  let matchedBase = false;
   for (const baseDomain of config.baseDomains) {
     if (host === baseDomain) {
       return { kind: 'platform', role: 'landing', host };
     }
     const suffix = `.${baseDomain}`;
     if (!host.endsWith(suffix)) continue;
+    matchedBase = true;
 
     const slug = host.slice(0, -suffix.length);
-    if (!slug || slug.includes('.') || RESERVED_TENANT_SLUGS.has(slug)) {
+    // A dotted slug means this base matched only as a SUFFIX of a longer
+    // base (e.g. `shop.ecomate.bd` ends with `.ecomate.bd`, leaving the
+    // dotted slug `acme.shop`) — try the next, more-specific base instead
+    // of giving up. A reserved slug is reserved on every base, so it
+    // still resolves as unknown immediately.
+    if (!slug || slug.includes('.')) continue;
+    if (RESERVED_TENANT_SLUGS.has(slug)) {
       return { kind: 'unknown', host };
     }
 
@@ -126,6 +138,7 @@ export function resolveTenantHost(
       isAlias: baseDomain !== config.primaryDomain,
     };
   }
+  if (matchedBase) return { kind: 'unknown', host };
 
   if (host === config.customDomainCname) {
     return { kind: 'platform', role: 'platformApi', host };

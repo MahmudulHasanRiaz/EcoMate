@@ -92,6 +92,10 @@ export class ImpersonationService {
       where: { tokenJti: sha256(token.toLowerCase()) },
       include: {
         tenant: { select: { id: true, slug: true, status: true, ownerEmail: true } },
+        // The backend mints the creating platform admin as the `impActor`
+        // claim on the tenant JWT, so tenant-side audit carries the actor —
+        // not just the impersonation flag.
+        platformUser: { select: { id: true, email: true } },
       },
     });
     if (
@@ -128,6 +132,8 @@ export class ImpersonationService {
       tenantId: session.tenant.id,
       slug: session.tenant.slug,
       email: session.tenant.ownerEmail,
+      actorId: session.platformUser.id,
+      actorEmail: session.platformUser.email,
     };
   }
 }

@@ -1,10 +1,9 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
-import { Roles } from '../auth/roles.decorator';
+import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { MetricsService } from './metrics.service';
 
-const READ_ROLES = ['SUPERADMIN', 'BILLING', 'SUPPORT'] as const;
 
 @Controller('metrics')
 @UseGuards(PlatformAuthGuard, RolesGuard)

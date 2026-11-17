@@ -13,11 +13,30 @@ volumes:
   # mobile builds so nothing else in the container can read it. Losing this
   # volume makes that data permanently unreadable.
   license-data:
+  # Per-tenant JSON exports (platform-api TENANT_EXPORT_DIR). Exports are
+  # the only copy of a tenant's data after purge — this volume must persist
+  # and be backed up like the databases.
+  platform-exports-data:
+  # Caddy ACME certificates, OCSP staples and on-demand TLS state. MUST
+  # persist: losing it forces re-issuance for every tenant host at once
+  # (Let's Encrypt rate limits) and drops all cached certificates.
+  caddy-data:
+  caddy-config:
 
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # Pool headroom (Phase 8 decision D6): per-tenant backend pools can
+    # reach 200 connections (2 per tenant x 100 cached clients) against
+    # Postgres's 100 default — saturation begins at ~45 warm tenants.
+    # 300 leaves room for the platform pool (10) + admin connections;
+    # measure the real ceiling with k6 before canary.
+    # Slow-query monitoring (Phase 8 Stage 2 item 21, compose part):
+    # pg_stat_statements preload + 500ms slow-query logging + 30s
+    # statement timeout. pg_stat_statements needs the extension created
+    # in-DB to query the views; the preload here only enables the library.
+    command: ["postgres", "-c", "max_connections=300", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "log_min_duration_statement=500", "-c", "statement_timeout=30000"]
     networks:
       - ecomate-network
     volumes:
@@ -25,7 +44,11 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-ecomate_web}
+      # Tenant database name, standardised on `ecomate` (Phase 8 decision
+      # D9 — docs/plan name; the old per-client default was ecomate_web).
+      # The platform database (ecomate_platform) is created by the
+      # platform-api startup script, not by this service.
+      POSTGRES_DB: ${POSTGRES_DB:-ecomate}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
@@ -86,8 +109,51 @@ services:
       SAAS_PRIMARY_UNHEALTHY: ${SAAS_PRIMARY_UNHEALTHY:-false}
       SAAS_CUSTOM_DOMAIN_CNAME: ${SAAS_CUSTOM_DOMAIN_CNAME:-}
       SAAS_ALLOW_EXTERNAL_FALLBACK: ${SAAS_ALLOW_EXTERNAL_FALLBACK:-false}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecomate_web}}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecomate}}
+      # Preferred tenant DSN (the tenancy layer reads this first, falling
+      # back to DATABASE_URL). Set explicitly so the tenant database name
+      # is one value everywhere (D9), not an accident of the fallback.
+      # Runtime connects as `ecomate_app` (LOGIN, NOSUPERUSER, NOBYPASSRLS)
+      # — NEVER the superuser: superusers bypass RLS entirely and the
+      # boot-time RLS coverage gate refuses to start (proven live,
+      # 2026-11-17). The password comes from TENANT_APP_DB_PASSWORD (no
+      # default — the stack fails closed without it); startup.sh provisions
+      # the role (LOGIN + password) on every boot, and migration 0002
+      # grants it DML. Migrations keep running as the owner via
+      # DATABASE_URL. The password must be URL-safe (letters, digits,
+      # hyphen, underscore) — it is embedded in this DSN.
+      TENANT_DATABASE_URL: ${TENANT_DATABASE_URL:-postgresql://ecomate_app:${TENANT_APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-ecomate}}
+      TENANT_APP_DB_PASSWORD: ${TENANT_APP_DB_PASSWORD:-}
       REDIS_URL: redis://redis:6379
+      # Platform control-plane link (registry sync, billing proxy,
+      # impersonation bootstrap, plan-change refresh). Without BOTH vars
+      # the backend runs with the control-plane link disabled by
+      # configuration — no tenant registry feed at all.
+      PLATFORM_API_URL: ${PLATFORM_API_URL:-http://platform-api:4100/api}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-}
+      # Tenant registry poll interval (how often the backend re-reads the
+      # tenant registry from the platform API).
+      TENANT_REGISTRY_REFRESH_MS: ${TENANT_REGISTRY_REFRESH_MS:-60000}
+      # Per-tenant Prisma client cache cap (Phase 8 decision D6, measured
+      # with k6 in Stage 2): each cached client costs ~25-40 MB of heap, so
+      # 60 clients (1.5-2.4 GB) cannot fit the heap budget below. 30 cached
+      # clients x pool max 2 = 60 max tenant connections, inside the 300
+      # Postgres max_connections above, and 30 is also the measured hard
+      # ceiling (first pg-pool connection timeout). Code default is 100
+      # (200 conns). Re-tune after the staging k6 run on real hardware.
+      TENANT_PRISMA_MAX_CLIENTS: ${TENANT_PRISMA_MAX_CLIENTS:-30}
+      # Default tenant for context-less paths (boot-time providers, health,
+      # queued jobs until the tenant fan-out lands). REQUIRED: without it
+      # the backend cannot boot — a provider touches Prisma during DI and
+      # the request has no tenant context (proven live, 2026-11-17:
+      # "Tenant context is required"). The default is the documented
+      # fallback UUID, which targets an empty tenant scope (no tenant rows
+      # exist under it); request paths always resolve a real tenant via
+      # middleware, so this value is never used for tenant traffic. Set it
+      # explicitly to a real tenant UUID only if a maintenance tenant is
+      # ever created for that purpose.
+      DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-00000000-0000-4000-8000-000000000000}
+      DEFAULT_TENANT_SLUG: ${DEFAULT_TENANT_SLUG:-default}
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
@@ -149,7 +215,7 @@ services:
       # Node heap ceiling, consumed by startup.sh. Must stay below the container
       # memory limit set in the deploy block below, or the kernel OOM-kills the
       # process before Node reaches its own ceiling.
-      NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-1280}
+      NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-2048}
       # Where the generated encryption key is persisted when
       # APP_ENCRYPTION_KEY is not supplied by the environment. The volume keeps
       # its historic `license-data` name so an already-provisioned key survives
@@ -164,11 +230,42 @@ services:
       MOBILE_BUILDER_REPO: ${MOBILE_BUILDER_REPO:-EcoMate-Mobile-Builder}
       GITHUB_REPOSITORY_OWNER: ${GITHUB_REPOSITORY_OWNER:-mahmudulhasanriaz}
       MOBILE_BUILD_DIR: ${MOBILE_BUILD_DIR:-./mobile-builds}
+      # Observability (Phase 8): structured JSON logging level.
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Sentry DSN (Phase 8). Empty = disabled (no account, no spend).
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # Ops alert recipients, comma-separated (Phase 8). Empty = alerts skipped.
+      OPS_ALERT_EMAIL: ${OPS_ALERT_EMAIL:-}
+      OPS_ALERT_MIN_INTERVAL_MS: ${OPS_ALERT_MIN_INTERVAL_MS:-900000}
+      # Direct SMTP for ops alerts (bypasses the email queue — an alert
+      # about a broken queue must not depend on the queue).
+      ALERT_SMTP_HOST: ${ALERT_SMTP_HOST:-}
+      ALERT_SMTP_PORT: ${ALERT_SMTP_PORT:-587}
+      ALERT_SMTP_SECURE: ${ALERT_SMTP_SECURE:-false}
+      ALERT_SMTP_USER: ${ALERT_SMTP_USER:-}
+      ALERT_SMTP_PASS: ${ALERT_SMTP_PASS:-}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-}
+      # BullMQ queue watcher (Phase 8): alerts on depth/failed jobs.
+      QUEUE_WATCHER_ENABLED: ${QUEUE_WATCHER_ENABLED:-true}
+      QUEUE_WATCHER_INTERVAL_MS: ${QUEUE_WATCHER_INTERVAL_MS:-60000}
+      QUEUE_DEPTH_ALERT_THRESHOLD: ${QUEUE_DEPTH_ALERT_THRESHOLD:-1000}
+      # Bull Board dashboard at /api/admin/queues (tenant superadmin only).
+      BULL_BOARD_ENABLED: ${BULL_BOARD_ENABLED:-true}
+      # Platform database URL (Phase 8): db_files backups dump it into
+      # platform.sql. Same value as the platform-api service.
+      PLATFORM_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ecomate_platform}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Ordering only (service_started, NOT service_healthy): the backend
+      # must keep serving tenants if the platform API is briefly down
+      # (registry sync keeps last-known-good). Hard-gating tenant boot on
+      # the control plane would couple tenant availability to platform
+      # availability.
+      platform-api:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/health"]
       interval: 30s
@@ -183,12 +280,15 @@ services:
         limits:
           cpus: '1.0'
           # Raised from 512M: startup died with "JavaScript heap out of memory"
-          # while Prisma loaded the 186-table schema. Node's heap has to fit
-          # inside this limit, otherwise the kernel OOM-kills the process before
-          # Node's own ceiling is reached. startup.sh sets --max-old-space-size
-          # to 1280, leaving ~256M for the container's non-heap allocations
-          # (Prisma engine, buffers, native).
-          memory: 1536M
+          # while Prisma loaded the 186-table schema. Raised again to 2560M in
+          # Phase 8 (decision D6, measured with k6 in Stage 2): each cached
+          # per-tenant Prisma client costs ~25-40 MB of heap, so the 30-client
+          # cache needs ~0.75-1.2 GB on top of the ~0.7 GB base heap. Node's
+          # heap has to fit inside this limit, otherwise the kernel OOM-kills
+          # the process before Node's own ceiling is reached. startup.sh sets
+          # --max-old-space-size to 2048, leaving ~512M for the container's
+          # non-heap allocations (Prisma engine, buffers, native).
+          memory: 2560M
         reservations:
           memory: 512M
 
@@ -304,6 +404,242 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/pos/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # SaaS control plane: signup, provisioning, tenants, plans, billing,
+  # domains, platform users, audit. Internal-only: no published port in
+  # production — Caddy + landing + backend reach it on the internal
+  # network. For staging debugging, a temporary
+  # "${PLATFORM_PORT:-4100}:4100" mapping can be enabled.
+  platform-api:
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-platform-api:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    volumes:
+      - platform-exports-data:/app/data/tenant-exports
+    environment:
+      NODE_ENV: production
+      PLATFORM_PORT: ${PLATFORM_PORT:-4100}
+      PLATFORM_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ecomate_platform}
+      PLATFORM_JWT_SECRET: ${PLATFORM_JWT_SECRET}
+      PLATFORM_JWT_REFRESH_SECRET: ${PLATFORM_JWT_REFRESH_SECRET}
+      # Real defaults (not empty): the auth service reads these with ??
+      # and Number("") is 0 — an empty value would make every token
+      # expire immediately.
+      PLATFORM_JWT_EXPIRES_IN_SECONDS: ${PLATFORM_JWT_EXPIRES_IN_SECONDS:-900}
+      PLATFORM_JWT_REFRESH_EXPIRES_IN_SECONDS: ${PLATFORM_JWT_REFRESH_EXPIRES_IN_SECONDS:-604800}
+      # Short-lived token for the MFA second step / mid-login enrollment.
+      PLATFORM_MFA_TOKEN_TTL_SECONDS: ${PLATFORM_MFA_TOKEN_TTL_SECONDS:-300}
+      # Grace window in which replaying a just-rotated refresh token is a
+      # plain 401 (console concurrent-refresh race) instead of a family
+      # revoke.
+      PLATFORM_REFRESH_REUSE_GRACE_MS: ${PLATFORM_REFRESH_REUSE_GRACE_MS:-30000}
+      # Redis backing for the platform rate limiter (login/refresh/MFA/
+      # verify/status/invite-accept + signup). Falls back to in-memory
+      # counters when unreachable — the depends_on below is ordering, not
+      # a boot requirement.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-}
+      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
+      # AES-256-GCM key for stored SMTP passwords + TOTP MFA secrets at
+      # rest. REQUIRED (64 hex chars) — encryption fails closed without
+      # it. Same key material as the backend's APP_ENCRYPTION_KEY.
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      PLATFORM_MAIL_FROM: ${PLATFORM_MAIL_FROM:-EcoMate <no-reply@ecomate.bd>}
+      # SMTP_FROM falls back to PLATFORM_MAIL_FROM in code (?? chain) —
+      # an empty value here would BREAK that fallback, so the default
+      # chains through PLATFORM_MAIL_FROM explicitly.
+      SMTP_FROM: ${SMTP_FROM:-${PLATFORM_MAIL_FROM:-EcoMate <no-reply@ecomate.bd>}}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_VERIFY_URL: ${TURNSTILE_VERIFY_URL:-}
+      PLATFORM_LANDING_URL: ${PLATFORM_LANDING_URL:-https://www.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
+      PLATFORM_ADMIN_URL: ${PLATFORM_ADMIN_URL:-https://saas.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
+      TENANT_BACKEND_URL: ${TENANT_BACKEND_URL:-http://backend:4000/api}
+      DEFAULT_PLAN_VERSION_ID: ${DEFAULT_PLAN_VERSION_ID:-}
+      PROVISIONING_STALE_MS: ${PROVISIONING_STALE_MS:-600000}
+      TENANT_RETENTION_DAYS: ${TENANT_RETENTION_DAYS:-30}
+      TENANT_PURGE_INTERVAL_MS: ${TENANT_PURGE_INTERVAL_MS:-21600000}
+      TENANT_PURGE_ENABLED: ${TENANT_PURGE_ENABLED:-true}
+      TENANT_EXPORT_DIR: /app/data/tenant-exports
+      TENANT_EXPORT_MAX_ROWS: ${TENANT_EXPORT_MAX_ROWS:-250000}
+      IMPERSONATION_TTL_SECONDS: ${IMPERSONATION_TTL_SECONDS:-900}
+      SIGNUP_DISPOSABLE_DOMAINS: ${SIGNUP_DISPOSABLE_DOMAINS:-}
+      CUSTOM_DOMAIN_POLL_MS: ${CUSTOM_DOMAIN_POLL_MS:-60000}
+      CUSTOM_DOMAIN_POLL_ENABLED: ${CUSTOM_DOMAIN_POLL_ENABLED:-true}
+      # Billing lifecycle jobs (Phase 7). In-process runner, single
+      # instance only — never scale platform-api past 1 replica with
+      # jobs enabled, or jobs double-run.
+      BILLING_JOBS_ENABLED: ${BILLING_JOBS_ENABLED:-true}
+      BILLING_JOBS_INTERVAL_MS: ${BILLING_JOBS_INTERVAL_MS:-3600000}
+      BILLING_CANCEL_AFTER_DAYS: ${BILLING_CANCEL_AFTER_DAYS:-30}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+      PLATFORM_ADMIN_NAME: ${PLATFORM_ADMIN_NAME:-Platform Admin}
+      # First deploy only: seeds the superadmin + feature catalog + free
+      # trial plan. The seed is idempotent (upserts), but leave it false
+      # after the first deploy.
+      RUN_PLATFORM_SEED: ${RUN_PLATFORM_SEED:-false}
+      SAAS_PRIMARY_DOMAIN: ${SAAS_PRIMARY_DOMAIN:-}
+      SAAS_BASE_DOMAINS: ${SAAS_BASE_DOMAINS:-}
+      SAAS_FALLBACK_DOMAIN: ${SAAS_FALLBACK_DOMAIN:-}
+      SAAS_PRIMARY_UNHEALTHY: ${SAAS_PRIMARY_UNHEALTHY:-false}
+      SAAS_CUSTOM_DOMAIN_CNAME: ${SAAS_CUSTOM_DOMAIN_CNAME:-}
+      SAAS_ALLOW_EXTERNAL_FALLBACK: ${SAAS_ALLOW_EXTERNAL_FALLBACK:-false}
+      # Observability (Phase 8): structured JSON logging level.
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Sentry DSN (Phase 8). Empty = disabled (no account, no spend).
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # Ops alert recipients, comma-separated (Phase 8). Empty = alerts skipped.
+      OPS_ALERT_EMAIL: ${OPS_ALERT_EMAIL:-}
+      OPS_ALERT_MIN_INTERVAL_MS: ${OPS_ALERT_MIN_INTERVAL_MS:-900000}
+      # Billing-job failure watcher (Phase 8): polls job status, alerts on failure.
+      JOB_WATCHER_ENABLED: ${JOB_WATCHER_ENABLED:-true}
+      JOB_WATCHER_INTERVAL_MS: ${JOB_WATCHER_INTERVAL_MS:-300000}
+      # TLS/domain health job (Phase 8): probes verified custom domains.
+      TLS_PROBE_ENABLED: ${TLS_PROBE_ENABLED:-true}
+      TLS_PROBE_INTERVAL_MS: ${TLS_PROBE_INTERVAL_MS:-3600000}
+      TLS_EXPIRY_ALERT_DAYS: ${TLS_EXPIRY_ALERT_DAYS:-14}
+      TLS_PROBE_PORT: ${TLS_PROBE_PORT:-443}
+      TLS_PROBE_TIMEOUT_MS: ${TLS_PROBE_TIMEOUT_MS:-10000}
+      TLS_PRIMARY_PROBE_ENABLED: ${TLS_PRIMARY_PROBE_ENABLED:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4100/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # SaaS platform console (Vite SPA). Served at the root of its own host
+  # (saas.ecomate.bd) by Caddy; no published port, no runtime env (the
+  # VITE_* vars are build-time, baked in by CI).
+  platform-admin:
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-platform-admin:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    depends_on:
+      platform-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          memory: 32M
+
+  # Public SaaS front door (Next.js): landing + signup + email verify.
+  # Browser /api/* calls are rewritten server-side to the platform API.
+  landing:
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-landing:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    environment:
+      NODE_ENV: production
+      PLATFORM_API_URL: ${PLATFORM_API_URL:-http://platform-api:4100/api}
+      # NEXT_PUBLIC_TURNSTILE_SITE_KEY is build-time (baked into the JS
+      # bundle by CI) — NOT a runtime var, do not put it here.
+    depends_on:
+      platform-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3002/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # Public edge: TLS termination + host routing (portainer/Caddyfile,
+  # baked into the image). The ONLY service on host 80/443 — if a
+  # per-client stack already binds those ports on the VPS, this service
+  # fails to start (confirm before staging deploy).
+  caddy:
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-caddy:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      # Ask token for on-demand TLS. Falls back to the internal service
+      # secret (same fallback the platform API uses) — the value must
+      # never be empty, or every ask 401s and no tenant cert issues.
+      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-${INTERNAL_SERVICE_SECRET:-}}
+      # Let's Encrypt account email (expiry notices). Caddy rejects an empty
+      # email at config load, so the default is baked in here and in the
+      # Caddyfile placeholder itself.
+      ACME_EMAIL: ${ACME_EMAIL:-support@ecomate.bd}
+      # Platform hosts + primary domain (Caddyfile {$VAR:default}s).
+      SAAS_PRIMARY_DOMAIN: ${SAAS_PRIMARY_DOMAIN:-ecomate.bd}
+      PLATFORM_LANDING_HOST: ${PLATFORM_LANDING_HOST:-www.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
+      PLATFORM_ADMIN_HOST: ${PLATFORM_ADMIN_HOST:-saas.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
+      PLATFORM_API_HOST: ${PLATFORM_API_HOST:-api.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
+    depends_on:
+      backend:
+        condition: service_healthy
+      storefront:
+        condition: service_healthy
+      platform-api:
+        condition: service_healthy
+    healthcheck:
+      # Admin API on localhost only — port 2019 is NOT published.
+      # Probe /config/, NOT /: the admin API root is a 404 in Caddy 2
+      # (proven live 2026-11-17 — the / probe could never go healthy).
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
       interval: 30s
       timeout: 5s
       retries: 3

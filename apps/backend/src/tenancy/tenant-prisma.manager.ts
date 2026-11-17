@@ -14,6 +14,12 @@ export const TENANT_PRISMA_CLIENT_FACTORY = Symbol(
   'TENANT_PRISMA_CLIENT_FACTORY',
 );
 
+// Tenant ids are platform UUIDs. Anything else is rejected here, before the
+// id reaches the pg Pool `options` string (`-c app.tenant_id=<id>`), where a
+// crafted value containing spaces could inject arbitrary `-c` settings.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export type TenantPrismaClientFactory = (tenantId: string) => PrismaClient;
 
 interface TenantClientEntry {
@@ -63,6 +69,11 @@ export class TenantPrismaManager implements OnModuleInit, OnModuleDestroy {
   getClient(tenantId: string): PrismaClient {
     if (!tenantId) {
       throw new Error('TenantPrismaManager requires a tenantId');
+    }
+    if (!UUID_RE.test(tenantId)) {
+      throw new Error(
+        `TenantPrismaManager requires a UUID tenantId, got ${JSON.stringify(tenantId)}`,
+      );
     }
 
     const existing = this.clients.get(tenantId);

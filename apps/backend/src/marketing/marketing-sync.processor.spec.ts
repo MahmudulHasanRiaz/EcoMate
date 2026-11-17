@@ -61,4 +61,32 @@ describe('MarketingSyncProcessor tenant routing', () => {
     expect(seen).toBe('a');
     expect(sync.syncAdAccount).toHaveBeenCalledWith('acct-1', undefined);
   });
+
+  it('returns the base skip marker for an old job of a vanished tenant', async () => {
+    const registry = new TenantRegistryService();
+    registry.replace([
+      { id: 'a', slug: 'alpha', status: 'active', hosts: [] },
+    ]);
+    const processor = new MarketingSyncProcessor(sync, registry);
+
+    // The override must RETURN super.process(): BullMQ records only what
+    // process() returns, and the skip marker is the job's returnvalue.
+    const result = await processor.process({
+      name: 'sync-account',
+      id: 'j3',
+      timestamp: Date.now() - 6 * 60_000,
+      data: {
+        type: 'sync-account',
+        adAccountId: 'acct-1',
+        tenantId: 'gone-tenant',
+        tenantSlug: 'gone',
+      },
+    } as any);
+
+    expect(result).toEqual({
+      skipped: 'tenant-unknown-or-deleted',
+      tenantId: 'gone-tenant',
+    });
+    expect(sync.syncAdAccount).not.toHaveBeenCalled();
+  });
 });

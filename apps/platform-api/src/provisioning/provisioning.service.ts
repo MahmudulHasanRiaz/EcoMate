@@ -224,13 +224,19 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
         data: { status: 'ACTIVE' },
       });
 
-      return this.prisma.provisioningJob.update({
+      const completed = await this.prisma.provisioningJob.update({
         where: { id: jobId },
         data: {
           status: 'SUCCEEDED',
           step: welcomeDelivered ? 'completed' : 'completed_without_welcome_email',
         },
       });
+
+      // The backend polls the registry every 60s; without a push, the new
+      // tenant's host 403s for up to a minute after provisioning. Best-effort:
+      // a failed refresh only costs the wait until the next poll.
+      await this.notifyBackendRegistryRefresh(secret, job.tenant.slug);
+      return completed;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Provisioning ${job.tenant.slug} failed: ${message}`);
@@ -249,6 +255,36 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
    * platform rows stay (tenant PROVISIONING, domain PENDING, job FAILED) so a
    * retry can reuse them; only the partial seed is removed.
    */
+  /**
+   * Asks the tenant backend to refresh its registry immediately so the new
+   * tenant's host is routable without waiting for the 60s poll. Never
+   * throws: a failed push only costs the wait until the next poll.
+   */
+  private async notifyBackendRegistryRefresh(
+    secret: string,
+    slug: string,
+  ): Promise<void> {
+    try {
+      const response = await fetch(
+        `${apiBase()}/internal/tenants/registry/refresh`,
+        {
+          method: 'POST',
+          headers: { 'x-platform-service-token': secret },
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      if (!response.ok) {
+        this.logger.warn(
+          `Backend registry refresh for ${slug} returned HTTP ${response.status}; the next 60s poll will pick it up`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Backend registry refresh for ${slug} failed (${err instanceof Error ? err.message : String(err)}); the next 60s poll will pick it up`,
+      );
+    }
+  }
+
   private async rollbackTenant(
     tenant: { id: string; slug: string },
     secret: string,
@@ -383,6 +419,29 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
       return explicit;
     }
 
+    // Explicit signup default (Phase 8, D3): preferred over newest-wins.
+    // A configured default that became unusable fails the signup loudly —
+    // silently falling back to newest-wins is exactly the F1 bug.
+    const flagged = await this.prisma.planVersion.findFirst({
+      where: { isDefault: true },
+      include,
+    });
+    if (flagged) {
+      const usable =
+        !flagged.archivedAt &&
+        flagged.plan.isActive &&
+        flagged.effectiveFrom <= new Date();
+      if (!usable) {
+        throw new Error(
+          'The default plan version is not usable (archived, inactive, or not yet effective). Set a new signup default.',
+        );
+      }
+      return flagged;
+    }
+
+    this.logger.warn(
+      'No signup-default plan version is set; provisioning falls back to the newest active version. Set an explicit default in the console.',
+    );
     const latest = await this.prisma.planVersion.findFirst({
       where: {
         archivedAt: null,

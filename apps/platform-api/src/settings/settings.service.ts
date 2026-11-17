@@ -4,6 +4,7 @@ import {
   Logger,
   OnModuleInit,
 } from '@nestjs/common';
+import { EncryptionService } from '../common/encryption.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 
 export interface SmtpSettings {
@@ -107,7 +108,10 @@ export class SettingsService implements OnModuleInit {
   private branding: BrandingSettings = { ...DEFAULT_BRANDING };
   private maintenance: MaintenanceSettings = { ...DEFAULT_MAINTENANCE };
 
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly encryption: EncryptionService,
+  ) {}
 
   async onModuleInit() {
     await this.loadAll();
@@ -170,9 +174,11 @@ export class SettingsService implements OnModuleInit {
     pass?: string;
     from?: string;
   }): Promise<SmtpSettingsPublic> {
-    const stored = await this.readStored('smtp');
+    const stored = await this.readSmtpStored();
     const current: Partial<SmtpSettings> = isRecord(stored) ? stored : {};
     // Omit = keep the stored password; an explicit value replaces it.
+    // `current.pass` is already decrypted by readSmtpStored; store()
+    // re-encrypts it, so a kept password is never double-encrypted.
     const pass =
       input.pass !== undefined
         ? input.pass.trim() || undefined
@@ -366,7 +372,7 @@ export class SettingsService implements OnModuleInit {
       };
       return;
     }
-    const stored = await this.readStored('smtp');
+    const stored = await this.readSmtpStored();
     if (isRecord(stored) && asString(stored.host)) {
       this.smtp = {
         host: asString(stored.host),
@@ -424,7 +430,58 @@ export class SettingsService implements OnModuleInit {
     }
   }
 
+  /**
+   * Read the stored SMTP setting with `pass` decrypted when it is
+   * ciphertext. A legacy PLAINTEXT password is lazily migrated: it is
+   * returned as-is for this boot and re-encrypted at rest (when a key is
+   * configured) so the next read finds ciphertext. An undecryptable
+   * password (missing/rotated key) fails closed — the setting is treated
+   * as absent and the operator gets a loud log line, never a silent
+   * plaintext fallback.
+   */
+  private async readSmtpStored(): Promise<unknown> {
+    const stored = await this.readStored('smtp');
+    if (!isRecord(stored) || !asString(stored.pass)) return stored;
+    const pass = asString(stored.pass);
+    if (EncryptionService.isEncrypted(pass)) {
+      try {
+        return { ...stored, pass: this.encryption.decrypt(pass) };
+      } catch (err) {
+        this.logger.error(
+          `Stored SMTP password cannot be decrypted (APP_ENCRYPTION_KEY missing or rotated); SMTP is unconfigured until the password is re-entered: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return { ...stored, pass: undefined, host: '' };
+      }
+    }
+    // Legacy plaintext row: migrate it now (no-op without a key).
+    if (this.encryption.isConfigured()) {
+      try {
+        await this.store('smtp', stored);
+        this.logger.log(
+          'Migrated a legacy plaintext SMTP password to encrypted storage',
+        );
+      } catch (err) {
+        this.logger.warn(
+          `SMTP password re-encryption failed; using the plaintext row this boot: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+    return stored;
+  }
+
   private async store(key: string, value: unknown): Promise<void> {
+    // The SMTP password is encrypted at rest (AES-256-GCM); every other
+    // setting is stored as-is. An already-encrypted value is left alone.
+    if (key === 'smtp' && isRecord(value)) {
+      const pass = asString(value.pass);
+      if (pass && !EncryptionService.isEncrypted(pass)) {
+        value = { ...value, pass: this.encryption.encrypt(pass) };
+      }
+    }
     await this.prisma.platformSetting.upsert({
       where: { key },
       update: { value: value as any },

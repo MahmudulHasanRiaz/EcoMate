@@ -5,13 +5,34 @@ import { getTenantContext } from '../tenancy/tenant-context';
 
 const FALLBACK_TENANT_ID = '00000000-0000-4000-8000-000000000000';
 
+/**
+ * Resolve the tenant a Better Auth client is scoped to. The hardcoded
+ * fallback tenant is TEST-ONLY (same gating as tenant-job.ts): outside
+ * test env, a missing tenant context with no DEFAULT_TENANT_ID fails
+ * closed instead of silently scoping auth reads/writes to the fallback
+ * tenant. An explicitly configured DEFAULT_TENANT_ID remains the
+ * operator's maintenance bridge in every environment.
+ */
+export function resolveBaTenantId(tenantId?: string): string {
+  const effective =
+    tenantId ||
+    getTenantContext()?.tenantId ||
+    process.env.DEFAULT_TENANT_ID ||
+    (process.env.NODE_ENV === 'test' ? FALLBACK_TENANT_ID : undefined);
+  if (!effective) {
+    throw new Error(
+      'Better Auth requires a tenant context (no tenant in context and no DEFAULT_TENANT_ID configured)',
+    );
+  }
+  return effective;
+}
+
 function createBaPrisma(tenantId?: string): PrismaClient {
   const url =
     process.env.TENANT_DATABASE_URL ||
     process.env.DATABASE_URL ||
     'postgresql://postgres@localhost:5432/ecomate_web';
-  const effectiveTenant =
-    tenantId || process.env.DEFAULT_TENANT_ID || FALLBACK_TENANT_ID;
+  const effectiveTenant = resolveBaTenantId(tenantId);
   const pool = new Pool({
     connectionString: url,
     max: 4,

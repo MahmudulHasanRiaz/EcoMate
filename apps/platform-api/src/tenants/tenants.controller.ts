@@ -14,7 +14,7 @@ import {
 import { createReadStream } from 'fs';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
-import { Roles } from '../auth/roles.decorator';
+import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { DomainsService } from '../domains/domains.service';
 import { AddDomainDto } from './dto/add-domain.dto';
@@ -38,6 +38,7 @@ export class TenantsController {
   ) {}
 
   @Get()
+  @Roles(...READ_ROLES)
   list(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -48,16 +49,55 @@ export class TenantsController {
   }
 
   @Get(':id/export')
-  @Roles('SUPERADMIN', 'BILLING', 'SUPPORT')
+  @Roles(...READ_ROLES)
   async exportTenant(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentPlatformUser() user?: { id: string },
   ) {
     const file = await this.lifecycle.exportToFile(id, user?.id);
     return new StreamableFile(createReadStream(file.path), {
-      type: 'application/json',
+      type: file.encrypted ? 'application/octet-stream' : 'application/json',
       disposition: `attachment; filename="${file.filename}"`,
       length: file.sizeBytes,
+    });
+  }
+
+  /**
+   * Async export for large tenants: starts the export in the background
+   * and returns the job id immediately. Poll the progress endpoint; when
+   * the job is done, download via the download endpoint. A second start
+   * while one is running returns the running job id.
+   */
+  @Post(':id/exports')
+  @Roles(...READ_ROLES)
+  startExport(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.lifecycle.startExport(id, user?.id);
+  }
+
+  @Get(':id/exports/:jobId')
+  @Roles(...READ_ROLES)
+  exportProgress(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+  ) {
+    return this.lifecycle.getExportProgress(id, jobId);
+  }
+
+  @Get(':id/exports/:jobId/download')
+  @Roles(...READ_ROLES)
+  downloadExport(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+  ) {
+    const file = this.lifecycle.getExportPath(id, jobId);
+    return new StreamableFile(createReadStream(file.path), {
+      type: file.filename.endsWith('.enc')
+        ? 'application/octet-stream'
+        : 'application/json',
+      disposition: `attachment; filename="${file.filename}"`,
     });
   }
 
@@ -107,6 +147,7 @@ export class TenantsController {
   }
 
   @Get(':id')
+  @Roles(...READ_ROLES)
   detail(@Param('id', ParseUUIDPipe) id: string) {
     return this.tenants.detail(id);
   }
@@ -161,6 +202,7 @@ export class TenantsController {
   }
 
   @Get(':id/domains')
+  @Roles(...READ_ROLES)
   listDomains(@Param('id', ParseUUIDPipe) id: string) {
     return this.domains.list(id);
   }

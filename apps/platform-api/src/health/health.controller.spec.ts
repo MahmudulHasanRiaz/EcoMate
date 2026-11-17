@@ -18,6 +18,7 @@ function makeController(primaryHealthy = true, fallbackDomain?: string) {
       },
     }),
     isPrimaryHealthy: () => primaryHealthy,
+    getPrimaryProbeResult: () => null,
     effectiveBaseDomain: () =>
       !primaryHealthy && fallbackDomain ? fallbackDomain : 'ecomate.bd',
   };

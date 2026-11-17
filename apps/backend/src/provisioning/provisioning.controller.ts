@@ -12,6 +12,7 @@ import { runWithTenant } from '../tenancy/tenant-context';
 import { ProvisionTenantDto } from './dto/provision-tenant.dto';
 import { RollbackProvisioningDto } from './dto/rollback-provisioning.dto';
 import { TenantDataDto } from './dto/tenant-data.dto';
+import { ExportChunkDto } from './dto/export-chunk.dto';
 import { OwnerPasswordResetDto } from './dto/owner-password-reset.dto';
 import { TenantBootstrapService } from './tenant-bootstrap.service';
 import { TenantDataService } from './tenant-data.service';
@@ -68,6 +69,42 @@ export class ProvisioningController {
     return runWithTenant(
       { tenantId: dto.tenantId, slug: dto.slug, status: 'active' },
       () => this.data.exportTenant(dto.tenantId),
+    );
+  }
+
+  /**
+   * Chunked export, part 1: the table list + per-table row counts, so the
+   * platform can stream the export with progress instead of loading it
+   * all behind one timeout.
+   */
+  @Public()
+  @SkipTenant()
+  @SkipSubscription()
+  @UseGuards(PlatformServiceTokenGuard)
+  @Post('export/manifest')
+  exportManifest(@Body() dto: TenantDataDto) {
+    return runWithTenant(
+      { tenantId: dto.tenantId, slug: dto.slug, status: 'active' },
+      () => this.data.exportManifest(dto.tenantId),
+    );
+  }
+
+  /** Chunked export, part 2: one page of one table, keyed on ctid. */
+  @Public()
+  @SkipTenant()
+  @SkipSubscription()
+  @UseGuards(PlatformServiceTokenGuard)
+  @Post('export/chunk')
+  exportChunk(@Body() dto: ExportChunkDto) {
+    return runWithTenant(
+      { tenantId: dto.tenantId, slug: dto.slug, status: 'active' },
+      () =>
+        this.data.exportTableChunk(
+          dto.tenantId,
+          dto.table,
+          dto.cursor,
+          dto.limit,
+        ),
     );
   }
 

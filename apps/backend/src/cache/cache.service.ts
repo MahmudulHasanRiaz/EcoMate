@@ -98,6 +98,21 @@ export class CacheService implements OnModuleDestroy {
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
   }
 
+  /**
+   * True when the shared Redis is reachable. False when Redis is
+   * unconfigured (memory fallback) or down. Used by the readiness probe —
+   * never throws, and never waits on the retry loop: a single PING with
+   * the caller's own timeout decides.
+   */
+  async ping(): Promise<boolean> {
+    if (!this.redis) return false;
+    try {
+      return (await this.redis.ping()) === 'PONG';
+    } catch {
+      return false;
+    }
+  }
+
   private evictExpired(): void {
     const now = Date.now();
     for (const [key, entry] of this.store) {

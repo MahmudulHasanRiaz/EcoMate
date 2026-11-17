@@ -21,10 +21,12 @@ export interface MarketingJob extends TenantJobData {
 export class MarketingSyncProcessor extends TenantWorkerHost<MarketingJob> {
   constructor(
     private readonly sync: MarketingSyncService,
+    // Plain parameter (not a property): the base class owns the
+    // `tenantRegistry` property; `this.tenantRegistry` below resolves to it.
     @Optional()
-    private readonly tenantRegistry?: TenantRegistryService,
+    tenantRegistry?: TenantRegistryService,
   ) {
-    super();
+    super(tenantRegistry);
   }
 
   async process(job: Job<MarketingJob>): Promise<any> {
@@ -36,7 +38,9 @@ export class MarketingSyncProcessor extends TenantWorkerHost<MarketingJob> {
       });
       return results;
     }
-    await super.process(job);
+    // Return the base result: the skip marker ({ skipped: ... }) is the
+    // job's returnvalue, and BullMQ only records what process() returns.
+    return super.process(job);
   }
 
   protected async handle(job: Job<MarketingJob>): Promise<any> {

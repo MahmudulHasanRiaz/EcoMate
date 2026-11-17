@@ -66,7 +66,7 @@ export const ROLE_MATRIX: RoleMatrixEntry[] = [
         access: 'write',
         note: 'Includes restore, impersonate and owner-password reset. No delete, purge, plan change or domain delete.',
       },
-      { area: 'Billing', access: 'read' },
+      { area: 'Billing', access: 'write', note: 'Approve/reject payment proofs only; no invoice, method, coupon or credit-note writes.' },
       { area: 'Plans', access: 'read' },
       {
         area: 'Domains',

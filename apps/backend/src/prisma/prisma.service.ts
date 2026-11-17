@@ -23,7 +23,10 @@ const FALLBACK_TENANT_ID = '00000000-0000-4000-8000-000000000000';
  * DEFAULT_TENANT_ID is a development/maintenance bridge for requests that
  * intentionally have no tenant context (health, backup control, queued jobs
  * until the tenant fan-out lands). Production request paths must resolve a
- * tenant in TenantMiddleware.
+ * tenant in TenantMiddleware. The hardcoded fallback tenant below is
+ * TEST-ONLY: outside test env, a missing tenant context with no
+ * DEFAULT_TENANT_ID fails closed instead of silently reading/writing the
+ * fallback tenant's rows (same gating as tenant-job.ts).
  */
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
@@ -38,11 +41,16 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   }
 
   private effectiveTenantId(): string {
-    return (
+    const tenantId =
       getTenantContext()?.tenantId ||
       process.env.DEFAULT_TENANT_ID ||
-      FALLBACK_TENANT_ID
-    );
+      (process.env.NODE_ENV === 'test' ? FALLBACK_TENANT_ID : undefined);
+    if (!tenantId) {
+      throw new Error(
+        'Tenant context is required (no tenant in context and no DEFAULT_TENANT_ID configured)',
+      );
+    }
+    return tenantId;
   }
 
   onModuleInit(): void {

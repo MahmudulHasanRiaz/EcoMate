@@ -5,6 +5,8 @@
 };
 
 import { NestFactory } from '@nestjs/core';
+import { RequestMethod } from '@nestjs/common';
+import { Logger as PinoLoggerService, PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { join } from 'path';
 import {
@@ -17,6 +19,8 @@ import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { initSentry } from './observability/sentry';
+import { registerBullBoard } from './observability/bull-board.setup';
 import { auth } from './better-auth/auth.config';
 import { baPrisma } from './better-auth/prisma';
 import { CacheService } from './cache/cache.service';
@@ -59,21 +63,49 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ trustProxy: true }),
+    // disableRequestLogging: Fastify's own per-request lines are untagged
+    // JSON; the onResponse hook below emits the single structured access
+    // log (tenantId + requestId) instead. request.log.error still works.
+    // genReqId: Fastify assigns request.id BEFORE pino-http runs, and
+    // pino-http only calls its own genReqId when req.id is unset — so the
+    // header-derived id must be assigned HERE, or every request logs as
+    // req-N. Same rule as CorrelationIdMiddleware (x-correlation-id or a
+    // fresh UUID) so req.id, req.log bindings, and the access log agree.
+    new FastifyAdapter({
+      trustProxy: true,
+      disableRequestLogging: true,
+      genReqId: (req) =>
+        (req.headers['x-correlation-id'] as string) || randomUUID(),
+    }),
   );
+  // Phase 8 Stage 2 item 19: JSON logs for every `new Logger()` call site.
+  app.useLogger(app.get(PinoLoggerService));
+  // Phase 8 Stage 2 item 20: Sentry is inert without a real SENTRY_DSN.
+  initSentry('backend');
   app.enableShutdownHooks();
   const cacheService = app.get(CacheService);
   const prismaService = app.get(PrismaService);
   const tenantManager = app.get(TenantPrismaManager);
   const tenantRegistry = app.get(TenantRegistryService);
+  // The hardcoded fallback tenant is TEST-ONLY (same gating as
+  // tenant-job.ts): in production a Better Auth call without tenant
+  // context fails closed instead of silently scoping to the fallback
+  // tenant. An explicitly configured DEFAULT_TENANT_ID remains the
+  // operator's maintenance bridge in every environment.
   const defaultTenantId =
     process.env.DEFAULT_TENANT_ID ||
-    '00000000-0000-4000-8000-000000000000';
-  setBaPrismaResolver(() =>
-    tenantManager.getClient(
-      tenantStorage.getStore()?.tenantId || defaultTenantId,
-    ),
-  );
+    (process.env.NODE_ENV === 'test'
+      ? '00000000-0000-4000-8000-000000000000'
+      : undefined);
+  setBaPrismaResolver(() => {
+    const tenantId = tenantStorage.getStore()?.tenantId || defaultTenantId;
+    if (!tenantId) {
+      throw new Error(
+        'Better Auth requires a tenant context (no tenant in context and no DEFAULT_TENANT_ID configured)',
+      );
+    }
+    return tenantManager.getClient(tenantId);
+  });
   let durableMaintenanceMemo: {
     expiresAt: number;
     value?: { mode: 'full_backup' | 'restore' };
@@ -325,11 +357,35 @@ async function bootstrap() {
     .getInstance()
     .addHook('onResponse', async (request, reply) => {
       await clearActiveWriteMarker(String(request.id));
-      const duration = reply.elapsedTime.toFixed(0);
+      // Structured access log (Phase 8 Stage 2 item 19). This hook runs
+      // outside the middleware ALS scope, so tenant/request ids are read
+      // off the raw request/response instead of the mixin: TenantMiddleware
+      // stashes tenantId on the raw request, CorrelationIdMiddleware echoes
+      // the request id as the x-correlation-id response header.
+      const durationMs = Number(reply.elapsedTime.toFixed(0));
       const requestPath = request.url.split(/[?#]/, 1)[0];
-      console.log(
-        `${request.method} ${requestPath} ${reply.statusCode} ${duration}ms`,
-      );
+      const requestId =
+        reply.getHeader('x-correlation-id') || String(request.id);
+      const tenantId = (request.raw as { tenantId?: string }).tenantId;
+      const rootLogger = PinoLogger.root;
+      if (rootLogger) {
+        rootLogger.info(
+          {
+            service: 'backend',
+            requestId: String(requestId),
+            ...(tenantId ? { tenantId } : {}),
+            method: request.method,
+            path: requestPath,
+            statusCode: reply.statusCode,
+            durationMs,
+          },
+          'request completed',
+        );
+      } else {
+        console.log(
+          `${request.method} ${requestPath} ${reply.statusCode} ${durationMs}ms`,
+        );
+      }
     });
   app
     .getHttpAdapter()
@@ -339,7 +395,14 @@ async function bootstrap() {
     });
 
   app.useGlobalFilters(new GlobalExceptionFilter());
-  app.setGlobalPrefix('api', { exclude: ['/'] });
+  // /metrics is root-level (outside /api) so the edge never proxies it to
+  // tenants; see MetricsController.
+  app.setGlobalPrefix('api', {
+    exclude: ['/', { path: 'metrics', method: RequestMethod.GET }],
+  });
+
+  // Phase 8 Stage 2 item 20: Bull Board queue dashboard (superadmin-only).
+  await registerBullBoard(app);
 
   const fastifyInstance = app.getHttpAdapter().getInstance();
 

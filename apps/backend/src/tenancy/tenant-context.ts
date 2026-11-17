@@ -8,6 +8,18 @@ export interface TenantContext {
   baseDomain?: string;
   canonicalHost?: string;
   isAlias?: boolean;
+  /**
+   * Set by DualModeAuthGuard when the request authenticates with an
+   * impersonated JWT (`imp: true`). The security-event emitter stamps it
+   * into the tenant audit trail so impersonated actions are attributable.
+   * `actor` is the platform operator identity when the impersonation
+   * exchange supplied one (the platform consume response does not return
+   * it yet, so it is usually null — the flag is always stamped).
+   */
+  impersonation?: {
+    impersonated: boolean;
+    actor?: string | null;
+  };
 }
 
 export const tenantStorage = new AsyncLocalStorage<TenantContext>();
@@ -40,16 +52,26 @@ export function requireTenantId(): string {
  *   tenantCompound({ key }) -> { tenantId: <current>, key }
  * Used for update/delete/upsert where clauses whose old unique key is now
  * [tenantId, ...fields].
+ *
+ * The hardcoded fallback tenant is TEST-ONLY (same gating as
+ * tenant-job.ts / page-view-buffer.service.ts): in production a missing
+ * tenant context fails closed instead of silently targeting the fallback
+ * tenant's rows. An explicitly configured DEFAULT_TENANT_ID remains the
+ * operator's maintenance bridge in every environment.
  */
 export function tenantCompound<T extends Record<string, unknown>>(
   fields: T,
 ): T & { tenantId: string } {
-  // Transitional bridge while the request middleware/proxy is being wired:
-  // unit tests and the single-tenant dev runtime use DEFAULT_TENANT_ID.
-  // Once the tenant middleware is enabled, this fallback is removed.
   const tenantId =
     getTenantContext()?.tenantId ||
     process.env.DEFAULT_TENANT_ID ||
-    '00000000-0000-4000-8000-000000000000';
+    (process.env.NODE_ENV === 'test'
+      ? '00000000-0000-4000-8000-000000000000'
+      : undefined);
+  if (!tenantId) {
+    throw new Error(
+      'Tenant context is required (no tenant in context and no DEFAULT_TENANT_ID configured)',
+    );
+  }
   return { tenantId, ...fields };
 }

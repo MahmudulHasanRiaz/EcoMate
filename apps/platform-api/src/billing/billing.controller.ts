@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { Roles } from '../auth/roles.decorator';
+import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { BillingService } from './billing.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
@@ -31,11 +31,13 @@ export class BillingController {
   constructor(private readonly billing: BillingService) {}
 
   @Get('summary')
+  @Roles(...READ_ROLES)
   summary() {
     return this.billing.summary();
   }
 
   @Get('methods')
+  @Roles(...READ_ROLES)
   methods() {
     return this.billing.methods();
   }
@@ -69,6 +71,7 @@ export class BillingController {
   }
 
   @Get('proofs')
+  @Roles(...READ_ROLES)
   proofs(
     @Query('status') status?: string,
     @Query('tenantId') tenantId?: string,
@@ -79,6 +82,7 @@ export class BillingController {
   }
 
   @Get('proofs/:id')
+  @Roles(...READ_ROLES)
   proof(@Param('id', ParseUUIDPipe) id: string) {
     return this.billing.proofDetail(id);
   }
@@ -103,6 +107,7 @@ export class BillingController {
   }
 
   @Get('invoices')
+  @Roles(...READ_ROLES)
   invoices(
     @Query('status') status?: string,
     @Query('tenantId') tenantId?: string,
@@ -123,11 +128,13 @@ export class BillingController {
   }
 
   @Get('invoices/:id')
+  @Roles(...READ_ROLES)
   invoice(@Param('id', ParseUUIDPipe) id: string) {
     return this.billing.invoiceDetail(id);
   }
 
   @Get('invoices/:id/pdf')
+  @Roles(...READ_ROLES)
   @Header('Content-Type', 'application/pdf')
   async invoicePdf(@Param('id', ParseUUIDPipe) id: string) {
     const { buffer, filename } = await this.billing.invoicePdf(id);
@@ -138,6 +145,7 @@ export class BillingController {
   }
 
   @Get('payments')
+  @Roles(...READ_ROLES)
   payments(
     @Query('tenantId') tenantId?: string,
     @Query('page') page?: string,
@@ -147,6 +155,7 @@ export class BillingController {
   }
 
   @Get('subscriptions')
+  @Roles(...READ_ROLES)
   subscriptions(
     @Query('status') status?: string,
     @Query('page') page?: string,
@@ -156,6 +165,7 @@ export class BillingController {
   }
 
   @Get('credit-notes')
+  @Roles(...READ_ROLES)
   creditNotes(
     @Query('tenantId') tenantId?: string,
     @Query('page') page?: string,
@@ -174,6 +184,7 @@ export class BillingController {
   }
 
   @Get('coupons')
+  @Roles(...READ_ROLES)
   coupons(
     @Query('active') active?: string,
     @Query('page') page?: string,

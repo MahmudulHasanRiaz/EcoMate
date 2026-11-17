@@ -7,6 +7,7 @@ import type {
   EmitEventResult,
 } from '../interfaces/event-emitter.interface';
 import { tenantJobPayload } from '../../tenancy/tenant-job';
+import { getTenantContext } from '../../tenancy/tenant-context';
 
 const SECURITY_EVENTS_QUEUE = 'security-events';
 const AGGREGATE_QUEUE = 'security-aggregate';
@@ -38,12 +39,28 @@ export class SecurityEventEmitterService {
     const eventId = randomUUID();
     const dedupKey = eventId; // event instance UUID — no time-bucket collapsing
 
+    // Impersonated sessions are stamped by DualModeAuthGuard into the ALS
+    // tenant context. Every audited action taken with an impersonated
+    // token carries the flag (and the platform actor identity when the
+    // impersonation exchange supplied one) in its metadata, so
+    // impersonated actions are attributable in the tenant audit trail
+    // instead of looking like the owner's own actions. Queue processors
+    // and other non-request contexts have no impersonation stamp.
+    const impersonation = getTenantContext()?.impersonation;
+    const metadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
+    if (impersonation?.impersonated) {
+      metadata.impersonation = {
+        impersonated: true,
+        ...(impersonation.actor ? { actor: impersonation.actor } : {}),
+      };
+    }
+
     const jobData = {
       ...input,
       id: eventId,
       dedupKey,
       timestamp: new Date().toISOString(), // detection time; processor defaults when absent
-      metadata: input.metadata ?? {},
+      metadata,
       metadataVersion: 1,
     };
 

@@ -27,10 +27,12 @@ export interface TenantRegistryRecord {
 export class TenantRegistryService {
   private bySlug = new Map<string, TenantRegistryRecord>();
   private byHost = new Map<string, TenantRegistryRecord>();
+  private byId = new Map<string, TenantRegistryRecord>();
 
   replace(records: TenantRegistryRecord[]): void {
     this.bySlug.clear();
     this.byHost.clear();
+    this.byId.clear();
     for (const record of records) this.index(record);
   }
 
@@ -52,6 +54,11 @@ export class TenantRegistryService {
     return this.byHost.get(normaliseHost(host));
   }
 
+  /** Queue workers look tenants up by id (job payloads carry no slug). */
+  resolveById(id: string): TenantRegistryRecord | undefined {
+    return this.byId.get(id);
+  }
+
   list(): TenantRegistryRecord[] {
     return Array.from(this.bySlug.values());
   }
@@ -68,6 +75,7 @@ export class TenantRegistryService {
       hosts: record.hosts.map((host) => normaliseHost(host)).filter(Boolean),
     };
     this.bySlug.set(slug, normalised);
+    this.byId.set(normalised.id, normalised);
     for (const host of normalised.hosts) {
       this.byHost.set(host, normalised);
     }

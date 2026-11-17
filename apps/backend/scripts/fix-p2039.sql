@@ -36,7 +36,17 @@ CREATE TABLE IF NOT EXISTS "better_auth_users" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "better_auth_users_pkey" PRIMARY KEY ("id")
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "better_auth_users_email_key" ON "better_auth_users"("email");
+-- Phase 8 (multi-tenant): NO global unique on email. The same owner email
+-- legitimately exists in several tenants' better_auth_users rows; the
+-- schema enforces uniqueness per tenant (better_auth_users_tenant_id_email_key).
+-- The DROP heals databases where the old global index was already created
+-- (only when the composite exists, so a pre-migration database never loses
+-- its only uniqueness enforcement).
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'better_auth_users_tenant_id_email_key') THEN
+    DROP INDEX IF EXISTS "better_auth_users_email_key";
+  END IF;
+END $$;
 
 -- 2. Ensure Employee.betterAuthUserId column exists
 DO $$ BEGIN

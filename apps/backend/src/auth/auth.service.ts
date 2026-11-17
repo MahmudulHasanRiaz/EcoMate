@@ -801,7 +801,12 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    let payload: { tenantId?: string; email?: string } | null = null;
+    let payload: {
+      tenantId?: string;
+      email?: string;
+      actorEmail?: string;
+      actorId?: string;
+    } | null = null;
     try {
       const response = await fetch(
         `${platformApiBase()}/internal/impersonations/consume`,
@@ -821,6 +826,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       payload = (await response.json()) as {
         tenantId?: string;
         email?: string;
+        actorEmail?: string;
+        actorId?: string;
       };
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
@@ -848,12 +855,22 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       Number.isFinite(configuredTtl) && configuredTtl >= 60
         ? Math.min(configuredTtl, 3_600)
         : 900;
+    // `imp` marks the session as impersonated; `impActor` carries the
+    // platform operator identity when the consume response supplies it
+    // (it does not yet — the platform side audits the actor, but the
+    // consume payload only returns tenantId/slug/email today). The
+    // DualModeAuthGuard consumes both claims: the flag gates sensitive
+    // actions and the security-event emitter stamps them into the tenant
+    // audit trail. When the platform starts returning the actor, it
+    // flows through with no backend change.
+    const impersonationActor = payload.actorEmail ?? payload.actorId;
     const accessToken = this.jwtService.sign(
       {
         sub: user.id,
         email: user.email,
         role: user.role,
         imp: true,
+        ...(impersonationActor ? { impActor: impersonationActor } : {}),
       },
       {
         secret: process.env['JWT_SECRET'],

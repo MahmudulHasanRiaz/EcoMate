@@ -10,8 +10,58 @@ const platformApi = configured.endsWith('/api')
   ? configured
   : `${configured}/api`;
 
+/**
+ * Content-Security-Policy for the landing site (enforcing, Phase 8).
+ *
+ * - `script-src 'unsafe-inline'` is required: Next.js App Router ships its
+ *   RSC flight payload as inline scripts, and this app has no nonce
+ *   plumbing (a nonce-based policy is a follow-up, not a launch blocker —
+ *   the landing renders no user-controlled HTML anywhere).
+ * - Turnstile (signup bot check) needs its script, frame, and connect
+ *   origins on challenges.cloudflare.com.
+ * - `img-src https:` allows a remotely hosted brand logo (NEXT_PUBLIC_LOGO_URL);
+ *   the logo URL itself is allowlisted in lib/branding.ts.
+ * - No other third party is loaded: system fonts only, no analytics.
+ */
+export const LANDING_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self'",
+  "connect-src 'self' https://challenges.cloudflare.com",
+  "frame-src https://challenges.cloudflare.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ');
+
+export const LANDING_SECURITY_HEADERS = [
+  { key: 'Content-Security-Policy', value: LANDING_CSP },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  {
+    key: 'Permissions-Policy',
+    value:
+      'camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()',
+  },
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains; preload',
+  },
+];
+
 const nextConfig: NextConfig = {
   output: 'standalone',
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: LANDING_SECURITY_HEADERS,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

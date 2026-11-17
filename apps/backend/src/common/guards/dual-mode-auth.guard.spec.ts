@@ -4,6 +4,10 @@ import { Reflector } from '@nestjs/core';
 import { DualModeAuthGuard } from './dual-mode-auth.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { getAllPermissions } from '../permissions/registry';
+import {
+  getTenantContext,
+  runWithTenant,
+} from '../../tenancy/tenant-context';
 
 jest.mock('../../better-auth/auth.config', () => ({
   auth: { api: { getSession: jest.fn() } },
@@ -209,5 +213,77 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     const req = context.switchToHttp().getRequest();
     expect(req.user.permissions).toEqual(['view_orders']);
     expect(req.user.betterAuthSession).toBeDefined();
+  });
+
+  describe('impersonation claim (imp)', () => {
+    it('marks request.user as impersonated and stamps the tenant context', async () => {
+      mockJwt.verifyAsync.mockResolvedValue({
+        sub: 'user-1',
+        imp: true,
+        impActor: 'ops@ecomate.bd',
+      });
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
+        id: 'user-1',
+        role: 'superadmin',
+        status: 'active',
+      });
+
+      const context = makeContext('Bearer <redacted>');
+      // The ALS stamp is read by the security-event emitter inside the
+      // same request; assert it from within the context.
+      await runWithTenant({ tenantId: 'tenant-1', slug: 'acme' }, async () => {
+        const result = await guard.canActivate(context);
+        expect(result).toBe(true);
+        expect(getTenantContext()?.impersonation).toEqual({
+          impersonated: true,
+          actor: 'ops@ecomate.bd',
+        });
+      });
+      const req = context.switchToHttp().getRequest();
+      expect(req.user.impersonated).toBe(true);
+      expect(req.user.impersonationActor).toBe('ops@ecomate.bd');
+    });
+
+    it('stamps the flag even when no platform actor identity is present', async () => {
+      mockJwt.verifyAsync.mockResolvedValue({ sub: 'user-1', imp: true });
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
+        id: 'user-1',
+        role: 'superadmin',
+        status: 'active',
+      });
+
+      const context = makeContext('Bearer <redacted>');
+      await runWithTenant({ tenantId: 'tenant-1', slug: 'acme' }, async () => {
+        await guard.canActivate(context);
+        expect(getTenantContext()?.impersonation).toEqual({
+          impersonated: true,
+          actor: null,
+        });
+      });
+      expect(
+        context.switchToHttp().getRequest().user.impersonated,
+      ).toBe(true);
+      expect(
+        context.switchToHttp().getRequest().user.impersonationActor,
+      ).toBeUndefined();
+    });
+
+    it('leaves ordinary JWT sessions unmarked', async () => {
+      mockJwt.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue({
+        id: 'user-1',
+        role: 'superadmin',
+        status: 'active',
+      });
+
+      const context = makeContext('Bearer <redacted>');
+      await runWithTenant({ tenantId: 'tenant-1', slug: 'acme' }, async () => {
+        await guard.canActivate(context);
+        expect(getTenantContext()?.impersonation).toBeUndefined();
+      });
+      expect(
+        context.switchToHttp().getRequest().user.impersonated,
+      ).toBe(false);
+    });
   });
 });

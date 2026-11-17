@@ -31,8 +31,11 @@ export class CreateSignupDto {
   @MaxLength(30)
   ownerPhone?: string;
 
+  // Minimum 12, matching the platform-user minimum
+  // (PLATFORM_MIN_PASSWORD_LENGTH) and the landing signup form. The owner
+  // account is the tenant's root of trust; 8 was too short.
   @IsString()
-  @Length(8, 72)
+  @Length(12, 72)
   password!: string;
 
   @IsOptional()

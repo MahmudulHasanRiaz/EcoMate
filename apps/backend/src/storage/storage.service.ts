@@ -4,14 +4,17 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { getTenantContext } from '../tenancy/tenant-context';
 import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { readFile, writeFile, unlink, mkdir, rename } from 'fs/promises';
+import { readFile, writeFile, unlink, mkdir, rename, rm } from 'fs/promises';
 import { createReadStream, createWriteStream } from 'fs';
 import {
   join,
@@ -32,6 +35,24 @@ const R2_MULTIPART_PART_SIZE = 16 * 1024 * 1024;
 const R2_MULTIPART_QUEUE_SIZE = 4;
 const PRIVATE_LOCAL_BACKUP_PREFIX = 'private-local/';
 const PRIVATE_R2_BACKUP_PREFIX = 'private-r2/';
+/**
+ * Tenant-attributable upload key scheme (Phase 8 item 26).
+ *
+ * New uploads are stored under `t/<tenantId>/<key>` so a tenant purge can
+ * delete every file the tenant owns with one prefix delete — local
+ * (`uploads/t/<tenantId>/`) or R2 (`t/<tenantId>/`). The tenant id comes
+ * from the ALS context, so uploads without a tenant (system jobs, seeds)
+ * keep the legacy flat key. Legacy flat keys stay readable forever; the
+ * purge enumerates them from the tenant's Media rows instead.
+ */
+const TENANT_KEY_PATTERN =
+  /^t\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//i;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Rows fetched per page when enumerating a tenant's media for purge. */
+const MEDIA_PURGE_PAGE_SIZE = 500;
+/** S3 DeleteObjects accepts at most 1000 keys per call. */
+const R2_DELETE_BATCH_SIZE = 1000;
 
 const MIME_EXT_MAP: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -234,6 +255,25 @@ export class StorageService {
       throw new InternalServerErrorException('Unsafe backup storage key');
     }
     return target;
+  }
+
+  /**
+   * Prefixes a storage key with the current tenant (`t/<tenantId>/...`) so
+   * a tenant purge can delete everything the tenant owns with one prefix
+   * delete. Idempotent (already-prefixed keys pass through) and a no-op
+   * without a tenant context (system uploads, seeds) — those keep the
+   * legacy flat key and are never attributed to a tenant.
+   */
+  private tenantKey(key: string): string {
+    if (TENANT_KEY_PATTERN.test(key)) return key;
+    const tenantId = getTenantContext()?.tenantId;
+    if (!tenantId) return key;
+    return `t/${tenantId}/${key}`;
+  }
+
+  /** The storage prefix owned by one tenant, for purge. */
+  private tenantPrefix(tenantId: string): string {
+    return `t/${tenantId}/`;
   }
 
   private localMediaPath(key: string): string {
@@ -557,9 +597,11 @@ export class StorageService {
     // originalname — a file named "photo.html" with image content used to
     // be stored as .html. Unknown MIME → no extension (never a guess).
     const ext = MIME_EXT_MAP[file.mimetype] || '';
-    const name = filename
-      ? await this.resolveFilename(filename + ext)
-      : `${uuid()}${ext}`;
+    const name = this.tenantKey(
+      filename
+        ? await this.resolveFilename(filename + ext)
+        : `${uuid()}${ext}`,
+    );
 
     const url =
       config.provider === 'r2'
@@ -570,12 +612,13 @@ export class StorageService {
   }
 
   async store(key: string, buffer: Buffer, mimeType: string): Promise<string> {
-    this.assertSafeStorageKey(key);
+    const tenantKey = this.tenantKey(key);
+    this.assertSafeStorageKey(tenantKey);
     const config = await this.getConfig();
     const url =
       config.provider === 'r2'
-        ? await this.uploadToR2(key, buffer, mimeType, config)
-        : await this.uploadToLocal(key, buffer);
+        ? await this.uploadToR2(tenantKey, buffer, mimeType, config)
+        : await this.uploadToLocal(tenantKey, buffer);
     return url;
   }
 
@@ -588,24 +631,25 @@ export class StorageService {
     stream: Readable,
     mimeType: string,
   ): Promise<string> {
-    this.assertSafeStorageKey(key);
+    const tenantKey = this.tenantKey(key);
+    this.assertSafeStorageKey(tenantKey);
     const config = await this.getConfig();
     if (config.provider === 'r2') {
       const client = this.getS3Client(config);
       await this.multipartUpload(
         client,
         config.r2Bucket!,
-        key,
+        tenantKey,
         stream,
         mimeType,
       );
       const baseUrl = config.r2PublicUrl!;
-      return `${baseUrl.replace(/\/$/, '')}/${key}`;
+      return `${baseUrl.replace(/\/$/, '')}/${tenantKey}`;
     }
     // Local: write beside the destination, then atomically publish it.
-    const filepath = this.localMediaPath(key);
+    const filepath = this.localMediaPath(tenantKey);
     await this.atomicLocalStream(filepath, stream);
-    return `/uploads/${key}`;
+    return `/uploads/${tenantKey}`;
   }
 
   /**
@@ -760,9 +804,11 @@ export class StorageService {
     const config = await this.getConfig();
     // SECURITY (2026-10-25): see upload() — extension from MIME only.
     const ext = MIME_EXT_MAP[mimeType] || '';
-    const name = filename
-      ? await this.resolveFilename(filename + ext)
-      : `${uuid()}${ext}`;
+    const name = this.tenantKey(
+      filename
+        ? await this.resolveFilename(filename + ext)
+        : `${uuid()}${ext}`,
+    );
 
     const url =
       config.provider === 'r2'
@@ -792,5 +838,216 @@ export class StorageService {
       );
       throw err;
     }
+  }
+
+  /**
+   * Deletes every stored file owned by one tenant. Two passes:
+   *
+   * 1. Legacy files: keys enumerated from the tenant's Media rows (url,
+   *    blurUrl, derivativeManifest) and courier-settlement invoice files
+   *    (fileStorageId). These predate the `t/<tenantId>/` scheme (or were
+   *    written while the tenant had no ALS context) and cannot be found by
+   *    prefix. Each URL is resolved to a key + provider from its shape, so
+   *    a provider switch mid-life does not strand files.
+   * 2. Prefix: everything under `t/<tenantId>/` — local directory removed
+   *    in one call, R2 objects listed + batch-deleted.
+   *
+   * Best-effort per file: a failure is recorded and the purge continues
+   * (an orphaned file is recoverable; a blocked tenant purge is not).
+   * Callers must run this BEFORE the tenant's database rows are deleted —
+   * the enumeration reads them. Returns counts for the purge audit record.
+   */
+  async deleteTenantMedia(
+    tenantId: string,
+  ): Promise<{ deletedFiles: number; failedFiles: string[] }> {
+    if (!UUID_PATTERN.test(tenantId)) {
+      throw new InternalServerErrorException('Invalid tenant id for media purge');
+    }
+    const failedFiles: string[] = [];
+    let deletedFiles = 0;
+
+    const r2 = await this.legacyR2Config();
+    const r2Keys = new Set<string>();
+    const localKeys = new Set<string>();
+    const classify = (url: string | null | undefined) => {
+      if (!url) return;
+      const found = this.storageKeyFromUrl(url, r2?.r2PublicUrl);
+      // Unresolvable URLs were never stored (inline `data:` blur
+      // placeholders, foreign remote originals) — there is nothing to
+      // delete, so they are not failures.
+      if (!found) return;
+      (found.provider === 'r2' ? r2Keys : localKeys).add(found.key);
+    };
+
+    // Media rows, paginated — a tenant can own thousands of files.
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await this.prisma.media.findMany({
+        where: { tenantId },
+        select: { id: true, url: true, blurUrl: true, derivativeManifest: true },
+        orderBy: { id: 'asc' },
+        take: MEDIA_PURGE_PAGE_SIZE,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      for (const row of page) {
+        classify(row.url);
+        classify(row.blurUrl);
+        const manifest = row.derivativeManifest as
+          | Record<string, unknown>
+          | null
+          | undefined;
+        if (manifest && typeof manifest === 'object') {
+          for (const value of Object.values(manifest)) {
+            if (typeof value === 'string') classify(value);
+          }
+        }
+      }
+      if (page.length < MEDIA_PURGE_PAGE_SIZE) break;
+      cursor = page[page.length - 1].id;
+    }
+
+    // Courier-settlement source files (stored via StorageService.store).
+    const invoices = await this.prisma.courierSettlementInvoice.findMany({
+      where: { tenantId, fileStorageId: { not: null } },
+      select: { fileStorageId: true },
+    });
+    for (const invoice of invoices) classify(invoice.fileStorageId);
+
+    // Local legacy files: unlink each (missing files are already gone).
+    for (const key of localKeys) {
+      try {
+        await unlink(this.localMediaPath(key));
+        deletedFiles += 1;
+      } catch (err: any) {
+        if (err?.code === 'ENOENT') continue;
+        failedFiles.push(key);
+        this.logger.warn(
+          `Tenant media purge: failed to delete local ${key}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // Local prefix: one recursive remove for everything under t/<tenantId>/.
+    // (No trailing slash: localMediaPath rejects empty path segments.)
+    try {
+      const dir = this.localMediaPath(`t/${tenantId}`);
+      await rm(dir, { recursive: true, force: true });
+    } catch (err) {
+      failedFiles.push(this.tenantPrefix(tenantId));
+      this.logger.warn(
+        `Tenant media purge: failed to remove local prefix for ${tenantId}: ${(err as Error).message}`,
+      );
+    }
+
+    // R2: enumerate the prefix, then batch-delete enumerated + prefix keys.
+    if (r2) {
+      try {
+        const client = this.getS3Client({ ...r2, provider: 'r2' });
+        let continuationToken: string | undefined;
+        do {
+          const listed = await client.send(
+            new ListObjectsV2Command({
+              Bucket: r2.r2Bucket!,
+              Prefix: this.tenantPrefix(tenantId),
+              ContinuationToken: continuationToken,
+            }),
+          );
+          for (const object of listed.Contents ?? []) {
+            if (object.Key) r2Keys.add(object.Key);
+          }
+          continuationToken = listed.IsTruncated
+            ? listed.NextContinuationToken
+            : undefined;
+        } while (continuationToken);
+        const keys = [...r2Keys];
+        for (let i = 0; i < keys.length; i += R2_DELETE_BATCH_SIZE) {
+          const batch = keys.slice(i, i + R2_DELETE_BATCH_SIZE);
+          const result = await client.send(
+            new DeleteObjectsCommand({
+              Bucket: r2.r2Bucket!,
+              Delete: { Objects: batch.map((Key) => ({ Key })), Quiet: true },
+            }),
+          );
+          deletedFiles += batch.length - (result.Errors?.length ?? 0);
+          for (const error of result.Errors ?? []) {
+            if (error.Key) failedFiles.push(error.Key);
+          }
+        }
+      } catch (err) {
+        failedFiles.push(this.tenantPrefix(tenantId));
+        this.logger.warn(
+          `Tenant media purge: R2 prefix delete failed for ${tenantId}: ${(err as Error).message}`,
+        );
+      }
+    } else if (r2Keys.size > 0) {
+      // R2 URLs exist but no R2 credentials are configured any more — the
+      // files cannot be deleted from here; record them so ops can see it.
+      for (const key of r2Keys) failedFiles.push(key);
+      this.logger.warn(
+        `Tenant media purge: ${r2Keys.size} R2 file(s) for ${tenantId} could not be deleted (R2 not configured)`,
+      );
+    }
+
+    this.logger.log(
+      `Tenant media purge for ${tenantId}: deleted ${deletedFiles} file(s), ${failedFiles.length} failure(s)`,
+    );
+    return { deletedFiles, failedFiles };
+  }
+
+  /**
+   * Resolves a persisted media URL to its storage key + provider. Mirrors
+   * readMediaOriginal's URL shapes: `/uploads/<key>` (local) or an R2
+   * public-base URL. Returns null for foreign URLs (remote originals that
+   * were never stored, e.g. a sourceUrl copied into `url`).
+   */
+  private storageKeyFromUrl(
+    url: string,
+    r2PublicUrl?: string,
+  ): { key: string; provider: 'local' | 'r2' } | null {
+    if (url.startsWith('/uploads/')) {
+      const key = decodeURIComponent(url.slice('/uploads/'.length));
+      try {
+        this.assertSafeStorageKey(key);
+      } catch {
+        return null;
+      }
+      return { key, provider: 'local' };
+    }
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname.startsWith('/uploads/')) {
+        const key = decodeURIComponent(
+          parsed.pathname.slice('/uploads/'.length),
+        );
+        try {
+          this.assertSafeStorageKey(key);
+        } catch {
+          return null;
+        }
+        return { key, provider: 'local' };
+      }
+      if (r2PublicUrl) {
+        const publicBase = new URL(r2PublicUrl);
+        const basePath = publicBase.pathname.replace(/\/+$/, '');
+        if (
+          parsed.origin === publicBase.origin &&
+          (parsed.pathname === basePath ||
+            parsed.pathname.startsWith(`${basePath}/`))
+        ) {
+          const key = decodeURIComponent(
+            parsed.pathname.slice(basePath.length).replace(/^\/+/, ''),
+          );
+          try {
+            this.assertSafeStorageKey(key);
+          } catch {
+            return null;
+          }
+          return { key, provider: 'r2' };
+        }
+      }
+    } catch {
+      return null;
+    }
+    return null;
   }
 }

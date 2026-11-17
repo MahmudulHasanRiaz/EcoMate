@@ -34,6 +34,28 @@ describe('storefront base-domain alias resolution', () => {
     ).toBe('https://acme.ecomate.bd/products/x?page=2');
   });
 
+  it('resolves an alias base that is itself a subdomain of the primary', () => {
+    const nested = readDomainConfig({
+      SAAS_PRIMARY_DOMAIN: 'ecomate.bd',
+      SAAS_BASE_DOMAINS: 'ecomate.bd,shop.ecomate.bd',
+    } as unknown as NodeJS.ProcessEnv);
+    // `shop.ecomate.bd` ends with `.ecomate.bd`, so a naive first-match
+    // parse leaves the dotted slug `acme.shop` — the resolver must try
+    // the longer base instead of giving up (E8 found this live: the alias
+    // host 404d instead of 301ing to canonical).
+    expect(resolveBaseDomainAlias('acme.shop.ecomate.bd', nested)).toEqual({
+      slug: 'acme',
+      baseDomain: 'shop.ecomate.bd',
+      canonicalHost: 'acme.ecomate.bd',
+      isAlias: true,
+    });
+    expect(
+      aliasRedirectTarget('acme.shop.ecomate.bd', '/products', '?x=1', nested),
+    ).toBe('https://acme.ecomate.bd/products?x=1');
+    expect(resolveBaseDomainAlias('admin.shop.ecomate.bd', nested)).toBeNull();
+    expect(resolveBaseDomainAlias('foo.bar.ecomate.bd', nested)).toBeNull();
+  });
+
   it('normalises case, ports and protocol prefixes', () => {
     expect(
       aliasRedirectTarget('ACME.Alias.Example:443', '/cart', '', config),

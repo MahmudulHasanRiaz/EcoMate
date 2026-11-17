@@ -31,7 +31,7 @@ vi.mock('@/components/page-info', () => ({
   PageInfo: ({ text }: { text: string }) => <span aria-label='About this page'>{text}</span>,
 }))
 vi.mock('@tanstack/react-router', () => ({
-  // The result screen links to /mon/backup; navigation is a no-op here.
+  // Router Link is stubbed to a plain anchor; navigation is a no-op here.
   Link: ({ children, to }: { children?: React.ReactNode; to?: string }) => (
     <a href={to}>{children}</a>
   ),

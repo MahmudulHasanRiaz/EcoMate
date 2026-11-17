@@ -95,6 +95,28 @@ export class PlatformMailService {
     return support || undefined;
   }
 
+  /**
+   * Phase 8 Stage 2 item 20 — ops alert mail (billing-job failure,
+   * purge-sweep failure, TLS expiry, primary-domain health). Plain
+   * text-first; same fail-closed-in-production / dev-log-fallback
+   * behaviour as the billing templates via deliver().
+   */
+  async sendOpsAlert(input: {
+    to: string;
+    subject: string;
+    text: string;
+  }): Promise<{ delivered: boolean }> {
+    const platformName = this.settings.getBranding().platformName;
+    const subject = `[${platformName} ops] ${input.subject}`;
+    return this.deliver(
+      input.to,
+      subject,
+      input.text,
+      `<p>${escapeHtml(input.text).replace(/\n/g, '<br/>')}</p>`,
+      `ops alert: ${input.subject}`,
+    );
+  }
+
   async sendTest(to: string): Promise<{ delivered: boolean }> {
     const transporter = this.getTransporter();
     if (!transporter) {

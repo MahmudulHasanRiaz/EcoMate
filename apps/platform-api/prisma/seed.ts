@@ -122,6 +122,12 @@ async function seedTrialPlan(): Promise<void> {
   const existing = await prisma.planVersion.findUnique({
     where: { planId_version: { planId: plan.id, version: 1 } },
   });
+  // The trial plan's v1 is the signup default — unless an operator already
+  // chose a different default (the seed must not steal it back).
+  const currentDefault = await prisma.planVersion.findFirst({
+    where: { isDefault: true },
+    select: { id: true },
+  });
   if (!existing) {
     await prisma.planVersion.create({
       data: {
@@ -134,7 +140,13 @@ async function seedTrialPlan(): Promise<void> {
         features: ['*'],
         limits: {},
         graceDays: 7,
+        isDefault: !currentDefault,
       },
+    });
+  } else if (!existing.isDefault && !currentDefault) {
+    await prisma.planVersion.update({
+      where: { id: existing.id },
+      data: { isDefault: true },
     });
   }
   console.log('[seed] trial plan ready');

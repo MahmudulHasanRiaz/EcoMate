@@ -19,6 +19,12 @@ import { extract, list, Parser } from 'tar';
 
 export const BACKUP_MANIFEST_FILENAME = 'backup-manifest.json';
 export const BACKUP_SQL_FILENAME = 'dump.sql';
+/**
+ * Phase 8 Stage 2 item 22: the platform database dump rides INSIDE the
+ * existing db_files artifact (no new artifact type, no schema change).
+ * db_only backups stay tenant-only — see runBackupPipelineOwned.
+ */
+export const PLATFORM_BACKUP_SQL_FILENAME = 'platform.sql';
 export const BACKUP_FORMAT = 'ecomate-backup';
 export const BACKUP_FORMAT_VERSION = 2;
 
@@ -35,6 +41,14 @@ export interface BackupManifest {
   localFilesIncluded: boolean;
   includePaths: string[];
   excludedPaths: string[];
+  /**
+   * Phase 8 Stage 2 item 22: whether platform.sql (the ecomate_platform
+   * dump) is in this archive. Optional — pre-Phase-8 archives omit it and
+   * restore treats a missing key as "no platform dump".
+   */
+  platformDumpIncluded?: boolean;
+  /** Uncompressed size of platform.sql in bytes (null when absent). */
+  platformDbDumpSize?: number | null;
 }
 
 export interface ArchiveValidation {
@@ -42,6 +56,8 @@ export interface ArchiveValidation {
   expandedBytes: bigint;
   contentBytes: bigint;
   hasManifest: boolean;
+  /** Phase 8 item 22: the archive carries a platform.sql dump. */
+  hasPlatformDump: boolean;
   layout: 'uploads' | 'legacy' | 'none';
 }
 
@@ -249,6 +265,7 @@ export async function validateTarBackup(
   let contentBytes = 0n;
   let hasDump = false;
   let hasManifest = false;
+  let hasPlatformDump = false;
   let hasUploadsLayout = false;
   let hasLegacyContent = false;
   const seen = new Set<string>();
@@ -301,6 +318,17 @@ export async function validateTarBackup(
             throw new Error(`${BACKUP_SQL_FILENAME} must be a file`);
           }
           hasDump = true;
+          return;
+        }
+
+        // Phase 8 item 22: platform.sql is a first-class archive member.
+        // Without this branch it would be classified as legacy content and
+        // a db_files archive would fail the mixed-layout check below.
+        if (path === PLATFORM_BACKUP_SQL_FILENAME) {
+          if (entry.type === 'Directory') {
+            throw new Error(`${PLATFORM_BACKUP_SQL_FILENAME} must be a file`);
+          }
+          hasPlatformDump = true;
           return;
         }
 
@@ -375,6 +403,7 @@ export async function validateTarBackup(
     expandedBytes,
     contentBytes,
     hasManifest,
+    hasPlatformDump,
     layout: hasUploadsLayout ? 'uploads' : hasLegacyContent ? 'legacy' : 'none',
   };
 }
@@ -483,6 +512,7 @@ async function promoteTree(
       if (
         legacyRoot &&
         (relativePath === BACKUP_SQL_FILENAME ||
+          relativePath === PLATFORM_BACKUP_SQL_FILENAME ||
           relativePath === BACKUP_MANIFEST_FILENAME)
       ) {
         return;
@@ -910,6 +940,7 @@ export async function prepareBackupContentRestore(
       if (
         legacyRoot &&
         (relativePath === BACKUP_SQL_FILENAME ||
+          relativePath === PLATFORM_BACKUP_SQL_FILENAME ||
           relativePath === BACKUP_MANIFEST_FILENAME)
       ) {
         return;

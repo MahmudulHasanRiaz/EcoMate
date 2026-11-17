@@ -333,7 +333,7 @@ export function SignupWizard() {
                 value={form.password}
                 onChange={(event) => update('password', event.target.value)}
                 autoComplete="new-password"
-                minLength={8}
+                minLength={12}
                 maxLength={72}
               />
               {errors.password && (
@@ -353,7 +353,7 @@ export function SignupWizard() {
                   update('confirmPassword', event.target.value)
                 }
                 autoComplete="new-password"
-                minLength={8}
+                minLength={12}
                 maxLength={72}
               />
               {errors.confirmPassword && (
@@ -393,8 +393,15 @@ export function SignupWizard() {
               onChange={(event) => update('acceptTerms', event.target.checked)}
             />
             <label htmlFor="acceptTerms">
-              I agree to the terms of service and privacy policy, and to receive
-              account email for this workspace.
+              I agree to the{' '}
+              <a href="/terms" target="_blank" rel="noreferrer">
+                terms of service
+              </a>{' '}
+              and{' '}
+              <a href="/privacy" target="_blank" rel="noreferrer">
+                privacy policy
+              </a>
+              , and to receive account email for this workspace.
             </label>
           </div>
           {errors.acceptTerms && (

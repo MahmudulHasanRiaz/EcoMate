@@ -127,45 +127,6 @@ export async function evaluateDiscounts(
   };
 }
 
-function getStorefrontApiBase(): string {
-  if (
-    typeof window !== "undefined" &&
-    !window.location.hostname.includes("localhost")
-  ) {
-    return "/api";
-  }
-  return (
-    process.env.API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:4000/api"
-  );
-}
-
-function isInvalidToken(t: string | undefined | null): boolean {
-  return !t || t === 'undefined' || t === 'null' || t.trim() === '';
-}
-
-export async function getOrderForThankYou(
-  orderId: string,
-  token?: string,
-): Promise<unknown> {
-  const safeToken = isInvalidToken(token) ? undefined : token;
-  const url = safeToken
-    ? `${getStorefrontApiBase()}/orders/${encodeURIComponent(orderId)}?t=${encodeURIComponent(safeToken)}`
-    : `${getStorefrontApiBase()}/orders/${encodeURIComponent(orderId)}`;
-  const res = await fetch(url, {
-    cache: "no-store",
-    credentials: "include",
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(
-      `Failed to load order (${res.status}): ${body || res.statusText}`,
-    );
-  }
-  return res.json();
-}
-
 export async function cancelOrderByToken(orderId: string, token: string) {
   const { data } = await apiClient.post(
     `/orders/${encodeURIComponent(orderId)}/cancel`,

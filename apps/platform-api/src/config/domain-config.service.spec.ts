@@ -256,4 +256,49 @@ describe('DomainConfigService', () => {
       isAlias: true,
     });
   });
+
+  describe('primary-domain probe (Phase 8 item 25, D12)', () => {
+    it('is healthy with no probe result yet', async () => {
+      const service = buildService();
+      await service.onModuleInit();
+      expect(service.getPrimaryProbeResult()).toBeNull();
+      expect(service.isPrimaryHealthy()).toBe(true);
+    });
+
+    it('a failing probe flips health to false', async () => {
+      const service = buildService();
+      await service.onModuleInit();
+      service.setPrimaryProbeResult(false);
+      expect(service.getPrimaryProbeResult()).toBe(false);
+      expect(service.isPrimaryHealthy()).toBe(false);
+    });
+
+    it('a passing probe restores health', async () => {
+      const service = buildService();
+      await service.onModuleInit();
+      service.setPrimaryProbeResult(false);
+      expect(service.isPrimaryHealthy()).toBe(false);
+      service.setPrimaryProbeResult(true);
+      expect(service.isPrimaryHealthy()).toBe(true);
+    });
+
+    it('the SAAS_PRIMARY_UNHEALTHY flag still forces unhealthy as a manual override', async () => {
+      const service = buildService();
+      await service.onModuleInit();
+      service.setPrimaryProbeResult(true);
+      expect(service.isPrimaryHealthy()).toBe(true);
+      process.env.SAAS_PRIMARY_UNHEALTHY = 'true';
+      expect(service.isPrimaryHealthy()).toBe(false);
+    });
+
+    it('effectiveBaseDomain follows the probe (fallback while unhealthy)', async () => {
+      process.env.SAAS_FALLBACK_DOMAIN = 'fallback.example';
+      process.env.SAAS_ALLOW_EXTERNAL_FALLBACK = 'true';
+      const service = buildService();
+      await service.onModuleInit();
+      expect(service.effectiveBaseDomain()).toBe('ecomate.bd');
+      service.setPrimaryProbeResult(false);
+      expect(service.effectiveBaseDomain()).toBe('fallback.example');
+    });
+  });
 });

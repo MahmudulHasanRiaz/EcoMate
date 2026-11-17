@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
 import { PlatformAuthGuard } from '../auth/platform-auth.guard';
-import { Roles } from '../auth/roles.decorator';
+import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
@@ -20,7 +20,6 @@ import { UpdateTaxSettingsDto } from './dto/update-tax-settings.dto';
 import { UpdateTrialSettingsDto } from './dto/update-trial-settings.dto';
 import { SettingsService } from './settings.service';
 
-const READ_ROLES = ['SUPERADMIN', 'BILLING', 'SUPPORT'] as const;
 
 @Controller('settings')
 @UseGuards(PlatformAuthGuard, RolesGuard)

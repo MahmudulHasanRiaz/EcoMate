@@ -1,38 +1,118 @@
-# Reference edge configuration for tenant hosts (Caddy 2).
+# EcoMate SaaS edge configuration (Caddy 2). Single source of truth:
+# this file, baked into the apps/caddy image (never bind-mounted).
 #
-# Not wired into docker-compose.yml: the public edge is deployment-specific
-# (one Caddy per fleet, or Traefik on a VPS). Apply this where the tenant hosts
-# are terminated. Service names match the SaaS compose file.
+# ROUTING SHAPE — hosts, not paths, separate the platform from tenants:
+#   www.ecomate.bd   -> landing (public signup front door)
+#   saas.ecomate.bd  -> platform-admin console; /api/* -> platform-api
+#   api.ecomate.bd   -> platform-api (control plane + webhooks)
+#   ecomate.bd       -> 301 to www.ecomate.bd (canonical marketing host)
+#   anything else    -> tenant block (:443): /api/* -> backend,
+#                       /admin/* -> admin, /pos/* -> pos, else storefront
 #
-# TLS is ON-DEMAND: Caddy asks the platform before issuing a certificate for a
-# host. The ask endpoint allows SUBDOMAIN hosts of non-deleted tenants and
-# CUSTOM domains only after DNS verification. Anything else is a 404 and no
-# certificate is issued. Keep platform-api on a private network.
+# The host split is load-bearing: platform-admin's default same-origin /api
+# would hit the TENANT backend under path-only routing. On the saas. host,
+# /api goes to platform-api; on tenant hosts, /api goes to the backend.
+#
+# TLS is ON-DEMAND for tenant hosts only: Caddy asks the platform before
+# issuing a certificate. The ask endpoint allows SUBDOMAIN hosts of
+# non-deleted tenants and CUSTOM domains only after DNS verification;
+# anything else is a 404 and no certificate is issued. Keep platform-api
+# on a private network.
+#
+# Platform hosts use PLAIN automatic TLS (no on_demand): the ask endpoint
+# only knows TenantDomain rows, so it would 404 www/saas/api.ecomate.bd
+# and no platform certificate would ever issue. Known hosts don't need
+# the ask gate; unknown tenant hosts do.
 #
 #   TLS_ASK_TOKEN must match platform-api's TLS_ASK_TOKEN
-#   (fallback: INTERNAL_SERVICE_SECRET).
+#   (fallback: INTERNAL_SERVICE_SECRET). Compose guarantees the caddy
+#   container always carries a non-empty value (TLS_ASK_TOKEN, else
+#   INTERNAL_SERVICE_SECRET) — an empty token would 401 every ask.
+#
+# Hosts come from env vars (parse-time {$VAR:default} substitution, so
+# they work in site addresses). ACME_EMAIL is the same kind of placeholder:
+# a runtime {env.} placeholder would FAIL config load when empty (Caddy
+# rejects an empty email value), so the default lives in the placeholder
+# itself. support@ecomate.bd is the repo's established support address
+# (also the billing supportEmail default); override via ACME_EMAIL.
+# NOTE: {$VAR:default} only applies when the var is UNSET — an explicitly
+# empty value still expands to empty and breaks parsing. Compose guards
+# this with ${ACME_EMAIL:-support@ecomate.bd} (and :- defaults for the
+# hosts), so the caddy container never sees an empty value. Do not run
+# this Caddyfile with ACME_EMAIL (or a host var) set-but-empty.
 
 {
+	# Caddy's built-in automatic HTTP->HTTPS redirect (308) runs BEFORE
+	# the explicit :80 site routes and would shadow them — including
+	# redirecting /.well-known/acme-challenge/*, which breaks HTTP-01
+	# issuance. Our :80 site owns the redirect (301, ACME passthrough),
+	# so the automatic one must be off. (Proven live 2026-11-17: without
+	# this, every :80 request returned 308, ACME path included.)
+	auto_https disable_redirects
 	on_demand_tls {
 		ask http://platform-api:4100/api/internal/tls/allow?token={env.TLS_ASK_TOKEN}
 	}
+	email {$ACME_EMAIL:support@ecomate.bd}
 }
+
+# --- Platform hosts (exact matches; plain automatic TLS) ---
+
+{$PLATFORM_LANDING_HOST:www.ecomate.bd} {
+	handle /api/* {
+		# Landing also rewrites /api itself, but routing here keeps the
+		# landing container's rewrite as a fallback, not the only path.
+		reverse_proxy platform-api:4100
+	}
+	handle {
+		reverse_proxy landing:3002
+	}
+}
+
+{$SAAS_PRIMARY_DOMAIN:ecomate.bd} {
+	# Bare domain is not a tenant host; canonical marketing host is www.
+	handle {
+		redir https://{$PLATFORM_LANDING_HOST:www.ecomate.bd}{uri} permanent
+	}
+}
+
+{$PLATFORM_ADMIN_HOST:saas.ecomate.bd} {
+	handle /api/* {
+		reverse_proxy platform-api:4100
+	}
+	handle {
+		reverse_proxy platform-admin:80
+	}
+}
+
+{$PLATFORM_API_HOST:api.ecomate.bd} {
+	# Platform API + webhooks (master plan §13 item 2: webhooks use api.
+	# unless a dedicated webhooks. host is decided later).
+	handle {
+		reverse_proxy platform-api:4100
+	}
+}
+
+# --- Tenant hosts: {slug}.ecomate.bd, alias bases, custom domains ---
+# On-demand TLS: cert issued only if the ask endpoint allows the host
+# (SUBDOMAIN always; CUSTOM only VERIFIED/ACTIVE; DELETED tenant denied).
 
 :443 {
 	tls {
 		on_demand
 	}
 
-	# API answers on canonical AND alias hosts (aliases are not redirected for
-	# /api, so integrations keep working).
+	# /api answers on canonical AND alias hosts (aliases are not redirected
+	# for /api, so integrations keep working).
 	@api path /api/*
 	handle @api {
 		reverse_proxy backend:4000
 	}
 
-	# Admin and POS are always noindex; alias hosts are redirected by the
-	# storefront proxy when these paths are routed through Next. At this edge,
-	# add the same 301 rule if they are routed directly to their static services.
+	# Admin/POS are routed directly (not through the storefront proxy), so
+	# the edge must do the alias→canonical 301 itself. The storefront proxy
+	# owns this rule for storefront paths; until an edge-side 301 is
+	# implemented (needs host→tenant lookup at the edge), alias hosts serve
+	# /admin and /pos directly with noindex headers from the apps.
 	@admin path /admin/*
 	handle @admin {
 		reverse_proxy admin:80
@@ -46,4 +126,18 @@
 	handle {
 		reverse_proxy storefront:3000
 	}
+}
+
+# --- HTTP: ACME challenge passthrough + redirect everything else ---
+:80 {
+	# ACME HTTP-01 challenges MUST NOT be redirected: Caddy's built-in
+	# solver serves /.well-known/acme-challenge/* itself for any request
+	# no handler matches — so the redirect below matches everything
+	# EXCEPT that path, and challenge requests fall through to the solver.
+	# (Do NOT answer challenges with a static body here: the solver's
+	# key-authorization token is the only body the CA accepts.)
+	@not_acme {
+		not path /.well-known/acme-challenge/*
+	}
+	redir @not_acme https://{host}{uri} permanent
 }

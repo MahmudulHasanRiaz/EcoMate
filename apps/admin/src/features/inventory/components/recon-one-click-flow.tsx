@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { CheckCircle2, Copy, Loader2, Wrench, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -164,7 +163,7 @@ export function ReconFixAllResultCard({
         <p>
           {idempotency.ok
             ? 'Re-check: all good — the fixed rows have no more problems.'
-            : `Re-check: ${remainingTotal} still left — do not fix again, restore from the backup and check.`}
+            : `Re-check: ${remainingTotal} still left — do not fix again. Contact support with the backup ID below to restore from the backup.`}
         </p>
         <div className='space-y-1 rounded-md border p-3'>
           <p className='text-xs font-medium text-muted-foreground'>
@@ -176,12 +175,9 @@ export function ReconFixAllResultCard({
               <Copy className='mr-1 h-3.5 w-3.5' />
               {copied ? 'Copied' : 'Copy'}
             </Button>
-            <Link
-              to='/mon/backup'
-              className='text-xs font-medium text-primary hover:underline'
-            >
-              View backups
-            </Link>
+            {/* NOTE (Phase 8): the "View backups" link was removed with the
+                tenant backup UI — backups are a platform/ops-only job now.
+                The backup ID above is what support needs to restore. */}
           </div>
         </div>
         {isRefreshingReport && <p className='text-muted-foreground'>Running a new check…</p>}

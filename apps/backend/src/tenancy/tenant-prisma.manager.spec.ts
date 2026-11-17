@@ -22,9 +22,9 @@ describe('TenantPrismaManager', () => {
     const factory = jest.fn(() => fakeClient());
     const manager = new TenantPrismaManager(factory);
 
-    const a1 = manager.getClient('tenant-a');
-    const a2 = manager.getClient('tenant-a');
-    const b = manager.getClient('tenant-b');
+    const a1 = manager.getClient('11111111-1111-4111-8111-111111111111');
+    const a2 = manager.getClient('11111111-1111-4111-8111-111111111111');
+    const b = manager.getClient('22222222-2222-4222-8222-222222222222');
 
     expect(a1).toBe(a2);
     expect(a1).not.toBe(b);
@@ -41,18 +41,18 @@ describe('TenantPrismaManager', () => {
     });
     const manager = new TenantPrismaManager(factory);
 
-    manager.getClient('tenant-a');
-    manager.getClient('tenant-b');
-    manager.getClient('tenant-c');
+    manager.getClient('11111111-1111-4111-8111-111111111111');
+    manager.getClient('22222222-2222-4222-8222-222222222222');
+    manager.getClient('33333333-3333-4333-8333-333333333333');
 
     expect(manager.getStats().tenants).toBe(2);
-    expect(clients['tenant-a'].$disconnect).toHaveBeenCalled();
+    expect(clients['11111111-1111-4111-8111-111111111111'].$disconnect).toHaveBeenCalled();
   });
 
   it('prunes idle clients and disconnects them', () => {
     const factory = jest.fn(() => fakeClient());
     const manager = new TenantPrismaManager(factory);
-    const client = manager.getClient('tenant-a');
+    const client = manager.getClient('11111111-1111-4111-8111-111111111111');
 
     const removed = manager.pruneIdle(Date.now() + 20_000);
 
@@ -66,5 +66,33 @@ describe('TenantPrismaManager', () => {
     expect(() => manager.getClient('')).toThrow(
       'TenantPrismaManager requires a tenantId',
     );
+  });
+
+  it('rejects a non-UUID tenant id', () => {
+    const manager = new TenantPrismaManager(() => fakeClient());
+    expect(() => manager.getClient('tenant-a')).toThrow(
+      'TenantPrismaManager requires a UUID tenantId',
+    );
+    expect(() => manager.getClient('not-a-uuid')).toThrow(
+      'TenantPrismaManager requires a UUID tenantId',
+    );
+  });
+
+  it('rejects a Postgres option-injection attempt in the tenant id', () => {
+    // The tenant id is interpolated into the pg Pool `options` string
+    // (`-c app.tenant_id=<id>`); a value with spaces could inject `-c`
+    // settings. The UUID assertion closes that vector.
+    const manager = new TenantPrismaManager(() => fakeClient());
+    expect(() =>
+      manager.getClient('11111111-1111-4111-8111-111111111111 -c log_statement=all'),
+    ).toThrow('TenantPrismaManager requires a UUID tenantId');
+  });
+
+  it('accepts the fallback tenant UUID', () => {
+    const factory = jest.fn(() => fakeClient());
+    const manager = new TenantPrismaManager(factory);
+    const client = manager.getClient('00000000-0000-4000-8000-000000000000');
+    expect(client).toBeDefined();
+    expect(factory).toHaveBeenCalledTimes(1);
   });
 });

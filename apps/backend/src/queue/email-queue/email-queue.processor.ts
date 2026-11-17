@@ -1,10 +1,11 @@
 import { Processor } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailJob } from './email-queue.service';
 import { TenantWorkerHost } from '../../tenancy/tenant-job';
+import { TenantRegistryService } from '../../tenancy/tenant-registry.service';
 
 const SMTP_KEYS = [
   'smtp_host',
@@ -19,8 +20,11 @@ const SMTP_KEYS = [
 export class EmailQueueProcessor extends TenantWorkerHost<EmailJob> {
   private readonly logger = new Logger(EmailQueueProcessor.name);
 
-  constructor(private prisma: PrismaService) {
-    super();
+  constructor(
+    private prisma: PrismaService,
+    @Optional() tenantRegistry?: TenantRegistryService,
+  ) {
+    super(tenantRegistry);
   }
 
   protected async handle(job: Job<EmailJob>): Promise<void> {

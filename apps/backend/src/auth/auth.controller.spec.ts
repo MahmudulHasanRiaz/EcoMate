@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ForbiddenException } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { SecurityService } from '../security/security.service';
@@ -20,6 +21,7 @@ describe('AuthController — me() permission fallback', () => {
     me: jest.fn(),
     adminLogin: jest.fn(),
     impersonate: jest.fn(),
+    changePassword: jest.fn().mockResolvedValue({ message: 'ok' }),
     computePermissionsForUser: jest.fn(async (user: any) => {
       const role = user.role || 'customer';
       if (role === 'superadmin' || role === 'admin') {
@@ -259,5 +261,26 @@ describe('AuthController — me() permission fallback', () => {
       '/admin/sign-in?impersonation=failed',
     );
     expect(res.send).toHaveBeenCalled();
+  });
+
+  it('blocks password changes during an impersonated session', async () => {
+    await expect(
+      controller.changePassword(
+        { userId: 'user-1', impersonated: true } as any,
+        { currentPassword: 'old', newPassword: 'new-password-123' } as any,
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockAuthService.changePassword).not.toHaveBeenCalled();
+  });
+
+  it('allows password changes for ordinary sessions', async () => {
+    await controller.changePassword(
+      { userId: 'user-1' } as any,
+      { currentPassword: 'old', newPassword: 'new-password-123' } as any,
+    );
+    expect(mockAuthService.changePassword).toHaveBeenCalledWith(
+      'user-1',
+      { currentPassword: 'old', newPassword: 'new-password-123' },
+    );
   });
 });

@@ -84,7 +84,17 @@ apply_reconcile() {
 
 # --- Failed migration detection -------------------------------------------------
 # Returns unique migration names (deduplicates if same name appears multiple times).
+# Fresh database: `_prisma_migrations` does not exist yet (migrate deploy
+# creates it on its first run). No failed migration can exist, so return
+# empty instead of failing — otherwise the backend cannot boot on a fresh
+# database at all (the query errors, `set -e` aborts startup before migrate
+# deploy ever runs). Proven live on the SaaS first-deploy path, 2026-11-17.
 failed_migrations() {
+  if ! psql "$DATABASE_URL" -tAc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '_prisma_migrations';" \
+    | grep -q 1; then
+    return 0
+  fi
   psql "$DATABASE_URL" -tAc \
     'SELECT DISTINCT migration_name FROM "_prisma_migrations"
      WHERE "started_at" IS NOT NULL AND "finished_at" IS NULL
@@ -841,6 +851,19 @@ recover_type_conflict() {
 resolve_failed() {
   # Step 0a: pgcrypto must exist before any migration DDL runs.
   ensure_pgcrypto
+
+  # Fresh database (no migration history yet): there is nothing to heal —
+  # `migrate deploy` builds the schema from the baseline migration. The
+  # reconcile step CREATEs base tables, which would make the schema
+  # non-empty and make migrate deploy refuse with P3005 ("database schema
+  # is not empty"). Skip the self-heal entirely on a fresh DB.
+  # Proven live on the SaaS first-deploy path, 2026-11-17.
+  if ! psql "$DATABASE_URL" -tAc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '_prisma_migrations';" \
+    | grep -q 1; then
+    echo "[Startup] Fresh database (no migration history) — skipping self-heal; migrate deploy will build the schema."
+    return 0
+  fi
 
   # Step 0: Fix P2039 FK constraint (must happen before reconciliation)
   fix_p2039

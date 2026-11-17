@@ -37,6 +37,35 @@ export function clearHostResolutionCache(): void {
   hostCache.clear();
 }
 
+/**
+ * Cache a host→tenant verdict, evicting instead of clearing when full.
+ *
+ * A burst of distinct custom hosts used to hit the 1,000-entry cap and
+ * `clear()` the entire cache — collapsing every cached verdict at once and
+ * re-flooding `/tenants/resolve` (thundering herd). Now expired entries go
+ * first; if the cache is still full, only the oldest-inserted entry is
+ * evicted. Map insertion order is the eviction order.
+ */
+function cacheHostResolution(
+  host: string,
+  result: TenantResolvePayload | null,
+): void {
+  if (!hostCache.has(host) && hostCache.size >= HOST_CACHE_MAX) {
+    const now = Date.now();
+    for (const [key, entry] of hostCache) {
+      if (entry.expiresAt <= now) hostCache.delete(key);
+    }
+    if (hostCache.size >= HOST_CACHE_MAX) {
+      const oldest = hostCache.keys().next().value;
+      if (oldest !== undefined) hostCache.delete(oldest);
+    }
+  }
+  hostCache.set(host, {
+    expiresAt: Date.now() + HOST_CACHE_TTL_MS,
+    result,
+  });
+}
+
 function isAliasExempt(pathname: string): boolean {
   return ALIAS_EXEMPT_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
@@ -95,11 +124,7 @@ async function lookupTenantHost(
     );
 
     if (response.status === 404) {
-      if (hostCache.size >= HOST_CACHE_MAX) hostCache.clear();
-      hostCache.set(host, {
-        expiresAt: Date.now() + HOST_CACHE_TTL_MS,
-        result: null,
-      });
+      cacheHostResolution(host, null);
       return { answered: true, result: null };
     }
 
@@ -118,11 +143,7 @@ async function lookupTenantHost(
       canonicalHost: body.canonicalHost,
       isAlias: body.isAlias,
     };
-    if (hostCache.size >= HOST_CACHE_MAX) hostCache.clear();
-    hostCache.set(host, {
-      expiresAt: Date.now() + HOST_CACHE_TTL_MS,
-      result,
-    });
+    cacheHostResolution(host, result);
     return { answered: true, result };
   } catch {
     return { answered: false, result: null };
@@ -187,6 +208,25 @@ export async function proxy(request: NextRequest) {
   const slug = resolved?.slug || baseResolution?.slug;
   if (slug) requestHeaders.set("x-tenant-slug", slug);
 
+  // /api/* requests are rewritten to the backend by next.config
+  // (standalone storefronts without Caddy path-routing, incl. the local
+  // harness). The rewrite replaces Host with the backend origin, so the
+  // backend cannot resolve the tenant from it — it must trust the
+  // x-tenant-host override, which it only does together with the internal
+  // secret from a private peer. Without this, every tenant API call
+  // through the rewrite 403s ("Tenant context is required"). The secret
+  // is set here, server-side, by the middleware: the browser never sees
+  // it, and it only travels storefront → backend over the private
+  // network — the same trust model as serverFetch. (In production Caddy
+  // routes /api/* to the backend before the storefront, so the rewrite
+  // path is inert there.) Side effect: rewritten browser calls count as
+  // internal and are exempt from the backend's adaptive rate limiter,
+  // exactly like SSR fetches.
+  if (pathname === "/api" || pathname.startsWith("/api/")) {
+    const secret = process.env.INTERNAL_SHARED_SECRET;
+    if (secret) requestHeaders.set("x-internal-secret", secret);
+  }
+
   // Apply strict CSP only to landing pages.
   // NOTE — CSP is defense-in-depth here, DOMPurify is the control: the
   // platform's own SDK is an inline script, so script-src must keep
@@ -228,7 +268,12 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except the paths that must keep answering on aliases and
-  // Next's own immutable build assets.
-  matcher: ["/((?!api|_next|uploads|assets).*)"],
+  // Everything except Next's own immutable build assets. /api IS included
+  // on purpose: the proxy injects x-tenant-host + the internal secret for
+  // /api/* requests, which the next.config rewrite needs to carry the
+  // tenant to the backend (the rewrite replaces Host with the backend
+  // origin). /api stays alias-exempt — no redirect, no registry lookup,
+  // no 404 — via ALIAS_EXEMPT_PREFIXES, so including it here only adds
+  // the header injection, not host gating.
+  matcher: ["/((?!_next|uploads|assets).*)"],
 };

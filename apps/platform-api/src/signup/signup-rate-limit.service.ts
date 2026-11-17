@@ -1,49 +1,35 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-
-const MAX_KEYS = 5_000;
+import { Injectable } from '@nestjs/common';
+import { RedisRateLimitService } from '../common/rate-limit/redis-rate-limit.service';
 
 /**
- * In-memory sliding-window limiter for the public signup endpoints.
+ * Sliding-window limiter for the public signup endpoints, backed by the
+ * shared Redis rate limiter (with an in-memory fallback when Redis is
+ * unreachable). Replaces the previous per-instance in-memory Map: two
+ * platform-api replicas no longer double the effective budget, and a
+ * restart no longer wipes the counters.
  *
- * Platform-api runs as a small control-plane service; a single instance with
- * this limiter is enough for launch, and the edge rate limit remains the first
- * line. Keys are per-IP and per-email so one attacker cannot exhaust another
+ * Keys are per-IP and per-email so one attacker cannot exhaust another
  * person's budget from a different address.
  */
 @Injectable()
 export class SignupRateLimitService {
-  private readonly hits = new Map<string, number[]>();
+  constructor(private readonly limiter: RedisRateLimitService) {}
 
-  consume(
-    key: string,
-    limit: number,
-    windowMs: number,
-    now = Date.now(),
-  ): boolean {
-    if (this.hits.size > MAX_KEYS) this.hits.clear();
-    const recent = (this.hits.get(key) ?? []).filter(
-      (at) => now - at < windowMs,
+  consume(key: string, limit: number, windowMs: number): Promise<boolean> {
+    return this.limiter.consume(key, limit, windowMs);
+  }
+
+  assert(key: string, limit: number, windowMs: number): Promise<void> {
+    return this.limiter.assert(
+      key,
+      limit,
+      windowMs,
+      'Too many signup attempts. Please try again later.',
     );
-    if (recent.length >= limit) {
-      this.hits.set(key, recent);
-      return false;
-    }
-    recent.push(now);
-    this.hits.set(key, recent);
-    return true;
   }
 
-  assert(key: string, limit: number, windowMs: number): void {
-    if (!this.consume(key, limit, windowMs)) {
-      throw new HttpException(
-        'Too many signup attempts. Please try again later.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-  }
-
-  /** Test helper — never used by the service itself. */
+  /** Test helper — clears the in-memory fallback only, never Redis. */
   reset(): void {
-    this.hits.clear();
+    this.limiter.reset();
   }
 }

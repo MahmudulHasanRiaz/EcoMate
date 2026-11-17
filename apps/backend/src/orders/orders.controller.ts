@@ -453,6 +453,10 @@ export class OrdersController {
     return this.svc.getStaff();
   }
 
+  // Staff-only: broadcasts every order event in the tenant (order.created /
+  // status_changed / trashed / restored with full payloads). A customer
+  // subscribing here would see other customers' orders.
+  @Roles('superadmin', 'admin', 'employee')
   @RateLimitPolicy('api')
   @Get('stream/updates')
   @Sse()

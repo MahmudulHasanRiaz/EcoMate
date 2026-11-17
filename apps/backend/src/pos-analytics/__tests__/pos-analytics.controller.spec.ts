@@ -1,4 +1,4 @@
-import { BadRequestException, StreamableFile } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, StreamableFile } from '@nestjs/common';
 import { PosAnalyticsController } from '../pos-analytics.controller';
 
 describe('PosAnalyticsController', () => {
@@ -44,5 +44,17 @@ describe('PosAnalyticsController', () => {
           'attachment; filename="POS-Sales-s-2026-09-01_2026-09-30.xlsx"',
       }),
     );
+  });
+
+  it('blocks the export during an impersonated session', async () => {
+    await expect(
+      ctl.export(
+        'sess-1',
+        { ...user, impersonated: true } as any,
+        { scope: 'showroom' } as any,
+        undefined,
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(svc.buildExport).not.toHaveBeenCalled();
   });
 });

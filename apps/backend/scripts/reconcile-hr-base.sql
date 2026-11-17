@@ -416,12 +416,40 @@ EXCEPTION WHEN undefined_column THEN null;
 END $$;
 
 -- ---- Unique indexes + relation indexes (create-if-absent) --------------------
-CREATE UNIQUE INDEX IF NOT EXISTS "AccessPreset_name_key" ON "AccessPreset"("name");
-CREATE UNIQUE INDEX IF NOT EXISTS "Department_name_key" ON "Department"("name");
-CREATE UNIQUE INDEX IF NOT EXISTS "Department_slug_key" ON "Department"("slug");
-CREATE UNIQUE INDEX IF NOT EXISTS "Designation_name_key" ON "Designation"("name");
-CREATE UNIQUE INDEX IF NOT EXISTS "Designation_slug_key" ON "Designation"("slug");
-CREATE UNIQUE INDEX IF NOT EXISTS "Employee_employeeId_key" ON "Employee"("employeeId");
+-- Phase 8 (multi-tenant): the GLOBAL unique indexes on AccessPreset.name,
+-- Department.name/slug, Designation.name/slug and Employee.employeeId were
+-- single-tenant leftovers and are DELETED here (they used to be created
+-- below). Two tenants may both have a "Manager" preset, a "Sales"
+-- department, or employee "EMP-001": a global unique breaks the second
+-- tenant's insert, and breaks every backend boot once two tenants share a
+-- value (CREATE UNIQUE fails on the duplicate rows -> [Startup] FATAL).
+-- Uniqueness is enforced per tenant by the composite keys the SaaS
+-- migrations created (e.g. AccessPreset_tenant_id_name_key). The DROPs heal
+-- databases where the globals were already created; each DROP runs only
+-- when its composite exists, so a pre-migration database never loses its
+-- only uniqueness enforcement.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'AccessPreset_tenant_id_name_key') THEN
+    DROP INDEX IF EXISTS "AccessPreset_name_key";
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'Department_tenant_id_name_key') THEN
+    DROP INDEX IF EXISTS "Department_name_key";
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'Department_tenant_id_slug_key') THEN
+    DROP INDEX IF EXISTS "Department_slug_key";
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'Designation_tenant_id_name_key') THEN
+    DROP INDEX IF EXISTS "Designation_name_key";
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'Designation_tenant_id_slug_key') THEN
+    DROP INDEX IF EXISTS "Designation_slug_key";
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'Employee_tenant_id_employeeId_key') THEN
+    DROP INDEX IF EXISTS "Employee_employeeId_key";
+  END IF;
+END $$;
+-- betterAuthUserId stays globally unique: the schema declares it @unique
+-- (a Better Auth user id belongs to exactly one employee, in one tenant).
 CREATE UNIQUE INDEX IF NOT EXISTS "Employee_betterAuthUserId_key" ON "Employee"("betterAuthUserId");
 CREATE INDEX IF NOT EXISTS "Employee_departmentId_idx" ON "Employee"("departmentId");
 CREATE INDEX IF NOT EXISTS "Employee_designationId_idx" ON "Employee"("designationId");

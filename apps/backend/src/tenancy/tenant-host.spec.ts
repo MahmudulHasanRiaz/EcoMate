@@ -37,6 +37,37 @@ describe('tenant host resolution', () => {
     });
   });
 
+  it('resolves an alias base that is itself a subdomain of the primary', () => {
+    const nested = readTenantDomainConfig({
+      SAAS_PRIMARY_DOMAIN: 'ecomate.bd',
+      SAAS_BASE_DOMAINS: 'ecomate.bd,shop.ecomate.bd',
+      SAAS_CUSTOM_DOMAIN_CNAME: 'cname.ecomate.bd',
+    } as NodeJS.ProcessEnv);
+    // `shop.ecomate.bd` ends with `.ecomate.bd`, so a naive first-match
+    // parse leaves the dotted slug `acme.shop` — the resolver must try
+    // the longer base instead of giving up (E8 found this live: the alias
+    // host 404d instead of redirecting to canonical).
+    expect(resolveTenantHost('acme.shop.ecomate.bd', nested)).toEqual({
+      kind: 'tenant',
+      slug: 'acme',
+      baseDomain: 'shop.ecomate.bd',
+      canonicalHost: 'acme.ecomate.bd',
+      isAlias: true,
+    });
+    // Reserved slugs stay rejected on the nested base too.
+    expect(resolveTenantHost('admin.shop.ecomate.bd', nested)).toEqual({
+      kind: 'unknown',
+      host: 'admin.shop.ecomate.bd',
+    });
+    // A genuinely multi-label slug under a base is unknown — it must NOT
+    // fall through to 'custom', or it could be attached as a custom domain
+    // under our own base.
+    expect(resolveTenantHost('foo.bar.ecomate.bd', nested)).toEqual({
+      kind: 'unknown',
+      host: 'foo.bar.ecomate.bd',
+    });
+  });
+
   it('resolves platform hosts and rejects reserved tenant slugs', () => {
     expect(resolveTenantHost('saas.ecomate.bd', config)).toMatchObject({
       kind: 'platform',

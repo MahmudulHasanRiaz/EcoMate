@@ -42,12 +42,32 @@ export interface SecureFetchResult {
   mimeType: string;
 }
 
+/** Raw pinned fetch: no content validation, for callers (media ingest) that
+ * accept non-image content (video) and validate it themselves. */
+export interface SecureFetchRawResult {
+  buffer: Buffer;
+  contentType: string;
+  statusCode: number;
+  /** URL actually fetched, after following redirects. */
+  finalUrl: string;
+}
+
 export interface SecureFetchOptions {
   totalTimeoutMs?: number;
   maxRedirects?: number;
   maxBytes?: number;
   limitInputPixels?: number;
 }
+
+export interface SecureFetchRawOptions extends SecureFetchOptions {
+  /** Defaults to the image-service UA; media ingest passes a browser UA. */
+  userAgent?: string;
+  /** Defaults to the image accept list; media ingest adds video/*. */
+  accept?: string;
+}
+
+const DEFAULT_USER_AGENT = 'EcoMateImageService/1.0';
+const DEFAULT_ACCEPT = 'image/webp,image/avif,image/*,*/*';
 
 // Image magic bytes for format identification
 const IMAGE_MAGIC: Array<{ offset: number; bytes: number[]; mime: string }> = [
@@ -112,6 +132,8 @@ function buildRequestOptions(
   pinnedAddr: string,
   parsed: URL,
   deadline: AbortController,
+  userAgent: string,
+  accept: string,
 ): [http.RequestOptions, 'http:' | 'https:'] {
   const isHttps = parsed.protocol === 'https:';
   const port = parsed.port ? parseInt(parsed.port, 10) : isHttps ? 443 : 80;
@@ -138,8 +160,8 @@ function buildRequestOptions(
     signal: deadline.signal,
     timeout: 10_000,
     headers: {
-      Accept: 'image/webp,image/avif,image/*,*/*',
-      'User-Agent': 'EcoMateImageService/1.0',
+      Accept: accept,
+      'User-Agent': userAgent,
     },
     agent: false,
   };
@@ -187,35 +209,58 @@ export class SecureFetcher {
     url: string,
     opts: SecureFetchOptions = {},
   ): Promise<SecureFetchResult> {
+    const raw = await this.fetchRaw(url, opts);
+    // Validate image: magic bytes + sharp metadata
+    return validateImageBuffer(raw.buffer, opts.limitInputPixels);
+  }
+
+  /**
+   * DNS-pinned fetch without image validation. Same TOCTOU-proof core as
+   * fetch(): every hop resolves + pins its IP, the socket's connected
+   * address must match the pinned address, redirects re-pin per hop and
+   * never downgrade https → http. Callers validate the bytes themselves.
+   */
+  async fetchRaw(
+    url: string,
+    opts: SecureFetchRawOptions = {},
+  ): Promise<SecureFetchRawResult> {
     const totalTimeoutMs = opts.totalTimeoutMs ?? 15_000;
     const maxRedirects = opts.maxRedirects ?? 5;
     const maxBytes = opts.maxBytes ?? 20 * 1024 * 1024;
-    const limitInputPixels = opts.limitInputPixels ?? 16_777_216;
 
     const deadline = new AbortController();
     const deadlineTimer = setTimeout(
-      () => deadline.abort(new Error('Image fetch deadline exceeded')),
+      () => deadline.abort(new Error('Fetch deadline exceeded')),
       totalTimeoutMs,
     );
 
     try {
-      return await this.fetchWithRedirects(url, 0, maxRedirects, maxBytes, limitInputPixels, deadline);
+      return await this.fetchRawWithRedirects(
+        url,
+        0,
+        maxRedirects,
+        maxBytes,
+        opts.userAgent ?? DEFAULT_USER_AGENT,
+        opts.accept ?? DEFAULT_ACCEPT,
+        deadline,
+      );
     } finally {
       clearTimeout(deadlineTimer);
       try { deadline.abort(); } catch { /* ignore */ }
     }
   }
 
-  private async fetchWithRedirects(
+  private async fetchRawWithRedirects(
     url: string,
     depth: number,
     maxRedirects: number,
     maxBytes: number,
-    limitInputPixels: number,
+    userAgent: string,
+    accept: string,
     deadline: AbortController,
-  ): Promise<SecureFetchResult> {
+  ): Promise<SecureFetchRawResult> {
     if (depth > maxRedirects) throw new Error('Too many redirects');
-    if (deadline.signal.aborted) throw new Error('Image fetch deadline exceeded');
+    if (deadline.signal.aborted) throw new Error('Fetch deadline exceeded');
 
     const parsed = validateImageUrl(url);
     const hostname = parsed.hostname;
@@ -226,10 +271,17 @@ export class SecureFetcher {
       deadline.signal,
     );
 
-    if (deadline.signal.aborted) throw new Error('Image fetch deadline exceeded');
+    if (deadline.signal.aborted) throw new Error('Fetch deadline exceeded');
 
     // Build request options with pinned connection
-    const [options, protocol] = buildRequestOptions(hostname, pinnedAddr, parsed, deadline);
+    const [options, protocol] = buildRequestOptions(
+      hostname,
+      pinnedAddr,
+      parsed,
+      deadline,
+      userAgent,
+      accept,
+    );
 
     const { response, connectedAddress } = await raceSignal(
       this.httpTransport.request(options, protocol),
@@ -276,12 +328,13 @@ export class SecureFetcher {
         throw new Error('Protocol downgrade on redirect rejected');
       }
 
-      return this.fetchWithRedirects(
+      return this.fetchRawWithRedirects(
         redirectUrl.toString(),
         depth + 1,
         maxRedirects,
         maxBytes,
-        limitInputPixels,
+        userAgent,
+        accept,
         deadline,
       );
     }
@@ -309,7 +362,7 @@ export class SecureFetcher {
     for await (const chunk of response) {
       if (deadline.signal.aborted) {
         response.destroy();
-        throw new Error('Image fetch deadline exceeded');
+        throw new Error('Fetch deadline exceeded');
       }
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       total += buf.length;
@@ -321,9 +374,10 @@ export class SecureFetcher {
     }
 
     const raw = Buffer.concat(chunks);
-
-    // Validate image: magic bytes + sharp metadata
-    const validated = await validateImageBuffer(raw, limitInputPixels);
-    return validated;
+    const contentType =
+      typeof response.headers['content-type'] === 'string'
+        ? response.headers['content-type']
+        : 'application/octet-stream';
+    return { buffer: raw, contentType, statusCode, finalUrl: url };
   }
 }

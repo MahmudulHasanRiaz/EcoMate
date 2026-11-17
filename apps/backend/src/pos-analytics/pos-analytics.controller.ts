@@ -10,6 +10,7 @@ import { PosAnalyticsService } from './pos-analytics.service';
 import { PosAnalyticsQueryDto } from './dto/pos-analytics-query.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { assertNotImpersonated } from '../common/utils/impersonation';
 
 @Controller('pos/analytics')
 export class PosAnalyticsController {
@@ -67,6 +68,9 @@ export class PosAnalyticsController {
     @Query() query: PosAnalyticsQueryDto,
     @Query('showroomId') forgedShowroomId: string | undefined,
   ) {
+    // Bulk data export is blocked during impersonation: an impersonated
+    // session is for support, not for exfiltrating tenant data.
+    assertNotImpersonated(user, 'Data exports');
     const { buffer, filename } = await this.svc.buildExport(
       this.requestOf(sessionId, user, query, forgedShowroomId),
     );

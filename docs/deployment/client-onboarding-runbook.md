@@ -1,5 +1,18 @@
 # Client Onboarding — Operator Runbook
 
+> **OBSOLETE FOR SAAS — DO NOT FOLLOW FOR NEW TENANTS.** This runbook
+> documents the archived per-client deployment model (one Portainer stack
+> per client, EcoMate-Web repo, `deploy-client.yml`). The SaaS product is
+> ONE stack serving all tenants from the EcoMate repo — there is no
+> per-client VPS, no per-client Portainer stack, and no Deploy Client
+> workflow for a SaaS tenant. For SaaS operations, use the runbooks in
+> `docs/saas/runbooks/` (provisioning failure, payment backlog, tenant
+> suspension, custom-domain failure, domain/fallback outage, DB restore)
+> and `docs/portainer-deployment.md` for the live deploy procedure. The
+> steps below are kept for historical reference for the still-running
+> per-client stacks only, until the old-repo archive/LTS decision
+> (Phase 8 item 8) is made.
+
 Step-by-step guide for onboarding a new paid client from contract to live deployment.
 
 ## Prerequisites

@@ -53,6 +53,24 @@ describe('SafeImage', () => {
     expect(image().getAttribute('src')).toBe(blur)
   })
 
+  it('builds relative resize URLs for uploads (tenant host preserved)', async () => {
+    const view = await render(
+      <SafeImage
+        src='/uploads/t/tenant-id/photo.png'
+        alt='Product'
+        thumbWidth={40}
+        thumbHeight={40}
+      />
+    )
+    const image = view.container.querySelector('img') as HTMLImageElement
+    // Relative: the dev proxy and production Caddy route /api to the
+    // backend with the tenant Host. An absolute localhost:4000 URL drops
+    // the tenant host and the backend 403s the resize.
+    expect(image.getAttribute('src')).toBe(
+      '/api/images/resize?path=%2Fuploads%2Ft%2Ftenant-id%2Fphoto.png&w=40&h=40'
+    )
+  })
+
   it('resets the failure state when the resolved source changes', async () => {
     const view = await render(
       <SafeImage
