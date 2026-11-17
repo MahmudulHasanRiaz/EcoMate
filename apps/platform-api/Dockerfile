@@ -40,9 +40,11 @@ RUN npm run build
 # the files were present.
 RUN cp -r src/generated dist/src/generated && chmod -R a+rX dist/src/generated
 
-# NOTE: no obfuscator stage (unlike the backend). The platform API holds
-# control-plane logic (billing, audit); readable stack traces matter more
-# here than obfuscation. Phase 8 decision D15.
+# NOTE: no obfuscator stage anywhere in the SaaS images. Obfuscation was
+# a single-tenant measure (code shipped to clients' servers); in the SaaS
+# model the code never leaves our servers, so it only slowed builds and
+# mangled stack traces. Removed from the backend 2026-11-17 (Boss decision,
+# post-Phase-8); the platform API never had one (Phase 8 decision D15).
 FROM node:24.22.1-alpine AS runner
 WORKDIR /app
 RUN apk add --no-cache postgresql-client && \

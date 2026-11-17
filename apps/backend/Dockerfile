@@ -26,27 +26,17 @@ WORKDIR /app/apps/backend
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:24.22.1-alpine AS obfuscator
-WORKDIR /app
-RUN --mount=type=cache,target=/root/.npm npm install -g javascript-obfuscator@^4.1.1
-COPY --from=builder /app/apps/backend/dist ./dist
-COPY apps/backend/obfuscator.config.json ./
-RUN javascript-obfuscator dist/ \
-    --output dist-obfuscated/ \
-    --config obfuscator.config.json && \
-    rm -rf dist && \
-    mv dist-obfuscated dist
-# Restore non-JS data files lost during obfuscation
-COPY --from=builder /app/apps/backend/dist ./dist-base
-RUN cp -r dist-base/feed/data/ dist/feed/data/ 2>/dev/null; rm -rf dist-base
-
+# NOTE: no obfuscator stage. JS obfuscation was a single-tenant measure
+# (code shipped to clients' servers); in the SaaS model the code never
+# leaves our servers, so obfuscation only slowed the build and mangled
+# stack traces. Removed 2026-11-17 (Boss decision, post-Phase-8).
 FROM node:24.22.1-alpine AS runner
 WORKDIR /app
 RUN apk add --no-cache unzip postgresql-client && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=obfuscator /app/dist ./dist
+COPY --from=builder /app/apps/backend/dist ./dist
 COPY --from=builder /app/apps/backend/prisma ./prisma
 # prisma/seed.ts imports the shared order-transition map from src (single
 # source of truth with the runtime gate). tsx transpiles it on demand, so the

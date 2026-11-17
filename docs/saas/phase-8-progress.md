@@ -406,3 +406,9 @@ Stage 3 (Boss prep: the 15 decisions in design doc §F, DNS, VPS check,
 secrets) and Stage 4 (staging deploy via Boss's Chrome + hands-on
 staging E2E, incl. E6/E10 on real DNS) — both need Boss and are NOT
 started. Do not start them without Boss.
+
+## Post-Phase-8 follow-ups (2026-11-17)
+
+- **Build Images run #3** (commit 8e404ee, 18m 4s): all 8 images built and pushed to GHCR; unit tests fully passed; guards + RLS gates + caddy validate passed. Only the OSV security scan failed — one real Medium finding: Next.js 16.4.1, GHSA-mfr8-8qww-v76h (CVSS 6.3), fixed in 16.4.5. Fixed by bumping `next` 16.4.1 → 16.4.5 in storefront + landing (+ lockfile).
+- **JS obfuscation removed** (Boss decision, 2026-11-17): it was a single-tenant measure (code shipped to clients' servers). In the SaaS model the code never leaves our servers, so obfuscation only slowed the backend build and mangled stack traces. Removed the `obfuscator` stage from `apps/backend/Dockerfile` (backend is 2-stage again), deleted `apps/backend/obfuscator.config.json`, updated the platform-api D15 comment + README. Frontend minification (Next/Vite defaults) is unchanged.
+- **No unnecessary rebuilds** (Boss, 2026-11-17): GHA layer caching (`cache-from`/`cache-to`, `mode=max`, per-service scope) was already wired in `build-service-image.yml` — run #3 was the first run where all 8 builds actually ran, so it populated the cache from scratch. From run #4 on, images whose inputs did not change rebuild from cache in seconds. The stale "per-service path filtering" comment in `build-service-image.yml` was corrected (ci.yml is dispatch-only with per-service toggles; there is no path filtering).

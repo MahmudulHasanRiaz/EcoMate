@@ -54,12 +54,12 @@ EcoMate Web/
 | **Validation** | Zod, class-validator, class-transformer |
 | **Testing** | Vitest (admin/storefront), Jest (backend), Playwright (browser tests) |
 | **CI/CD** | GitHub Actions → ghcr.io → Portainer webhook |
-| **Containerization** | Docker (3-stage backend with JS obfuscation, 2-stage storefront & admin) |
+| **Containerization** | Docker (2-stage backend, storefront & admin) |
 | **Reverse Proxy** | Traefik (VPS) or Nginx (admin Docker image) |
 | **Email** | Nodemailer |
 | **File Storage** | AWS S3 + local uploads via sharp |
 | **Entitlements** | SaaS plan features from the platform control plane |
-| **Security** | Helmet (Fastify), rate limiting, JS obfuscation, CSP headers, account lockout |
+| **Security** | Helmet (Fastify), rate limiting, CSP headers, account lockout |
 
 ## Applications
 
@@ -279,9 +279,9 @@ npx prisma generate
 - Secrets at rest (attendance device credentials, marketing OAuth tokens) use
   AES-256-GCM with `APP_ENCRYPTION_KEY`.
 
-## Obfuscation
+## Obfuscation (removed)
 
-Backend Docker build applies `javascript-obfuscator` (control flow flattening, string array encoding, dead code injection, self-defending). Config: `apps/backend/obfuscator.config.json`.
+The single-tenant backend Docker build used to apply `javascript-obfuscator`. It was removed in the SaaS conversion (2026-11-17, Boss decision): the code never leaves our servers, so obfuscation only slowed the build and mangled stack traces. Frontend apps still ship minified bundles (Next/Vite defaults).
 
 ## Docs
 
@@ -309,7 +309,6 @@ Backend Docker build applies `javascript-obfuscator` (control flow flattening, s
 - **API-first** — core commerce should not depend on realtime
 - **Migration safety** — every schema change gets a migration file; production migrations must be idempotent (all `IF NOT EXISTS`), zero destructive ops
 - **Tests required** for critical flows (checkout, payment, inventory, orders, auth, RBAC, refunds)
-- **JS obfuscation** applied to backend production builds only
 
 ## Multi-Tenancy
 
