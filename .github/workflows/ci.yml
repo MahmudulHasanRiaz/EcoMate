@@ -230,14 +230,18 @@ jobs:
         run: npm audit --audit-level=high
 
       - name: OSV scan (all lockfiles)
-        uses: google/osv-scanner-action@v2
+        # Pinned: google/osv-scanner-action has NO floating `v2` tag
+        # (latest is v2.7.1) — @v2 fails resolution and kills the job.
+        uses: google/osv-scanner-action@v2.7.1
         with:
           scan-args: |-
             --recursive
             .
 
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
+        # Pinned: gitleaks-action has NO floating `v2` tag either
+        # (only `v3` floats; latest v2 is v2.3.9).
+        uses: gitleaks/gitleaks-action@v2.3.9
 
   # Edge config gate. Catches Caddyfile syntax errors before they reach the
   # VPS (a bad Caddyfile takes the whole stack's public edge down).
