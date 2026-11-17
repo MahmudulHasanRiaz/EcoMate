@@ -252,7 +252,10 @@ jobs:
       - name: OSV scan (all lockfiles)
         # Pinned: google/osv-scanner-action has NO floating `v2` tag
         # (latest is v2.7.1) — @v2 fails resolution and kills the job.
-        uses: google/osv-scanner-action@v2.7.1
+        # Subdirectory path: since the v2 restructure the repo is a monorepo
+        # and the ROOT action.yml has no `runs:` section — the runnable
+        # action lives in osv-scanner-action/ (run #2 failed on the root).
+        uses: google/osv-scanner-action/osv-scanner-action@v2.7.1
         with:
           scan-args: |-
             --recursive
