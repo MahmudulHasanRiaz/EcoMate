@@ -8,7 +8,7 @@ name: Perf Budgets
 # that touch the storefront. It is deliberately narrow:
 #   - it builds ONLY the storefront and runs a deterministic budget script
 #     against that PR's own build output (no deployed site is measured);
-#   - it changes nothing about ci.yml / Build Images / Deploy Client.
+#   - it changes nothing about ci.yml / Build Images / Deploy SaaS.
 # The `lighthouse` job stays MANUAL (workflow_dispatch), because Lighthouse
 # against the staging URL measures already-deployed code — it cannot grade
 # a PR's own change, so it must never gate one. See .lighthouserc.js.

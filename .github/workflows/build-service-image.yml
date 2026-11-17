@@ -1,10 +1,11 @@
 name: Build service image
 
-# Shared build logic for one service image (called by ci.yml with per-service
-# path filtering, so a push rebuilds ONLY the images whose inputs changed).
-# Behaviour is identical to the old matrix job: Buildx (docker-container
-# driver for amd64 emulation on the arm64 runner) → push to GHCR with
-# `latest` + short-sha tags → GHA layer cache scoped per service.
+# Shared build logic for one service image (called by ci.yml; the dispatch
+# form's per-service toggles select which images build).
+# Buildx (docker-container driver for amd64 emulation on the arm64 runner)
+# → push to GHCR with `latest` + short-sha tags → GHA layer cache scoped
+# per service, so an image whose inputs did not change rebuilds from cache
+# in seconds instead of from scratch.
 on:
   workflow_call:
     inputs:
