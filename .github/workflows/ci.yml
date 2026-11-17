@@ -158,6 +158,15 @@ jobs:
           docker rm -f ci-rls-pg 2>/dev/null || true
           # Throwaway password for a disposable container (removed below).
           docker run -d --name ci-rls-pg -e POSTGRES_PASSWORD=ci-rls-only -e POSTGRES_DB=ecomate_rls_ci -p 55433:5432 postgres:16-alpine
+          # The postgres entrypoint runs a TEMPORARY server during init, then
+          # shuts it down and starts the real one — pg_isready alone can pass
+          # against the temp server, and the next step then hits
+          # "FATAL: the database system is shutting down" (run #1). Wait for
+          # the init process to finish before checking readiness.
+          for i in $(seq 1 90); do
+            docker logs ci-rls-pg 2>&1 | grep -q "init process complete" && break
+            sleep 1
+          done
           for i in $(seq 1 60); do
             docker exec ci-rls-pg pg_isready -U postgres && break
             sleep 1
@@ -166,13 +175,24 @@ jobs:
 
       - name: Create app role
         run: |
-          docker exec -i ci-rls-pg psql -U postgres -d ecomate_rls_ci -v ON_ERROR_STOP=1 <<'SQL'
+          # Retry loop: belt-and-braces against the entrypoint restart window
+          # (run #1 failed here on the first connection attempt).
+          cat > /tmp/create-app-role.sql <<'SQL'
           DO $$ BEGIN
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ecomate_tenant_app') THEN
               CREATE ROLE ecomate_tenant_app LOGIN;
             END IF;
           END $$;
           SQL
+          for i in $(seq 1 30); do
+            docker cp /tmp/create-app-role.sql ci-rls-pg:/tmp/create-app-role.sql
+            if docker exec ci-rls-pg psql -U postgres -d ecomate_rls_ci -v ON_ERROR_STOP=1 -f /tmp/create-app-role.sql; then
+              break
+            fi
+            echo "Create app role attempt $i failed — retrying in 2s"
+            sleep 2
+            if [ "$i" = "30" ]; then echo "::error::Could not connect to disposable Postgres after 30 attempts"; exit 1; fi
+          done
 
       - name: Migrate disposable DB
         working-directory: apps/backend
@@ -261,10 +281,13 @@ jobs:
         run: docker run --rm -v "$PWD/portainer/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
   # Unit quality gate. Each suite runs only when its service was ticked.
-  # Backend jest excludes the two `.integration.spec.ts` files, which need a
-  # live database (verified: with a dead DATABASE_URL exactly those 2 suites
-  # fail, the other 3964 pass) — so this job never touches any database and
-  # cannot pollute dev data.
+  # Backend jest excludes the `.integration.spec.ts` files plus
+  # `tenant-runtime-isolation.spec.ts`, which need a live migrated database
+  # (the isolation spec says so in its own header; run #1 failed on it) —
+  # so this job never touches any database and cannot pollute dev data.
+  # Isolation is still covered live by the RLS gates job
+  # (rls_smoke_test.sql), and the excluded specs run in the full local
+  # suite with a live DB.
   unit:
     name: unit tests
     if: ${{ inputs.all == true || inputs.backend == true || inputs.storefront == true || inputs.admin == true || inputs.pos == true || inputs.platform-api == true || inputs.platform-admin == true || inputs.landing == true }}
@@ -293,7 +316,7 @@ jobs:
           npx tsc -p ../../packages/shared-types/tsconfig.json
           npx tsc -p ../../packages/feature-flags/tsconfig.json
           npx nest build
-          npx jest --no-coverage --testPathIgnorePatterns "integration"
+          npx jest --no-coverage --testPathIgnorePatterns "integration" "tenant-runtime-isolation"
 
       - name: Platform API unit tests
         if: inputs.all == true || inputs.platform-api == true
