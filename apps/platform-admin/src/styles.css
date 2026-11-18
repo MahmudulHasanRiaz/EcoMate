@@ -301,8 +301,9 @@ button {
 /* Collapsed sidebar = 64px icon rail (desktop only; mobile keeps the
    drawer). Labels hide, but the LAYOUT must not change on expand: the
    icon column stays left-aligned at the expanded padding (icons never
-   jump sideways), group labels use visibility:hidden so their row space
-   is preserved, and group dividers/spacing stay — so hovering the rail
+   jump sideways), group labels stay visible but small (9px, full rail
+   width — Boss, 2026-11-18: the rail felt empty without them) on their
+   pinned 18px row, and group dividers/spacing stay — so hovering the rail
    only reveals labels, and nothing on screen moves. (Position changes
    on expand are bad UX: the item under the cursor must stay put.)
    Hovering (or keyboard-focusing into) the rail temporarily expands the
@@ -338,10 +339,20 @@ button {
   .shell[data-nav-collapsed='true'] .nav-label {
     display: none;
   }
-  /* Group labels keep their row space (visibility, not display) and the
-     group dividers/spacing stay, so no row moves vertically on expand. */
+  /* Group labels STAY VISIBLE in the rail, small (Boss, 2026-11-18: the
+     rail felt empty without them). They use the full 64px rail width —
+     negative margins escape the sidebar's 12px padding — at 9px,
+     centred, with ellipsis for the longest name ("Administration").
+     The row keeps its 18px height (16px line-height + 2px padding),
+     so no row moves vertically on expand. */
   .shell[data-nav-collapsed='true'] .nav-group-label {
-    visibility: hidden;
+    font-size: 9px;
+    padding: 0 2px 2px;
+    margin: 0 calc(var(--em-space-3) * -1);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   /* The expansion is also gated on data-flyout-suppressed: after a toggle
      click the pointer still rests over the rail, and without the gate the
@@ -354,7 +365,13 @@ button {
   }
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:hover .nav-group-label,
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:focus-within .nav-group-label {
-    visibility: visible;
+    font-size: 12px;
+    padding: 0 var(--em-space-3) 2px;
+    margin: 0;
+    text-align: left;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
   }
 }
 
