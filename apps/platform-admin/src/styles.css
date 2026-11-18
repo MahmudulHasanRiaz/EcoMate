@@ -150,6 +150,10 @@ button {
   font-size: 16px;
   letter-spacing: -0.02em;
   padding: var(--em-space-1) var(--em-space-2);
+  /* Pinned: the name block (48.5px) is taller than the 28px logo, so
+     without this the row shrinks in the rail and every nav row below
+     jumps up on collapse. 49px covers the expanded height. */
+  min-height: 49px;
   color: var(--em-text);
 }
 .brand:hover {
@@ -226,10 +230,14 @@ button {
   display: flex;
   align-items: center;
   gap: var(--em-space-2);
+  /* Pinned: without the label's 20px line box the icon-only row would
+     be 24px in the rail vs 28px expanded, shifting every row below on
+     expand. The height must not depend on the label being visible. */
+  min-height: 28px;
   text-align: left;
   background: transparent;
   border: none;
-  padding: 8px var(--em-space-3);
+  padding: 4px var(--em-space-3);
   border-radius: var(--em-radius-md);
   color: var(--em-text-muted);
   font-size: 14px;
@@ -267,11 +275,13 @@ button {
   display: flex;
   align-items: center;
   gap: var(--em-space-2);
+  /* 28px row + the 1px divider border, pinned in both states. */
+  min-height: 29px;
   text-align: left;
   background: transparent;
   border: none;
   border-top: 1px solid var(--em-border);
-  padding: 8px var(--em-space-3);
+  padding: 4px var(--em-space-3);
   border-radius: var(--em-radius-md);
   color: var(--em-text-muted);
   font-size: 14px;
@@ -289,7 +299,12 @@ button {
 }
 
 /* Collapsed sidebar = 64px icon rail (desktop only; mobile keeps the
-   drawer). Labels and the brand name hide; icons stay centered.
+   drawer). Labels hide, but the LAYOUT must not change on expand: the
+   icon column stays left-aligned at the expanded padding (icons never
+   jump sideways), group labels use visibility:hidden so their row space
+   is preserved, and group dividers/spacing stay — so hovering the rail
+   only reveals labels, and nothing on screen moves. (Position changes
+   on expand are bad UX: the item under the cursor must stay put.)
    Live StackMate behaviour: hovering (or keyboard-focusing into) the
    rail temporarily expands the FULL sidebar as an overlay flyout over
    the content — labels, groups and the toggle all reappear — and moving
@@ -314,25 +329,13 @@ button {
     grid-template-columns: var(--em-sidebar-rail-width) minmax(0, 1fr);
   }
   .shell[data-nav-collapsed='true'] .sidebar .brand-name,
-  .shell[data-nav-collapsed='true'] .nav-label,
-  .shell[data-nav-collapsed='true'] .nav-group-label {
+  .shell[data-nav-collapsed='true'] .nav-label {
     display: none;
   }
-  /* The rail is icons only — group dividers collapse away with the
-     labels so the rail stays a tight icon column. */
-  .shell[data-nav-collapsed='true'] .nav-group + .nav-group {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: none;
-  }
-  .shell[data-nav-collapsed='true'] .sidebar .brand {
-    justify-content: center;
-    padding: var(--em-space-1) 0;
-  }
-  .shell[data-nav-collapsed='true'] .nav-link,
-  .shell[data-nav-collapsed='true'] .nav-collapse-btn {
-    justify-content: center;
-    padding: var(--em-space-2);
+  /* Group labels keep their row space (visibility, not display) and the
+     group dividers/spacing stay, so no row moves vertically on expand. */
+  .shell[data-nav-collapsed='true'] .nav-group-label {
+    visibility: hidden;
   }
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover,
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within {
@@ -347,31 +350,12 @@ button {
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .brand-name,
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .brand-name,
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-label,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-label,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-group-label,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-group-label {
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-label {
     display: initial;
   }
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-group + .nav-group,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true'])
-    .sidebar:focus-within
-    .nav-group
-    + .nav-group {
-    margin-top: 8px;
-    padding-top: 12px;
-    border-top: 1px solid var(--em-border);
-  }
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .brand,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .brand {
-    justify-content: flex-start;
-    padding: var(--em-space-1) var(--em-space-2);
-  }
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-link,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-link,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-collapse-btn,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-collapse-btn {
-    justify-content: flex-start;
-    padding: 8px var(--em-space-3);
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-group-label,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-group-label {
+    visibility: visible;
   }
 }
 
