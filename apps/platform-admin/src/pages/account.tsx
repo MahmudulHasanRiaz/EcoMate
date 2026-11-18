@@ -1,3 +1,4 @@
+import { useLocation } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth';
 import { QrCode } from '../components/qr-code';
@@ -56,6 +57,18 @@ export function AccountPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The account menu links here with a hash (#profile, #password): scroll
+  // to the section once the page has rendered. TanStack Router does not
+  // scroll to hashes on its own. Depends on the hash too, so clicking
+  // "Change password" while already on /account still scrolls.
+  const location = useLocation();
+  useEffect(() => {
+    const hash = location.hash?.slice(1);
+    if (!hash) return;
+    const target = document.getElementById(hash);
+    if (target) target.scrollIntoView({ block: 'start' });
+  }, [location.hash, profile, mfaStatus]);
 
   async function changePassword(event: React.FormEvent) {
     event.preventDefault();
@@ -190,7 +203,7 @@ export function AccountPage() {
       {busy === 'load' && !mfaStatus ? <Loading label="Loading profile…" /> : null}
 
       {user ? (
-        <section className="panel">
+        <section className="panel" id="profile">
           <h2>Profile</h2>
           <dl className="detail-list">
             <dt>Email</dt>
@@ -342,7 +355,7 @@ export function AccountPage() {
         ) : null}
       </section>
 
-      <section className="panel">
+      <section className="panel" id="password">
         <h2>Change password</h2>
         <p className="muted-note">
           At least 12 characters. Changing your password signs out all other

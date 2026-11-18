@@ -200,6 +200,7 @@ describe('authorization coverage', () => {
       'PublicLandingContentController',
       'PublicLeadsController',
       'PublicPlansController',
+      'SearchController',
       'SettingsController',
       'SignupController',
       'TenantsController',

@@ -236,87 +236,190 @@ button {
   border-left-color: var(--em-accent);
 }
 
-.sidebar-foot {
-  margin-top: auto;
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  padding: 14px 8px 0;
-  border-top: 1px solid var(--em-border);
-}
-
-.avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--em-radius-md);
-  background: var(--em-accent-soft);
+.nav-link--active svg {
   color: var(--em-accent);
-  display: inline-flex;
+}
+
+/* Collapse/extend toggle — sidebar BOTTOM corner (the spot the account
+   widget vacated). margin-top: auto pins it below the nav; the button is
+   full-width with a top border, StackMate .sm-nav-collapse-btn style. */
+.nav-collapse-btn {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.identity {
-  min-width: 0;
-}
-
-.identity strong {
-  display: block;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.identity small {
-  display: block;
-  font-size: 11px;
+  gap: var(--em-space-2);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--em-border);
+  padding: var(--em-space-1-5) var(--em-space-2-5);
+  border-radius: var(--em-radius-md);
   color: var(--em-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.nav-collapse-btn:hover {
+  background: var(--em-nav-hover-bg);
+  color: var(--em-text);
+}
+.nav-collapse-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--em-focus-ring);
 }
 
+/* Collapsed sidebar = 64px icon rail (desktop only; mobile keeps the
+   drawer). Labels and the brand name hide; icons stay centered, with
+   title tooltips on the links. No hover-peek (StackMate has one; the
+   console skips it — title tooltips cover the labels). */
+@media (min-width: 901px) {
+  .shell[data-nav-collapsed='true'] {
+    grid-template-columns: var(--em-sidebar-rail-width) minmax(0, 1fr);
+  }
+  .shell[data-nav-collapsed='true'] .sidebar .brand-name,
+  .shell[data-nav-collapsed='true'] .nav-label {
+    display: none;
+  }
+  .shell[data-nav-collapsed='true'] .sidebar .brand {
+    justify-content: center;
+    padding: var(--em-space-1) 0;
+  }
+  .shell[data-nav-collapsed='true'] .nav-link,
+  .shell[data-nav-collapsed='true'] .nav-collapse-btn {
+    justify-content: center;
+    padding: var(--em-space-2);
+  }
+}
+
+/* Plain inline link-styled button (used by the search palette's "Clear
+   recent" and anywhere a text action is needed). */
 .link-button {
-  grid-column: 2;
-  justify-self: start;
   border: 0;
   background: none;
   padding: 0;
   color: var(--em-text-muted);
   font-size: 12px;
   text-decoration: underline;
+  cursor: pointer;
 }
 .link-button:hover {
   color: var(--em-text);
 }
 
-.theme-toggle {
-  grid-column: 1 / -1;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--em-space-2);
-  border: 1px solid var(--em-border);
-  border-radius: var(--em-radius-md);
-  background: transparent;
-  color: var(--em-text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  padding: 6px 10px;
-  justify-self: start;
-}
-.theme-toggle:hover {
-  color: var(--em-text);
-  background: var(--em-surface-hover);
+/* ---------- topbar ---------- */
+
+/* The topbar is visible at ALL widths now (StackMate layout): it holds
+   the mobile hamburger + brand (mobile only), the centered global search
+   button (desktop), and the account menu at the right end. */
+.shell-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
-/* Mobile topbar — hidden on desktop; the sidebar becomes a drawer. */
 .topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-3);
+  height: var(--em-topbar-height);
+  background: var(--em-surface);
+  border-bottom: 1px solid var(--em-border);
+  padding: 0 var(--em-space-4);
+  position: sticky;
+  top: 0;
+  z-index: var(--em-z-dropdown);
+  flex: none;
+}
+
+.hamburger {
   display: none;
+}
+
+.brand--topbar {
+  display: none;
+}
+
+.topbar-search {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  flex: none;
+}
+
+/* Global search trigger (StackMate QuickNav pattern): a 280px search
+   button with a ⌘K hint. The icon-only variant shows on mobile instead. */
+.search-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  width: 280px;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 var(--em-space-2-5);
+  background: var(--em-surface-raised);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  color: var(--em-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.search-trigger:hover {
+  border-color: var(--em-border-strong);
+  color: var(--em-text);
+}
+.search-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--em-focus-ring);
+}
+.search-trigger-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-trigger--icon {
+  display: none;
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+kbd,
+.search-trigger-kbd {
+  font-family: var(--em-font-sans);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--em-text-muted);
+  background: var(--em-surface-muted);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  padding: 3px 5px;
 }
 
 .sidebar-backdrop {
   display: none;
+}
+
+/* Second nav column beside the content (Settings). The column is sticky
+   under the topbar; the main content keeps its max-width centering. */
+.shell-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+}
+
+.shell-body .main {
+  flex: 1;
 }
 
 .main {
@@ -327,6 +430,469 @@ button {
   min-width: 0;
   padding: var(--em-space-5);
   margin: 0 auto;
+}
+
+/* ---------- account menu ---------- */
+
+/* StackMate Neon image-78, EcoMate blue accent. ONE button in the topbar
+   (avatar + name + chevron) opens a square dark menu: header (avatar,
+   name, email, role), "Manage" (Profile, Change password, Settings,
+   Theme submenu), a live API Status row, then Sign out. */
+.menu-wrap {
+  position: relative;
+}
+
+.account-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  border-radius: var(--em-radius-md);
+  color: var(--em-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.account-btn:hover {
+  background: var(--em-nav-hover-bg);
+}
+.account-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--em-focus-ring);
+}
+
+.account-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-chevron {
+  color: var(--em-text-muted);
+  flex: none;
+}
+
+.account-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--em-radius-md);
+  background: var(--em-accent-soft);
+  color: var(--em-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+}
+.account-avatar--lg {
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 264px;
+  background: var(--em-dialog-bg);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  box-shadow: var(--em-shadow-md);
+  padding: 4px;
+  z-index: var(--em-z-dropdown);
+}
+
+.menu-header {
+  display: flex;
+  gap: var(--em-space-3);
+  padding: var(--em-space-3);
+  align-items: flex-start;
+}
+
+.menu-header-body {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.menu-header-name {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-header-sub {
+  font-size: 12px;
+  color: var(--em-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-header-roles {
+  margin-top: var(--em-space-1-5);
+  display: flex;
+  gap: var(--em-space-1);
+  flex-wrap: wrap;
+}
+
+.menu-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--em-text-muted);
+  padding: var(--em-space-2) var(--em-space-3) var(--em-space-1);
+}
+
+.menu-divider {
+  height: 1px;
+  background: var(--em-border);
+  margin: 4px 0;
+}
+
+.menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  padding: var(--em-space-2) var(--em-space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--em-radius-md);
+  color: var(--em-text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--em-nav-hover-bg);
+  outline: none;
+}
+.menu-item[data-danger='true'] {
+  color: var(--em-danger-text);
+}
+.menu-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-item-check {
+  color: var(--em-accent);
+  display: inline-flex;
+  flex: none;
+}
+
+.menu-sub-wrap {
+  position: relative;
+}
+
+/* The submenu flies out LEFT — the account menu sits at the right edge,
+   so a right fly-out would leave the viewport. */
+.menu-sub {
+  position: absolute;
+  right: calc(100% + 4px);
+  top: 0;
+  min-width: 160px;
+  background: var(--em-dialog-bg);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  box-shadow: var(--em-shadow-md);
+  padding: 4px;
+  z-index: var(--em-z-dropdown);
+}
+
+.menu-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--em-space-2);
+  padding: var(--em-space-2) var(--em-space-3);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ---------- settings nav ---------- */
+
+/* StackMate SettingsShell pattern: a 240px column beside the main nav
+   rail, grouped under headings. Desktop only — mobile gets the tab strip. */
+.settings-nav {
+  width: var(--em-settings-nav-width);
+  flex: none;
+  background: var(--em-surface);
+  border-right: 1px solid var(--em-border);
+  padding: var(--em-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: var(--em-topbar-height);
+  height: calc(100vh - var(--em-topbar-height));
+  overflow-y: auto;
+}
+
+.settings-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  padding: var(--em-space-2) var(--em-space-2-5);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--em-text);
+}
+
+.settings-nav-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--em-text-muted);
+  padding: var(--em-space-3) var(--em-space-2-5) var(--em-space-1);
+}
+
+.settings-nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  padding: var(--em-space-1-5) var(--em-space-2-5);
+  border-left: 2px solid transparent;
+  border-radius: var(--em-radius-md);
+  color: var(--em-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background var(--em-transition),
+    color var(--em-transition);
+}
+.settings-nav-link:hover {
+  background: var(--em-nav-hover-bg);
+  color: var(--em-text);
+  text-decoration: none;
+}
+.settings-nav-link--active {
+  background: var(--em-nav-active-bg);
+  color: var(--em-text);
+  font-weight: 600;
+  border-left-color: var(--em-accent);
+}
+.settings-nav-link--active svg {
+  color: var(--em-accent);
+}
+
+/* Mobile settings nav: the same sections as a scrollable tab strip. */
+.settings-tabs {
+  display: none;
+  margin-bottom: var(--em-space-4);
+}
+
+/* ---------- search palette ---------- */
+
+/* Cmd/Ctrl+K command palette: a top-anchored dialog over the console.
+   The combined selector beats .dialog-backdrop (later in this file) so
+   the panel anchors to the top instead of centering. */
+.dialog-backdrop.search-backdrop {
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.search-palette {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(80vh, 640px);
+  background: var(--em-dialog-bg);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-xl);
+  box-shadow: var(--em-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.search-palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2-5);
+  padding: 14px var(--em-space-4);
+  border-bottom: 1px solid var(--em-border);
+  color: var(--em-text-muted);
+  flex: none;
+}
+
+.search-palette-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--em-text);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+  padding: 0;
+}
+.search-palette-input::placeholder {
+  color: var(--em-text-muted);
+}
+
+.search-palette-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--em-radius-md);
+  background: transparent;
+  color: var(--em-text-muted);
+  cursor: pointer;
+  flex: none;
+}
+.search-palette-clear:hover {
+  background: var(--em-surface-hover);
+  color: var(--em-text);
+}
+
+.search-palette-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  padding: var(--em-space-2) var(--em-space-3);
+  border-bottom: 1px solid var(--em-border);
+  flex: none;
+  min-width: 0;
+}
+.search-palette-filters .tabs-scroll {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-status-filter {
+  flex: none;
+}
+.search-status-filter select {
+  min-height: 32px;
+  border: 1px solid var(--em-border-strong);
+  border-radius: var(--em-radius-md);
+  padding: 0 var(--em-space-2);
+  background: var(--em-surface);
+  color: var(--em-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.search-palette-results {
+  overflow-y: auto;
+  padding: 4px;
+  flex: 1;
+  min-height: 0;
+}
+
+.search-palette-state {
+  padding: 24px var(--em-space-4);
+  text-align: center;
+  color: var(--em-text-muted);
+  font-size: 13px;
+}
+.search-palette-state--error {
+  color: var(--em-danger-text);
+}
+
+.search-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--em-space-2);
+  padding: var(--em-space-2) var(--em-space-3) var(--em-space-1);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--em-text-muted);
+}
+
+.search-result-item,
+.search-recent-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2-5);
+  padding: var(--em-space-2) var(--em-space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--em-radius-md);
+  color: var(--em-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.search-result-item:hover,
+.search-recent-item:hover,
+.search-result-item[data-active='true'] {
+  background: var(--em-nav-hover-bg);
+  outline: none;
+}
+
+.search-result-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.search-result-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-subtitle {
+  font-size: 12px;
+  color: var(--em-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-enter {
+  color: var(--em-text-muted);
+  opacity: 0;
+  flex: none;
+}
+.search-result-item[data-active='true'] .search-result-enter {
+  opacity: 1;
+}
+
+.search-palette-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-4);
+  padding: var(--em-space-2) var(--em-space-4);
+  border-top: 1px solid var(--em-border);
+  font-size: 12px;
+  color: var(--em-text-muted);
+  flex: none;
+  flex-wrap: wrap;
+}
+.search-palette-footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.search-palette-count {
+  margin-left: auto;
 }
 
 /* ---------- page primitives ---------- */
@@ -2001,25 +2567,9 @@ td time,
     grid-template-columns: 1fr;
   }
 
-  /* Mobile topbar with the hamburger (R2: the sidebar becomes a drawer
-     instead of squeezing the content). */
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: var(--em-space-3);
-    height: var(--em-topbar-height);
-    background: var(--em-surface);
-    border-bottom: 1px solid var(--em-border);
-    padding: 0 var(--em-space-4);
-    position: sticky;
-    top: 0;
-    z-index: var(--em-z-dropdown);
-  }
-
-  .topbar .brand {
-    padding: 0;
-  }
-
+  /* Mobile topbar: hamburger + brand on the left, search icon + account
+     menu on the right. The sidebar becomes a drawer (R2) instead of
+     squeezing the content; the collapse toggle is desktop-only. */
   .hamburger {
     display: inline-flex;
     align-items: center;
@@ -2036,6 +2586,36 @@ td time,
   }
   .hamburger:hover {
     background: var(--em-surface-hover);
+  }
+
+  .brand--topbar {
+    display: flex;
+    padding: 0;
+  }
+
+  .topbar-search {
+    display: none;
+  }
+
+  .search-trigger--icon {
+    display: inline-flex;
+  }
+
+  .nav-collapse-btn {
+    display: none;
+  }
+
+  /* Settings: the nav column hides; the tab strip shows instead. */
+  .settings-nav {
+    display: none;
+  }
+
+  .settings-tabs {
+    display: block;
+  }
+
+  .dialog-backdrop.search-backdrop {
+    padding-top: 8px;
   }
 
   .sidebar {
@@ -2108,6 +2688,13 @@ td time,
   .page-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  /* Account menu trigger: avatar only (StackMate rule — name + chevron
+     hide at narrow widths). */
+  .account-name,
+  .account-chevron {
+    display: none;
   }
 
   .toolbar {

@@ -20,6 +20,7 @@ import { ObservabilityModule } from './observability/observability.module';
 import { PlansModule } from './plans/plans.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
+import { SearchModule } from './search/search.module';
 import { SettingsModule } from './settings/settings.module';
 import { SignupModule } from './signup/signup.module';
 import { TenantsModule } from './tenants/tenants.module';
@@ -49,6 +50,7 @@ import { UsersModule } from './users/users.module';
     ObservabilityModule,
     PlansModule,
     ProvisioningModule,
+    SearchModule,
     SettingsModule,
     SignupModule,
     TenantsModule,

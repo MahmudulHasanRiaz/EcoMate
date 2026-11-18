@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useLocation } from '@tanstack/react-router';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDate, formatDateTime, formatMoney } from '../lib/format';
@@ -35,6 +35,24 @@ type Tab =
   | 'coupons'
   | 'methods'
   | 'jobs';
+const TABS: Tab[] = [
+  'proofs',
+  'invoices',
+  'payments',
+  'subscriptions',
+  'credits',
+  'coupons',
+  'methods',
+  'jobs',
+];
+
+/** Tab from the parsed ?tab= param (global search deep-links here). */
+function tabFromParam(param: unknown): Tab {
+  return typeof param === 'string' && (TABS as string[]).includes(param)
+    ? (param as Tab)
+    : 'proofs';
+}
+
 const PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
 const INVOICE_STATUSES = [
   '',
@@ -47,7 +65,15 @@ const INVOICE_STATUSES = [
 
 export function BillingPage() {
   const { api } = useAuth();
-  const [tab, setTab] = useState<Tab>('proofs');
+  const location = useLocation();
+  const tabParam = (location.search as { tab?: unknown }).tab;
+  const [tab, setTab] = useState<Tab>(() => tabFromParam(tabParam));
+
+  // The page does not remount when search navigation lands on a different
+  // ?tab= while already on /billing — sync the tab to the URL instead.
+  useEffect(() => {
+    setTab(tabFromParam(tabParam));
+  }, [tabParam]);
   const [summary, setSummary] = useState<BillingSummary | null>(null);
   const [proofs, setProofs] = useState<Page<PaymentProof> | null>(null);
   const [invoices, setInvoices] = useState<Page<Invoice> | null>(null);

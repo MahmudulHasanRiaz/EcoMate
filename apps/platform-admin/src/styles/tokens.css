@@ -125,6 +125,8 @@
   /* Layout */
   --em-content-max: 1400px;
   --em-sidebar-width: 248px;
+  --em-sidebar-rail-width: 64px;
+  --em-settings-nav-width: 240px;
   --em-topbar-height: 48px;
 
   /* Radii — max 4px; dialogs 6px. */

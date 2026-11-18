@@ -2,6 +2,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  Navigate,
   Outlet,
 } from '@tanstack/react-router';
 import { AppShell } from './components/app-shell';
@@ -17,6 +18,7 @@ import { MetricsPage } from './pages/metrics';
 import { OverviewPage } from './pages/overview';
 import { PlansPage } from './pages/plans';
 import { SettingsPage } from './pages/settings';
+import { DEFAULT_SETTINGS_SECTION } from './pages/settings/sections';
 import { TenantCreatePage } from './pages/tenant-create';
 import { TenantDetailPage } from './pages/tenant-detail';
 import { TenantsPage } from './pages/tenants';
@@ -143,14 +145,24 @@ const metricsRoute = createRoute({
   ),
 });
 
+// /settings redirects to the first registry section; /settings/$sectionId
+// renders the section (SettingsPage renders its own AppShell so it can
+// pass the settings nav column as secondaryNav).
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
   component: () => (
-    <AppShell>
-      <SettingsPage />
-    </AppShell>
+    <Navigate
+      to="/settings/$sectionId"
+      params={{ sectionId: DEFAULT_SETTINGS_SECTION.id }}
+    />
   ),
+});
+
+const settingsSectionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/$sectionId',
+  component: SettingsPage,
 });
 
 const usersRoute = createRoute({
@@ -204,6 +216,7 @@ const routeTree = rootRoute.addChildren([
   plansRoute,
   landingRoute,
   settingsRoute,
+  settingsSectionRoute,
   usersRoute,
   auditRoute,
   accountRoute,
