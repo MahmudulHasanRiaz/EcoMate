@@ -10,13 +10,16 @@
  * submitted form always carries the consent text the visitor agreed to;
  * UTM parameters come from the page URL. No Meta Pixel, no CAPI dedup —
  * the platform stores the lead and notifies sales when SMTP is
- * configured. Turnstile is verify-if-present (the SaaS callback-style
- * widget, gated on the site key): the form submits without a token when
- * no widget renders.
+ * configured. Turnstile is verify-if-present and lazy (the
+ * `LazyTurnstile` on-submit pattern from the EcoMate-Landing reference):
+ * nothing loads or renders on a plain page visit — the widget renders
+ * only when the form is submitted, stays hidden unless Cloudflare needs
+ * an interaction, and the form still submits without a token when the
+ * challenge cannot run (blocked script, timeout).
  */
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useLanding } from '@/components/shell/useLanding';
-import { Turnstile } from '@/components/turnstile';
+import { LazyTurnstile, type TurnstileHandle } from '@/components/turnstile';
 import { SectionHead, SectionShell } from './SectionHead';
 
 export function MkFaq() {
@@ -54,10 +57,10 @@ export function MkLeadForm() {
   const [volume, setVolume] = useState(() => defaultVolume(form.volumeOptions));
   const [message, setMessage] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
-  const [turnstileToken, setTurnstileToken] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle | null>(null);
 
   const required = (message: string): boolean => {
     setFormError(message);
@@ -91,6 +94,17 @@ export function MkLeadForm() {
 
     setIsSubmitting(true);
     try {
+      // Turnstile resolves on submit only — never on page load. A null
+      // token (blocked script, timeout) still submits without one:
+      // lead verification is verify-if-present, so a real visitor is
+      // never blocked by the challenge failing to run.
+      let turnstileToken = '';
+      const turnstile = turnstileRef.current;
+      if (turnstile) {
+        const token = await turnstile.getToken();
+        if (token) turnstileToken = token;
+      }
+
       // Consent + attribution (Batch 1, item 8): the consent checkbox
       // is required client-side, so a submitted form always carries
       // consentGiven + the consent text the visitor agreed to; UTM
@@ -235,7 +249,7 @@ export function MkLeadForm() {
               />
               {form.consentLabel}
             </label>
-            <Turnstile onToken={setTurnstileToken} />
+            <LazyTurnstile ref={turnstileRef} />
             {formError && (
               <p role="alert" style={{ color: 'var(--mk-bad)', fontSize: 13, margin: '0 0 10px' }}>
                 {formError}

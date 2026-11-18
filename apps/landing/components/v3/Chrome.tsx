@@ -248,13 +248,13 @@ export function MkHeader({
             </a>
           )}
           {whatsappUrl && (
-            <a href={whatsappUrl} target="_blank" rel="noreferrer" className="mk-drawer-contact-btn" aria-label={dock.whatsappLabel}>
+            <a href={whatsappUrl} target="_blank" rel="noreferrer" className="mk-drawer-contact-btn mk-drawer-contact-btn-wa" aria-label={dock.whatsappLabel}>
               <WhatsAppIcon size={16} />
               {dock.whatsappLabel}
             </a>
           )}
           {messengerUrl && (
-            <a href={messengerUrl} target="_blank" rel="noreferrer" className="mk-drawer-contact-btn" aria-label={dock.messengerLabel}>
+            <a href={messengerUrl} target="_blank" rel="noreferrer" className="mk-drawer-contact-btn mk-drawer-contact-btn-ms" aria-label={dock.messengerLabel}>
               <MessengerIcon size={16} />
               {dock.messengerLabel}
             </a>
