@@ -7,6 +7,7 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import { Logger as PinoLoggerService, PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { initSentry } from './observability/sentry';
@@ -41,6 +42,19 @@ async function bootstrap() {
   // Security headers (defence in depth for direct exposure; the console
   // and landing reach the API same-origin, so the defaults are safe).
   await app.register(helmet);
+
+  // Multipart uploads (media library only). The fileSize cap mirrors
+  // MEDIA_MAX_BYTES (default 100 MB, see media-validation.ts); the
+  // media service re-checks the size itself with the friendly error.
+  const mediaMaxBytes = Number(process.env.MEDIA_MAX_BYTES ?? '');
+  await app.register(multipart, {
+    limits: {
+      fileSize:
+        Number.isFinite(mediaMaxBytes) && mediaMaxBytes > 0
+          ? Math.floor(mediaMaxBytes)
+          : 100 * 1024 * 1024,
+    },
+  });
 
   // /metrics is root-level (outside /api) so it never collides with the
   // business metrics at /api/metrics/overview; see MetricsController.

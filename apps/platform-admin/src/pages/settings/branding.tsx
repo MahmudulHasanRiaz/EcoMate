@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useBranding } from '../../lib/branding';
 import { errorMessage, readJson } from '../../lib/api';
+import { resolveAbsoluteMediaUrl, type MediaAsset } from '../../lib/media';
+import { MediaPicker } from '../../components/media-picker';
 import { useAuth } from '../../auth';
 import type { SettingsSectionProps } from './sections';
 
 const MAX_LOGO_BYTES = 200 * 1024;
 const MAX_FAVICON_BYTES = 100 * 1024;
+/** The image types a logo/favicon may be (matches the file inputs below). */
+const BRANDING_IMAGE_MIMES = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+];
 
 /**
  * Reads an uploaded image as a data URL (F11). The data URL is stored in
@@ -45,6 +55,7 @@ export function BrandingSection({
   const [supportEmail, setSupportEmail] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
   const [faviconUrl, setFaviconUrl] = useState('');
+  const [pickerFor, setPickerFor] = useState<'logo' | 'favicon' | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -97,6 +108,19 @@ export function BrandingSection({
     } catch (err) {
       onError(errorMessage(err));
     }
+  }
+
+  /**
+   * A library pick stores the asset's ABSOLUTE content URL (branding
+   * values are consumed by the landing from another origin, so a
+   * relative path would not survive). Library picks are NOT subject
+   * to the data-URL size caps — the stored value is a short URL, and
+   * the file itself lives on the media volume.
+   */
+  function pickFromLibrary(asset: MediaAsset) {
+    const url = resolveAbsoluteMediaUrl(asset.contentUrl);
+    if (pickerFor === 'logo') setLogoUrl(url);
+    else if (pickerFor === 'favicon') setFaviconUrl(url);
   }
 
   return (
@@ -189,6 +213,13 @@ export function BrandingSection({
                 event.target.value = '';
               }}
             />
+            <button
+              type="button"
+              className="button button--sm"
+              onClick={() => setPickerFor('logo')}
+            >
+              Choose from library
+            </button>
             {logoUrl ? (
               <button
                 type="button"
@@ -219,6 +250,13 @@ export function BrandingSection({
                 event.target.value = '';
               }}
             />
+            <button
+              type="button"
+              className="button button--sm"
+              onClick={() => setPickerFor('favicon')}
+            >
+              Choose from library
+            </button>
             {faviconUrl ? (
               <button
                 type="button"
@@ -231,6 +269,10 @@ export function BrandingSection({
           </div>
         </div>
       </div>
+      <p className="muted-note">
+        Files picked from the media library are served from the platform
+        API, so the size caps above do not apply to them.
+      </p>
       <div className="progress-actions">
         <button
           type="button"
@@ -241,6 +283,15 @@ export function BrandingSection({
           {busy ? 'Saving…' : 'Save branding'}
         </button>
       </div>
+      <MediaPicker
+        open={pickerFor !== null}
+        onClose={() => setPickerFor(null)}
+        onSelect={pickFromLibrary}
+        mimes={BRANDING_IMAGE_MIMES}
+        title={
+          pickerFor === 'favicon' ? 'Choose a favicon' : 'Choose a logo'
+        }
+      />
     </section>
   );
 }

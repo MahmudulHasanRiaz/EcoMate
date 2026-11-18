@@ -264,6 +264,26 @@
       "name": "TENANT_EXPORT_MAX_ROWS"
     },
     {
+      "default": "/app/data/media",
+      "label": "Media library local volume path (platform-api; on the platform-media-data volume)",
+      "name": "MEDIA_LOCAL_PATH"
+    },
+    {
+      "default": "",
+      "label": "Media library public base URL (empty = compose default https://api.<primary domain>; the origin written into content URLs)",
+      "name": "MEDIA_PUBLIC_BASE_URL"
+    },
+    {
+      "default": "104857600",
+      "label": "Media library max upload size in bytes (default 100 MB)",
+      "name": "MEDIA_MAX_BYTES"
+    },
+    {
+      "default": "",
+      "label": "Media library storage driver lock ('local' or 'r2'; EMPTY = the console setting controls the driver; env wins when set)",
+      "name": "MEDIA_STORAGE_DRIVER"
+    },
+    {
       "default": "600000",
       "label": "A RUNNING provisioning job older than this is made retryable (ms)",
       "name": "PROVISIONING_STALE_MS"

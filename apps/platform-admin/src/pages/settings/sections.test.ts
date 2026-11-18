@@ -18,14 +18,16 @@ describe('settings sections registry', () => {
     }
   });
 
-  it('covers every section the old single-page settings had, plus Landing', () => {
+  it('covers every section the old single-page settings had, plus Landing and Media storage', () => {
     // The old page had 6 real sections + a Domains link card. Domains is
     // a top-level nav item, not a setting — it is intentionally absent.
-    // Landing (Batch 1) is the 7th section.
+    // Landing (Batch 1) is the 7th section; Media storage (media
+    // library) is the 8th.
     expect(SETTINGS_SECTIONS.map((s) => s.id).sort()).toEqual([
       'branding',
       'landing',
       'maintenance',
+      'media',
       'payment-methods',
       'smtp',
       'tax',

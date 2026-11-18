@@ -36,6 +36,8 @@ const PUBLIC_CONTROLLERS: Record<string, string> = {
   PublicPlansController: 'public plan catalogue for the landing page',
   PublicBrandingController:
     'public branding for the console login page (platform name + logo/favicon URLs only, no tenant data)',
+  PublicMediaController:
+    'public media bytes for the landing (logos/landing images rendered for anonymous visitors; SVG sanitized at upload + sandbox CSP; the library itself is authenticated)',
   HealthController: 'liveness probe, no data',
   PrometheusMetricsController:
     'Prometheus scrape endpoint (Phase 8 Stage 2) — operational metrics only, no tenant data; restricted to the private network in production',
@@ -112,6 +114,7 @@ const AREA_CONTROLLERS: Record<string, string[]> = {
   Audit: ['AuditController'],
   Leads: ['LeadsController'],
   Landing: ['LandingContentController'],
+  Media: ['MediaController'],
 };
 
 interface HandlerInfo {
@@ -193,6 +196,7 @@ describe('authorization coverage', () => {
       'LandingCacheController',
       'LandingContentController',
       'LeadsController',
+      'MediaController',
       'MetricsController',
       'MfaController',
       'PlansController',
@@ -200,6 +204,7 @@ describe('authorization coverage', () => {
       'PublicBrandingController',
       'PublicLandingContentController',
       'PublicLeadsController',
+      'PublicMediaController',
       'PublicPlansController',
       'SearchController',
       'SettingsController',
@@ -252,7 +257,7 @@ describe('authorization coverage', () => {
     expect(unguarded).toEqual([]);
   });
 
-  it('the role matrix covers exactly the four roles and all eleven areas', () => {
+  it('the role matrix covers exactly the four roles and all twelve areas', () => {
     expect(ROLE_MATRIX.map((r) => r.role).sort()).toEqual([
       'BILLING',
       'READONLY',

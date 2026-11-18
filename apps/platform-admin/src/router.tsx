@@ -14,6 +14,7 @@ import { DomainsPage } from './pages/domains';
 import { LandingPage } from './pages/landing';
 import { LeadsPage } from './pages/leads';
 import { LoginPage } from './pages/login';
+import { MediaPage } from './pages/media';
 import { MetricsPage } from './pages/metrics';
 import { OverviewPage } from './pages/overview';
 import { PlansPage } from './pages/plans';
@@ -108,6 +109,16 @@ const landingRoute = createRoute({
   component: () => (
     <AppShell>
       <LandingPage />
+    </AppShell>
+  ),
+});
+
+const mediaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/media',
+  component: () => (
+    <AppShell>
+      <MediaPage />
     </AppShell>
   ),
 });
@@ -222,6 +233,7 @@ const routeTree = rootRoute.addChildren([
   metricsRoute,
   plansRoute,
   landingRoute,
+  mediaRoute,
   settingsRoute,
   settingsSectionRoute,
   usersRoute,

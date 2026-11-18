@@ -100,7 +100,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (current?.accessToken) {
       headers.set('authorization', `Bearer ${current.accessToken}`);
     }
-    if (init.body && !headers.has('content-type')) {
+    // FormData bodies set their own multipart content-type (with the
+    // boundary) — forcing application/json here would break uploads
+    // (StackMate Decision 7: same fix in their shared client).
+    const isFormData =
+      typeof FormData !== 'undefined' && init.body instanceof FormData;
+    if (init.body && !isFormData && !headers.has('content-type')) {
       headers.set('content-type', 'application/json');
     }
 

@@ -17,6 +17,14 @@ volumes:
   # the only copy of a tenant's data after purge — this volume must persist
   # and be backed up like the databases.
   platform-exports-data:
+  # Platform media library files (platform-api MEDIA_LOCAL_PATH). Landing
+  # + branding assets only — tenant store media lives on uploads-data
+  # and is served by media-static. This volume must persist and be
+  # backed up: deleting it orphans the MediaAsset rows in the platform
+  # DB (their bytes 404). Migration to R2 is per-row (see
+  # docs/saas/media-storage.md) — the volume stays until every row has
+  # moved.
+  platform-media-data:
   # Caddy ACME certificates, OCSP staples and on-demand TLS state. MUST
   # persist: losing it forces re-issuance for every tenant host at once
   # (Let's Encrypt rate limits) and drops all cached certificates.
@@ -430,6 +438,7 @@ services:
       - ecomate-network
     volumes:
       - platform-exports-data:/app/data/tenant-exports
+      - platform-media-data:/app/data/media
     environment:
       NODE_ENV: production
       PLATFORM_PORT: ${PLATFORM_PORT:-4100}
@@ -489,6 +498,20 @@ services:
       TENANT_PURGE_ENABLED: ${TENANT_PURGE_ENABLED:-true}
       TENANT_EXPORT_DIR: /app/data/tenant-exports
       TENANT_EXPORT_MAX_ROWS: ${TENANT_EXPORT_MAX_ROWS:-250000}
+      # Media library (platform assets — landing + branding). Files live
+      # on the platform-media-data volume; the API serves the bytes at
+      # GET /api/public/media/:id (public, immutable). MEDIA_STORAGE_DRIVER
+      # is LEFT UNSET here so the console setting (Settings → Media
+      # storage) controls the driver; set it to 'local' or 'r2' to lock
+      # the driver from the environment (env wins, like the SEO flag).
+      # MEDIA_PUBLIC_BASE_URL is the origin the API writes into content
+      # URLs — the public API host, so other origins (the landing) can
+      # load the files. Leave MEDIA_STORAGE_DRIVER empty to keep the
+      # console switch effective.
+      MEDIA_LOCAL_PATH: ${MEDIA_LOCAL_PATH:-/app/data/media}
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-https://api.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
+      MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-104857600}
+      MEDIA_STORAGE_DRIVER: ${MEDIA_STORAGE_DRIVER:-}
       IMPERSONATION_TTL_SECONDS: ${IMPERSONATION_TTL_SECONDS:-900}
       SIGNUP_DISPOSABLE_DOMAINS: ${SIGNUP_DISPOSABLE_DOMAINS:-}
       CUSTOM_DOMAIN_POLL_MS: ${CUSTOM_DOMAIN_POLL_MS:-60000}

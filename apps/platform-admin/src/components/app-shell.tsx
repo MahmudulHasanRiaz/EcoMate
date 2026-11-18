@@ -6,6 +6,7 @@ import {
   CreditCard,
   Gauge,
   Globe,
+  Images,
   Layers,
   LayoutDashboard,
   LayoutTemplate,
@@ -58,7 +59,10 @@ const NAV_GROUPS: {
   },
   {
     label: 'Website',
-    items: [{ to: '/landing', label: 'Landing', icon: LayoutTemplate }],
+    items: [
+      { to: '/landing', label: 'Landing', icon: LayoutTemplate },
+      { to: '/media', label: 'Media', icon: Images },
+    ],
   },
   {
     label: 'Administration',
@@ -149,6 +153,10 @@ function SidebarCollapseIcon() {
  *   it. Only an explicit toggle press persists (StackMate pin rule). The
  *   hover flyout is suppressed on these pages (data-secondary-nav): the
  *   overlay would cover the secondary nav's links.
+ * - After a toggle click the flyout is suppressed until the pointer leaves
+ *   the sidebar (data-flyout-suppressed): without this, collapsing leaves
+ *   the pointer resting over the rail, the hover flyout re-opens at once,
+ *   and the click looks like it did nothing (Boss, 2026-11-18).
  */
 export function AppShell({
   children,
@@ -164,6 +172,14 @@ export function AppShell({
   const [navCollapsed, setNavCollapsed] = useState<boolean>(() =>
     secondaryNav ? true : readNavCollapsed(),
   );
+  // True right after a toggle click, until the pointer leaves the sidebar
+  // (or focus moves anywhere — keyboard users). Gates the hover flyout so
+  // a collapse is actually visible instead of being masked by the flyout.
+  // Focus clears it at the shell level, not just inside the sidebar:
+  // after a keyboard collapse + blur, the next Tab lands on the hamburger
+  // (the element after the toggle in tab order), so an aside-only focus
+  // handler would leave the flyout suppressed for a whole Tab cycle.
+  const [flyoutSuppressed, setFlyoutSuppressed] = useState(false);
 
   // Cmd/Ctrl+K opens the search palette from anywhere in the console.
   // Skipped while typing in a text field, so it never hijacks input.
@@ -206,6 +222,8 @@ export function AppShell({
       data-nav-open={navOpen ? 'true' : 'false'}
       data-nav-collapsed={navCollapsed ? 'true' : 'false'}
       data-secondary-nav={secondaryNav ? 'true' : 'false'}
+      data-flyout-suppressed={flyoutSuppressed ? 'true' : 'false'}
+      onFocus={() => setFlyoutSuppressed(false)}
     >
       <button
         type="button"
@@ -213,7 +231,10 @@ export function AppShell({
         aria-label="Close navigation"
         onClick={() => setNavOpen(false)}
       />
-      <aside className="sidebar">
+      <aside
+        className="sidebar"
+        onMouseLeave={() => setFlyoutSuppressed(false)}
+      >
         <Link to="/" className="brand" onClick={() => setNavOpen(false)}>
           <BrandMark />
           <span className="brand-name">
@@ -251,6 +272,12 @@ export function AppShell({
           aria-expanded={!navCollapsed}
           onClick={(event) => {
             toggleCollapsed();
+            // Suppress the hover flyout until the pointer leaves the
+            // sidebar: after collapsing, the pointer rests over the rail
+            // and the flyout would re-open at once, making the click look
+            // like it did nothing (the toggle label flips but the menu
+            // still looks expanded — the next click then feels reversed).
+            setFlyoutSuppressed(true);
             // The flyout opens on :focus-within, so without this the
             // button keeps focus after collapsing and the sidebar stays
             // expanded as an overlay instead of visibly collapsing to

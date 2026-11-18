@@ -15,6 +15,7 @@ import { InternalModule } from './internal/internal.module';
 import { JobsModule } from './jobs/jobs.module';
 import { LandingContentModule } from './landing-content/landing-content.module';
 import { LeadsModule } from './leads/leads.module';
+import { MediaModule } from './media/media.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { PlansModule } from './plans/plans.module';
@@ -46,6 +47,7 @@ import { UsersModule } from './users/users.module';
     JobsModule,
     LandingContentModule,
     LeadsModule,
+    MediaModule,
     MetricsModule,
     ObservabilityModule,
     PlansModule,

@@ -163,6 +163,7 @@ model PlatformUser {
   auditLogs      AuditLog[]
   impersonations ImpersonationSession[]
   invitesCreated PlatformUserInvite[]
+  mediaUploads   MediaAsset[]          @relation("MediaUploadedBy")
 
   @@index([role, status])
 }
@@ -752,4 +753,48 @@ model LandingContent {
 
   @@unique([section, key, locale])
   @@index([section, locale, sortOrder])
+}
+
+/// One file in the platform media library (console /media; StackMate
+/// ADR-0011 pattern, adapted for multi-tenant SaaS).
+///
+/// Platform/landing assets ONLY — branding logos, landing images, and
+/// other public website files. Tenant store media lives in the tenant
+/// backend's upload system, never here.
+///
+/// Each row stores its OWN storage driver ('local' | 'r2'), so reads
+/// always use the row's driver and a driver switch never orphans a
+/// library file. The object key is server-generated
+/// (`media/<yyyy>/<mm>/<uuid>-<sanitized-name>`); only the key, never
+/// a public URL, is stored — the public content URL is derived at read
+/// time (GET /public/media/:id, see media.service.ts).
+///
+/// Files are PUBLIC bytes by design (the landing renders them for
+/// anonymous visitors); the library itself (list/upload/manage) is
+/// authenticated. SVG is sanitized at upload and served with a sandbox
+/// CSP, so a stored SVG can never carry an active payload.
+model MediaAsset {
+  id               String        @id @default(uuid())
+  objectKey        String        @unique
+  /// 'local' | 'r2'. Enforced in code (media-storage.service.ts) — the
+  /// row driver is always the resolved driver name, never user input.
+  driver           String        @default("local")
+  originalFilename String
+  mimeType         String
+  byteSize         BigInt
+  checksumSha256   String
+  width            Int?
+  height           Int?
+  /// '' = library root; otherwise lowercase slash-separated segments.
+  folder           String        @default("")
+  tags             String[]      @default([])
+  uploadedByUserId String?
+  uploadedBy       PlatformUser? @relation("MediaUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([folder, createdAt(sort: Desc)])
+  @@index([mimeType, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([uploadedByUserId])
 }

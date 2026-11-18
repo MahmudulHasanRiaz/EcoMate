@@ -337,8 +337,11 @@ button {
   .shell[data-nav-collapsed='true'] .nav-group-label {
     visibility: hidden;
   }
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within {
+  /* The flyout is also gated on data-flyout-suppressed: after a toggle
+     click the pointer still rests over the rail, and without the gate the
+     flyout would re-open at once and mask the collapse. */
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:hover,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:focus-within {
     position: fixed;
     left: 0;
     top: 0;
@@ -347,14 +350,14 @@ button {
     box-shadow: var(--em-shadow-lg);
     z-index: var(--em-z-drawer);
   }
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .brand-name,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .brand-name,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-label,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-label {
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:hover .brand-name,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:focus-within .brand-name,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:hover .nav-label,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:focus-within .nav-label {
     display: initial;
   }
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-group-label,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-group-label {
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:hover .nav-group-label,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:focus-within .nav-group-label {
     visibility: visible;
   }
 }
@@ -1696,8 +1699,12 @@ kbd,
 /* Buttons inside unstyled contexts get the secondary button treatment
    by default so a bare <button> never renders as a browser-default
    control. .plan-title / .table-link are excluded: they are heading- /
-   link-styled buttons with their own resets. */
-.card button:not(.button):not(.link-button):not(.plan-title):not(.table-link),
+   link-styled buttons with their own resets. .media-card /
+   .media-card-body are excluded too: they are whole-card buttons whose
+   own rules own the layout (without the exclusion the 32px inline-flex
+   treatment crushes the thumbnail card into a one-line strip — and the
+   picker dialog renders INSIDE a .card section, so it is hit too). */
+.card button:not(.button):not(.link-button):not(.plan-title):not(.table-link):not(.media-card):not(.media-card-body),
 .detail-panel button:not(.button),
 .pagination button:not(.button),
 .form-actions button:not(.button),
@@ -1717,7 +1724,7 @@ kbd,
   white-space: nowrap;
 }
 
-.card button:not(.button):not(.link-button):not(.plan-title):not(.table-link):hover:not(:disabled),
+.card button:not(.button):not(.link-button):not(.plan-title):not(.table-link):not(.media-card):not(.media-card-body):hover:not(:disabled),
 .detail-panel button:not(.button):hover:not(:disabled),
 .pagination button:not(.button):hover:not(:disabled),
 .form-actions button:not(.button):hover:not(:disabled),
@@ -1725,7 +1732,7 @@ kbd,
   background: var(--em-surface-muted);
 }
 
-.card button:not(.button):not(.link-button):not(.plan-title):not(.table-link):disabled,
+.card button:not(.button):not(.link-button):not(.plan-title):not(.table-link):not(.media-card):not(.media-card-body):disabled,
 .detail-panel button:not(.button):disabled,
 .pagination button:not(.button):disabled,
 .form-actions button:not(.button):disabled,
@@ -3291,3 +3298,317 @@ input[type='checkbox']:disabled {
 .test-row .button {
   flex: none;
 }
+
+/* ------------------------------------------------------------------ */
+/* media-library: start — Media library page + MediaPicker dialog.     */
+/* ------------------------------------------------------------------ */
+
+/* Shared thumbnail: 4:3, muted surface, cover-fit media, centred icon
+   for non-image kinds. --sm is the 40px list-view cell. */
+.media-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  background: var(--em-surface-muted);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  color: var(--em-text-muted);
+  overflow: hidden;
+}
+.media-thumb img,
+.media-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.media-thumb--sm {
+  width: 40px;
+  height: 40px;
+  aspect-ratio: auto;
+  flex: none;
+}
+
+/* Grid + cards. The picker renders the card itself as a <button>; the
+   library page renders an <article> with a checkbox overlay and an
+   inner <button class="media-card-body">, so both share the box. */
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.media-card {
+  background: var(--em-surface);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  padding: 8px;
+  color: var(--em-text);
+  font: inherit;
+  text-align: left;
+  position: relative;
+  transition: border-color 0.12s ease;
+}
+button.media-card {
+  cursor: pointer;
+  width: 100%;
+  /* Fully specified so no bare-button default can crush the card:
+     block layout, content height, wrapping text. */
+  display: block;
+  height: auto;
+  white-space: normal;
+}
+button.media-card:hover,
+.media-card--page:hover {
+  border-color: var(--em-accent-40);
+}
+.media-card-body {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  display: block;
+  height: auto;
+  white-space: normal;
+}
+.media-card-select {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+  margin: 0;
+}
+.media-card-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  margin-top: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-card-meta {
+  display: block;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--em-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Library toolbar extras: view toggle + kind chips (StackMate filter
+   chip pattern — active = accent text + border + translucent bg). */
+.media-view-toggle {
+  display: flex;
+  gap: 4px;
+}
+.media-kind-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.media-kind-chip {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--em-border-strong);
+  border-radius: var(--em-radius-md);
+  background: transparent;
+  color: var(--em-text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.media-kind-chip:hover {
+  color: var(--em-text);
+}
+.media-kind-chip--active {
+  color: var(--em-accent);
+  border-color: var(--em-accent);
+  background: var(--em-accent-10);
+}
+
+/* Bulk-action bar + drag-drop zone on the library page. */
+.media-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--em-accent-08);
+  border: 1px solid var(--em-accent-30);
+  border-radius: var(--em-radius-md);
+  font-size: 13px;
+}
+.media-bulk-bar span {
+  margin-right: auto;
+  font-weight: 600;
+}
+.media-dropzone--dragover {
+  border-color: var(--em-accent);
+  background: var(--em-accent-04);
+}
+.media-dropzone-hint {
+  text-align: center;
+  color: var(--em-accent);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 12px 0 0;
+}
+.media-file-input {
+  display: none;
+}
+
+/* List view: compact rows, vertically centred cells. */
+.media-table td {
+  vertical-align: middle;
+}
+
+/* Detail modal: preview + metadata + edit rows. */
+.media-detail-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  max-height: 320px;
+  background: var(--em-surface-muted);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.media-detail-preview img,
+.media-detail-preview video {
+  max-width: 100%;
+  max-height: 320px;
+  display: block;
+}
+.media-detail-preview audio {
+  width: 100%;
+  margin: 24px 16px;
+}
+.media-detail-icon {
+  color: var(--em-text-muted);
+  padding: 32px 0;
+}
+.media-detail-meta {
+  margin: 0 0 16px;
+}
+.media-detail-meta > div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--em-border);
+  font-size: 13px;
+  line-height: 20px;
+}
+.media-detail-meta > div:last-child {
+  border-bottom: 0;
+}
+.media-detail-meta dt {
+  color: var(--em-text-muted);
+  font-weight: 600;
+}
+.media-detail-meta dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.media-detail-url {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.media-detail-url .media-mono {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.media-detail-edit {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+.media-detail-edit .inline-field {
+  flex: 1;
+}
+.media-detail-edit .button {
+  flex: none;
+}
+
+/* Picker dialog: toolbar, empty state, "show more", upload row. */
+.media-picker--dragover {
+  outline: 2px solid var(--em-accent);
+  outline-offset: 4px;
+  border-radius: var(--em-radius-md);
+}
+.media-picker-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.media-picker-toolbar input {
+  flex: 1;
+  min-width: 200px;
+}
+.media-picker-empty {
+  text-align: center;
+  color: var(--em-text-muted);
+  font-size: 13px;
+  padding: 32px 0;
+}
+.media-grid--picker {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.media-picker-more {
+  text-align: center;
+  margin-top: 12px;
+}
+.media-picker-upload {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--em-border);
+}
+
+@media (max-width: 640px) {
+  .media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+  .media-detail-meta > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .media-detail-edit {
+    flex-wrap: wrap;
+  }
+  .media-detail-edit .inline-field {
+    flex-basis: 100%;
+  }
+  .media-picker-toolbar input {
+    flex-basis: 100%;
+  }
+}
+
+/* media-library: end */
+/* ------------------------------------------------------------------ */

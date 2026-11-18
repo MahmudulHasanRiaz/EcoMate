@@ -34,6 +34,7 @@ export const ROLE_MATRIX: RoleMatrixEntry[] = [
       { area: 'Audit', access: 'full', note: 'Includes CSV/JSON export.' },
       { area: 'Leads', access: 'full' },
       { area: 'Landing', access: 'full' },
+      { area: 'Media', access: 'full' },
     ],
   },
   {
@@ -59,6 +60,7 @@ export const ROLE_MATRIX: RoleMatrixEntry[] = [
       { area: 'Audit', access: 'read', note: 'Includes CSV/JSON export.' },
       { area: 'Leads', access: 'write' },
       { area: 'Landing', access: 'write' },
+      { area: 'Media', access: 'write' },
     ],
   },
   {
@@ -84,6 +86,7 @@ export const ROLE_MATRIX: RoleMatrixEntry[] = [
       { area: 'Audit', access: 'read', note: 'Search only; no export.' },
       { area: 'Leads', access: 'write', note: 'Status triage only.' },
       { area: 'Landing', access: 'read' },
+      { area: 'Media', access: 'read' },
     ],
   },
   {
@@ -101,6 +104,7 @@ export const ROLE_MATRIX: RoleMatrixEntry[] = [
       { area: 'Audit', access: 'none' },
       { area: 'Leads', access: 'none' },
       { area: 'Landing', access: 'none' },
+      { area: 'Media', access: 'none' },
     ],
   },
 ];

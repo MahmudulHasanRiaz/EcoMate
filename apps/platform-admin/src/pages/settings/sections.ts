@@ -3,6 +3,7 @@ import {
   Clock,
   CreditCard,
   Globe,
+  HardDrive,
   Mail,
   Palette,
   Percent,
@@ -13,6 +14,7 @@ import type { PaymentMethod, PlatformSettings } from '../../types';
 import { BrandingSection } from './branding';
 import { LandingSection } from './landing';
 import { MaintenanceSection } from './maintenance';
+import { MediaSection } from './media';
 import { PaymentMethodsSection } from './payment-methods';
 import { SmtpSection } from './smtp';
 import { TaxSection } from './tax';
@@ -97,6 +99,13 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     icon: Globe,
     group: 'Website',
     component: LandingSection,
+  },
+  {
+    id: 'media',
+    label: 'Media storage',
+    icon: HardDrive,
+    group: 'Website',
+    component: MediaSection,
   },
 ];
 
