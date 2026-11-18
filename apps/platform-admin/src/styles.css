@@ -1239,7 +1239,12 @@ kbd,
   color: var(--em-stat-4-icon);
 }
 
-.metric span {
+/* Label line of a metric card. Scoped to exclude .metric-icon: the icon
+   chip is also a <span>, and this rule's higher specificity
+   (.metric span beats .metric-icon) used to override the chip's
+   inline-flex with display:block, killing its centring — the glyph sat
+   in the chip's top-left corner instead of centred. */
+.metric span:not(.metric-icon) {
   display: block;
   color: var(--em-text-muted);
   font-size: 13px;
