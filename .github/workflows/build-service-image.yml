@@ -22,12 +22,12 @@ on:
         description: JSON label array for runs-on (caller maps its runner choice)
         required: false
         type: string
-                default: '["self-hosted", "macos", "arm64"]'
-            build-args:
-            description: Docker build args, one per line (KEY=VALUE)
-            required: false
-            type: string
-            default: ''
+        default: '["self-hosted", "macos", "arm64"]'
+      build-args:
+        description: Docker build args, one per line (KEY=VALUE)
+        required: false
+        type: string
+        default: ''
 
 jobs:
   build:
