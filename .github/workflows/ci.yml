@@ -250,7 +250,9 @@ jobs:
 
       - name: npm audit (high and above)
         # Reads package-lock.json; no install needed.
-        run: npm audit --audit-level=high
+        # Filter script: fails on any high+ finding EXCEPT the reviewed
+        # picomatch GHSA-fc5q-39xc-vjpf (no fixed release exists).
+        run: node scripts/npm-audit-filter.mjs
 
       - name: OSV scan (all lockfiles)
         # Pinned: google/osv-scanner-action has NO floating `v2` tag
