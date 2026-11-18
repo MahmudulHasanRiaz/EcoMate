@@ -54,12 +54,27 @@ export interface MaintenanceSettings {
   message: string;
 }
 
+/**
+ * Public landing behaviour (Batch 1, items 2 + 5). defaultLocale is the
+ * locale a first-time visitor sees; seoIndexingEnabled is the
+ * search-engine kill-switch (off = robots disallows all, no sitemap,
+ * noindex meta). seoIndexingSource discloses where the effective
+ * indexing value comes from: SEO_INDEXING_ENABLED env wins when set
+ * (staging deploys set it false), else the stored setting.
+ */
+export interface LandingSettings {
+  defaultLocale: 'en' | 'bn';
+  seoIndexingEnabled: boolean;
+  seoIndexingSource: 'env' | 'setting';
+}
+
 export interface AllSettings {
   smtp: SmtpSettingsPublic;
   trial: TrialSettings;
   tax: TaxSettings;
   branding: BrandingSettings;
   maintenance: MaintenanceSettings;
+  landing: LandingSettings;
 }
 
 export const DEFAULT_TRIAL_DAYS = 14;
@@ -86,6 +101,12 @@ const DEFAULT_BRANDING: BrandingSettings = {
 const DEFAULT_MAINTENANCE: MaintenanceSettings = {
   enabled: false,
   message: '',
+};
+
+const DEFAULT_LANDING: LandingSettings = {
+  defaultLocale: 'en',
+  seoIndexingEnabled: true,
+  seoIndexingSource: 'setting',
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -123,6 +144,7 @@ export class SettingsService implements OnModuleInit {
   private tax: TaxSettings = { ...DEFAULT_TAX };
   private branding: BrandingSettings = { ...DEFAULT_BRANDING };
   private maintenance: MaintenanceSettings = { ...DEFAULT_MAINTENANCE };
+  private landing: LandingSettings = { ...DEFAULT_LANDING };
 
   constructor(
     private readonly prisma: PlatformPrismaService,
@@ -141,6 +163,7 @@ export class SettingsService implements OnModuleInit {
       tax: { ...this.tax },
       branding: { ...this.branding },
       maintenance: { ...this.maintenance },
+      landing: { ...this.landing },
     };
   }
 
@@ -180,6 +203,15 @@ export class SettingsService implements OnModuleInit {
 
   isMaintenanceEnabled(): boolean {
     return this.maintenance.enabled;
+  }
+
+  getLanding(): LandingSettings {
+    return { ...this.landing };
+  }
+
+  /** Effective search-indexing flag for the public landing. */
+  isSeoIndexingEnabled(): boolean {
+    return this.landing.seoIndexingEnabled;
   }
 
   async updateSmtp(input: {
@@ -325,6 +357,64 @@ export class SettingsService implements OnModuleInit {
     return { ...next };
   }
 
+  async updateLanding(input: {
+    defaultLocale?: string;
+    seoIndexingEnabled?: boolean;
+  }): Promise<LandingSettings> {
+    const defaultLocale =
+      input.defaultLocale ?? this.landing.defaultLocale;
+    if (defaultLocale !== 'en' && defaultLocale !== 'bn') {
+      throw new BadRequestException("defaultLocale must be 'en' or 'bn'");
+    }
+    const storedIndexing =
+      input.seoIndexingEnabled ?? this.storedIndexing;
+    await this.store('landing', {
+      defaultLocale,
+      seoIndexingEnabled: storedIndexing,
+    });
+    // Reload so the env override (if set) recomputes the effective value.
+    await this.loadLanding();
+    return { ...this.landing };
+  }
+
+  /** Stored indexing value as last read from the DB (env-independent). */
+  private storedIndexing = true;
+
+  /**
+   * Landing settings precedence (same rule as SMTP): the
+   * SEO_INDEXING_ENABLED env var wins when set to 'true'/'false' (staging
+   * deploys set it false so staging is never indexed); otherwise the
+   * stored PlatformSetting; otherwise the default (indexing on). The
+   * stored setting is kept even while env wins, so removing the env var
+   * later reveals it again. defaultLocale has no env override.
+   */
+  private async loadLanding(): Promise<void> {
+    const stored = await this.readStored('landing');
+    let defaultLocale: 'en' | 'bn' = 'en';
+    let storedIndexing = true;
+    if (isRecord(stored)) {
+      if (stored.defaultLocale === 'en' || stored.defaultLocale === 'bn') {
+        defaultLocale = stored.defaultLocale;
+      }
+      storedIndexing = asBoolean(stored.seoIndexingEnabled, true);
+    }
+    this.storedIndexing = storedIndexing;
+    const envRaw = (process.env.SEO_INDEXING_ENABLED ?? '').trim().toLowerCase();
+    if (envRaw === 'true' || envRaw === 'false') {
+      this.landing = {
+        defaultLocale,
+        seoIndexingEnabled: envRaw === 'true',
+        seoIndexingSource: 'env',
+      };
+      return;
+    }
+    this.landing = {
+      defaultLocale,
+      seoIndexingEnabled: storedIndexing,
+      seoIndexingSource: 'setting',
+    };
+  }
+
   private async loadAll(): Promise<void> {
     await this.loadSmtp();
     const trial = await this.readStored('trial_defaults');
@@ -359,6 +449,7 @@ export class SettingsService implements OnModuleInit {
         message: asString(maintenance.message),
       };
     }
+    await this.loadLanding();
   }
 
   /**

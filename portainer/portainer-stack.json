@@ -159,6 +159,16 @@
       "name": "TENANT_BACKEND_URL"
     },
     {
+      "default": "http://landing:3002",
+      "label": "Internal landing URL for the cache purge",
+      "name": "LANDING_INTERNAL_URL"
+    },
+    {
+      "default": "true",
+      "label": "Search-engine indexing for the landing ('false' = noindex + robots disallow-all; wins over the console toggle; set false on staging)",
+      "name": "SEO_INDEXING_ENABLED"
+    },
+    {
       "default": "",
       "label": "Explicit plan version for self-serve trials (empty = newest active version; set explicitly before launch)",
       "name": "DEFAULT_PLAN_VERSION_ID"

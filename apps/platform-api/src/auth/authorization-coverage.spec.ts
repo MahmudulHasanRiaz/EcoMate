@@ -190,6 +190,7 @@ describe('authorization coverage', () => {
       'HealthController',
       'InternalController',
       'JobsController',
+      'LandingCacheController',
       'LandingContentController',
       'LeadsController',
       'MetricsController',

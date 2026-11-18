@@ -12,6 +12,10 @@ import {
   trialCtaCopy,
   trialDaysForPlans,
 } from '@/lib/plans';
+import {
+  fetchManagedLandingContent,
+} from '@/lib/landing-content';
+import { fetchLandingSettings } from '@/lib/landing-settings';
 import './globals.css';
 
 // next/font self-hosts the families and defines these variables on <html>;
@@ -44,16 +48,41 @@ const mono = JetBrains_Mono({
 
 export async function generateMetadata(): Promise<Metadata> {
   // Trial length comes from the live plan list, never a hardcoded number.
-  // The fetch never throws; a downed API just yields the dateless copy.
-  const plans = await fetchPublicPlans();
+  // The fetches never throw; a downed API yields the dateless copy, the
+  // built-in SEO strings, and indexing on.
+  const [plans, managed, settings] = await Promise.all([
+    fetchPublicPlans(),
+    fetchManagedLandingContent(),
+    fetchLandingSettings(),
+  ]);
   const trialDays = trialDaysForPlans(
     plans,
     process.env.NEXT_PUBLIC_TRIAL_DAYS,
   );
   const cta = trialCtaCopy(trialDays);
+  // Managed SEO (console /landing "SEO" tab) in the site's default
+  // locale, else English, else the built-in strings. The managed
+  // description is the BASE text — the live trial CTA is still appended
+  // so the trial length never goes stale in the metadata.
+  const seo =
+    managed?.[settings.defaultLocale]?.seo ?? managed?.en?.seo;
+  const title =
+    typeof seo?.title === 'string' && seo.title.trim()
+      ? seo.title.trim()
+      : 'EcoMate — a commerce workspace you own';
+  const baseDescription =
+    typeof seo?.description === 'string' && seo.description.trim()
+      ? seo.description.trim()
+      : 'Launch your storefront, run orders and inventory, and keep your data.';
   return {
-    title: 'EcoMate — a commerce workspace you own',
-    description: `Launch your storefront, run orders and inventory, and keep your data. ${cta}.`,
+    title,
+    description: `${baseDescription} ${cta}.`,
+    // Search-engine kill-switch (console Settings → Landing, or the
+    // SEO_INDEXING_ENABLED env var): off = noindex + nofollow meta on
+    // every page, plus robots.txt disallow-all and an empty sitemap.
+    robots: settings.seoIndexingEnabled
+      ? undefined
+      : { index: false, follow: false },
     other: {
       'theme-color': '#090A0F',
     },

@@ -68,6 +68,100 @@ describe('SettingsService', () => {
     });
   });
 
+  it('defaults the landing locale to en and indexing to on', async () => {
+    const { service } = buildService();
+    await service.onModuleInit();
+
+    expect(service.getLanding()).toEqual({
+      defaultLocale: 'en',
+      seoIndexingEnabled: true,
+      seoIndexingSource: 'setting',
+    });
+    expect(service.isSeoIndexingEnabled()).toBe(true);
+  });
+
+  it('loads stored landing settings on boot', async () => {
+    const { service } = buildService({
+      landing: { defaultLocale: 'bn', seoIndexingEnabled: false },
+    });
+    await service.onModuleInit();
+
+    expect(service.getLanding()).toEqual({
+      defaultLocale: 'bn',
+      seoIndexingEnabled: false,
+      seoIndexingSource: 'setting',
+    });
+  });
+
+  it('prefers the SEO_INDEXING_ENABLED env var over the stored setting', async () => {
+    process.env.SEO_INDEXING_ENABLED = 'false';
+    const { service } = buildService({
+      landing: { defaultLocale: 'bn', seoIndexingEnabled: true },
+    });
+    await service.onModuleInit();
+
+    expect(service.getLanding()).toEqual({
+      defaultLocale: 'bn',
+      seoIndexingEnabled: false,
+      seoIndexingSource: 'env',
+    });
+  });
+
+  it('ignores a malformed SEO_INDEXING_ENABLED env var', async () => {
+    process.env.SEO_INDEXING_ENABLED = 'maybe';
+    const { service } = buildService({
+      landing: { defaultLocale: 'en', seoIndexingEnabled: false },
+    });
+    await service.onModuleInit();
+
+    expect(service.getLanding()).toEqual({
+      defaultLocale: 'en',
+      seoIndexingEnabled: false,
+      seoIndexingSource: 'setting',
+    });
+  });
+
+  it('updates landing settings and rejects a bad locale', async () => {
+    const { service, stored } = buildService();
+    await service.onModuleInit();
+
+    const next = await service.updateLanding({
+      defaultLocale: 'bn',
+      seoIndexingEnabled: false,
+    });
+    expect(next).toEqual({
+      defaultLocale: 'bn',
+      seoIndexingEnabled: false,
+      seoIndexingSource: 'setting',
+    });
+    expect(stored.landing).toEqual({
+      defaultLocale: 'bn',
+      seoIndexingEnabled: false,
+    });
+    await expect(
+      service.updateLanding({ defaultLocale: 'fr' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('keeps the stored indexing value while env wins, and reveals it when env is removed', async () => {
+    process.env.SEO_INDEXING_ENABLED = 'false';
+    const { service, stored } = buildService({
+      landing: { defaultLocale: 'en', seoIndexingEnabled: true },
+    });
+    await service.onModuleInit();
+    expect(service.isSeoIndexingEnabled()).toBe(false);
+
+    // The operator flips the stored toggle while env wins: the stored
+    // value changes, the effective value does not.
+    await service.updateLanding({ seoIndexingEnabled: false });
+    expect(stored.landing).toEqual({
+      defaultLocale: 'en',
+      seoIndexingEnabled: false,
+    });
+    expect(service.isSeoIndexingEnabled()).toBe(false);
+    expect(service.getLanding().seoIndexingSource).toBe('env');
+  });
+
   it('loads stored settings on boot', async () => {
     const { service } = buildService({
       trial_defaults: { trialDays: 30, graceDays: 10 },

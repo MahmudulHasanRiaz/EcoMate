@@ -496,12 +496,26 @@ export interface MaintenanceSettings {
   message: string;
 }
 
+/**
+ * Landing settings (Batch 1, items 2 + 5): the default locale a
+ * first-time visitor sees and the search-engine indexing flag.
+ * seoIndexingSource tells the console whether the effective indexing
+ * value came from this setting or from the SEO_INDEXING_ENABLED env var
+ * (env wins when set).
+ */
+export interface LandingSettings {
+  defaultLocale: 'en' | 'bn';
+  seoIndexingEnabled: boolean;
+  seoIndexingSource: 'env' | 'setting';
+}
+
 export interface PlatformSettings {
   smtp: SmtpSettingsPublic;
   trial: TrialSettings;
   tax: TaxSettings;
   branding: BrandingSettings;
   maintenance: MaintenanceSettings;
+  landing: LandingSettings;
 }
 
 export interface JobRun {
@@ -520,7 +534,14 @@ export interface JobsStatus {
   jobs: JobRun[];
 }
 
-export type LeadStatus = 'NEW' | 'CONTACTED' | 'CLOSED';
+export type LeadStatus =
+  | 'NEW'
+  | 'CONTACTED'
+  | 'QUALIFIED'
+  | 'DEMO_SCHEDULED'
+  | 'WON'
+  | 'LOST'
+  | 'CLOSED';
 
 export interface Lead {
   id: string;
@@ -533,6 +554,15 @@ export interface Lead {
   status: LeadStatus;
   ip?: string | null;
   userAgent?: string | null;
+  /** Consent the visitor gave in the lead form (Batch 1, item 8). */
+  consentGiven: boolean;
+  consentText?: string | null;
+  /** UTM attribution from the page URL (Batch 1, item 8). */
+  utmSource?: string | null;
+  utmCampaign?: string | null;
+  /** Tenant this lead was converted to (Batch 1, C1), if any. */
+  convertedTenantId?: string | null;
+  convertedTenant?: { id: string; name: string; slug: string } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -547,4 +577,26 @@ export interface LandingContentRow {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Per-section translation coverage (Batch 1, item 4). */
+export interface LandingContentHealthSection {
+  section: string;
+  /** Rows in either locale (a key counts once per locale). */
+  total: number;
+  published: number;
+  /** Keys present in bn but missing in en. */
+  missingEn: number;
+  /** Keys present in en but missing in bn. */
+  missingBn: number;
+}
+
+export interface LandingContentHealth {
+  sections: LandingContentHealthSection[];
+  totals: {
+    total: number;
+    published: number;
+    missingEn: number;
+    missingBn: number;
+  };
 }

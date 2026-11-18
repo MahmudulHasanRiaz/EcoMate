@@ -8,6 +8,11 @@ function makeController() {
     getTax: jest.fn().mockReturnValue({ ratePercent: 0 }),
     getBranding: jest.fn().mockReturnValue({ platformName: 'EcoMate' }),
     getMaintenance: jest.fn().mockReturnValue({ enabled: false, message: '' }),
+    getLanding: jest.fn().mockReturnValue({
+      defaultLocale: 'en',
+      seoIndexingEnabled: true,
+      seoIndexingSource: 'setting',
+    }),
     updateSmtp: jest.fn().mockResolvedValue({ configured: true }),
     updateTrial: jest.fn().mockResolvedValue({ trialDays: 30, graceDays: 7 }),
     updateTax: jest.fn().mockResolvedValue({ ratePercent: 15 }),
@@ -15,6 +20,11 @@ function makeController() {
     updateMaintenance: jest
       .fn()
       .mockResolvedValue({ enabled: true, message: 'Upgrading' }),
+    updateLanding: jest.fn().mockResolvedValue({
+      defaultLocale: 'bn',
+      seoIndexingEnabled: false,
+      seoIndexingSource: 'setting',
+    }),
   };
   const mail: any = {
     refresh: jest.fn(),
@@ -98,5 +108,42 @@ describe('SettingsController', () => {
     const trialCall = audit.record.mock.calls[0][0];
     expect(trialCall.before).toEqual({ trialDays: 14, graceDays: 7 });
     expect(trialCall.after).toEqual({ trialDays: 30, graceDays: 7 });
+  });
+
+  it('audits landing updates with before/after', async () => {
+    const { controller, settings, audit } = makeController();
+
+    const result = await controller.updateLanding(
+      { defaultLocale: 'bn', seoIndexingEnabled: false } as any,
+      { id: 'user-1' },
+    );
+
+    expect(settings.updateLanding).toHaveBeenCalledWith({
+      defaultLocale: 'bn',
+      seoIndexingEnabled: false,
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'user-1',
+        action: 'settings.landing.update',
+        entity: 'PlatformSetting',
+        entityId: 'landing',
+        before: {
+          defaultLocale: 'en',
+          seoIndexingEnabled: true,
+          seoIndexingSource: 'setting',
+        },
+        after: {
+          defaultLocale: 'bn',
+          seoIndexingEnabled: false,
+          seoIndexingSource: 'setting',
+        },
+      }),
+    );
+    expect(result).toEqual({
+      defaultLocale: 'bn',
+      seoIndexingEnabled: false,
+      seoIndexingSource: 'setting',
+    });
   });
 });

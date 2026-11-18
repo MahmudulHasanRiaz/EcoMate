@@ -45,7 +45,8 @@ export async function fetchPublicPlans(): Promise<PublicPlan[]> {
     const response = await fetch(`${platformApiBase()}/public/plans`, {
       // Pricing changes are rare; a 5-minute cache keeps the landing fast
       // and keeps a downed API from taking the page down with it.
-      next: { revalidate: 300 },
+      // Tagged so the cache purge revalidates it immediately.
+      next: { revalidate: 300, tags: ['public-plans'] },
       signal: AbortSignal.timeout(5_000),
     });
     if (!response.ok) return [];

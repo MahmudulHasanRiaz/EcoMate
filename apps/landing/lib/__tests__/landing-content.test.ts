@@ -168,10 +168,190 @@ describe('mergeLandingContent (lib/landing-content.ts)', () => {
       testimonials: ['nope'],
       partners: null,
       contact: 42,
+      leadForm: 42,
+      proof: 'nope',
+      nav: [{ key: 'n1', label: 'X', href: 'javascript:alert(1)' }],
     } as unknown as ManagedLocaleContent;
     expect(() => mergeLandingContent(FALLBACK, junk)).not.toThrow();
     const merged = mergeLandingContent(FALLBACK, junk);
     expect(merged.hero.headlinePart1).toBe(FALLBACK.hero.headlinePart1);
     expect(merged.faq.items).toBe(FALLBACK.faq.items);
+    expect(merged.header.nav).toBe(FALLBACK.header.nav);
+  });
+
+  // Batch 1 object sections.
+  it('overrides lead-form copy per-field, including volume options', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      leadForm: {
+        heading: 'DB lead heading',
+        volumeOptions: ['1–10', '11–50'],
+        submitCta: '   ',
+      },
+    });
+    expect(merged.leadForm.heading).toBe('DB lead heading');
+    expect(merged.leadForm.volumeOptions).toEqual(['1–10', '11–50']);
+    expect(merged.leadForm.submitCta).toBe(FALLBACK.leadForm.submitCta);
+    expect(merged.leadForm.eyebrow).toBe(FALLBACK.leadForm.eyebrow);
+  });
+
+  it('overrides proof copy and maps chrome labels, composing with testimonials', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      proof: {
+        heading: 'DB proof heading',
+        chromeWatchCaseStudy: 'DB watch label',
+      },
+      testimonials: [
+        {
+          key: 'story-acme',
+          businessName: 'Acme Store',
+          founderName: 'Ayesha Khan',
+          role: 'Founder',
+          location: 'Dhaka',
+          website: 'acme.example',
+          quote: 'It just works.',
+          videoDuration: '2:10',
+          videoTitle: 'Acme story',
+          metrics: [],
+        },
+      ],
+    });
+    // Copy merge and list merge compose — neither wipes the other.
+    expect(merged.proof.heading).toBe('DB proof heading');
+    expect(merged.proof.chrome.watchCaseStudy).toBe('DB watch label');
+    expect(merged.proof.chrome.featuredBadge).toBe(
+      FALLBACK.proof.chrome.featuredBadge,
+    );
+    expect(merged.proof.caseStudies).toHaveLength(1);
+  });
+
+  it('overrides FAQ copy and composes with the FAQ item list', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      faqMeta: { heading: 'DB FAQ heading' },
+      faq: [{ key: 'faq-1', question: 'DB question?', answer: 'DB answer.' }],
+    });
+    expect(merged.faq.heading).toBe('DB FAQ heading');
+    expect(merged.faq.items).toEqual([
+      { question: 'DB question?', answer: 'DB answer.' },
+    ]);
+  });
+
+  it('overrides pricing copy and maps the rendered price labels', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      pricingCopy: {
+        heading: 'DB pricing heading',
+        labelPerMonth: 'DB /mo',
+        labelCtaLabel: 'DB CTA',
+      },
+    });
+    expect(merged.pricing.heading).toBe('DB pricing heading');
+    expect(merged.pricing.labels.perMonth).toBe('DB /mo');
+    expect(merged.pricing.labels.ctaLabel).toBe('DB CTA');
+    expect(merged.pricing.labels.trialNote).toBe(
+      FALLBACK.pricing.labels.trialNote,
+    );
+  });
+
+  it('overrides getting-started copy and maps step titles/details', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      gettingStarted: {
+        heading: 'DB getting-started heading',
+        step1Title: 'DB step one',
+        step2Detail: 'DB step two detail',
+      },
+    });
+    expect(merged.gettingStarted.heading).toBe('DB getting-started heading');
+    expect(merged.gettingStarted.steps[0].title).toBe('DB step one');
+    expect(merged.gettingStarted.steps[0].detail).toBe(
+      FALLBACK.gettingStarted.steps[0].detail,
+    );
+    expect(merged.gettingStarted.steps[1].detail).toBe('DB step two detail');
+    // Step numbers stay in code.
+    expect(merged.gettingStarted.steps[0].stepNumber).toBe(
+      FALLBACK.gettingStarted.steps[0].stepNumber,
+    );
+  });
+
+  it('overrides walkthrough bullets and the video URL', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      walkthrough: { bullets: ['Bullet one', 'Bullet two'] },
+      videoSection: { youtubeUrl: 'https://www.youtube.com/watch?v=db' },
+    });
+    expect(merged.walkthrough.bullets).toEqual([
+      'Bullet one',
+      'Bullet two',
+    ]);
+    expect(merged.videoSection.youtubeUrl).toBe(
+      'https://www.youtube.com/watch?v=db',
+    );
+  });
+
+  it('overrides hero-tab labels and composes with partner brands', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      heroTabs: { tabLabelAdmin: 'DB Admin', trustedTitle: 'DB trusted' },
+      partners: [{ key: 'partner-a', name: 'Brand A' }],
+    });
+    const admin = merged.heroTabs.tabs.find((tab) => tab.id === 'admin');
+    expect(admin?.label).toBe('DB Admin');
+    expect(merged.heroTabs.trustedTitle).toBe('DB trusted');
+    expect(merged.heroTabs.brands).toEqual(['Brand A']);
+  });
+
+  it('overrides dock labels without touching contact values, and composes with contact', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      dock: { helpLabel: 'DB help', demoLabel: 'DB demo' },
+      contact: { phone: '+880 1900-000000' },
+    });
+    expect(merged.dock.helpLabel).toBe('DB help');
+    expect(merged.dock.demoLabel).toBe('DB demo');
+    expect(merged.dock.callNumber).toBe('+880 1900-000000');
+    expect(merged.footer.phone).toBe('+880 1900-000000');
+  });
+
+  it('overrides header and footer copy without touching contact values', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      header: { ctaStartTrial: 'DB trial CTA' },
+      footer: { tagline: 'DB tagline', copyright: 'DB copyright' },
+      contact: { phone: '+880 1900-000000' },
+    });
+    expect(merged.header.ctaStartTrial).toBe('DB trial CTA');
+    expect(merged.footer.tagline).toBe('DB tagline');
+    expect(merged.footer.copyright).toBe('DB copyright');
+    expect(merged.footer.phone).toBe('+880 1900-000000');
+  });
+
+  it('replaces nav and footer links, dropping unsafe hrefs', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      nav: [
+        { key: 'nav-1', label: 'Features', href: '#features' },
+        { key: 'nav-2', label: 'Evil', href: 'javascript:alert(1)' },
+        { key: 'nav-3', label: 'Blog', href: 'https://blog.example.com' },
+      ],
+      footerLinks: [
+        { key: 'footer-1', label: 'Pricing', href: '#pricing' },
+      ],
+    });
+    expect(merged.header.nav).toEqual([
+      { label: 'Features', href: '#features' },
+      { label: 'Blog', href: 'https://blog.example.com' },
+    ]);
+    expect(merged.footer.capabilities).toEqual([
+      { label: 'Pricing', href: '#pricing' },
+    ]);
+  });
+
+  it('keeps the fallback nav when the managed nav is empty or all-unsafe', () => {
+    const empty = mergeLandingContent(FALLBACK, { nav: [] });
+    expect(empty.header.nav).toBe(FALLBACK.header.nav);
+    const unsafe = mergeLandingContent(FALLBACK, {
+      nav: [{ key: 'n1', label: 'Evil', href: 'javascript:alert(1)' }],
+    });
+    expect(unsafe.header.nav).toBe(FALLBACK.header.nav);
+  });
+
+  it('ignores the seo section in the page merge (metadata reads it)', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      seo: { title: 'DB title', description: 'DB description' },
+    });
+    expect(merged.hero.headlinePart1).toBe(FALLBACK.hero.headlinePart1);
   });
 });

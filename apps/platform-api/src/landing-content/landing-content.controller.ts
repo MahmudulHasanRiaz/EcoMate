@@ -39,6 +39,13 @@ export class LandingContentController {
     return this.content.list({ page, limit, section, locale });
   }
 
+  /** Content-health summary (per-section counts + translation gap). */
+  @Get('health')
+  @Roles(...READ_ROLES)
+  health() {
+    return this.content.health();
+  }
+
   @Post()
   @Roles('SUPERADMIN', 'BILLING')
   create(

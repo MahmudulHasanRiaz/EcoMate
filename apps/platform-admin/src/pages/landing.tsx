@@ -14,6 +14,8 @@ import {
   landingValueToForm,
   LANDING_LOCALES,
   LANDING_LOCALE_LABELS,
+  LANDING_OBJECT_KEY,
+  LANDING_OBJECT_SECTIONS,
   LANDING_SCALAR_SECTIONS,
   LANDING_SECTIONS,
   LANDING_SECTION_LABELS,
@@ -23,7 +25,11 @@ import {
   type LandingRowGroup,
   type LandingSection,
 } from '../lib/landing-content';
-import type { LandingContentRow, Page } from '../types';
+import type {
+  LandingContentHealth,
+  LandingContentRow,
+  Page,
+} from '../types';
 import {
   ConfirmDialog,
   ErrorNote,
@@ -267,9 +273,11 @@ function LandingRowCard({
   const title =
     section === 'capabilities'
       ? `${CAPABILITY_LABELS[group.key] ?? group.key} (${group.key})`
-      : scalar
-        ? landingScalarFieldLabel(section, group.key)
-        : group.key;
+      : LANDING_OBJECT_SECTIONS.has(section)
+        ? LANDING_SECTION_LABELS[section]
+        : scalar
+          ? landingScalarFieldLabel(section, group.key)
+          : group.key;
 
   return (
     <article className="card landing-card">
@@ -377,7 +385,7 @@ function AddRowForm({
     setKey('');
   };
 
-  if (section === 'hero' || section === 'contact') {
+  if (LANDING_SCALAR_SECTIONS.has(section)) {
     if (scalarOptions.length === 0) return null;
     return (
       <form className="inline-form" onSubmit={submit}>
@@ -399,6 +407,31 @@ function AddRowForm({
         <div className="form-actions">
           <button type="submit" className="button button--primary">
             Add field
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  // Object sections hold exactly one row per locale (key 'main'); once
+  // it exists there is nothing more to add.
+  if (LANDING_OBJECT_SECTIONS.has(section)) {
+    if (taken.has(LANDING_OBJECT_KEY)) return null;
+    return (
+      <form
+        className="inline-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onAdd(LANDING_OBJECT_KEY);
+        }}
+      >
+        <p className="muted-note">
+          This section has one content block per locale — add it to start
+          editing the landing copy.
+        </p>
+        <div className="form-actions">
+          <button type="submit" className="button button--primary">
+            Add content
           </button>
         </div>
       </form>
@@ -438,7 +471,11 @@ function AddRowForm({
       ? 'faq-5'
       : section === 'testimonials'
         ? 'story-business-name'
-        : 'partner-brand-name';
+        : section === 'nav'
+          ? 'nav-5'
+          : section === 'footerLinks'
+            ? 'footer-5'
+            : 'partner-brand-name';
   return (
     <form className="inline-form" onSubmit={submit}>
       <label>
@@ -460,13 +497,19 @@ function AddRowForm({
 }
 
 export function LandingPage() {
-  const { api } = useAuth();
+  const { api, session } = useAuth();
   const [section, setSection] = useState<LandingSection>('hero');
   const [rows, setRows] = useState<LandingContentRow[]>([]);
+  const [health, setHealth] = useState<LandingContentHealth | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingKeys, setPendingKeys] = useState<string[]>([]);
+  const [purging, setPurging] = useState(false);
+
+  // Cache purge is a SUPERADMIN-only API; hide the button for everyone
+  // else instead of showing an action that would 403.
+  const canPurge = session?.user.role === 'SUPERADMIN';
 
   const load = () => {
     setLoading(true);
@@ -479,10 +522,55 @@ export function LandingPage() {
       .finally(() => setLoading(false));
   };
 
+  const loadHealth = () => {
+    api('/landing-content/health')
+      .then((response) => readJson<LandingContentHealth>(response))
+      .then((result) => setHealth(result))
+      .catch(() => {
+        // Health is advisory — a failed fetch must not block editing.
+      });
+  };
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, section]);
+
+  useEffect(() => {
+    loadHealth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api]);
+
+  async function purgeCache() {
+    setPurging(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await api('/landing-cache/purge', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      const result = await readJson<{ revalidated?: string[] }>(response);
+      const tags = result.revalidated ?? [];
+      setNotice(
+        tags.length > 0
+          ? `Landing cache purged (${tags.join(', ')}) — edits are live now.`
+          : 'Landing cache purged — edits are live now.',
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPurging(false);
+    }
+  }
+
+  const missingBySection = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of health?.sections ?? []) {
+      map.set(entry.section, entry.missingEn + entry.missingBn);
+    }
+    return map;
+  }, [health]);
 
   const groups = useMemo(() => {
     const grouped = groupLandingRows(rows);
@@ -500,6 +588,12 @@ export function LandingPage() {
     setNotice(null);
   };
 
+  const onChanged = () => {
+    setNotice('Landing content saved.');
+    loadHealth();
+    load();
+  };
+
   return (
     <>
       <PageHeader
@@ -512,6 +606,31 @@ export function LandingPage() {
         so the landing never breaks. Unpublishing a row hides the managed
         copy and restores the built-in text for that item.
       </p>
+      {health ? (
+        <div className="notice" role="status">
+          <strong>Content health:</strong> {health.totals.total} rows ·{' '}
+          {health.totals.published} published ·{' '}
+          {health.totals.missingEn + health.totals.missingBn === 0
+            ? 'every item is translated in both languages.'
+            : `${health.totals.missingEn} missing English, ${health.totals.missingBn} missing Bangla.`}
+        </div>
+      ) : null}
+      {canPurge ? (
+        <div className="toolbar">
+          <button
+            type="button"
+            className="button"
+            disabled={purging}
+            onClick={() => void purgeCache()}
+          >
+            {purging ? 'Purging…' : 'Purge landing cache'}
+          </button>
+          <span className="muted-note">
+            The landing caches content for 5 minutes — purge to make edits
+            live immediately.
+          </span>
+        </div>
+      ) : null}
       {error ? <ErrorNote message={error} /> : null}
       {notice ? (
         <div className="notice notice--success" role="status">
@@ -520,19 +639,25 @@ export function LandingPage() {
       ) : null}
 
       <ScrollableTabs label="Landing content sections">
-        {LANDING_SECTIONS.map((value) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={section === value}
-            className="tab"
-            data-active={section === value}
-            onClick={() => switchSection(value)}
-          >
-            {LANDING_SECTION_LABELS[value]}
-          </button>
-        ))}
+        {LANDING_SECTIONS.map((value) => {
+          const missing = missingBySection.get(value) ?? 0;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={section === value}
+              className="tab"
+              data-active={section === value}
+              onClick={() => switchSection(value)}
+            >
+              {LANDING_SECTION_LABELS[value]}
+              {missing > 0 ? (
+                <span className="badge badge--muted"> {missing} untranslated</span>
+              ) : null}
+            </button>
+          );
+        })}
       </ScrollableTabs>
 
       <section className="card">
@@ -565,8 +690,7 @@ export function LandingPage() {
             setPendingKeys((current) =>
               current.filter((key) => key !== group.key),
             );
-            setNotice('Landing content saved.');
-            load();
+            onChanged();
           }}
           onError={setError}
           onRemovePending={(key) =>

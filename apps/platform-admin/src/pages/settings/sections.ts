@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 import {
   Clock,
   CreditCard,
+  Globe,
   Mail,
   Palette,
   Percent,
@@ -10,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { PaymentMethod, PlatformSettings } from '../../types';
 import { BrandingSection } from './branding';
+import { LandingSection } from './landing';
 import { MaintenanceSection } from './maintenance';
 import { PaymentMethodsSection } from './payment-methods';
 import { SmtpSection } from './smtp';
@@ -88,6 +90,13 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     icon: Wrench,
     group: 'Platform',
     component: MaintenanceSection,
+  },
+  {
+    id: 'landing',
+    label: 'Landing',
+    icon: Globe,
+    group: 'Website',
+    component: LandingSection,
   },
 ];
 

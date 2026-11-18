@@ -10,6 +10,7 @@ import { UpdateLandingContentDto } from './dto/update-landing-content.dto';
 import {
   LANDING_LIST_SECTIONS,
   LANDING_LOCALES,
+  LANDING_OBJECT_SECTIONS,
   LANDING_SCALAR_SECTIONS,
   LANDING_SECTIONS,
 } from './landing-content.constants';
@@ -28,11 +29,16 @@ export class LandingContentService {
   /**
    * Public read for the landing app: active rows grouped by locale then
    * section. Exact shape (the landing depends on it):
-   * - hero / contact: `{ field: value }` scalar maps (one row per field)
+   * - hero / contact / seo: `{ field: value }` scalar maps (one row per
+   *   field)
    * - capabilities: `{ sectionId: partialSectionObject }` (one row per
    *   section; the landing shallow-merges it over the built-in section)
-   * - faq / testimonials / partners: `[{ key, ...value }]` lists, sorted
-   *   by sortOrder then key
+   * - object sections (leadForm, proof, faqMeta, pricingCopy,
+   *   gettingStarted, walkthrough, videoSection, heroTabs, dock, header,
+   *   footer): a single `{ ...fields }` object (one row per locale, key
+   *   'main'; the lowest sortOrder wins if several rows exist)
+   * - faq / testimonials / partners / nav / footerLinks:
+   *   `[{ key, ...value }]` lists, sorted by sortOrder then key
    * Sections with zero active rows are OMITTED — the landing falls back
    * to built-in content for missing sections. An empty table returns
    * `{ en: {}, bn: {} }`, never an error.
@@ -67,6 +73,13 @@ export class LandingContentService {
         >;
         section[row.key] = row.value;
         locale[row.section] = section;
+      } else if (LANDING_OBJECT_SECTIONS.has(row.section)) {
+        // One object row per locale; the first row in sortOrder wins
+        // (rows are ordered sortOrder, key — a duplicate 'main' row can
+        // only exist with a different key, and the first one stands).
+        if (!(row.section in locale) && isPlainObject(row.value)) {
+          locale[row.section] = row.value;
+        }
       } else if (row.section === 'capabilities') {
         const section = (locale.capabilities ?? {}) as Record<
           string,
@@ -86,6 +99,80 @@ export class LandingContentService {
     }
 
     return grouped;
+  }
+
+  /**
+   * Content-health summary for the console /landing page (Batch 1,
+   * item 4): per-section row counts, published counts, and the
+   * translation gap — keys that exist in one locale but not the other.
+   * The reference panel shows the same as a badge count; here the
+   * console renders it as a health strip + per-tab badges. One query
+   * (the table is ~100 rows); no pagination.
+   */
+  async health(): Promise<{
+    sections: {
+      section: string;
+      total: number;
+      published: number;
+      missingEn: number;
+      missingBn: number;
+    }[];
+    totals: { total: number; published: number; missingEn: number; missingBn: number };
+  }> {
+    const rows = await this.prisma.landingContent.findMany({
+      select: { section: true, key: true, locale: true, isActive: true },
+    });
+
+    const bySection = new Map<
+      string,
+      { total: number; published: number; keys: Map<string, Set<string>> }
+    >();
+    for (const section of LANDING_SECTIONS) {
+      bySection.set(section, { total: 0, published: 0, keys: new Map() });
+    }
+    for (const row of rows) {
+      // Unknown sections are never served publicly; count them under
+      // their own name anyway so the health strip never hides rows.
+      let entry = bySection.get(row.section);
+      if (!entry) {
+        entry = { total: 0, published: 0, keys: new Map() };
+        bySection.set(row.section, entry);
+      }
+      entry.total += 1;
+      if (row.isActive) entry.published += 1;
+      let locales = entry.keys.get(row.key);
+      if (!locales) {
+        locales = new Set();
+        entry.keys.set(row.key, locales);
+      }
+      locales.add(row.locale);
+    }
+
+    const sections = [...bySection.entries()].map(([section, entry]) => {
+      let missingEn = 0;
+      let missingBn = 0;
+      for (const locales of entry.keys.values()) {
+        if (!locales.has('en')) missingEn += 1;
+        if (!locales.has('bn')) missingBn += 1;
+      }
+      return {
+        section,
+        total: entry.total,
+        published: entry.published,
+        missingEn,
+        missingBn,
+      };
+    });
+    const totals = sections.reduce(
+      (acc, s) => ({
+        total: acc.total + s.total,
+        published: acc.published + s.published,
+        missingEn: acc.missingEn + s.missingEn,
+        missingBn: acc.missingBn + s.missingBn,
+      }),
+      { total: 0, published: 0, missingEn: 0, missingBn: 0 },
+    );
+    return { sections, totals };
   }
 
   async list(query: {

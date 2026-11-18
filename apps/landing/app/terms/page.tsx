@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/site-header';
-import { getBranding } from '@/lib/branding';
+import { fetchBranding } from '@/lib/branding';
 
 export const metadata: Metadata = {
   title: 'Terms of Service — EcoMate',
@@ -8,8 +8,8 @@ export const metadata: Metadata = {
     'The terms for using EcoMate: your workspace, your data, billing, and what happens when you leave.',
 };
 
-export default function TermsPage() {
-  const { platformName } = getBranding();
+export default async function TermsPage() {
+  const { platformName } = await fetchBranding();
   return (
     <>
       <SiteHeader />

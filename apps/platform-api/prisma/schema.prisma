@@ -126,6 +126,10 @@ enum LeadContactType {
 enum LeadStatus {
   NEW
   CONTACTED
+  QUALIFIED
+  DEMO_SCHEDULED
+  WON
+  LOST
   CLOSED
 }
 
@@ -225,6 +229,7 @@ model Tenant {
   auditLogs         AuditLog[]
   impersonations    ImpersonationSession[]
   provisioningJobs  ProvisioningJob[]
+  convertedFromLeads Lead[] @relation("LeadConvertedTenant")
 
   @@index([status, createdAt])
   @@index([status, graceEndsAt])
@@ -686,6 +691,12 @@ model OutboxEvent {
 /// A contact request from the public landing lead form (POST /public/leads).
 /// Low-privilege record: no account, no auth. Triaged from the console
 /// (GET/PATCH /leads) by operators.
+/// Consent + UTM are captured from the form (Batch 1): consentGiven is
+/// true when the visitor ticked the consent checkbox, consentText stores
+/// the exact label shown at submit time (proof of what was agreed to).
+/// convertedTenantId links a Won lead to the tenant it became (C1:
+/// "Convert lead to tenant" from the console); SetNull on tenant purge
+/// so the lead record survives its tenant.
 model Lead {
   id            String          @id @default(uuid())
   name          String
@@ -695,24 +706,36 @@ model Lead {
   monthlyOrders String?
   source        String          @default("landing_page_lead_form")
   status        LeadStatus      @default(NEW)
+  consentGiven  Boolean         @default(false)
+  consentText   String?         @db.Text
+  utmSource     String?
+  utmCampaign   String?
+  convertedTenantId String?
+  convertedTenant Tenant?       @relation("LeadConvertedTenant", fields: [convertedTenantId], references: [id], onDelete: SetNull)
   ip            String?
   userAgent     String?         @db.Text
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
   @@index([status, createdAt])
+  @@index([convertedTenantId])
 }
 
 /// One manageable piece of the public SaaS landing content (plan §13:
 /// a SINGLE flexible model, not per-section models — the managed types
 /// vary in shape: scalars, lists, nested objects).
 ///
-/// section: hero | capabilities | faq | testimonials | partners | contact.
-/// key: hero/contact = field name (e.g. headlinePart1); capabilities =
-/// section id (e.g. packing); faq/testimonials/partners = item slug.
-/// locale: 'en' | 'bn'. value: a JSON string (hero/contact scalars) or a
-/// JSON object (capability/faq/testimonial/partner item); arrays and null
-/// are rejected at the API layer.
+/// section: hero | capabilities | faq | testimonials | partners | contact
+/// | seo | leadForm | proof | faqMeta | pricingCopy | gettingStarted |
+/// walkthrough | videoSection | heroTabs | dock | header | nav | footer |
+/// footerLinks (see landing-content.constants.ts for the authoritative
+/// list and the per-section public shapes).
+/// key: hero/contact/seo = field name (e.g. headlinePart1); capabilities
+/// and the single-object sections (leadForm, proof, ...) = section id or
+/// 'main'; faq/testimonials/partners/nav/footerLinks = item slug.
+/// locale: 'en' | 'bn'. value: a JSON string (hero/contact/seo scalars)
+/// or a JSON object (capability / object-section / list item); arrays and
+/// null are rejected at the API layer.
 /// Public GET /public/landing-content groups active rows by locale then
 /// section; the landing falls back to built-in content for missing
 /// sections, so an empty table is a valid state.

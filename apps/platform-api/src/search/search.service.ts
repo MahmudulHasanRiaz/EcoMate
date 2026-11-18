@@ -101,7 +101,7 @@ const TYPE_DEFS: TypeDef[] = [
   { type: 'credit-note', label: 'Credit notes', area: 'Billing', statuses: null },
   { type: 'method', label: 'Payment methods', area: 'Billing', statuses: ['ACTIVE', 'INACTIVE'] },
   { type: 'job', label: 'Billing jobs', area: 'Billing', statuses: ['OK', 'ERROR', 'NEVER'] },
-  { type: 'lead', label: 'Leads', area: 'Leads', statuses: ['NEW', 'CONTACTED', 'CLOSED'] },
+  { type: 'lead', label: 'Leads', area: 'Leads', statuses: ['NEW', 'CONTACTED', 'QUALIFIED', 'DEMO_SCHEDULED', 'WON', 'LOST', 'CLOSED'] },
   {
     type: 'domain',
     label: 'Domains',

@@ -24,7 +24,11 @@ function makeService(overrides: Record<string, any> = {}) {
       update: jest.fn().mockImplementation(async ({ data }: any) => ({
         id: 'lead-1',
         status: data.status,
+        convertedTenantId: data.convertedTenantId ?? null,
       })),
+    },
+    tenant: {
+      findUnique: jest.fn().mockResolvedValue(null),
     },
   };
   const captcha = {
@@ -81,11 +85,39 @@ describe('LeadsService.create — validation', () => {
         contactType: 'email',
         message: 'We sell 500 orders a month.',
         monthlyOrders: '500',
+        consentGiven: false,
+        consentText: null,
+        utmSource: null,
+        utmCampaign: null,
         ip: '1.2.3.4',
         userAgent: 'test-agent',
       },
     });
     expect(mail.sendLeadNotification).not.toHaveBeenCalled();
+  });
+
+  it('persists consent + UTM when the form sends them', async () => {
+    const { service, prisma } = makeService();
+    await service.create(
+      {
+        ...validDto,
+        consentGiven: true,
+        consentText: '  I consent to EcoMate storing this request.  ',
+        utmSource: 'facebook',
+        utmCampaign: '  ramadan-sale ',
+      } as any,
+      {},
+    );
+    expect(prisma.lead.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          consentGiven: true,
+          consentText: 'I consent to EcoMate storing this request.',
+          utmSource: 'facebook',
+          utmCampaign: 'ramadan-sale',
+        }),
+      }),
+    );
   });
 
   it('derives phone contactType for a Bangladeshi number', async () => {
@@ -166,6 +198,29 @@ describe('CreateLeadDto — class-validator', () => {
       monthlyOrders: 'x'.repeat(51),
     });
     expect(errors.map((e) => e.property)).toContain('monthlyOrders');
+  });
+
+  it('accepts consent + UTM fields and rejects overlong ones', async () => {
+    expect(
+      await errorsFor({
+        name: 'Ayesha',
+        contact: 'a@b.com',
+        consentGiven: true,
+        consentText: 'I consent.',
+        utmSource: 'facebook',
+        utmCampaign: 'ramadan',
+      }),
+    ).toEqual([]);
+    const errors = await errorsFor({
+      name: 'Ayesha',
+      contact: 'a@b.com',
+      consentGiven: 'yes',
+      utmSource: 'x'.repeat(256),
+      consentText: 'x'.repeat(2001),
+    });
+    expect(errors.map((e) => e.property)).toEqual(
+      expect.arrayContaining(['consentGiven', 'utmSource', 'consentText']),
+    );
   });
 });
 
@@ -324,6 +379,9 @@ describe('LeadsService — admin reads and triage', () => {
         orderBy: { createdAt: 'desc' },
         skip: 0,
         take: 20,
+        include: {
+          convertedTenant: { select: { id: true, name: true, slug: true } },
+        },
       }),
     );
     expect(result).toEqual({
@@ -338,6 +396,39 @@ describe('LeadsService — admin reads and triage', () => {
     expect(prisma.lead.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: {} }),
     );
+  });
+
+  it('searches name/contact/message case-insensitively, combined with status', async () => {
+    const { service, prisma } = makeService();
+    await service.list({ status: 'WON', search: '  ayesha ' });
+    expect(prisma.lead.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: 'WON',
+          OR: [
+            { name: { contains: 'ayesha', mode: 'insensitive' } },
+            { contact: { contains: 'ayesha', mode: 'insensitive' } },
+            { message: { contains: 'ayesha', mode: 'insensitive' } },
+          ],
+        },
+      }),
+    );
+  });
+
+  it('accepts the new 6-status workflow in the status filter', async () => {
+    const { service, prisma } = makeService();
+    for (const status of ['QUALIFIED', 'DEMO_SCHEDULED', 'WON', 'LOST']) {
+      await service.list({ status });
+    }
+    const wheres = prisma.lead.findMany.mock.calls.map(
+      (call: any) => call[0].where,
+    );
+    expect(wheres).toEqual([
+      { status: 'QUALIFIED' },
+      { status: 'DEMO_SCHEDULED' },
+      { status: 'WON' },
+      { status: 'LOST' },
+    ]);
   });
 
   it('returns the detail row and 404s for an unknown id', async () => {
@@ -381,5 +472,134 @@ describe('LeadsService — admin reads and triage', () => {
       service.updateStatus('missing', { status: 'CLOSED' }, 'user-1'),
     ).rejects.toThrow('Lead not found');
     expect(audit.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('LeadsService — export', () => {
+  it('returns rows newest-first and flags truncation past the cap', async () => {
+    const { service, prisma } = makeService();
+    const rows = Array.from({ length: 10_001 }, (_, i) => ({ id: `l${i}` }));
+    prisma.lead.findMany.mockResolvedValue(rows);
+    const result = await service.exportRows({ status: 'NEW' });
+    expect(result.rows).toHaveLength(10_000);
+    expect(result.truncated).toBe(true);
+    expect(prisma.lead.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: 'NEW' },
+        orderBy: { createdAt: 'desc' },
+        take: 10_001,
+      }),
+    );
+  });
+
+  it('does not flag truncation under the cap', async () => {
+    const { service, prisma } = makeService();
+    prisma.lead.findMany.mockResolvedValue([{ id: 'l1' }]);
+    const result = await service.exportRows({});
+    expect(result.truncated).toBe(false);
+    expect(result.rows).toHaveLength(1);
+  });
+
+  it('writes RFC 4180 CSV with the full column set', async () => {
+    const { service } = makeService();
+    const csv = service.toCsv([
+      {
+        id: 'lead-1',
+        createdAt: new Date('2026-11-18T08:00:00.000Z'),
+        name: 'Ayesha "The Boss" Khan',
+        contact: 'ayesha@example.com',
+        contactType: 'email',
+        monthlyOrders: '500',
+        message: 'Line one\nLine two',
+        status: 'WON',
+        source: 'landing_page_lead_form',
+        utmSource: 'facebook',
+        utmCampaign: null,
+        consentGiven: true,
+        convertedTenantId: 'tenant-1',
+      },
+    ]);
+    const lines = csv.split('\n');
+    expect(lines[0]).toBe(
+      'id,createdAt,name,contact,contactType,monthlyOrders,message,status,source,utmSource,utmCampaign,consentGiven,convertedTenantId',
+    );
+    expect(csv).toContain('"Ayesha ""The Boss"" Khan"');
+    expect(csv).toContain('"Line one\nLine two"');
+    expect(csv).toContain('2026-11-18T08:00:00.000Z');
+  });
+});
+
+describe('LeadsService — convert (C1)', () => {
+  function convertedMocks() {
+    const { service, prisma, audit } = makeService();
+    prisma.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      status: 'QUALIFIED',
+      convertedTenantId: null,
+    });
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      name: 'Ayesha Store',
+      slug: 'ayesha-store',
+    });
+    return { service, prisma, audit };
+  }
+
+  it('links the lead, marks it WON and audits the conversion', async () => {
+    const { service, prisma, audit } = convertedMocks();
+    const result = await service.convert(
+      'lead-1',
+      { tenantId: 'tenant-1' },
+      'user-1',
+    );
+    expect(prisma.lead.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'lead-1' },
+        data: { convertedTenantId: 'tenant-1', status: 'WON' },
+      }),
+    );
+    expect(result.status).toBe('WON');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'user-1',
+        action: 'lead.converted',
+        entity: 'Lead',
+        entityId: 'lead-1',
+        tenantId: 'tenant-1',
+        before: { status: 'QUALIFIED', convertedTenantId: null },
+        after: { status: 'WON', convertedTenantId: 'tenant-1' },
+      }),
+    );
+  });
+
+  it('409s when the lead is already converted', async () => {
+    const { service, prisma, audit } = makeService();
+    prisma.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      status: 'WON',
+      convertedTenantId: 'tenant-1',
+    });
+    await expect(
+      service.convert('lead-1', { tenantId: 'tenant-2' }, 'user-1'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(prisma.lead.update).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('404s for an unknown lead or tenant', async () => {
+    const { service, prisma } = makeService();
+    prisma.lead.findUnique.mockResolvedValue(null);
+    await expect(
+      service.convert('missing', { tenantId: 'tenant-1' }, 'user-1'),
+    ).rejects.toThrow('Lead not found');
+    prisma.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      status: 'NEW',
+      convertedTenantId: null,
+    });
+    prisma.tenant.findUnique.mockResolvedValue(null);
+    await expect(
+      service.convert('lead-1', { tenantId: 'missing' }, 'user-1'),
+    ).rejects.toThrow('Tenant not found');
   });
 });

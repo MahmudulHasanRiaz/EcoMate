@@ -65,9 +65,16 @@ const tenantRoute = createRoute({
 
 // Static segment wins over the $tenantId param, so /tenants/new never
 // reaches the detail page (previously it did — "uuid is expected", F1).
+// ?leadId= pre-fills the form from a lead (Batch 1, C1 convert flow).
 const tenantCreateRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/tenants/new',
+  validateSearch: (search: Record<string, unknown>): { leadId?: string } => ({
+    leadId:
+      typeof search.leadId === 'string' && search.leadId.length > 0
+        ? search.leadId
+        : undefined,
+  }),
   component: () => (
     <AppShell>
       <TenantCreatePage />

@@ -7,18 +7,29 @@
  * fetch never throws: API down, empty DB, or malformed rows all fall
  * back to the built-in content — the landing never breaks.
  *
- * Merge rule (redesign plan §13):
- * - hero / contact: per-field override (non-empty strings only).
+ * Merge rule (redesign plan §13, extended in Landing CMS Batch 1):
+ * - hero / contact / seo: per-field override (non-empty strings only).
+ * - object sections (leadForm, proof, faqMeta, pricingCopy,
+ *   gettingStarted, walkthrough, videoSection, heroTabs, dock, header,
+ *   footer): per-field override of the flat managed object — string
+ *   fields override when non-empty, string-list fields (volumeOptions,
+ *   bullets) override when a non-empty string array.
  * - capabilities: shallow per-field override per section (non-empty
  *   string or string-array, type-checked against the built-in field).
- * - faq / testimonials / partners: full-list replace when the managed
- *   list is non-empty.
+ * - faq / testimonials / partners / nav / footerLinks: full-list
+ *   replace when the managed list is non-empty.
  * - a section absent from the managed payload keeps the built-in copy.
+ *
+ * Every merge step spreads the CURRENT merged state (never the raw
+ * fallback), so a copy merge and a list merge on the same top-level
+ * key (faq copy + faq items, proof copy + testimonials, heroTabs copy
+ * + partners, footer copy + contact) compose instead of clobbering.
  */
 import type {
   CaseStudy,
   LandingContent,
   Locale,
+  NavItem,
 } from '@/lib/landingTypes';
 
 export interface ManagedTestimonial {
@@ -45,6 +56,12 @@ export interface ManagedPartner {
   name: string;
 }
 
+export interface ManagedNavItem {
+  key: string;
+  label: string;
+  href: string;
+}
+
 export interface ManagedLocaleContent {
   hero?: Record<string, unknown>;
   capabilities?: Record<string, Record<string, unknown>>;
@@ -52,6 +69,20 @@ export interface ManagedLocaleContent {
   testimonials?: ManagedTestimonial[];
   partners?: ManagedPartner[];
   contact?: Record<string, unknown>;
+  seo?: Record<string, unknown>;
+  leadForm?: Record<string, unknown>;
+  proof?: Record<string, unknown>;
+  faqMeta?: Record<string, unknown>;
+  pricingCopy?: Record<string, unknown>;
+  gettingStarted?: Record<string, unknown>;
+  walkthrough?: Record<string, unknown>;
+  videoSection?: Record<string, unknown>;
+  heroTabs?: Record<string, unknown>;
+  dock?: Record<string, unknown>;
+  header?: Record<string, unknown>;
+  nav?: ManagedNavItem[];
+  footer?: Record<string, unknown>;
+  footerLinks?: ManagedNavItem[];
 }
 
 export type ManagedLandingContent = Partial<
@@ -87,7 +118,8 @@ export async function fetchManagedLandingContent(): Promise<ManagedLandingConten
       {
         // Managed copy changes rarely; a 5-minute cache keeps the landing
         // fast and keeps a downed API from taking the page down with it.
-        next: { revalidate: 300 },
+        // Tagged so the cache purge revalidates it immediately.
+        next: { revalidate: 300, tags: ['landing-content'] },
         signal: AbortSignal.timeout(5_000),
       },
     );
@@ -159,6 +191,78 @@ function isPartner(value: unknown): value is ManagedPartner {
 }
 
 /**
+ * A nav/footer href is safe as a same-page anchor, a same-origin path,
+ * or an https URL. Anything else (javascript:, protocol-relative,
+ * http:) is dropped — a managed link must never become an XSS vector.
+ */
+export function isSafeHref(href: string): boolean {
+  if (!href) return false;
+  if (href.startsWith('#')) return href.length > 1;
+  if (href.startsWith('/') && !href.startsWith('//')) return true;
+  try {
+    return new URL(href).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isNavItem(value: unknown): value is ManagedNavItem {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.key === 'string' &&
+    isNonEmptyString(value.label) &&
+    typeof value.href === 'string' &&
+    isSafeHref(value.href)
+  );
+}
+
+function validNavItems(value: unknown): NavItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isNavItem)
+    .map(({ label, href }) => ({ label: label.trim(), href: href.trim() }));
+}
+
+/**
+ * Override the named string fields of `target` from `source` (non-empty
+ * strings only). Returns a new object; `target` is untouched.
+ */
+function overrideStrings<T extends Record<string, unknown>>(
+  target: T,
+  source: Record<string, unknown>,
+  fields: readonly string[],
+): T {
+  const next = { ...target };
+  for (const field of fields) {
+    const value = source[field];
+    if (isNonEmptyString(value) && typeof next[field] === 'string') {
+      (next as Record<string, unknown>)[field] = value;
+    }
+  }
+  return next;
+}
+
+const LEAD_FORM_FIELDS = [
+  'eyebrow',
+  'heading',
+  'subheading',
+  'nameLabel',
+  'namePlaceholder',
+  'phoneLabel',
+  'phonePlaceholder',
+  'volumeLabel',
+  'noteLabel',
+  'notePlaceholder',
+  'submitCta',
+  'submittingText',
+  'successHeading',
+  'successMessage',
+  'privacyNote',
+  'consentLabel',
+  'volumeFallback',
+] as const;
+
+/**
  * Merge one locale's managed content over the built-in fallback.
  * Pure and defensive: unknown fields, wrong types, and empty values are
  * ignored, so a bad payload can never break the page.
@@ -172,7 +276,7 @@ export function mergeLandingContent(
 
   // Hero: per-field override of the scalar fields.
   if (isRecord(managed.hero)) {
-    const hero = { ...fallback.hero };
+    const hero = { ...merged.hero };
     for (const field of HERO_FIELDS) {
       const value = managed.hero[field];
       if (isNonEmptyString(value)) hero[field] = value;
@@ -187,7 +291,7 @@ export function mergeLandingContent(
     for (const [managedKey, dataKey] of Object.entries(CAPABILITY_SECTIONS)) {
       const value = managed.capabilities[managedKey];
       if (!isRecord(value)) continue;
-      const base = fallback[dataKey] as unknown as Record<string, unknown>;
+      const base = merged[dataKey] as unknown as Record<string, unknown>;
       const next: Record<string, unknown> = { ...base };
       for (const [field, fieldValue] of Object.entries(value)) {
         if (!(field in base)) continue;
@@ -208,12 +312,176 @@ export function mergeLandingContent(
     }
   }
 
+  // Lead form: per-field override + volume options (string list).
+  if (isRecord(managed.leadForm)) {
+    const form = overrideStrings(
+      merged.leadForm,
+      managed.leadForm,
+      LEAD_FORM_FIELDS,
+    );
+    const options = managed.leadForm.volumeOptions;
+    if (isStringArray(options)) form.volumeOptions = options;
+    merged.leadForm = form;
+  }
+
+  // Proof section copy: eyebrow/heading/subheading + the rendered
+  // chrome labels (flat chrome* fields map into proof.chrome).
+  if (isRecord(managed.proof)) {
+    const proof = overrideStrings(merged.proof, managed.proof, [
+      'eyebrow',
+      'heading',
+      'subheading',
+    ]);
+    const chrome = { ...proof.chrome };
+    const chromeMap: Record<string, keyof typeof chrome> = {
+      chromeFeaturedBadge: 'featuredBadge',
+      chromeWatchInterview: 'watchInterview',
+      chromeWatchCaseStudy: 'watchCaseStudy',
+    };
+    for (const [field, target] of Object.entries(chromeMap)) {
+      if (isNonEmptyString(managed.proof[field])) {
+        chrome[target] = managed.proof[field];
+      }
+    }
+    merged.proof = { ...proof, chrome };
+  }
+
+  // FAQ section copy (items merge below).
+  if (isRecord(managed.faqMeta)) {
+    merged.faq = overrideStrings(merged.faq, managed.faqMeta, [
+      'eyebrow',
+      'heading',
+      'subheading',
+    ]);
+  }
+
+  // Pricing section copy + the rendered price labels.
+  if (isRecord(managed.pricingCopy)) {
+    const pricing = overrideStrings(merged.pricing, managed.pricingCopy, [
+      'eyebrow',
+      'heading',
+      'subheading',
+    ]);
+    const labels = { ...pricing.labels };
+    const labelMap: Record<string, keyof typeof labels> = {
+      labelPerMonth: 'perMonth',
+      labelTrialNote: 'trialNote',
+      labelCtaLabel: 'ctaLabel',
+    };
+    for (const [field, target] of Object.entries(labelMap)) {
+      if (isNonEmptyString(managed.pricingCopy[field])) {
+        labels[target] = managed.pricingCopy[field];
+      }
+    }
+    merged.pricing = { ...pricing, labels };
+  }
+
+  // Getting started: copy + the three step title/detail pairs (flat
+  // stepNTitle/stepNDetail fields map onto steps[N-1]).
+  if (isRecord(managed.gettingStarted)) {
+    const getting = overrideStrings(
+      merged.gettingStarted,
+      managed.gettingStarted,
+      ['eyebrow', 'heading', 'subheading', 'ctaLabel'],
+    );
+    const steps = getting.steps.map((step, index) => {
+      const next = { ...step };
+      const title = managed.gettingStarted?.[`step${index + 1}Title`];
+      const detail = managed.gettingStarted?.[`step${index + 1}Detail`];
+      if (isNonEmptyString(title)) next.title = title;
+      if (isNonEmptyString(detail)) next.detail = detail;
+      return next;
+    });
+    merged.gettingStarted = { ...getting, steps };
+  }
+
+  // Walkthrough bullets + trust note.
+  if (isRecord(managed.walkthrough)) {
+    const walkthrough = overrideStrings(
+      merged.walkthrough,
+      managed.walkthrough,
+      ['trustNote'],
+    );
+    const bullets = managed.walkthrough.bullets;
+    if (isStringArray(bullets)) walkthrough.bullets = bullets;
+    merged.walkthrough = walkthrough;
+  }
+
+  // Video section: the YouTube URL (empty = no embed, as built-in).
+  if (isRecord(managed.videoSection)) {
+    merged.videoSection = overrideStrings(
+      merged.videoSection,
+      managed.videoSection,
+      ['youtubeUrl'],
+    );
+  }
+
+  // Hero tabs: tab labels (by tab id) + the strip copy. Brands merge
+  // below via partners.
+  if (isRecord(managed.heroTabs)) {
+    const tabs = overrideStrings(merged.heroTabs, managed.heroTabs, [
+      'trustedTitle',
+      'platformNote',
+      'sampleNote',
+    ]);
+    const labelMap: Record<string, string> = {
+      tabLabelAdmin: 'admin',
+      tabLabelOperations: 'operations',
+      tabLabelPacking: 'packing',
+      tabLabelHr: 'hr',
+    };
+    const tabList = tabs.tabs.map((tab) => {
+      const next = { ...tab };
+      for (const [field, id] of Object.entries(labelMap)) {
+        if (tab.id === id && isNonEmptyString(managed.heroTabs?.[field])) {
+          next.label = managed.heroTabs[field] as string;
+        }
+      }
+      return next;
+    });
+    merged.heroTabs = { ...tabs, tabs: tabList };
+  }
+
+  // Dock labels only — call/WhatsApp/Messenger VALUES come from the
+  // contact section (merged last) and are never touched here.
+  if (isRecord(managed.dock)) {
+    merged.dock = overrideStrings(merged.dock, managed.dock, [
+      'helpLabel',
+      'demoLabel',
+      'demoUrl',
+      'callLabel',
+      'whatsappLabel',
+      'messengerLabel',
+      'fabLabel',
+    ]);
+  }
+
+  // Header labels (nav items merge below).
+  if (isRecord(managed.header)) {
+    merged.header = overrideStrings(merged.header, managed.header, [
+      'ctaStartTrial',
+      'signInLabel',
+    ]);
+  }
+
+  // Footer copy (phone/email/address merge below via contact).
+  if (isRecord(managed.footer)) {
+    merged.footer = overrideStrings(merged.footer, managed.footer, [
+      'tagline',
+      'linksTitle',
+      'contactTitle',
+      'copyright',
+      'privacyLabel',
+      'termsLabel',
+    ]);
+  }
+
   // FAQ: full-list replace when the managed list is non-empty.
   if (Array.isArray(managed.faq) && managed.faq.length > 0) {
     const items = managed.faq
       .filter(isFaqItem)
       .map(({ question, answer }) => ({ question, answer }));
-    if (items.length > 0) merged.faq = { ...fallback.faq, items };
+    if (items.length > 0) merged.faq = { ...merged.faq, items };
   }
 
   // Testimonials: full-list replace, mapped onto the case-study shape.
@@ -241,7 +509,7 @@ export function mergeLandingContent(
         videoTitle: t.videoTitle,
       }));
     if (studies.length > 0) {
-      merged.proof = { ...fallback.proof, caseStudies: studies };
+      merged.proof = { ...merged.proof, caseStudies: studies };
     }
   }
 
@@ -252,16 +520,31 @@ export function mergeLandingContent(
       .map((p) => p.name)
       .filter((name) => name.trim().length > 0);
     if (brands.length > 0) {
-      merged.heroTabs = { ...fallback.heroTabs, brands };
+      merged.heroTabs = { ...merged.heroTabs, brands };
     }
+  }
+
+  // Nav: full-list replace of the header nav (unsafe hrefs dropped).
+  // The R-PRICING-NAV rule lives in Chrome.tsx and still applies on top.
+  const nav = validNavItems(managed.nav);
+  if (nav.length > 0) {
+    merged.header = { ...merged.header, nav };
+  }
+
+  // Footer links: full-list replace of the footer capabilities column.
+  const footerLinks = validNavItems(managed.footerLinks);
+  if (footerLinks.length > 0) {
+    merged.footer = { ...merged.footer, capabilities: footerLinks };
   }
 
   // Contact: per-field override into the footer + dock. The dock's
   // call number follows the phone unless a separate callNumber is set.
+  // Spreads the CURRENT merged footer/dock so the footer-copy and
+  // dock-label merges above survive.
   if (isRecord(managed.contact)) {
     const contact = managed.contact;
-    const footer = { ...fallback.footer };
-    const dock = { ...fallback.dock };
+    const footer = { ...merged.footer };
+    const dock = { ...merged.dock };
     if (isNonEmptyString(contact.phone)) {
       footer.phone = contact.phone;
       dock.callNumber = contact.phone;

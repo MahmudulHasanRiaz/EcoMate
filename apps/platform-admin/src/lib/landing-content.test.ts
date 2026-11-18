@@ -9,6 +9,11 @@ import {
   landingFormToValue,
   landingScalarFieldNames,
   landingValueToForm,
+  LANDING_LIST_SECTIONS,
+  LANDING_OBJECT_SECTIONS,
+  LANDING_SCALAR_SECTIONS,
+  LANDING_SECTIONS,
+  LANDING_SECTION_LABELS,
   metricsToLines,
   parseMetricsLines,
 } from './landing-content';
@@ -29,6 +34,23 @@ function row(
     ...overrides,
   };
 }
+
+describe('landing sections', () => {
+  it('has 20 sections, every one labelled, every one classified', () => {
+    expect(LANDING_SECTIONS).toHaveLength(20);
+    for (const section of LANDING_SECTIONS) {
+      expect(LANDING_SECTION_LABELS[section].length).toBeGreaterThan(0);
+      const kinds = [
+        LANDING_SCALAR_SECTIONS.has(section),
+        LANDING_OBJECT_SECTIONS.has(section),
+        LANDING_LIST_SECTIONS.has(section),
+        section === 'capabilities',
+      ].filter(Boolean);
+      // Exactly one kind per section (capabilities is its own kind).
+      expect(kinds).toHaveLength(1);
+    }
+  });
+});
 
 describe('landingFieldDefs', () => {
   it('covers all 10 capability sections with their real fields', () => {
@@ -72,6 +94,12 @@ describe('landingFieldDefs', () => {
     expect(landingFieldDefs('contact', 'callNumber').map((f) => f.name)).toEqual([
       'callNumber',
     ]);
+    expect(landingFieldDefs('seo', 'title').map((f) => f.name)).toEqual([
+      'title',
+    ]);
+    expect(landingFieldDefs('seo', 'description').map((f) => f.name)).toEqual([
+      'description',
+    ]);
     expect(landingFieldDefs('hero', 'nope')).toEqual([]);
   });
 
@@ -86,12 +114,118 @@ describe('landingFieldDefs', () => {
     expect(landingFieldDefs('partners', 'partner-x').map((f) => f.name)).toEqual([
       'name',
     ]);
+    expect(landingFieldDefs('nav', 'nav-1').map((f) => f.name)).toEqual([
+      'label',
+      'href',
+    ]);
+    expect(
+      landingFieldDefs('footerLinks', 'footer-1').map((f) => f.name),
+    ).toEqual(['label', 'href']);
+  });
+
+  it('returns the full field list for object sections', () => {
+    // Object sections use the fixed 'main' key; the defs are the same
+    // regardless of the key passed.
+    expect(landingFieldDefs('leadForm', 'main').map((f) => f.name)).toEqual([
+      'eyebrow',
+      'heading',
+      'subheading',
+      'nameLabel',
+      'namePlaceholder',
+      'phoneLabel',
+      'phonePlaceholder',
+      'volumeLabel',
+      'volumeOptions',
+      'noteLabel',
+      'notePlaceholder',
+      'submitCta',
+      'submittingText',
+      'successHeading',
+      'successMessage',
+      'privacyNote',
+      'consentLabel',
+      'volumeFallback',
+    ]);
+    expect(landingFieldDefs('proof', 'main').map((f) => f.name)).toEqual([
+      'eyebrow',
+      'heading',
+      'subheading',
+      'chromeFeaturedBadge',
+      'chromeWatchInterview',
+      'chromeWatchCaseStudy',
+    ]);
+    expect(
+      landingFieldDefs('gettingStarted', 'main').map((f) => f.name),
+    ).toEqual([
+      'eyebrow',
+      'heading',
+      'subheading',
+      'ctaLabel',
+      'step1Title',
+      'step1Detail',
+      'step2Title',
+      'step2Detail',
+      'step3Title',
+      'step3Detail',
+    ]);
+    expect(landingFieldDefs('walkthrough', 'main').map((f) => f.name)).toEqual([
+      'bullets',
+      'trustNote',
+    ]);
+    expect(
+      landingFieldDefs('videoSection', 'main').map((f) => f.name),
+    ).toEqual(['youtubeUrl']);
+    expect(landingFieldDefs('heroTabs', 'main').map((f) => f.name)).toEqual([
+      'tabLabelAdmin',
+      'tabLabelOperations',
+      'tabLabelPacking',
+      'tabLabelHr',
+      'trustedTitle',
+      'platformNote',
+      'sampleNote',
+    ]);
+    expect(landingFieldDefs('dock', 'main').map((f) => f.name)).toEqual([
+      'helpLabel',
+      'demoLabel',
+      'demoUrl',
+      'callLabel',
+      'whatsappLabel',
+      'messengerLabel',
+      'fabLabel',
+    ]);
+    expect(landingFieldDefs('header', 'main').map((f) => f.name)).toEqual([
+      'ctaStartTrial',
+      'signInLabel',
+    ]);
+    expect(landingFieldDefs('footer', 'main').map((f) => f.name)).toEqual([
+      'tagline',
+      'linksTitle',
+      'contactTitle',
+      'copyright',
+      'privacyLabel',
+      'termsLabel',
+    ]);
+    expect(landingFieldDefs('faqMeta', 'main').map((f) => f.name)).toEqual([
+      'eyebrow',
+      'heading',
+      'subheading',
+    ]);
+    expect(landingFieldDefs('pricingCopy', 'main').map((f) => f.name)).toEqual([
+      'eyebrow',
+      'heading',
+      'subheading',
+      'labelPerMonth',
+      'labelTrialNote',
+      'labelCtaLabel',
+    ]);
   });
 
   it('lists the scalar field names for the add picker', () => {
     expect(landingScalarFieldNames('hero')).toContain('headlinePart1');
     expect(landingScalarFieldNames('contact')).toContain('callNumber');
+    expect(landingScalarFieldNames('seo')).toEqual(['title', 'description']);
     expect(landingScalarFieldNames('faq')).toEqual([]);
+    expect(landingScalarFieldNames('leadForm')).toEqual([]);
   });
 });
 

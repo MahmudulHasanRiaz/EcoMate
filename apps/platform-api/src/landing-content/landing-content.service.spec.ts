@@ -230,6 +230,156 @@ describe('LandingContentService.publicGrouped', () => {
       }),
     );
   });
+
+  it('serves seo as a scalar map, object sections as one object, and nav/footerLinks as lists', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue([
+      {
+        section: 'seo',
+        key: 'title',
+        locale: 'en',
+        value: 'EcoMate — a commerce workspace you own',
+        sortOrder: 0,
+      },
+      {
+        section: 'seo',
+        key: 'description',
+        locale: 'en',
+        value: 'Launch your storefront.',
+        sortOrder: 1,
+      },
+      {
+        section: 'leadForm',
+        key: 'main',
+        locale: 'en',
+        value: { heading: 'Book a walkthrough', volumeOptions: ['< 1k', '1k+'] },
+        sortOrder: 0,
+      },
+      {
+        section: 'proof',
+        key: 'main',
+        locale: 'bn',
+        value: { heading: 'যারা ব্যবহার করছেন EcoMate' },
+        sortOrder: 0,
+      },
+      {
+        section: 'nav',
+        key: 'nav-1',
+        locale: 'en',
+        value: { label: 'Packing', href: '#packing' },
+        sortOrder: 0,
+      },
+      {
+        section: 'nav',
+        key: 'nav-2',
+        locale: 'en',
+        value: { label: 'Pricing', href: '#pricing' },
+        sortOrder: 1,
+      },
+      {
+        section: 'footerLinks',
+        key: 'footer-1',
+        locale: 'en',
+        value: { label: 'Packing', href: '#packing' },
+        sortOrder: 0,
+      },
+    ]);
+    await expect(service.publicGrouped()).resolves.toEqual({
+      en: {
+        seo: {
+          title: 'EcoMate — a commerce workspace you own',
+          description: 'Launch your storefront.',
+        },
+        leadForm: {
+          heading: 'Book a walkthrough',
+          volumeOptions: ['< 1k', '1k+'],
+        },
+        nav: [
+          { key: 'nav-1', label: 'Packing', href: '#packing' },
+          { key: 'nav-2', label: 'Pricing', href: '#pricing' },
+        ],
+        footerLinks: [{ key: 'footer-1', label: 'Packing', href: '#packing' }],
+      },
+      bn: {
+        proof: { heading: 'যারা ব্যবহার করছেন EcoMate' },
+      },
+    });
+  });
+
+  it('serves only the first object row per locale when duplicates exist', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue([
+      {
+        section: 'dock',
+        key: 'main',
+        locale: 'en',
+        value: { fabLabel: 'Contact' },
+        sortOrder: 0,
+      },
+      {
+        section: 'dock',
+        key: 'other',
+        locale: 'en',
+        value: { fabLabel: 'Shadow' },
+        sortOrder: 1,
+      },
+    ]);
+    await expect(service.publicGrouped()).resolves.toEqual({
+      en: { dock: { fabLabel: 'Contact' } },
+      bn: {},
+    });
+  });
+});
+
+describe('LandingContentService.health', () => {
+  it('counts rows, published rows and the translation gap per section', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue([
+      { section: 'hero', key: 'badge', locale: 'en', isActive: true },
+      { section: 'hero', key: 'badge', locale: 'bn', isActive: true },
+      { section: 'hero', key: 'subtitle', locale: 'en', isActive: false },
+      { section: 'faq', key: 'faq-1', locale: 'en', isActive: true },
+      { section: 'faq', key: 'faq-1', locale: 'bn', isActive: true },
+      { section: 'faq', key: 'faq-2', locale: 'bn', isActive: true },
+    ]);
+    const result = await service.health();
+    const hero = result.sections.find((s) => s.section === 'hero')!;
+    expect(hero).toEqual({
+      section: 'hero',
+      total: 3,
+      published: 2,
+      missingEn: 0,
+      missingBn: 1,
+    });
+    const faq = result.sections.find((s) => s.section === 'faq')!;
+    expect(faq).toEqual({
+      section: 'faq',
+      total: 3,
+      published: 3,
+      missingEn: 1,
+      missingBn: 0,
+    });
+    expect(result.totals).toEqual({
+      total: 6,
+      published: 5,
+      missingEn: 1,
+      missingBn: 1,
+    });
+  });
+
+  it('lists every known section even with zero rows', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue([]);
+    const result = await service.health();
+    expect(result.sections.map((s) => s.section)).toContain('seo');
+    expect(result.sections.map((s) => s.section)).toContain('leadForm');
+    expect(result.totals).toEqual({
+      total: 0,
+      published: 0,
+      missingEn: 0,
+      missingBn: 0,
+    });
+  });
 });
 
 describe('LandingContentService — admin CRUD', () => {
@@ -412,6 +562,33 @@ describe('CreateLandingContentDto — class-validator', () => {
         key: 'headlinePart1',
         locale: 'en',
         value: 'Run your',
+      }),
+    ).toEqual([]);
+  });
+
+  it('accepts the Batch 1 sections (seo scalar, leadForm object, nav list)', async () => {
+    expect(
+      await errorsFor({
+        section: 'seo',
+        key: 'title',
+        locale: 'en',
+        value: 'EcoMate',
+      }),
+    ).toEqual([]);
+    expect(
+      await errorsFor({
+        section: 'leadForm',
+        key: 'main',
+        locale: 'bn',
+        value: { heading: 'ওয়াকথ্রু বুক করুন' },
+      }),
+    ).toEqual([]);
+    expect(
+      await errorsFor({
+        section: 'nav',
+        key: 'nav-1',
+        locale: 'en',
+        value: { label: 'Packing', href: '#packing' },
       }),
     ).toEqual([]);
   });

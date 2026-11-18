@@ -1,16 +1,15 @@
 import Link from 'next/link';
-import { getBranding } from '@/lib/branding';
+import { fetchBranding } from '@/lib/branding';
 
 /**
- * Brand mark for the site header. Renders the configured logo image when
- * NEXT_PUBLIC_LOGO_URL is set (and safe — see lib/branding.ts), otherwise
- * the platform-initial lettermark. Styled on the v3 mk-logo classes. The
- * platform branding setting (logoUrl) has a public endpoint
- * (GET /public/branding) but the landing still reads branding from env —
- * live branding is out of scope here.
+ * Brand mark for the site header. Renders the operator-managed logo
+ * image (GET /public/branding, with env fallback) when one is
+ * configured, otherwise the platform-initial lettermark. Styled on the
+ * v3 mk-logo classes. Async server component — the fetch is cached
+ * (5-minute revalidate, 'branding' tag) so it costs nothing per page.
  */
-export function BrandLogo() {
-  const { platformName, logoUrl } = getBranding();
+export async function BrandLogo() {
+  const { platformName, logoUrl } = await fetchBranding();
   return (
     <Link className="mk-logo" href="/">
       {logoUrl ? (

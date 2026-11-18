@@ -473,6 +473,15 @@ services:
       PLATFORM_LANDING_URL: ${PLATFORM_LANDING_URL:-https://www.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
       PLATFORM_ADMIN_URL: ${PLATFORM_ADMIN_URL:-https://saas.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
       TENANT_BACKEND_URL: ${TENANT_BACKEND_URL:-http://backend:4000/api}
+      # Landing cache purge (Batch 1): the internal landing URL the
+      # platform API calls to revalidate the landing cache. The shared
+      # INTERNAL_SERVICE_SECRET above authenticates the call.
+      LANDING_INTERNAL_URL: ${LANDING_INTERNAL_URL:-http://landing:3002}
+      # Search-engine indexing kill-switch (Batch 1): 'false' hides the
+      # landing from search engines (noindex + robots disallow-all +
+      # empty sitemap) and wins over the console toggle. Set 'false' on
+      # staging; leave unset (or 'true') on production.
+      SEO_INDEXING_ENABLED: ${SEO_INDEXING_ENABLED:-true}
       DEFAULT_PLAN_VERSION_ID: ${DEFAULT_PLAN_VERSION_ID:-}
       PROVISIONING_STALE_MS: ${PROVISIONING_STALE_MS:-600000}
       TENANT_RETENTION_DAYS: ${TENANT_RETENTION_DAYS:-30}
@@ -578,6 +587,10 @@ services:
     environment:
       NODE_ENV: production
       PLATFORM_API_URL: ${PLATFORM_API_URL:-http://platform-api:4100/api}
+      # Cache purge guard (Batch 1): the landing's POST /api/revalidate
+      # accepts only requests carrying this shared secret (same value
+      # as platform-api's INTERNAL_SERVICE_SECRET).
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-}
       # NEXT_PUBLIC_TURNSTILE_SITE_KEY is build-time (baked into the JS
       # bundle by CI) — NOT a runtime var, do not put it here.
     depends_on:

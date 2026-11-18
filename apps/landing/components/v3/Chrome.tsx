@@ -4,9 +4,10 @@
  * v3 site chrome: floating nav pill, footer, mobile dock + desktop FAB.
  *
  * Copy comes from `useLanding()` (header/footer/dock keys); contact URLs
- * are content data in the `dock` key, not hardcoded links. Branding comes
- * from env (lib/branding.ts via the provider) — there is no DB menu or
- * CMS branding in the SaaS landing.
+ * are content data in the `dock` key, not hardcoded links. Branding
+ * comes from GET /public/branding (lib/branding.ts via the provider,
+ * env fallback); nav and footer links are managed in the console
+ * (Landing CMS `nav` + `footerLinks` sections).
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Menu, Moon, Sun } from 'lucide-react';

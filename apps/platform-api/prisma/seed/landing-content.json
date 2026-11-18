@@ -802,5 +802,565 @@
     },
     "sortOrder": 2,
     "isActive": true
+  },
+  {
+    "section": "seo",
+    "key": "title",
+    "locale": "en",
+    "value": "EcoMate — a commerce workspace you own",
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "seo",
+    "key": "description",
+    "locale": "en",
+    "value": "Launch your storefront, run orders and inventory, and keep your data.",
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "leadForm",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "eyebrow": "Demo",
+      "heading": "Book a 1-on-1 walkthrough",
+      "subheading": "Three fields. Takes under a minute.",
+      "nameLabel": "Full name",
+      "namePlaceholder": "Full name",
+      "phoneLabel": "Phone / WhatsApp",
+      "phonePlaceholder": "Phone / WhatsApp",
+      "volumeLabel": "Monthly orders",
+      "volumeOptions": [
+        "< 1k",
+        "1k – 5k",
+        "5k – 20k",
+        "20k+"
+      ],
+      "noteLabel": "Key Operational Challenges (Optional)",
+      "notePlaceholder": "Tell us about your outlets, packing challenges, or courier reconciliation needs...",
+      "submitCta": "Request a walkthrough",
+      "submittingText": "Sending…",
+      "successHeading": "Walkthrough requested",
+      "successMessage": "Thank you! An EcoMate operations specialist will reach out within 2 hours to confirm your personalized walkthrough.",
+      "privacyNote": "Strictly confidential. We never share your phone number or business data.",
+      "consentLabel": "I consent to EcoMate storing this request and contacting me about it. I can ask for deletion at any time.",
+      "volumeFallback": "150-500 orders / day"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "proof",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "eyebrow": "Trust",
+      "heading": "Who is using EcoMate",
+      "subheading": "Sample content — to be replaced with real stories.",
+      "chromeFeaturedBadge": "Customer story",
+      "chromeWatchInterview": "Watch",
+      "chromeWatchCaseStudy": "Read case study →"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "faqMeta",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "eyebrow": "FAQ",
+      "heading": "Common questions",
+      "subheading": ""
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "pricingCopy",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "eyebrow": "Pricing",
+      "heading": "Every plan starts with a trial — no card required.",
+      "subheading": "Pick the plan that fits your store. Upgrade, downgrade, or cancel anytime.",
+      "labelPerMonth": "/ mo",
+      "labelTrialNote": "{days}-day free trial",
+      "labelCtaLabel": "Start a trial"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "gettingStarted",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "eyebrow": "Getting started",
+      "heading": "Get live in three steps.",
+      "subheading": "",
+      "ctaLabel": "Start a trial",
+      "step1Title": "Tell us about the store",
+      "step1Detail": "Pick a name and a store address. Nothing is provisioned until your email is verified.",
+      "step2Title": "Verify your email",
+      "step2Detail": "A single link proves the address is yours. Links expire after 24 hours and can be re-sent.",
+      "step3Title": "Open the workspace",
+      "step3Detail": "Your admin and storefront come up on the same tenant, with a trial subscription and your own data boundary."
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "walkthrough",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "bullets": [
+        "See your own order volume running on EcoMate",
+        "Packing, courier and COD setup mapped live",
+        "Pricing for your monthly volume, on the call"
+      ],
+      "trustNote": "Strictly confidential. We never share your business data."
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "videoSection",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "youtubeUrl": ""
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "heroTabs",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "tabLabelAdmin": "Admin",
+      "tabLabelOperations": "Operations",
+      "tabLabelPacking": "Packing",
+      "tabLabelHr": "HR & Team",
+      "trustedTitle": "Trusted by",
+      "platformNote": "Android · iOS · PWA · Cloudflare R2 backup",
+      "sampleNote": "Sample data"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "dock",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "helpLabel": "Need help?",
+      "demoLabel": "Book demo",
+      "demoUrl": "#demo",
+      "callLabel": "Call",
+      "whatsappLabel": "WhatsApp",
+      "messengerLabel": "Messenger",
+      "fabLabel": "Contact"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "header",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "ctaStartTrial": "Start a trial",
+      "signInLabel": "Sign in"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "nav",
+    "key": "nav-1",
+    "locale": "en",
+    "value": {
+      "label": "Packing",
+      "href": "#packing"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "nav",
+    "key": "nav-2",
+    "locale": "en",
+    "value": {
+      "label": "Courier",
+      "href": "#courier"
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "nav",
+    "key": "nav-3",
+    "locale": "en",
+    "value": {
+      "label": "Warehouse & POS",
+      "href": "#warehouse"
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "nav",
+    "key": "nav-4",
+    "locale": "en",
+    "value": {
+      "label": "Pricing",
+      "href": "#pricing"
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "footer",
+    "key": "main",
+    "locale": "en",
+    "value": {
+      "tagline": "Commerce OS built for Bangladesh",
+      "linksTitle": "Platform",
+      "contactTitle": "Contact",
+      "copyright": "© 2026 EcoMate · Android · iOS · PWA · Privacy · Terms",
+      "privacyLabel": "Privacy Policy",
+      "termsLabel": "Terms of Service"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "footerLinks",
+    "key": "footer-1",
+    "locale": "en",
+    "value": {
+      "label": "Packing",
+      "href": "#packing"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "footerLinks",
+    "key": "footer-2",
+    "locale": "en",
+    "value": {
+      "label": "Courier",
+      "href": "#courier"
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "footerLinks",
+    "key": "footer-3",
+    "locale": "en",
+    "value": {
+      "label": "Warehouse & POS",
+      "href": "#warehouse"
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "footerLinks",
+    "key": "footer-4",
+    "locale": "en",
+    "value": {
+      "label": "Pricing",
+      "href": "#pricing"
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "seo",
+    "key": "title",
+    "locale": "bn",
+    "value": "EcoMate — আপনার নিজের commerce workspace",
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "seo",
+    "key": "description",
+    "locale": "bn",
+    "value": "আপনার storefront চালু করুন, order আর inventory এক জায়গা থেকে চালান, আর data রাখুন নিজের কাছে।",
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "leadForm",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "eyebrow": "ডেমো",
+      "heading": "১-অন-১ ওয়াকথ্রু বুক করুন",
+      "subheading": "তিনটি ফিল্ড, এক মিনিটেরও কম।",
+      "nameLabel": "আপনার নাম",
+      "namePlaceholder": "আপনার নাম",
+      "phoneLabel": "ফোন / হোয়াটসঅ্যাপ",
+      "phonePlaceholder": "ফোন / হোয়াটসঅ্যাপ",
+      "volumeLabel": "মাসিক গড় অর্ডার",
+      "volumeOptions": [
+        "< 1k",
+        "1k – 5k",
+        "5k – 20k",
+        "20k+"
+      ],
+      "noteLabel": "প্রধান অপারেশনাল চ্যালেঞ্জ (ঐচ্ছিক)",
+      "notePlaceholder": "আপনার শোরুম সংখ্যা, প্যাকিংয়ের সমস্যা বা কুরিয়ার রিকনসিলিয়েশন সম্পর্কে লিখুন...",
+      "submitCta": "ওয়াকথ্রুর অনুরোধ করুন",
+      "submittingText": "পাঠানো হচ্ছে...",
+      "successHeading": "ওয়াকথ্রু অনুরোধ গৃহীত হয়েছে",
+      "successMessage": "ধন্যবাদ! ইকোমেটের একজন অপারেশন স্পেশালিস্ট আগামী ২ ঘণ্টার মধ্যে কল করে ডেমোর সময়সূচি নির্ধারণ করবেন।",
+      "privacyNote": "সম্পূর্ণ গোপনীয়। আমরা কখনোই আপনার ফোন নম্বর বা ব্যবসায়িক তথ্য অন্য কোথাও শেয়ার করি না।",
+      "consentLabel": "আমি সম্মত যে ইকোমেট এই তথ্য সংরক্ষণ করবে এবং আমার সাথে যোগাযোগ করবে। আমি যেকোনো সময় তথ্য মুছতে বলতে পারি।",
+      "volumeFallback": "১৫০-৫০০ অর্ডার / দিন"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "proof",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "eyebrow": "আস্থা",
+      "heading": "যারা ব্যবহার করছেন EcoMate",
+      "subheading": "নমুনা কনটেন্ট — আসল গল্প দিয়ে বদলানো হবে।",
+      "chromeFeaturedBadge": "Customer story",
+      "chromeWatchInterview": "দেখুন",
+      "chromeWatchCaseStudy": "কেস স্টাডি পড়ুন →"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "faqMeta",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "eyebrow": "প্রশ্নোত্তর",
+      "heading": "সাধারণ প্রশ্ন",
+      "subheading": ""
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "pricingCopy",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "eyebrow": "প্রাইসিং",
+      "heading": "প্রতিটি plan শুরু হয় trial দিয়ে — কোনো card লাগে না।",
+      "subheading": "আপনার store-এর জন্য সঠিক plan বেছে নিন। যেকোনো সময় upgrade, downgrade বা cancel করতে পারবেন।",
+      "labelPerMonth": "/ মাস",
+      "labelTrialNote": "{days} দিনের free trial",
+      "labelCtaLabel": "Trial শুরু করুন"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "gettingStarted",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "eyebrow": "শুরু করা",
+      "heading": "তিন ধাপে চালু করুন",
+      "subheading": "",
+      "ctaLabel": "Trial শুরু করুন",
+      "step1Title": "আপনার store সম্পর্কে জানান",
+      "step1Detail": "নাম ও store address বেছে নিন। Email verify না হওয়া পর্যন্ত কিছুই provision হবে না।",
+      "step2Title": "আপনার email verify করুন",
+      "step2Detail": "একটি link-ই প্রমাণ করে address-টি আপনার। Link ২৪ ঘণ্টা পর expire হয়, আবার পাঠানো যায়।",
+      "step3Title": "Workspace খুলুন",
+      "step3Detail": "আপনার admin ও storefront একই tenant-এ চালু হবে — trial subscription ও নিজের data boundary সহ।"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "walkthrough",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "bullets": [
+        "আপনার নিজের অর্ডার ভলিউম ইকোমেটে চালিয়ে দেখুন",
+        "প্যাকিং, কুরিয়ার ও সিওডি সেটআপ লাইভে ম্যাপ করা হয়",
+        "আপনার মাসিক ভলিউম অনুযায়ী প্রাইসিং, কলেই"
+      ],
+      "trustNote": "সম্পূর্ণ গোপনীয়। আপনার ব্যবসার তথ্য কখনো শেয়ার করা হয় না।"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "videoSection",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "youtubeUrl": ""
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "heroTabs",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "tabLabelAdmin": "অ্যাডমিন",
+      "tabLabelOperations": "অপারেশন",
+      "tabLabelPacking": "প্যাকিং",
+      "tabLabelHr": "এইচআর ও টিম",
+      "trustedTitle": "যারা ব্যবহার করছেন",
+      "platformNote": "Android · iOS · PWA · Cloudflare R2 backup",
+      "sampleNote": "উদাহরণ ডেটা"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "dock",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "helpLabel": "সাহায্য লাগবে?",
+      "demoLabel": "ডেমো বুক করুন",
+      "demoUrl": "#demo",
+      "callLabel": "কল করুন",
+      "whatsappLabel": "হোয়াটসঅ্যাপ",
+      "messengerLabel": "মেসেঞ্জার",
+      "fabLabel": "যোগাযোগ"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "header",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "ctaStartTrial": "Trial শুরু করুন",
+      "signInLabel": "সাইন ইন"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "nav",
+    "key": "nav-1",
+    "locale": "bn",
+    "value": {
+      "label": "প্যাকিং",
+      "href": "#packing"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "nav",
+    "key": "nav-2",
+    "locale": "bn",
+    "value": {
+      "label": "কুরিয়ার",
+      "href": "#courier"
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "nav",
+    "key": "nav-3",
+    "locale": "bn",
+    "value": {
+      "label": "ওয়্যারহাউস ও POS",
+      "href": "#warehouse"
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "nav",
+    "key": "nav-4",
+    "locale": "bn",
+    "value": {
+      "label": "প্রাইসিং",
+      "href": "#pricing"
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "footer",
+    "key": "main",
+    "locale": "bn",
+    "value": {
+      "tagline": "বাংলাদেশের জন্য কমার্স অপারেটিং সিস্টেম",
+      "linksTitle": "প্ল্যাটফর্ম",
+      "contactTitle": "যোগাযোগ",
+      "copyright": "© ২০২৬ EcoMate · Android · iOS · PWA · Privacy · Terms",
+      "privacyLabel": "গোপনীয়তা নীতি",
+      "termsLabel": "সেবার শর্তাবলি"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "footerLinks",
+    "key": "footer-1",
+    "locale": "bn",
+    "value": {
+      "label": "প্যাকিং",
+      "href": "#packing"
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "footerLinks",
+    "key": "footer-2",
+    "locale": "bn",
+    "value": {
+      "label": "কুরিয়ার",
+      "href": "#courier"
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "footerLinks",
+    "key": "footer-3",
+    "locale": "bn",
+    "value": {
+      "label": "ওয়্যারহাউস ও POS",
+      "href": "#warehouse"
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "footerLinks",
+    "key": "footer-4",
+    "locale": "bn",
+    "value": {
+      "label": "প্রাইসিং",
+      "href": "#pricing"
+    },
+    "sortOrder": 3,
+    "isActive": true
   }
 ]

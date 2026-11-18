@@ -13,10 +13,17 @@ function makeController() {
     updateStatus: jest
       .fn()
       .mockResolvedValue({ id: 'lead-1', status: 'CONTACTED' }),
+    exportRows: jest.fn().mockResolvedValue({ rows: [], truncated: false }),
+    toCsv: jest.fn().mockReturnValue('id,createdAt\n'),
+    convert: jest
+      .fn()
+      .mockResolvedValue({ id: 'lead-1', status: 'WON' }),
   };
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
   return {
     leads,
-    controller: new LeadsController(leads),
+    audit,
+    controller: new LeadsController(leads, audit as any),
     publicController: new PublicLeadsController(leads),
   };
 }
@@ -36,16 +43,69 @@ function guardContext(handler: any, role?: string): any {
 describe('LeadsController', () => {
   it('lists with the query params and returns the detail row', async () => {
     const { controller, leads } = makeController();
-    await controller.list('2', '10', 'NEW');
+    await controller.list('2', '10', 'NEW', 'ayesha');
     expect(leads.list).toHaveBeenCalledWith({
       page: '2',
       limit: '10',
       status: 'NEW',
+      search: 'ayesha',
     });
     await expect(controller.detail('lead-1')).resolves.toEqual({
       id: 'lead-1',
     });
     expect(leads.detail).toHaveBeenCalledWith('lead-1');
+  });
+
+  it('exports CSV as a downloadable file and audits it', async () => {
+    const { controller, leads, audit } = makeController();
+    leads.exportRows.mockResolvedValue({
+      rows: [{ id: 'lead-1' }],
+      truncated: false,
+    });
+    const result: any = await controller.export('WON', undefined, {
+      id: 'user-1',
+    });
+    expect(leads.exportRows).toHaveBeenCalledWith({
+      status: 'WON',
+      search: undefined,
+    });
+    expect(leads.toCsv).toHaveBeenCalledWith([{ id: 'lead-1' }]);
+    expect(result.options.type).toBe('text/csv; charset=utf-8');
+    expect(result.options.disposition).toMatch(
+      /attachment; filename="leads-export-\d{14}\.csv"/,
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'user-1',
+        action: 'lead.export',
+        after: expect.objectContaining({ rows: 1, truncated: false }),
+      }),
+    );
+  });
+
+  it('converts a lead and declares the convert/export roles', async () => {
+    const { controller, leads } = makeController();
+    await controller.convert('lead-1', { tenantId: 'tenant-1' }, { id: 'user-1' });
+    expect(leads.convert).toHaveBeenCalledWith(
+      'lead-1',
+      { tenantId: 'tenant-1' },
+      'user-1',
+    );
+    const reflector = new Reflector();
+    const rolesOf = (handler: any) =>
+      reflector.getAllAndOverride<string[]>(PLATFORM_ROLES_KEY, [
+        handler,
+        LeadsController,
+      ]);
+    expect(rolesOf(LeadsController.prototype.convert)).toEqual([
+      'SUPERADMIN',
+      'BILLING',
+      'SUPPORT',
+    ]);
+    expect(rolesOf(LeadsController.prototype.export)).toEqual([
+      'SUPERADMIN',
+      'BILLING',
+    ]);
   });
 
   it('passes the actor id through on status updates', async () => {

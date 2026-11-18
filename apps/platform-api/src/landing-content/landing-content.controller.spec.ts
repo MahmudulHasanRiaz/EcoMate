@@ -9,6 +9,7 @@ function makeController() {
   const content: any = {
     publicGrouped: jest.fn().mockResolvedValue({ en: {}, bn: {} }),
     list: jest.fn().mockResolvedValue({ data: [], meta: {} }),
+    health: jest.fn().mockResolvedValue({ sections: [], totals: {} }),
     create: jest.fn().mockResolvedValue({ id: 'row-1' }),
     update: jest.fn().mockResolvedValue({ id: 'row-1' }),
     delete: jest.fn().mockResolvedValue({ deleted: true }),
@@ -60,6 +61,19 @@ describe('LandingContentController', () => {
     );
     await controller.delete('row-1', { id: 'user-1' });
     expect(content.delete).toHaveBeenCalledWith('row-1', 'user-1');
+  });
+
+  it('serves the health summary to read roles', async () => {
+    const { controller, content } = makeController();
+    await controller.health();
+    expect(content.health).toHaveBeenCalled();
+    const reflector = new Reflector();
+    expect(
+      reflector.getAllAndOverride<string[]>(PLATFORM_ROLES_KEY, [
+        LandingContentController.prototype.health,
+        LandingContentController,
+      ]),
+    ).toEqual(['SUPERADMIN', 'BILLING', 'SUPPORT']);
   });
 
   it('declares READ_ROLES on list and SUPERADMIN/BILLING on writes', () => {

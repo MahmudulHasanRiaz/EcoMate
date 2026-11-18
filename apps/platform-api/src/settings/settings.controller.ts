@@ -14,6 +14,7 @@ import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
 import { TestSmtpDto } from './dto/test-smtp.dto';
 import { UpdateBrandingSettingsDto } from './dto/update-branding-settings.dto';
+import { UpdateLandingSettingsDto } from './dto/update-landing-settings.dto';
 import { UpdateMaintenanceSettingsDto } from './dto/update-maintenance-settings.dto';
 import { UpdateSmtpSettingsDto } from './dto/update-smtp-settings.dto';
 import { UpdateTaxSettingsDto } from './dto/update-tax-settings.dto';
@@ -145,6 +146,25 @@ export class SettingsController {
       action: 'settings.maintenance.update',
       entity: 'PlatformSetting',
       entityId: 'maintenance',
+      before,
+      after: next,
+    });
+    return next;
+  }
+
+  @Patch('landing')
+  @Roles('SUPERADMIN')
+  async updateLanding(
+    @Body() dto: UpdateLandingSettingsDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    const before = this.settings.getLanding();
+    const next = await this.settings.updateLanding(dto);
+    await this.audit.record({
+      actorId: user?.id,
+      action: 'settings.landing.update',
+      entity: 'PlatformSetting',
+      entityId: 'landing',
       before,
       after: next,
     });

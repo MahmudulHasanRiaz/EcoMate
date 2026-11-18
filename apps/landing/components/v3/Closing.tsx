@@ -5,11 +5,14 @@
  *
  * SaaS adaptation: the form posts to the platform's POST /public/leads
  * (same-origin rewrite, `/api/public/leads`) with { name, contact,
- * message?, monthlyOrders?, turnstileToken? }. No Meta Pixel, no CAPI
- * dedup, no consent-text versioning — the platform stores the lead and
- * notifies sales when SMTP is configured. Turnstile is verify-if-present
- * (the SaaS callback-style widget, gated on the site key): the form
- * submits without a token when no widget renders.
+ * message?, monthlyOrders?, turnstileToken?, consentGiven, consentText,
+ * utmSource?, utmCampaign? }. The consent checkbox is required, so a
+ * submitted form always carries the consent text the visitor agreed to;
+ * UTM parameters come from the page URL. No Meta Pixel, no CAPI dedup —
+ * the platform stores the lead and notifies sales when SMTP is
+ * configured. Turnstile is verify-if-present (the SaaS callback-style
+ * widget, gated on the site key): the form submits without a token when
+ * no widget renders.
  */
 import React, { useState } from 'react';
 import { useLanding } from '@/components/shell/useLanding';
@@ -88,6 +91,13 @@ export function MkLeadForm() {
 
     setIsSubmitting(true);
     try {
+      // Consent + attribution (Batch 1, item 8): the consent checkbox
+      // is required client-side, so a submitted form always carries
+      // consentGiven + the consent text the visitor agreed to; UTM
+      // parameters come from the page URL (empty = not attributed).
+      const params = new URLSearchParams(window.location.search);
+      const utmSource = params.get('utm_source') ?? undefined;
+      const utmCampaign = params.get('utm_campaign') ?? undefined;
       const response = await fetch('/api/public/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -97,6 +107,10 @@ export function MkLeadForm() {
           ...(message.trim() ? { message: message.trim() } : {}),
           ...(volume ? { monthlyOrders: volume } : {}),
           ...(turnstileToken ? { turnstileToken } : {}),
+          consentGiven: true,
+          consentText: form.consentLabel,
+          ...(utmSource ? { utmSource } : {}),
+          ...(utmCampaign ? { utmCampaign } : {}),
         }),
       });
 

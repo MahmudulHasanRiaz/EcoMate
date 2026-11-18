@@ -1,20 +1,36 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { csvCell } from '../audit/audit-query.service';
 import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
 import { RedisRateLimitService } from '../common/rate-limit/redis-rate-limit.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { CaptchaService } from '../signup/captcha.service';
+import { ConvertLeadDto } from './dto/convert-lead.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadStatusDto } from './dto/update-lead-status.dto';
 import { classifyContact } from './lead-contact';
 
 const IP_LIMIT = 5;
 const IP_WINDOW_MS = 10 * 60_000;
+
+/** CSV export cap (same as the reference panel's 10,000-row cap). */
+export const LEAD_EXPORT_MAX_ROWS = 10_000;
+
+export const LEAD_STATUSES = [
+  'NEW',
+  'CONTACTED',
+  'QUALIFIED',
+  'DEMO_SCHEDULED',
+  'WON',
+  'LOST',
+  'CLOSED',
+] as const;
 
 export interface LeadRequestMeta {
   ip?: string;
@@ -77,6 +93,13 @@ export class LeadsService {
     const monthlyOrders = dto.monthlyOrders?.trim()
       ? dto.monthlyOrders.trim()
       : null;
+    const consentText = dto.consentText?.trim()
+      ? dto.consentText.trim()
+      : null;
+    const utmSource = dto.utmSource?.trim() ? dto.utmSource.trim() : null;
+    const utmCampaign = dto.utmCampaign?.trim()
+      ? dto.utmCampaign.trim()
+      : null;
 
     const lead = await this.prisma.lead.create({
       data: {
@@ -85,6 +108,10 @@ export class LeadsService {
         contactType,
         message,
         monthlyOrders,
+        consentGiven: dto.consentGiven ?? false,
+        consentText,
+        utmSource,
+        utmCampaign,
         ip: meta.ip || null,
         userAgent: meta.userAgent || null,
       },
@@ -115,20 +142,34 @@ export class LeadsService {
     return { id: lead.id };
   }
 
+  private buildWhere(query: { status?: string; search?: string }) {
+    const where: any = {};
+    if (query.status && (LEAD_STATUSES as readonly string[]).includes(query.status)) {
+      where.status = query.status;
+    }
+    // Substring search across the triage fields (name/contact/message),
+    // case-insensitive. ILIKE scan, like the global search — pg_trgm is
+    // the noted follow-up if lead volume ever makes this slow.
+    const search = query.search?.trim();
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { contact: { contains: search, mode: 'insensitive' } },
+        { message: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    return where;
+  }
+
   async list(query: {
     page?: string;
     limit?: string;
     status?: string;
+    search?: string;
   }) {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
-    const where: any = {};
-    if (
-      query.status &&
-      ['NEW', 'CONTACTED', 'CLOSED'].includes(query.status)
-    ) {
-      where.status = query.status;
-    }
+    const where = this.buildWhere(query);
 
     const [data, total] = await this.prisma.$transaction([
       this.prisma.lead.findMany({
@@ -136,6 +177,12 @@ export class LeadsService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
+        // The console opens the detail modal from the list row, so the
+        // list must carry the converted tenant too (else the modal's
+        // "Converted to tenant" link never renders).
+        include: {
+          convertedTenant: { select: { id: true, name: true, slug: true } },
+        },
       }),
       this.prisma.lead.count({ where }),
     ]);
@@ -151,8 +198,69 @@ export class LeadsService {
     };
   }
 
+  /**
+   * CSV export rows (Batch 1, item 9): same filters as list(), newest
+   * first, capped at LEAD_EXPORT_MAX_ROWS. `truncated` tells the caller
+   * the cap bit. The controller audits the export.
+   */
+  async exportRows(query: { status?: string; search?: string }) {
+    const where = this.buildWhere(query);
+    const rows = await this.prisma.lead.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: LEAD_EXPORT_MAX_ROWS + 1,
+    });
+    const truncated = rows.length > LEAD_EXPORT_MAX_ROWS;
+    return { rows: rows.slice(0, LEAD_EXPORT_MAX_ROWS), truncated };
+  }
+
+  toCsv(rows: any[]): string {
+    const header = [
+      'id',
+      'createdAt',
+      'name',
+      'contact',
+      'contactType',
+      'monthlyOrders',
+      'message',
+      'status',
+      'source',
+      'utmSource',
+      'utmCampaign',
+      'consentGiven',
+      'convertedTenantId',
+    ];
+    const lines = rows.map((row) =>
+      [
+        row.id,
+        row.createdAt instanceof Date
+          ? row.createdAt.toISOString()
+          : row.createdAt,
+        row.name,
+        row.contact,
+        row.contactType,
+        row.monthlyOrders,
+        row.message,
+        row.status,
+        row.source,
+        row.utmSource,
+        row.utmCampaign,
+        row.consentGiven,
+        row.convertedTenantId,
+      ]
+        .map(csvCell)
+        .join(','),
+    );
+    return [header.join(','), ...lines].join('\n');
+  }
+
   async detail(id: string) {
-    const lead = await this.prisma.lead.findUnique({ where: { id } });
+    const lead = await this.prisma.lead.findUnique({
+      where: { id },
+      include: {
+        convertedTenant: { select: { id: true, name: true, slug: true } },
+      },
+    });
     if (!lead) throw new NotFoundException('Lead not found');
     return lead;
   }
@@ -175,6 +283,45 @@ export class LeadsService {
       entityId: id,
       before: { status: lead.status },
       after: { status: updated.status },
+    });
+    return updated;
+  }
+
+  /**
+   * Convert-lead-to-tenant (C1). The console creates the tenant first
+   * (prefilled tenant-create form — the lead has no slug, plan or owner
+   * password, so the operator supplies them), then calls this to link
+   * the lead to its tenant. The link + WON status are one audited step;
+   * a lead converts at most once (409 on a second convert).
+   */
+  async convert(id: string, dto: ConvertLeadDto, actorId?: string) {
+    const lead = await this.prisma.lead.findUnique({ where: { id } });
+    if (!lead) throw new NotFoundException('Lead not found');
+    if (lead.convertedTenantId) {
+      throw new ConflictException(
+        'This lead was already converted to a tenant',
+      );
+    }
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: dto.tenantId },
+      select: { id: true, name: true, slug: true },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const updated = await this.prisma.lead.update({
+      where: { id },
+      data: { convertedTenantId: tenant.id, status: 'WON' },
+      include: {
+        convertedTenant: { select: { id: true, name: true, slug: true } },
+      },
+    });
+    await this.audit.record({
+      actorId,
+      action: 'lead.converted',
+      entity: 'Lead',
+      entityId: id,
+      tenantId: tenant.id,
+      before: { status: lead.status, convertedTenantId: null },
+      after: { status: 'WON', convertedTenantId: tenant.id },
     });
     return updated;
   }

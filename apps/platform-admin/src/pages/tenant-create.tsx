@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useAuth } from '../auth';
 import { ErrorNote, Loading, PageHeader, useToast } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
 import { formatMoney } from '../lib/format';
-import type { Plan, Tenant } from '../types';
+import type { Lead, Plan, Tenant } from '../types';
 
 function slugify(value: string): string {
   return value
@@ -20,14 +20,25 @@ function slugify(value: string): string {
  * immediately (same flow as a verified public signup) and this page waits
  * for the definitive outcome: success navigates to the tenant detail,
  * where the provisioning banner shows the result.
+ *
+ * Lead conversion (Batch 1, C1): ?leadId=<id> pre-fills the form from
+ * the lead (name + owner email when the lead's contact is an email, or
+ * owner phone when it is a phone number). A phone-only lead leaves the
+ * email empty — it stays REQUIRED, so the operator must add one before
+ * the tenant can be created. After a successful create the lead is
+ * linked to the new tenant (POST /leads/:id/convert), which also marks
+ * it Won.
  */
 export function TenantCreatePage() {
   const { api } = useAuth();
   const navigate = useNavigate();
+  const { leadId } = useSearch({ from: '/tenants/new' });
   const { pushToast } = useToast();
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
+  const [lead, setLead] = useState<Lead | null>(null);
+  const [leadLoading, setLeadLoading] = useState(Boolean(leadId));
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
@@ -38,6 +49,34 @@ export function TenantCreatePage() {
   const [trialDays, setTrialDays] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!leadId) return;
+    let cancelled = false;
+    api(`/leads/${leadId}`)
+      .then((response) => readJson<Lead>(response))
+      .then((result) => {
+        if (cancelled) return;
+        setLead(result);
+        setName(result.name);
+        setSlug(slugify(result.name));
+        if (result.contactType === 'email') setOwnerEmail(result.contact);
+        else setOwnerPhone(result.contact);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(
+            `Could not load the lead to convert: ${errorMessage(err)} — you can still create the tenant manually.`,
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLeadLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, leadId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,11 +144,35 @@ export function TenantCreatePage() {
         body: JSON.stringify(body),
       }).then((response) => readJson<Tenant>(response));
       const job = created.provisioningJobs?.[0];
-      if (job?.status === 'FAILED') {
+      const provisioned = job?.status !== 'FAILED';
+      // Lead conversion: link the lead to the new tenant (marks it Won).
+      // An already-converted lead is skipped (the API 409s); a failed
+      // link never blocks the tenant — the tenant exists either way.
+      let converted = false;
+      let convertError: string | null = null;
+      if (leadId && lead && !lead.convertedTenantId) {
+        try {
+          await api(`/leads/${leadId}/convert`, {
+            method: 'POST',
+            body: JSON.stringify({ tenantId: created.id }),
+          }).then((response) => readJson(response));
+          converted = true;
+        } catch (convertErr) {
+          convertError = errorMessage(convertErr);
+        }
+      }
+      if (!provisioned) {
         pushToast(
           'Tenant created, but provisioning failed — retry it from the tenant page.',
           'error',
         );
+      } else if (convertError) {
+        pushToast(
+          `Tenant ${created.name} is ready, but the lead could not be linked: ${convertError}`,
+          'error',
+        );
+      } else if (converted) {
+        pushToast(`Lead converted — tenant ${created.name} is ready.`, 'success');
       } else {
         pushToast(`Tenant ${created.name} is ready.`, 'success');
       }
@@ -136,7 +199,23 @@ export function TenantCreatePage() {
       />
 
       {error ? <ErrorNote message={error} /> : null}
-      {plansLoading ? (
+      {leadId && lead ? (
+        <div className="notice" role="status">
+          Converting lead “{lead.name}” — the form is prefilled from the
+          lead. Owner email is required: a phone-only lead needs an email
+          added here before the tenant can be created.
+          {lead.convertedTenantId ? (
+            <>
+              {' '}
+              This lead is already linked to a tenant, so creating another
+              one will not re-link it.
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      {leadLoading ? (
+        <Loading label="Loading lead…" />
+      ) : plansLoading ? (
         <Loading label="Loading plans…" />
       ) : (
         <section className="card">

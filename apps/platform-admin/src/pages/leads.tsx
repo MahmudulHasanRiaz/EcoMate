@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDate, formatDateTime } from '../lib/format';
 import {
   leadContactLabel,
   LEAD_STATUSES,
+  LEAD_TRIAGE_STATUSES,
   leadStatusLabel,
   leadsQueryString,
 } from '../lib/leads';
@@ -18,19 +20,32 @@ import {
 } from '../components/ui';
 
 export function LeadsPage() {
-  const { api } = useAuth();
+  const { api, session } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState<Page<Lead> | null>(null);
   const [status, setStatus] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Lead | null>(null);
+  const [nextStatus, setNextStatus] = useState<LeadStatus | ''>('');
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // Export is SUPERADMIN/BILLING-only on the API (bulk PII, same rule
+  // as the audit export); convert is SUPERADMIN/BILLING/SUPPORT.
+  // Hide the buttons for roles that would 403 instead of showing them.
+  const role = session?.user.role ?? '';
+  const canExport = role === 'SUPERADMIN' || role === 'BILLING';
+  const canConvert =
+    role === 'SUPERADMIN' || role === 'BILLING' || role === 'SUPPORT';
 
   const load = () => {
     setLoading(true);
-    api(`/leads${leadsQueryString({ status, page, limit: 20 })}`)
+    api(`/leads${leadsQueryString({ status, search, page, limit: 20 })}`)
       .then((response) => readJson<Page<Lead>>(response))
       .then((result) => setData(result))
       .catch((err) => setError(errorMessage(err)))
@@ -40,7 +55,21 @@ export function LeadsPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, status, page]);
+  }, [api, status, search, page]);
+
+  // Keep the status picker in sync with the open lead. NEW is not a
+  // triage target, so a new lead starts on the first triage status.
+  useEffect(() => {
+    if (!selected) {
+      setNextStatus('');
+      return;
+    }
+    setNextStatus(
+      (LEAD_TRIAGE_STATUSES as string[]).includes(selected.status)
+        ? selected.status
+        : LEAD_TRIAGE_STATUSES[0],
+    );
+  }, [selected]);
 
   async function setLeadStatus(lead: Lead, next: LeadStatus) {
     setBusy(true);
@@ -63,12 +92,47 @@ export function LeadsPage() {
     }
   }
 
+  async function exportLeads() {
+    setExporting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await api(
+        `/leads/export${leadsQueryString({ status, search })}`,
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const message =
+          body && typeof body === 'object' && 'message' in body
+            ? String((body as { message: unknown }).message)
+            : `Export failed (${response.status})`;
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('content-disposition') ?? '';
+      const match = /filename="([^"]+)"/.exec(disposition);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = match?.[1] ?? 'leads-export.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setNotice('Leads export downloaded (CSV).');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
         eyebrow="Sales"
         title="Leads"
-        description="Contact requests from the landing lead form. Open a lead to read the full message and mark it contacted or closed."
+        description="Contact requests from the landing lead form. Open a lead to read the full message, move it through the pipeline, or convert it into a tenant."
       />
       {error ? <ErrorNote message={error} /> : null}
       {notice ? (
@@ -95,6 +159,51 @@ export function LeadsPage() {
             ))}
           </select>
         </label>
+        <form
+          className="inline-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSearch(searchInput.trim());
+            setPage(1);
+          }}
+        >
+          <label>
+            Search
+            <input
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Name, contact, or message…"
+            />
+          </label>
+          <div className="form-actions">
+            <button type="submit" className="button">
+              Search
+            </button>
+            {search ? (
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => {
+                  setSearchInput('');
+                  setSearch('');
+                  setPage(1);
+                }}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </form>
+        {canExport ? (
+          <button
+            type="button"
+            className="button"
+            disabled={exporting}
+            onClick={() => void exportLeads()}
+          >
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+        ) : null}
       </div>
 
       {loading && !data ? <Loading /> : null}
@@ -212,28 +321,91 @@ export function LeadsPage() {
                 <dt>Source</dt>
                 <dd>{selected.source}</dd>
               </div>
+              <div>
+                <dt>Consent</dt>
+                <dd>
+                  {selected.consentGiven
+                    ? (selected.consentText ?? 'Given')
+                    : 'Not given'}
+                </dd>
+              </div>
+              <div>
+                <dt>UTM source</dt>
+                <dd>{selected.utmSource || '—'}</dd>
+              </div>
+              <div>
+                <dt>UTM campaign</dt>
+                <dd>{selected.utmCampaign || '—'}</dd>
+              </div>
+              {selected.convertedTenant ? (
+                <div>
+                  <dt>Converted to tenant</dt>
+                  <dd>
+                    <Link
+                      to="/tenants/$tenantId"
+                      params={{ tenantId: selected.convertedTenant.id }}
+                    >
+                      {selected.convertedTenant.name} (
+                      {selected.convertedTenant.slug})
+                    </Link>
+                  </dd>
+                </div>
+              ) : null}
             </dl>
             <h3 className="subhead">Message</h3>
             <p className="muted-note" style={{ whiteSpace: 'pre-wrap' }}>
               {selected.message || 'No message.'}
             </p>
+            <div className="inline-form">
+              <label>
+                Status
+                <select
+                  value={nextStatus}
+                  onChange={(event) =>
+                    setNextStatus(event.target.value as LeadStatus)
+                  }
+                  disabled={busy}
+                >
+                  {LEAD_TRIAGE_STATUSES.map((value) => (
+                    <option key={value} value={value}>
+                      {leadStatusLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="button button--primary"
+                  disabled={
+                    busy || !nextStatus || nextStatus === selected.status
+                  }
+                  onClick={() =>
+                    nextStatus &&
+                    void setLeadStatus(selected, nextStatus as LeadStatus)
+                  }
+                >
+                  {busy ? 'Saving…' : 'Update status'}
+                </button>
+              </div>
+            </div>
             <div className="form-actions">
-              <button
-                type="button"
-                className="button button--primary"
-                disabled={busy || selected.status === 'CONTACTED'}
-                onClick={() => void setLeadStatus(selected, 'CONTACTED')}
-              >
-                {busy ? 'Saving…' : 'Mark contacted'}
-              </button>
-              <button
-                type="button"
-                className="button"
-                disabled={busy || selected.status === 'CLOSED'}
-                onClick={() => void setLeadStatus(selected, 'CLOSED')}
-              >
-                {busy ? 'Saving…' : 'Close lead'}
-              </button>
+              {canConvert && !selected.convertedTenant ? (
+                <button
+                  type="button"
+                  className="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setSelected(null);
+                    void navigate({
+                      to: '/tenants/new',
+                      search: { leadId: selected.id },
+                    });
+                  }}
+                >
+                  Convert to tenant
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="button button--ghost"

@@ -1,5 +1,12 @@
 import type { LandingContentRow } from '../types';
 
+/**
+ * The 20 landing sections, in console tab order (mirrors
+ * LANDING_SECTIONS in the platform API's landing-content.constants.ts).
+ * Scalar sections hold one string per row; object sections hold one
+ * flat object per locale (fixed key 'main'); list sections hold one
+ * object row per item.
+ */
 export const LANDING_SECTIONS = [
   'hero',
   'capabilities',
@@ -7,6 +14,20 @@ export const LANDING_SECTIONS = [
   'testimonials',
   'partners',
   'contact',
+  'seo',
+  'leadForm',
+  'proof',
+  'faqMeta',
+  'pricingCopy',
+  'gettingStarted',
+  'walkthrough',
+  'videoSection',
+  'heroTabs',
+  'dock',
+  'header',
+  'nav',
+  'footer',
+  'footerLinks',
 ] as const;
 
 export type LandingSection = (typeof LANDING_SECTIONS)[number];
@@ -18,6 +39,20 @@ export const LANDING_SECTION_LABELS: Record<LandingSection, string> = {
   testimonials: 'Testimonials',
   partners: 'Partners',
   contact: 'Contact',
+  seo: 'SEO',
+  leadForm: 'Lead form',
+  proof: 'Proof',
+  faqMeta: 'FAQ heading',
+  pricingCopy: 'Pricing copy',
+  gettingStarted: 'Getting started',
+  walkthrough: 'Walkthrough',
+  videoSection: 'Video',
+  heroTabs: 'Hero tabs',
+  dock: 'Dock',
+  header: 'Header',
+  nav: 'Navigation',
+  footer: 'Footer',
+  footerLinks: 'Footer links',
 };
 
 export const LANDING_LOCALES = ['en', 'bn'] as const;
@@ -33,13 +68,38 @@ export const LANDING_LOCALE_LABELS: Record<LandingLocale, string> = {
 export const LANDING_SCALAR_SECTIONS: ReadonlySet<string> = new Set([
   'hero',
   'contact',
+  'seo',
 ]);
+
+/**
+ * Sections whose rows are one flat object per locale (value = object,
+ * fixed key LANDING_OBJECT_KEY). The landing merge overrides the
+ * built-in section field-by-field.
+ */
+export const LANDING_OBJECT_SECTIONS: ReadonlySet<string> = new Set([
+  'leadForm',
+  'proof',
+  'faqMeta',
+  'pricingCopy',
+  'gettingStarted',
+  'walkthrough',
+  'videoSection',
+  'heroTabs',
+  'dock',
+  'header',
+  'footer',
+]);
+
+/** The single row key for object sections (same as the API). */
+export const LANDING_OBJECT_KEY = 'main';
 
 /** Sections whose rows are list items (value = object, one row per item). */
 export const LANDING_LIST_SECTIONS: ReadonlySet<string> = new Set([
   'faq',
   'testimonials',
   'partners',
+  'nav',
+  'footerLinks',
 ]);
 
 /** The 10 capability section ids the landing renders (in page order). */
@@ -188,11 +248,121 @@ const TESTIMONIAL_FIELDS: LandingFieldDef[] = [
 
 const PARTNER_FIELDS: LandingFieldDef[] = [text('name', 'Brand name')];
 
+const SEO_FIELDS: LandingFieldDef[] = [
+  text('title', 'Page title'),
+  area('description', 'Meta description'),
+];
+
 /**
- * Field definitions for one row. Scalar sections (hero/contact) return
- * the single field for that row's key; capabilities resolve by section
- * id; unknown capability ids fall back to heading + subheading so a new
- * id still gets a usable editor.
+ * Object-section fields (Batch 1, items 6–7). The field names are the
+ * landing merge's REAL field names — the merge in
+ * apps/landing/lib/landing-content.ts reads them by name, so these
+ * must stay in sync with it AND with the seed rows in
+ * apps/platform-api/prisma/seed/landing-content.json. Flat camelCase
+ * names map onto nested landing fields (chrome*, label*, stepN*).
+ */
+const OBJECT_FIELDS: Record<string, LandingFieldDef[]> = {
+  leadForm: [
+    text('eyebrow', 'Eyebrow'),
+    text('heading', 'Heading'),
+    area('subheading', 'Subheading'),
+    text('nameLabel', 'Name label'),
+    text('namePlaceholder', 'Name placeholder'),
+    text('phoneLabel', 'Phone label'),
+    text('phonePlaceholder', 'Phone placeholder'),
+    text('volumeLabel', 'Volume label'),
+    lines('volumeOptions', 'Volume options'),
+    text('noteLabel', 'Note label'),
+    text('notePlaceholder', 'Note placeholder'),
+    text('submitCta', 'Submit button'),
+    text('submittingText', 'Submitting text'),
+    text('successHeading', 'Success heading'),
+    area('successMessage', 'Success message'),
+    area('privacyNote', 'Privacy note'),
+    area('consentLabel', 'Consent checkbox text'),
+    text('volumeFallback', 'Volume fallback'),
+  ],
+  proof: [
+    text('eyebrow', 'Eyebrow'),
+    text('heading', 'Heading'),
+    area('subheading', 'Subheading'),
+    text('chromeFeaturedBadge', 'Featured badge'),
+    text('chromeWatchInterview', 'Watch interview label'),
+    text('chromeWatchCaseStudy', 'Watch case study label'),
+  ],
+  faqMeta: [
+    text('eyebrow', 'Eyebrow'),
+    text('heading', 'Heading'),
+    area('subheading', 'Subheading'),
+  ],
+  pricingCopy: [
+    text('eyebrow', 'Eyebrow'),
+    text('heading', 'Heading'),
+    area('subheading', 'Subheading'),
+    text('labelPerMonth', 'Per-month label'),
+    text('labelTrialNote', 'Trial note label'),
+    text('labelCtaLabel', 'CTA label'),
+  ],
+  gettingStarted: [
+    text('eyebrow', 'Eyebrow'),
+    text('heading', 'Heading'),
+    area('subheading', 'Subheading'),
+    text('ctaLabel', 'CTA label'),
+    text('step1Title', 'Step 1 title'),
+    area('step1Detail', 'Step 1 detail'),
+    text('step2Title', 'Step 2 title'),
+    area('step2Detail', 'Step 2 detail'),
+    text('step3Title', 'Step 3 title'),
+    area('step3Detail', 'Step 3 detail'),
+  ],
+  walkthrough: [
+    lines('bullets', 'Bullets'),
+    area('trustNote', 'Trust note'),
+  ],
+  videoSection: [text('youtubeUrl', 'YouTube URL')],
+  heroTabs: [
+    text('tabLabelAdmin', 'Tab label — Admin'),
+    text('tabLabelOperations', 'Tab label — Operations'),
+    text('tabLabelPacking', 'Tab label — Packing'),
+    text('tabLabelHr', 'Tab label — HR'),
+    text('trustedTitle', 'Trusted-by title'),
+    area('platformNote', 'Platform note'),
+    area('sampleNote', 'Sample data note'),
+  ],
+  dock: [
+    text('helpLabel', 'Help label'),
+    text('demoLabel', 'Demo label'),
+    text('demoUrl', 'Demo URL'),
+    text('callLabel', 'Call label'),
+    text('whatsappLabel', 'WhatsApp label'),
+    text('messengerLabel', 'Messenger label'),
+    text('fabLabel', 'Floating button label'),
+  ],
+  header: [
+    text('ctaStartTrial', 'Start trial button'),
+    text('signInLabel', 'Sign in link'),
+  ],
+  footer: [
+    area('tagline', 'Tagline'),
+    text('linksTitle', 'Links column title'),
+    text('contactTitle', 'Contact column title'),
+    text('copyright', 'Copyright line'),
+    text('privacyLabel', 'Privacy link label'),
+    text('termsLabel', 'Terms link label'),
+  ],
+};
+
+const NAV_FIELDS: LandingFieldDef[] = [
+  text('label', 'Label'),
+  text('href', 'Link (anchor, path, or https URL)'),
+];
+
+/**
+ * Field definitions for one row. Scalar sections (hero/contact/seo)
+ * return the single field for that row's key; object sections return
+ * the section's full field list (their key is always 'main');
+ * capabilities resolve by section id; unknown capability ids fall back
+ * to heading + subheading so a new id still gets a usable editor.
  */
 export function landingFieldDefs(
   section: string,
@@ -204,6 +374,9 @@ export function landingFieldDefs(
   if (section === 'contact') {
     return CONTACT_FIELDS.filter((field) => field.name === key);
   }
+  if (section === 'seo') {
+    return SEO_FIELDS.filter((field) => field.name === key);
+  }
   if (section === 'capabilities') {
     return (
       CAPABILITY_FIELDS[key] ?? [
@@ -212,9 +385,13 @@ export function landingFieldDefs(
       ]
     );
   }
+  if (LANDING_OBJECT_SECTIONS.has(section)) {
+    return OBJECT_FIELDS[section] ?? [];
+  }
   if (section === 'faq') return FAQ_FIELDS;
   if (section === 'testimonials') return TESTIMONIAL_FIELDS;
   if (section === 'partners') return PARTNER_FIELDS;
+  if (section === 'nav' || section === 'footerLinks') return NAV_FIELDS;
   return [];
 }
 
@@ -222,6 +399,7 @@ export function landingFieldDefs(
 export function landingScalarFieldNames(section: string): string[] {
   if (section === 'hero') return HERO_FIELDS.map((field) => field.name);
   if (section === 'contact') return CONTACT_FIELDS.map((field) => field.name);
+  if (section === 'seo') return SEO_FIELDS.map((field) => field.name);
   return [];
 }
 

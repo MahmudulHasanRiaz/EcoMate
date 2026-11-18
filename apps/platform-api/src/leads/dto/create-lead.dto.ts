@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsOptional,
   IsString,
   Length,
@@ -48,6 +49,33 @@ export class CreateLeadDto {
   @IsString()
   @MaxLength(50)
   monthlyOrders?: string;
+
+  /**
+   * Consent capture (Batch 1, item 8). The form requires the checkbox;
+   * the API accepts it as optional so non-form submitters are not
+   * broken, but a submitted lead SHOULD carry consentGiven=true with
+   * the exact label text shown (consentText) as proof of what was
+   * agreed to.
+   */
+  @IsOptional()
+  @IsBoolean()
+  consentGiven?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  consentText?: string;
+
+  /** UTM params from the form page URL (Batch 1, item 8). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  utmSource?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  utmCampaign?: string;
 
   /** Cloudflare Turnstile token. Optional — never required (see LeadsService). */
   @IsOptional()

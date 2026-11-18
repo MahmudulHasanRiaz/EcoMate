@@ -78,7 +78,7 @@ export const TYPE_STATUSES: Record<string, string[]> = {
   proof: ['PENDING', 'APPROVED', 'REJECTED'],
   coupon: ['ACTIVE', 'INACTIVE'],
   job: ['OK', 'ERROR', 'NEVER'],
-  lead: ['NEW', 'CONTACTED', 'CLOSED'],
+  lead: ['NEW', 'CONTACTED', 'QUALIFIED', 'DEMO_SCHEDULED', 'WON', 'LOST', 'CLOSED'],
   domain: ['PENDING', 'VERIFIED', 'ACTIVE', 'FAILED', 'DISABLED'],
   invite: ['PENDING', 'USED', 'EXPIRED'],
 };

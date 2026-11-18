@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/site-header';
-import { getBranding } from '@/lib/branding';
+import { fetchBranding } from '@/lib/branding';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy — EcoMate',
@@ -8,8 +8,8 @@ export const metadata: Metadata = {
     'What data EcoMate collects, why, how it is isolated per workspace, and how it is deleted.',
 };
 
-export default function PrivacyPage() {
-  const { platformName } = getBranding();
+export default async function PrivacyPage() {
+  const { platformName } = await fetchBranding();
   return (
     <>
       <SiteHeader />
