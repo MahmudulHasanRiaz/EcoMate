@@ -479,8 +479,10 @@ services:
       SMTP_FROM: ${SMTP_FROM:-${PLATFORM_MAIL_FROM:-EcoMate <no-reply@ecomate.bd>}}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       TURNSTILE_VERIFY_URL: ${TURNSTILE_VERIFY_URL:-}
-      PLATFORM_LANDING_URL: ${PLATFORM_LANDING_URL:-https://www.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
-      PLATFORM_ADMIN_URL: ${PLATFORM_ADMIN_URL:-https://saas.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
+      # No nested defaults here (git deploys): each origin is set explicitly
+      # per environment; the literal ecomate.bd default is production only.
+      PLATFORM_LANDING_URL: ${PLATFORM_LANDING_URL:-https://www.ecomate.bd}
+      PLATFORM_ADMIN_URL: ${PLATFORM_ADMIN_URL:-https://saas.ecomate.bd}
       TENANT_BACKEND_URL: ${TENANT_BACKEND_URL:-http://backend:4000/api}
       # Landing cache purge (Batch 1): the internal landing URL the
       # platform API calls to revalidate the landing cache. The shared
@@ -509,7 +511,7 @@ services:
       # load the files. Leave MEDIA_STORAGE_DRIVER empty to keep the
       # console switch effective.
       MEDIA_LOCAL_PATH: ${MEDIA_LOCAL_PATH:-/app/data/media}
-      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-https://api.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-https://api.ecomate.bd}
       MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-104857600}
       MEDIA_STORAGE_DRIVER: ${MEDIA_STORAGE_DRIVER:-}
       IMPERSONATION_TTL_SECONDS: ${IMPERSONATION_TTL_SECONDS:-900}
@@ -661,9 +663,11 @@ services:
       ACME_EMAIL: ${ACME_EMAIL:-support@ecomate.bd}
       # Platform hosts + primary domain (Caddyfile {$VAR:default}s).
       SAAS_PRIMARY_DOMAIN: ${SAAS_PRIMARY_DOMAIN:-ecomate.bd}
-      PLATFORM_LANDING_HOST: ${PLATFORM_LANDING_HOST:-www.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
-      PLATFORM_ADMIN_HOST: ${PLATFORM_ADMIN_HOST:-saas.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
-      PLATFORM_API_HOST: ${PLATFORM_API_HOST:-api.${SAAS_PRIMARY_DOMAIN:-ecomate.bd}}
+      # No nested defaults here (git deploys): each host is set explicitly
+      # per environment; the literal ecomate.bd defaults are production only.
+      PLATFORM_LANDING_HOST: ${PLATFORM_LANDING_HOST:-www.ecomate.bd}
+      PLATFORM_ADMIN_HOST: ${PLATFORM_ADMIN_HOST:-saas.ecomate.bd}
+      PLATFORM_API_HOST: ${PLATFORM_API_HOST:-api.ecomate.bd}
     depends_on:
       backend:
         condition: service_healthy

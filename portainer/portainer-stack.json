@@ -50,17 +50,17 @@
     },
     {
       "default": "",
-      "label": "Landing host (Caddy; empty = www.<primary>)",
+      "label": "Landing host (Caddy; empty = www.ecomate.bd — set explicitly for staging)",
       "name": "PLATFORM_LANDING_HOST"
     },
     {
       "default": "",
-      "label": "Platform console host (Caddy; empty = saas.<primary>)",
+      "label": "Platform console host (Caddy; empty = saas.ecomate.bd — set explicitly for staging)",
       "name": "PLATFORM_ADMIN_HOST"
     },
     {
       "default": "",
-      "label": "Platform API host (Caddy; empty = api.<primary>)",
+      "label": "Platform API host (Caddy; empty = api.ecomate.bd — set explicitly for staging)",
       "name": "PLATFORM_API_HOST"
     },
     {
@@ -135,12 +135,12 @@
     },
     {
       "default": "",
-      "label": "Public landing origin for verification emails (empty = https://www.<primary>)",
+      "label": "Public landing origin for verification emails (empty = https://www.ecomate.bd — set explicitly for staging)",
       "name": "PLATFORM_LANDING_URL"
     },
     {
       "default": "",
-      "label": "Platform console origin for invite emails (empty = https://saas.<primary>)",
+      "label": "Platform console origin for invite emails (empty = https://saas.ecomate.bd — set explicitly for staging)",
       "name": "PLATFORM_ADMIN_URL"
     },
     {
@@ -270,7 +270,7 @@
     },
     {
       "default": "",
-      "label": "Media library public base URL (empty = compose default https://api.<primary domain>; the origin written into content URLs)",
+      "label": "Media library public base URL (empty = compose default https://api.ecomate.bd; the origin written into content URLs — set explicitly for staging)",
       "name": "MEDIA_PUBLIC_BASE_URL"
     },
     {
