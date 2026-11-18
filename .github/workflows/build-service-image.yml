@@ -22,7 +22,12 @@ on:
         description: JSON label array for runs-on (caller maps its runner choice)
         required: false
         type: string
-        default: '["self-hosted", "macos", "arm64"]'
+                default: '["self-hosted", "macos", "arm64"]'
+            build-args:
+            description: Docker build args, one per line (KEY=VALUE)
+            required: false
+            type: string
+            default: ''
 
 jobs:
   build:
@@ -71,3 +76,4 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=${{ inputs.service }}
           cache-to: type=gha,mode=max,scope=${{ inputs.service }}
+          build-args: ${{ inputs.build-args }}
