@@ -163,10 +163,16 @@
   --em-topbar-height: 48px;
 
   /* Radii — live StackMate: inputs/buttons 6px; cards/dialogs 8px. */
+  /* Neon radius system (StackMate tokens.css): 4px max everywhere —
+     the look is almost radiusless. Only dialogs get 6px, and only
+     status pills/dots/spinners get 999px. Do NOT raise these: an
+     earlier apply round set md/lg/xl to 6/8/8px from approximate
+     screenshot measurements and Boss called it out (2026-11-18) —
+     the 4px code tokens, not the screenshots, are the source of truth. */
   --em-radius-sm: 4px;
-  --em-radius-md: 6px;
-  --em-radius-lg: 8px;
-  --em-radius-xl: 8px;
+  --em-radius-md: 4px;
+  --em-radius-lg: 4px;
+  --em-radius-xl: 6px;
 
   /* Elevation — minimal in dark (Neon: borders do the work, not shadows). */
   --em-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
