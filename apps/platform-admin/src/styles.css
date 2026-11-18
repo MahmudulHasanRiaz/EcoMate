@@ -1067,6 +1067,52 @@ button {
   display: none;
 }
 
+/* R-BILLING-TABS: the strip hides its scrollbar, so without buttons the
+   cut-off tabs were unreachable with a mouse (dragging does not scroll).
+   ScrollableTabs renders ‹ › buttons at the overflowing edges only. */
+.tabs-scroll {
+  position: relative;
+}
+.tabs-scroll .tabs {
+  /* Keep the tab buttons clear of the overlay buttons. */
+  scroll-padding: 0 36px;
+}
+.tabs-scroll-btn {
+  position: absolute;
+  top: 0;
+  bottom: 18px;
+  width: 32px;
+  border: 0;
+  border-bottom: 1px solid var(--em-border);
+  background: linear-gradient(
+    to right,
+    var(--em-surface) 55%,
+    transparent
+  );
+  color: var(--em-text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tabs-scroll-btn--left {
+  left: 0;
+}
+.tabs-scroll-btn--right {
+  right: 0;
+  background: linear-gradient(
+    to left,
+    var(--em-surface) 55%,
+    transparent
+  );
+}
+.tabs-scroll-btn:hover {
+  color: var(--em-accent);
+}
+
 .tab {
   border: 0;
   background: none;
@@ -1391,6 +1437,28 @@ td time,
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+/* R-PLANS: the plan name is a button (opens the edit dialog) styled as
+   plain heading text — no button chrome, accent + underline on hover so
+   the clickability is discoverable. */
+.plan-title {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.plan-title:hover:not(:disabled) {
+  color: var(--em-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.plan-title:disabled {
+  cursor: default;
 }
 
 .plan-versions {

@@ -941,6 +941,15 @@ export class SystemSettingsController {
     }
     let value = body.value ?? '';
 
+    // R-NULL-SETTINGS: a null stringified on an earlier write path landed in
+    // some tenants as the literal string "null" (or "undefined"), which the
+    // settings editors then rendered verbatim. No genuine setting value is
+    // exactly the word "null", so treat it as empty and stop the poison
+    // from being re-written. (The display layer also sanitizes on read, so
+    // already-poisoned rows render empty without a data migration.)
+    if (value === 'null' || value === 'undefined') {
+      value = '';
+    }
     // Masked-secret convention: an EMPTY submitted value for a redacted secret
     // means "keep the stored one" (the GET handler never returns the token). This
     // is what makes redaction non-destructive.

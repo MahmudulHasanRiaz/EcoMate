@@ -6,5 +6,5 @@
 
 [[IgnoredVulns]]
 id = "GHSA-fc5q-39xc-vjpf"
-reason = "picomatch ReDoS via single-branch repeated extglobs (CVE-2026-112366). No fixed release exists: the latest picomatch is 4.0.7 (2026-08-24) and every version through 4.0.7 is affected; the fix exists only as unreleased PR micromatch/picomatch#194. In this repo picomatch is reachable only via dev/build tooling (vite, vitest, jest, micromatch, anymatch, knip, ts-loader, rollup pluginutils, unplugin, tinyglobby, @angular-devkit) — no app code depends on it directly and no user-controlled glob patterns reach it, so there is no reachable attack path in production. Re-check for a fixed picomatch release after the ignoreUntil date."
-ignoreUntil = "2027-02-17T00:00:00Z"
+reason = "picomatch ReDoS via single-branch repeated extglobs (CVE-2026-112366). No fixed release exists: the latest picomatch is 4.0.7 (2026-08-24) and every version through 4.0.7 is affected; the fix exists only as unreleased PR micromatch/picomatch#194. In this repo picomatch is reachable only via dev/build tooling (vite, vitest, jest, micromatch, anymatch, knip, ts-loader, rollup pluginutils, unplugin, tinyglobby, @angular-devkit) — no app code depends on it directly and no user-controlled glob patterns reach it, so there is no reachable attack path in production. Re-check for a fixed picomatch release after the effectiveUntil date."
+effectiveUntil = "2027-02-17T00:00:00Z"

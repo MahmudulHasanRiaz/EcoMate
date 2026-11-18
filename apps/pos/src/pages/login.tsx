@@ -76,6 +76,8 @@ export function LoginPage({ onSuccess }: Props) {
         )}
 
         <div className="space-y-4">
+          {/* R-BITWARDEN: explicit autocomplete tokens so password managers
+              can identify the login form (see the tenant admin sign-in form). */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Email Address</label>
             <div className="relative">
@@ -83,6 +85,7 @@ export function LoginPage({ onSuccess }: Props) {
               <input
                 className="w-full rounded-xl border border-slate-800 bg-slate-900/50 py-3 pl-11 pr-4 text-sm text-slate-200 placeholder-slate-600 outline-none transition-all duration-200 focus:border-emerald-500 focus:bg-slate-900 focus:ring-2 focus:ring-emerald-500/20"
                 type="email"
+                autoComplete="username"
                 placeholder="Enter email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -99,6 +102,7 @@ export function LoginPage({ onSuccess }: Props) {
               <input
                 className="w-full rounded-xl border border-slate-800 bg-slate-900/50 py-3 pl-11 pr-4 text-sm text-slate-200 placeholder-slate-600 outline-none transition-all duration-200 focus:border-emerald-500 focus:bg-slate-900 focus:ring-2 focus:ring-emerald-500/20"
                 type="password"
+                autoComplete="current-password"
                 placeholder="Enter password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

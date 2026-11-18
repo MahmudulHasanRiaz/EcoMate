@@ -61,6 +61,7 @@ export function SettingsPage() {
   const [smtpFrom, setSmtpFrom] = useState('');
   const [testEmail, setTestEmail] = useState('');
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
 
   const [trialDays, setTrialDays] = useState('14');
   const [graceDays, setGraceDays] = useState('7');
@@ -177,11 +178,11 @@ export function SettingsPage() {
 
   async function sendTestEmail() {
     if (!testEmail.trim()) {
-      setError('Enter an address to send the test email to.');
+      setTestError('Enter an address to send the test email to.');
       return;
     }
     setBusy('smtp-test');
-    setError(null);
+    setTestError(null);
     setTestResult(null);
     try {
       await api('/settings/smtp/test', {
@@ -190,7 +191,11 @@ export function SettingsPage() {
       }).then((r) => readJson(r));
       setTestResult(`Test email sent to ${testEmail.trim()}.`);
     } catch (err) {
-      setError(errorMessage(err));
+      // R-F7b: the result must show INLINE here in the SMTP section. The
+      // page-level error banner lives at the top of the page, far above
+      // this section, so a setup error was invisible to an operator
+      // scrolled down here — the click appeared to do nothing.
+      setTestError(errorMessage(err));
     } finally {
       setBusy(null);
     }
@@ -743,6 +748,7 @@ export function SettingsPage() {
               {testResult}
             </p>
           ) : null}
+          {testError ? <ErrorNote message={testError} /> : null}
         </section>
       ) : null}
 

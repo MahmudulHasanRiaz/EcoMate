@@ -193,6 +193,73 @@ describe('SystemSettingsController', () => {
     });
   });
 
+  // R-NULL-SETTINGS: the literal strings "null"/"undefined" must never be
+  // stored — they render verbatim in the settings editors. They are
+  // normalized to '' at write time (the display layer also sanitizes
+  // already-poisoned rows on read).
+  describe('POST :key literal "null" guard', () => {
+    function mockSetController() {
+      const prisma = {
+        systemSetting: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          upsert: jest
+            .fn()
+            .mockImplementation(async ({ create }: any) => create),
+        },
+      };
+      const cache = { delete: jest.fn().mockResolvedValue(undefined) };
+      const ctrl = new SystemSettingsController(
+        prisma as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        cache as any,
+        {} as any,
+        {
+          revalidateStorefront: jest.fn().mockResolvedValue({
+            status: 'purged',
+            detail: '',
+          }),
+        } as any,
+      );
+      return { ctrl, prisma, cache };
+    }
+
+    it.each(['null', 'undefined'])(
+      'value "%s" is stored as empty, not the literal string',
+      async (poison) => {
+        const { ctrl, prisma } = mockSetController();
+        const res = await ctrl.set(
+          'app_name',
+          { value: poison },
+          { role: 'admin' } as any,
+        );
+        expect(res).toEqual({ key: 'app_name', value: '' });
+        expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            create: { key: 'app_name', value: '' },
+            update: { value: '' },
+          }),
+        );
+      },
+    );
+
+    it('a genuine value containing "null" is left untouched', async () => {
+      const { ctrl, prisma } = mockSetController();
+      const res = await ctrl.set(
+        'app_name',
+        { value: 'Null & Co' },
+        { role: 'admin' } as any,
+      );
+      expect(res).toEqual({ key: 'app_name', value: 'Null & Co' });
+      expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: { key: 'app_name', value: 'Null & Co' },
+        }),
+      );
+    });
+  });
+
   // SECURITY lock-in (2026-10-25, F9): getAll must never leak secrets.
   describe('getAll secret redaction', () => {
     it('redacts smtp_pass and tracking tokens, keeps presence flags', async () => {

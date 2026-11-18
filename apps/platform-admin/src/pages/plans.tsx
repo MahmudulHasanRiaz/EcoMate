@@ -555,7 +555,20 @@ export function PlansPage() {
               <div className="plan-head">
                 <div>
                   <p className="eyebrow">{plan.slug}</p>
-                  <h2>{plan.name}</h2>
+                  {/* R-PLANS: the heading opens the edit dialog, same as the
+                      card's Edit plan button — a heading that does nothing
+                      on click reads as broken. */}
+                  <h2>
+                    <button
+                      type="button"
+                      className="plan-title"
+                      onClick={() => openEdit(plan)}
+                      disabled={!!busy}
+                      aria-label={`Edit plan ${plan.name}`}
+                    >
+                      {plan.name}
+                    </button>
+                  </h2>
                 </div>
                 {plan.badge ? <span className="badge">{plan.badge}</span> : null}
               </div>

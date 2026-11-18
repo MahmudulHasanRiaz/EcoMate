@@ -91,6 +91,9 @@ export function SignUpForm({
         className={cn('grid gap-3', className)}
         {...props}
       >
+        {/* R-BITWARDEN: explicit autocomplete tokens on every field so
+            password managers can identify the signup form (see the
+            sign-in form). Passwords use new-password, not current-password. */}
         <div className='grid grid-cols-2 gap-3'>
           <FormField
             control={form.control}
@@ -99,7 +102,7 @@ export function SignUpForm({
               <FormItem>
                 <FormLabel>First Name</FormLabel>
                 <FormControl>
-                  <Input placeholder='John' {...field} />
+                  <Input autoComplete='given-name' placeholder='John' {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -112,7 +115,7 @@ export function SignUpForm({
               <FormItem>
                 <FormLabel>Last Name</FormLabel>
                 <FormControl>
-                  <Input placeholder='Doe' {...field} />
+                  <Input autoComplete='family-name' placeholder='Doe' {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -126,7 +129,7 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>Username</FormLabel>
               <FormControl>
-                <Input placeholder='john_doe' {...field} />
+                <Input autoComplete='username' placeholder='john_doe' {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -139,7 +142,12 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input placeholder='name@example.com' {...field} />
+                <Input
+                  type='email'
+                  autoComplete='email'
+                  placeholder='name@example.com'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -152,7 +160,12 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>Phone Number</FormLabel>
               <FormControl>
-                <Input placeholder='+1234567890' {...field} />
+                <Input
+                  type='tel'
+                  autoComplete='tel'
+                  placeholder='+1234567890'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -165,7 +178,11 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <PasswordInput placeholder='********' {...field} />
+                <PasswordInput
+                  autoComplete='new-password'
+                  placeholder='********'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -178,7 +195,11 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>Confirm Password</FormLabel>
               <FormControl>
-                <PasswordInput placeholder='********' {...field} />
+                <PasswordInput
+                  autoComplete='new-password'
+                  placeholder='********'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>

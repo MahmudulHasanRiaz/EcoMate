@@ -130,15 +130,17 @@ function AccountForm({ data, onSave, saving }: { data: any; onSave: (d: any) => 
             )}
             <div>
               <Label>Current Password</Label>
-              <PasswordInput value={cpw.current} onChange={e => setCpw(p => ({ ...p, current: e.target.value }))} />
+              {/* R-BITWARDEN: autocomplete tokens so password managers can
+                  identify the change-password form (see the sign-in form). */}
+              <PasswordInput autoComplete='current-password' value={cpw.current} onChange={e => setCpw(p => ({ ...p, current: e.target.value }))} />
             </div>
             <div>
               <Label>New Password</Label>
-              <PasswordInput value={cpw.newPass} onChange={e => setCpw(p => ({ ...p, newPass: e.target.value }))} />
+              <PasswordInput autoComplete='new-password' value={cpw.newPass} onChange={e => setCpw(p => ({ ...p, newPass: e.target.value }))} />
             </div>
             <div>
               <Label>Confirm New Password</Label>
-              <PasswordInput value={cpw.confirm} onChange={e => setCpw(p => ({ ...p, confirm: e.target.value }))} />
+              <PasswordInput autoComplete='new-password' value={cpw.confirm} onChange={e => setCpw(p => ({ ...p, confirm: e.target.value }))} />
               {cpw.confirm && cpw.newPass !== cpw.confirm && (
                 <p className='text-xs text-red-500 mt-1'>Passwords do not match</p>
               )}

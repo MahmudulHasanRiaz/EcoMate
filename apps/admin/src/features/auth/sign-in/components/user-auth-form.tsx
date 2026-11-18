@@ -123,6 +123,13 @@ export function UserAuthForm({
             <span>{customerBlocked}</span>
           </div>
         )}
+        {/*
+          R-BITWARDEN: explicit autocomplete tokens on the login fields.
+          Without them, password managers (Bitwarden) cannot identify the
+          form and warn that the page is "interfering" — the console had
+          the same gap until fix round #1. username + current-password
+          is the standard login pairing.
+        */}
         <FormField
           control={form.control}
           name='email'
@@ -130,7 +137,12 @@ export function UserAuthForm({
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input placeholder='name@example.com' {...field} />
+                <Input
+                  type='email'
+                  autoComplete='username'
+                  placeholder='name@example.com'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -143,7 +155,11 @@ export function UserAuthForm({
             <FormItem className='relative'>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <PasswordInput placeholder='********' {...field} />
+                <PasswordInput
+                  autoComplete='current-password'
+                  placeholder='********'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
               <Link

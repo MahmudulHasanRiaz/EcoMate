@@ -21,10 +21,22 @@ export class SettingsService {
       });
     }
 
+    // R-PROFILE: the UserSettings row is created EMPTY on first access, so
+    // username/email read as null until the operator saves the form once —
+    // the Profile tab rendered empty fields for every fresh account. Fall
+    // back to the account's own UserProfile record (username/email are
+    // required there), so the form shows the operator's real identity.
+    // An explicitly saved UserSettings value still wins. Bio has no
+    // account-level source and stays empty until set.
+    const account = await this.prisma.userProfile.findFirst({
+      where: { id: userId },
+      select: { username: true, email: true },
+    });
+
     return {
       profile: {
-        username: settings.username,
-        email: settings.email,
+        username: settings.username ?? account?.username ?? null,
+        email: settings.email ?? account?.email ?? null,
         bio: settings.bio,
         urls: settings.urls ? JSON.parse(settings.urls) : [],
       },

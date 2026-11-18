@@ -29,6 +29,7 @@ import {
   ErrorNote,
   Loading,
   PageHeader,
+  ScrollableTabs,
 } from '../components/ui';
 
 type ApiFn = (path: string, init?: RequestInit) => Promise<Response>;
@@ -518,7 +519,7 @@ export function LandingPage() {
         </div>
       ) : null}
 
-      <div className="tabs" role="tablist">
+      <ScrollableTabs label="Landing content sections">
         {LANDING_SECTIONS.map((value) => (
           <button
             key={value}
@@ -532,7 +533,7 @@ export function LandingPage() {
             {LANDING_SECTION_LABELS[value]}
           </button>
         ))}
-      </div>
+      </ScrollableTabs>
 
       <section className="card">
         <AddRowForm

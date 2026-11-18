@@ -24,11 +24,17 @@ import {
 export function MkHeader({
   drawerOpen: controlledOpen,
   onDrawerChange,
+  // R-PRICING-NAV: when the platform has no public plans the pricing
+  // section hides itself (MkPricing returns null), so the #pricing nav
+  // link would point at a missing anchor. LandingV3 passes
+  // plans.length > 0; standalone pages omit it and keep the link.
+  hasPricing = true,
 }: {
   // Controlled by LandingV3 so the dock can hide with the drawer; standalone
   // pages omit both and the drawer manages itself locally.
   drawerOpen?: boolean;
   onDrawerChange?: (open: boolean) => void;
+  hasPricing?: boolean;
 }) {
   const [internalOpen, setInternalOpen] = useState(false);
   const drawerOpen = controlledOpen ?? internalOpen;
@@ -36,7 +42,9 @@ export function MkHeader({
   const { content, locale, branding, toggleLocale, toggleTheme, theme } = useLanding();
   const header = content.header;
   const dock = content.dock;
-  const nav = header.nav;
+  const nav = hasPricing
+    ? header.nav
+    : header.nav.filter((item) => item.href !== '#pricing');
   const logoUrl = branding?.logoUrl.trim() ?? '';
   const brandName = branding?.siteName.trim() || 'EcoMate';
   const panelRef = useRef<HTMLDivElement>(null);
@@ -256,10 +264,13 @@ export function MkHeader({
   );
 }
 
-export function MkFooter() {
+export function MkFooter({ hasPricing = true }: { hasPricing?: boolean } = {}) {
   const { content } = useLanding();
   const footer = content.footer;
-  const platform = footer.capabilities;
+  // Same R-PRICING-NAV rule as the header: no plans, no dead #pricing link.
+  const platform = hasPricing
+    ? footer.capabilities
+    : footer.capabilities.filter((item) => item.href !== '#pricing');
 
   return (
     <footer className="mk-footer">

@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -10,12 +11,16 @@ import {
 import type { PlatformUser, Session } from './types';
 import { ApiError, readJson } from './lib/api';
 import { classifyLoginResponse, type LoginOutcome } from './lib/mfa';
+import {
+  readSession,
+  writeSession,
+  SESSION_STORAGE_KEY,
+} from './lib/session-store';
 
 const API_BASE = (import.meta.env.VITE_PLATFORM_API_URL || '/api').replace(
   /\/+$/,
   '',
 );
-const STORAGE_KEY = 'ecomate.platform.session';
 
 export interface MfaSetup {
   secret: string;
@@ -41,27 +46,6 @@ interface AuthValue {
 
 const AuthContext = createContext<AuthValue | null>(null);
 
-function readSession(): Session | null {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const value = JSON.parse(raw) as Session;
-    if (!value?.accessToken || !value?.refreshToken || !value?.user) return null;
-    return value;
-  } catch {
-    return null;
-  }
-}
-
-function writeSession(session: Session | null): void {
-  try {
-    if (session) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    else sessionStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Storage can be unavailable (private mode); the in-memory session still works.
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(() => readSession());
   const sessionRef = useRef<Session | null>(session);
@@ -82,10 +66,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(next);
   }, []);
 
+  // Cross-tab sync (R-SESSION): the session is shared in localStorage, so a
+  // login, refresh, or logout in one tab must reach every other tab. Without
+  // this, tabs diverge on refresh-token rotation and the stale tab replays
+  // a rotated token — outside the API's reuse grace window that revokes the
+  // whole family and logs the operator out everywhere. `storage` fires only
+  // in the tabs that did NOT make the write, so this cannot loop.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== SESSION_STORAGE_KEY) return;
+      const next = readSession();
+      const current = sessionRef.current;
+      if (
+        next?.accessToken === current?.accessToken &&
+        next?.refreshToken === current?.refreshToken
+      ) {
+        return;
+      }
+      storeSession(next);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [storeSession]);
+
   const api = useCallback(async function request(
     path: string,
     init: RequestInit = {},
     retry = true,
+    adopted = false,
   ): Promise<Response> {
     const current = sessionRef.current ?? readSession();
     const headers = new Headers(init.headers);
@@ -127,6 +135,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshPromiseRef.current = null;
 
     if (!next) {
+      // Refresh failed — but another tab may have rotated the tokens while
+      // our refresh was in flight (its storage event may not have landed
+      // yet). Adopt the fresher stored session and retry once instead of
+      // logging the operator out for a race they did not cause. The
+      // `adopted` flag bounds this to one adoption per call chain.
+      if (!adopted) {
+        const latest = readSession();
+        if (latest && latest.refreshToken !== current.refreshToken) {
+          storeSession(latest);
+          return request(path, init, true, true);
+        }
+      }
       storeSession(null);
       return response;
     }

@@ -22,6 +22,7 @@ import {
   ErrorNote,
   Loading,
   PageHeader,
+  ScrollableTabs,
   StatusBadge,
 } from '../components/ui';
 
@@ -467,7 +468,7 @@ export function BillingPage() {
         </article>
       </section>
 
-      <div className="tabs" role="tablist">
+      <ScrollableTabs label="Billing sections">
         <button
           type="button"
           role="tab"
@@ -555,7 +556,7 @@ export function BillingPage() {
         >
           Billing jobs
         </button>
-      </div>
+      </ScrollableTabs>
 
       {tab === 'proofs' ? (
         <>

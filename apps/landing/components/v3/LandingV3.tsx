@@ -50,7 +50,11 @@ export function LandingV3({ plans }: { plans: PublicPlan[] }) {
       key={locale}
       className={`mk-page motion-page-enter ${locale === 'bn' ? 'font-bangla' : ''}`}
     >
-      <MkHeader drawerOpen={drawerOpen} onDrawerChange={setDrawerOpen} />
+      <MkHeader
+        drawerOpen={drawerOpen}
+        onDrawerChange={setDrawerOpen}
+        hasPricing={plans.length > 0}
+      />
       <main>
         <MkHero />
         <Reveal delay={staggerDelayMs(0)}>
@@ -99,7 +103,7 @@ export function LandingV3({ plans }: { plans: PublicPlan[] }) {
           <MkLeadForm />
         </Reveal>
       </main>
-      <MkFooter />
+      <MkFooter hasPricing={plans.length > 0} />
       <MkDock drawerOpen={drawerOpen} />
     </div>
   );

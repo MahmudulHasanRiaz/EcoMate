@@ -248,3 +248,93 @@ export function Modal({
     </div>
   );
 }
+
+/**
+ * Horizontally scrollable tab strip (R-BILLING-TABS).
+ *
+ * `.tabs` scrolls natively (`overflow-x: auto`) but hides its scrollbar,
+ * so on desktop there was no way to reach cut-off tabs: no visible
+ * scrollbar, and dragging a scroll container does nothing with a mouse.
+ * This wrapper adds ‹ › buttons that appear only while there is more to
+ * scroll in that direction, plus a fade at the overflowing edge. The
+ * buttons scroll by ~80% of the visible width; keyboard users can still
+ * Tab through the tab buttons (focus scrolls the strip into view).
+ */
+export function ScrollableTabs({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const update = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 1);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    update();
+    const el = stripRef.current;
+    if (!el) return;
+    window.addEventListener('resize', update);
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(update);
+      observer.observe(el);
+    }
+    return () => {
+      window.removeEventListener('resize', update);
+      observer?.disconnect();
+    };
+  }, [update, children]);
+
+  const scrollBy = (direction: 1 | -1) => {
+    const el = stripRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * Math.max(160, el.clientWidth * 0.8), behavior: 'smooth' });
+  };
+
+  return (
+    <div
+      className="tabs-scroll"
+      data-can-left={canScrollLeft}
+      data-can-right={canScrollRight}
+    >
+      {canScrollLeft ? (
+        <button
+          type="button"
+          className="tabs-scroll-btn tabs-scroll-btn--left"
+          onClick={() => scrollBy(-1)}
+          aria-label="Scroll tabs left"
+        >
+          ‹
+        </button>
+      ) : null}
+      <div
+        className="tabs"
+        role="tablist"
+        aria-label={label}
+        ref={stripRef}
+        onScroll={update}
+      >
+        {children}
+      </div>
+      {canScrollRight ? (
+        <button
+          type="button"
+          className="tabs-scroll-btn tabs-scroll-btn--right"
+          onClick={() => scrollBy(1)}
+          aria-label="Scroll tabs right"
+        >
+          ›
+        </button>
+      ) : null}
+    </div>
+  );
+}

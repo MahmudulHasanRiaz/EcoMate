@@ -61,33 +61,37 @@ export default function AccountPage() {
           }} className="space-y-4">
             {!isLoginMode && (
               <>
+                {/* R-BITWARDEN: explicit autocomplete tokens so password
+                    managers can identify the auth form (see the tenant
+                    admin sign-in form). The password token switches with
+                    the login/signup mode below. */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-gray-600 ml-1">First Name</label>
-                    <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="John" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
+                    <input type="text" autoComplete="given-name" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="John" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-gray-600 ml-1">Last Name</label>
-                    <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Doe" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
+                    <input type="text" autoComplete="family-name" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Doe" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
                   </div>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-gray-600 ml-1">Username</label>
-                  <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="johndoe" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
+                  <input type="text" autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} placeholder="johndoe" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-gray-600 ml-1">Phone Number</label>
-                  <input type="tel" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} placeholder="+8801700000000" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
+                  <input type="tel" autoComplete="tel" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} placeholder="+8801700000000" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" />
                 </div>
               </>
             )}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-600 ml-1">Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" required />
+              <input type="email" autoComplete={isLoginMode ? 'username' : 'email'} value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" required />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-600 ml-1">Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" required />
+              <input type="password" autoComplete={isLoginMode ? 'current-password' : 'new-password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" required />
             </div>
             {error && <div className="text-red-500 text-xs font-medium bg-red-50 p-3 rounded-xl">{error}</div>}
             <button type="submit" disabled={submitting} className="w-full h-12 bg-brand-blue hover:bg-brand-blue/90 text-white font-bold rounded-xl transition-all shadow-lg shadow-brand-blue/20 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center">

@@ -67,7 +67,14 @@ export function ForgotPasswordForm({
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input placeholder='name@example.com' {...field} />
+                {/* R-BITWARDEN: explicit type + autocomplete so password
+                    managers can identify the field (see sign-in form). */}
+                <Input
+                  type='email'
+                  autoComplete='email'
+                  placeholder='name@example.com'
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
