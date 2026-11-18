@@ -18,6 +18,9 @@ export interface SmtpSettings {
   user: string;
   pass?: string;
   from: string;
+  /** Display name for outgoing mail ("EcoMate" in "EcoMate <a@b>"). Split
+   * out of the legacy combined `from` value (StackMate apply round). */
+  fromName: string;
 }
 
 export interface SmtpSettingsPublic {
@@ -26,6 +29,7 @@ export interface SmtpSettingsPublic {
   secure: boolean;
   user: string;
   from: string;
+  fromName: string;
   configured: boolean;
   /** Where the effective config comes from: env wins when set, else the stored setting. */
   source: 'env' | 'setting' | 'none';
@@ -126,6 +130,31 @@ function asBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+/**
+ * Split a legacy combined "Name <email>" from-value into its parts.
+ * Pre-fromName settings (and SMTP_FROM / PLATFORM_MAIL_FROM env vars)
+ * stored the display name inside `from`; parsing on read keeps those
+ * rows working — and validatable, since validateSmtp requires a bare
+ * email — without a migration. A bare email returns { name: '', email }.
+ * The name is stripped of `"` / `<` / `>` so it can be safely quoted
+ * back into a header by the mail service.
+ */
+export function splitFrom(value: string): { name: string; email: string } {
+  const match = value.match(
+    /^\s*(?:"?([^"<>]*)"?\s*)?<([^<>@\s]+@[^<>@\s]+)>\s*$/,
+  );
+  if (match) {
+    return {
+      name: (match[1] ?? '').trim().replace(/^"|"$/g, ''),
+      email: match[2],
+    };
+  }
+  return { name: '', email: value.trim() };
+}
+
+/** Max sender-name length (DTO + service agree). */
+export const SMTP_FROM_NAME_MAX_LENGTH = 100;
+
 /** Empty clears the value; a non-empty value must be an http(s) URL or a data:image/* URL. */
 function assertImageUrl(value: string, field: string): void {
   if (!value) return;
@@ -177,6 +206,7 @@ export class SettingsService implements OnModuleInit {
       user: this.smtp.user,
       pass: this.smtp.pass,
       from: this.smtp.from,
+      fromName: this.smtp.fromName,
     };
   }
 
@@ -221,6 +251,7 @@ export class SettingsService implements OnModuleInit {
     user?: string;
     pass?: string;
     from?: string;
+    fromName?: string;
   }): Promise<SmtpSettingsPublic> {
     const stored = await this.readSmtpStored();
     const current: Partial<SmtpSettings> = isRecord(stored) ? stored : {};
@@ -231,13 +262,26 @@ export class SettingsService implements OnModuleInit {
       input.pass !== undefined
         ? input.pass.trim() || undefined
         : current.pass;
+    // The incoming `from` may still be a legacy combined "Name <email>"
+    // (a direct API caller, or the stored value on a partial PATCH) —
+    // split it so `from` is always stored as a bare email. The sender
+    // name changes only when explicitly provided, or when the incoming
+    // `from` carries one; otherwise the stored name is kept.
+    const incomingFrom = (input.from ?? current.from ?? '').trim();
+    const parsedFrom = splitFrom(incomingFrom);
+    const fromName =
+      input.fromName !== undefined
+        ? input.fromName.trim().replace(/["<>]/g, '')
+        : parsedFrom.name ||
+          (typeof current.fromName === 'string' ? current.fromName : '');
     const next: SmtpSettings = {
       host: (input.host ?? current.host ?? '').trim(),
       port: input.port ?? asNumber(current.port, 587),
       secure: input.secure ?? asBoolean(current.secure, false),
       user: (input.user ?? current.user ?? '').trim(),
       pass,
-      from: (input.from ?? current.from ?? '').trim(),
+      from: parsedFrom.email,
+      fromName,
     };
     this.validateSmtp(next);
     await this.store('smtp', next);
@@ -461,14 +505,17 @@ export class SettingsService implements OnModuleInit {
   private async loadSmtp(): Promise<void> {
     const envHost = (process.env.SMTP_HOST ?? '').trim();
     if (envHost) {
+      const envFrom = splitFrom(
+        process.env.SMTP_FROM ?? process.env.PLATFORM_MAIL_FROM ?? '',
+      );
       this.smtp = {
         host: envHost,
         port: Number(process.env.SMTP_PORT ?? 587) || 587,
         secure: process.env.SMTP_SECURE === 'true',
         user: (process.env.SMTP_USER ?? '').trim(),
         pass: process.env.SMTP_PASS || undefined,
-        from: (process.env.SMTP_FROM ?? process.env.PLATFORM_MAIL_FROM ?? '')
-          .trim(),
+        from: envFrom.email,
+        fromName: envFrom.name,
         configured: true,
         source: 'env',
       };
@@ -476,25 +523,31 @@ export class SettingsService implements OnModuleInit {
     }
     const stored = await this.readSmtpStored();
     if (isRecord(stored) && asString(stored.host)) {
+      // Legacy rows stored "Name <email>" in `from` with no fromName —
+      // parse it on read so the console shows two clean fields.
+      const storedFrom = splitFrom(asString(stored.from));
       this.smtp = {
         host: asString(stored.host),
         port: asNumber(stored.port, 587),
         secure: asBoolean(stored.secure, false),
         user: asString(stored.user),
         pass: asString(stored.pass) || undefined,
-        from: asString(stored.from),
+        from: storedFrom.email,
+        fromName: asString(stored.fromName) || storedFrom.name,
         configured: true,
         source: 'setting',
       };
       return;
     }
+    const fallbackFrom = splitFrom(process.env.PLATFORM_MAIL_FROM ?? '');
     this.smtp = {
       host: '',
       port: 587,
       secure: false,
       user: '',
       pass: undefined,
-      from: (process.env.PLATFORM_MAIL_FROM ?? '').trim(),
+      from: fallbackFrom.email,
+      fromName: fallbackFrom.name,
       configured: false,
       source: 'none',
     };
@@ -513,6 +566,11 @@ export class SettingsService implements OnModuleInit {
     }
     if (config.from && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.from)) {
       throw new BadRequestException('SMTP from must be a valid email');
+    }
+    if (config.fromName.length > SMTP_FROM_NAME_MAX_LENGTH) {
+      throw new BadRequestException(
+        `SMTP sender name must be at most ${SMTP_FROM_NAME_MAX_LENGTH} characters`,
+      );
     }
   }
 

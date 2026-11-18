@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
+import { Layers } from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDate, formatMoney, planLabel } from '../lib/format';
 import type { Plan, PlanVersion } from '../types';
 import {
   ConfirmDialog,
+  EmptyState,
   ErrorNote,
-  Loading,
   Modal,
   PageHeader,
+  Skeleton,
+  StatusBadge,
 } from '../components/ui';
 
 interface VersionForm {
@@ -490,12 +493,12 @@ export function PlansPage() {
           {notice}
         </div>
       ) : null}
-      {loading && plans.length === 0 ? <Loading /> : null}
+      {loading && plans.length === 0 ? <Skeleton /> : null}
       {!loading && plans.length === 0 ? (
-        <p className="muted-note">
-          No plans yet. Create the first plan — signups and admin-created
-          tenants need one.
-        </p>
+        <EmptyState icon={Layers} title="No plans yet">
+          Create the first plan — signups and admin-created tenants need
+          one.
+        </EmptyState>
       ) : null}
       {preview ? (
         <section className="card">
@@ -512,7 +515,7 @@ export function PlansPage() {
             <div className="button-row">
               <button
                 type="button"
-                className="button"
+                className="button button--accent"
                 onClick={() => void applyVersion()}
                 disabled={!!busy || preview.affected === 0}
               >
@@ -592,11 +595,19 @@ export function PlansPage() {
                 </div>
                 <div>
                   <dt>Visibility</dt>
-                  <dd>{plan.isPublic ? 'Public' : 'Private'}</dd>
+                  <dd>
+                    <span className="badge badge--neutral">
+                      {plan.isPublic ? 'Public' : 'Private'}
+                    </span>
+                  </dd>
                 </div>
                 <div>
                   <dt>Status</dt>
-                  <dd>{plan.isActive ? 'Active' : 'Inactive'}</dd>
+                  <dd>
+                    <StatusBadge
+                      status={plan.isActive ? 'ACTIVE' : 'INACTIVE'}
+                    />
+                  </dd>
                 </div>
                 <div>
                   <dt>Created</dt>
@@ -612,7 +623,7 @@ export function PlansPage() {
                     v{v.version} — {formatMoney(v.price, v.currency)}
                     {v.archivedAt ? ' (archived)' : ''}
                     {v.isDefault ? (
-                      <span className="badge badge--success"> Signup default</span>
+                      <span className="badge badge--accent">Signup default</span>
                     ) : !v.archivedAt ? (
                       <button
                         type="button"
@@ -631,7 +642,7 @@ export function PlansPage() {
               <div className="button-row">
                 <button
                   type="button"
-                  className="button button--ghost"
+                  className="button"
                   onClick={() => openEdit(plan)}
                   disabled={!!busy}
                 >
@@ -639,7 +650,7 @@ export function PlansPage() {
                 </button>
                 <button
                   type="button"
-                  className="button button--ghost"
+                  className="button"
                   onClick={() => openNewVersion(plan)}
                   disabled={!!busy}
                 >
@@ -658,7 +669,7 @@ export function PlansPage() {
                 <div className="button-row">
                   <button
                     type="button"
-                    className="button button--ghost"
+                    className="button"
                     onClick={() => void previewApply(plan.id, version.id)}
                     disabled={!!busy}
                   >
@@ -754,7 +765,7 @@ export function PlansPage() {
           <div className="form-actions">
             <button
               type="submit"
-              className="button button--primary"
+              className="button button--accent"
               disabled={busy === 'create'}
             >
               {busy === 'create' ? 'Creating…' : 'Create plan'}
@@ -838,14 +849,14 @@ export function PlansPage() {
                 Free plan
               </label>
             </div>
-            <p className="muted-note" style={{ marginTop: 12 }}>
+            <p className="muted-note muted-note--gap-top">
               Price, features and limits live on versions — create a new
               version to change them.
             </p>
             <div className="form-actions">
               <button
                 type="submit"
-                className="button button--primary"
+                className="button button--accent"
                 disabled={busy === 'edit'}
               >
                 {busy === 'edit' ? 'Saving…' : 'Save changes'}
@@ -872,7 +883,7 @@ export function PlansPage() {
       >
         {newVersionFor ? (
           <form onSubmit={submitNewVersion}>
-            <p className="muted-note" style={{ marginBottom: 12 }}>
+            <p className="muted-note muted-note--gap-bottom">
               Prefilled from the current version. Existing subscriptions stay
               on their version until you apply the new one.
             </p>
@@ -880,7 +891,7 @@ export function PlansPage() {
             <div className="form-actions">
               <button
                 type="submit"
-                className="button button--primary"
+                className="button button--accent"
                 disabled={busy === 'version'}
               >
                 {busy === 'version' ? 'Creating…' : 'Create version'}

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 import { errorMessage } from '../lib/api';
+import { useBranding } from '../lib/branding';
 
 const API_BASE = (import.meta.env.VITE_PLATFORM_API_URL || '/api').replace(
   /\/+$/,
@@ -8,6 +9,7 @@ const API_BASE = (import.meta.env.VITE_PLATFORM_API_URL || '/api').replace(
 );
 
 export function AcceptInvitePage() {
+  const { platformName, logoUrl } = useBranding();
   const token = new URLSearchParams(window.location.search).get('token') ?? '';
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -51,30 +53,51 @@ export function AcceptInvitePage() {
     }
   }
 
+  // Rebuilt on the login pattern (AI1): the old markup rendered
+  // `className="login-form"`, a class that does not exist, so the whole
+  // page — labels, inputs, submit — was browser-native.
   return (
     <div className="login-page">
       <section className="login-brand">
-        <span className="brand-mark brand-mark--large" aria-hidden />
-        <p className="eyebrow">EcoMate</p>
+        {logoUrl ? (
+          <img
+            className="brand-logo-img brand-mark--large"
+            src={logoUrl}
+            alt={`${platformName} logo`}
+          />
+        ) : (
+          <span className="brand-mark brand-mark--large" aria-hidden>
+            {platformName.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <p className="eyebrow">{platformName}</p>
         <h1>Accept your platform invite.</h1>
         <p>
           Set a password to activate your operator account for the SaaS
           console.
         </p>
       </section>
-      <section className="login-form">
+      <section className="login-panel">
         {done ? (
-          <>
+          <div className="card login-card">
+            <p className="eyebrow">Platform invite</p>
             <h2>Invite accepted</h2>
-            <p>
+            <p className="muted-note">
               Your account is active. You can now sign in to the platform
               console.
             </p>
-            <Link to="/login">Go to sign in</Link>
-          </>
+            <Link to="/login" className="button button--primary">
+              Go to sign in
+            </Link>
+          </div>
         ) : (
-          <form onSubmit={submit}>
+          <form className="card login-card" onSubmit={submit}>
+            <p className="eyebrow">Platform invite</p>
             <h2>Set your password</h2>
+            <p className="muted-note">
+              At least 12 characters. Your name is optional — it defaults
+              to the name on the invite.
+            </p>
             {!token ? (
               <div className="notice notice--error" role="alert">
                 This link has no invite token. Open the link from your invite
@@ -86,16 +109,17 @@ export function AcceptInvitePage() {
                 {error}
               </div>
             ) : null}
-            <label>
-              Name (optional)
+            <label className="field">
+              <span>Name (optional)</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="As in the invite"
+                autoComplete="name"
               />
             </label>
-            <label>
-              Password
+            <label className="field">
+              <span>Password</span>
               <input
                 type="password"
                 value={password}
@@ -103,10 +127,11 @@ export function AcceptInvitePage() {
                 minLength={12}
                 required
                 autoComplete="new-password"
+                placeholder="••••••••••••"
               />
             </label>
-            <label>
-              Confirm password
+            <label className="field">
+              <span>Confirm password</span>
               <input
                 type="password"
                 value={confirmPassword}
@@ -114,11 +139,15 @@ export function AcceptInvitePage() {
                 minLength={12}
                 required
                 autoComplete="new-password"
+                placeholder="••••••••••••"
               />
             </label>
-            <p className="muted-note">At least 12 characters.</p>
-            <button type="submit" disabled={busy || !token}>
-              Accept invite
+            <button
+              className="button button--primary"
+              type="submit"
+              disabled={busy || !token}
+            >
+              {busy ? 'Accepting…' : 'Accept invite'}
             </button>
             <p className="muted-note">
               Already have an account? <Link to="/login">Sign in</Link>

@@ -33,6 +33,74 @@ function formatMoney(amount: number, currency: string): string {
   })}`;
 }
 
+/**
+ * Plain-language cause for the mail transport failures operators hit
+ * most often. Nodemailer reports these as bare codes (EAUTH,
+ * ECONNREFUSED, EPROTO, ...) with a terse message; the hint names the
+ * cause at a glance and the raw detail follows it. The classic case is
+ * implicit TLS switched on against a STARTTLS port (587): nodemailer
+ * fails the handshake with EPROTO "wrong version number".
+ */
+function smtpErrorHint(code: unknown, message: string): string | null {
+  const c = typeof code === 'string' ? code : '';
+  const m = message.toLowerCase();
+  if (
+    c === 'EAUTH' ||
+    /invalid login|authentication failed|\b535\b|\b530\b/.test(m)
+  ) {
+    return 'SMTP authentication failed';
+  }
+  if (
+    c === 'ECONNREFUSED' ||
+    c === 'ECONNECTION' ||
+    /econnrefused|connection refused/.test(m)
+  ) {
+    return 'Could not connect to the SMTP server';
+  }
+  if (c === 'ETIMEDOUT' || c === 'ESOCKETTIMEOUT' || /timed out/.test(m)) {
+    return 'Connection to the SMTP server timed out';
+  }
+  if (c === 'ENOTFOUND' || /enotfound|getaddrinfo|dns lookup/.test(m)) {
+    return 'SMTP host could not be resolved';
+  }
+  if (
+    /certificate|self signed|unable to verify the first certificate/.test(m)
+  ) {
+    return 'TLS certificate problem';
+  }
+  if (
+    c === 'EPROTO' ||
+    /wrong version number|handshake failure|ssl routines|\btls\b/.test(m)
+  ) {
+    return 'TLS handshake failed';
+  }
+  return null;
+}
+
+/**
+ * Turn a raw mail transport error into a message that is safe to show
+ * the operator. Host/port/auth-failure wording is the operator's own
+ * config, so it stays; anything credential-shaped is redacted, and the
+ * result is capped so a long SMTP transcript cannot flood the inline
+ * error note. Never returns an empty string.
+ */
+export function sanitizeMailErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? '');
+  const code = (error as { code?: unknown } | null)?.code;
+  const redacted = raw
+    .trim()
+    .replace(
+      /(password|passwd|pwd|pass|secret|token)\s*[:=]\s*\S+/gi,
+      '$1: [redacted]',
+    )
+    .replace(/\/\/[^/\s:]+:[^/\s@]+@/g, '//[redacted]@')
+    .replace(/(authorization:\s*)\S+/gi, '$1[redacted]');
+  const hint = smtpErrorHint(code, redacted);
+  const combined = hint ? `${hint}: ${redacted}` : redacted;
+  const trimmed = combined.slice(0, 300).trim();
+  return trimmed || 'Sending the test email failed.';
+}
+
 @Injectable()
 export class PlatformMailService {
   private readonly logger = new Logger(PlatformMailService.name);
@@ -87,7 +155,11 @@ export class PlatformMailService {
       'no-reply@ecomate.bd';
     // PLATFORM_MAIL_FROM may already carry a display name ("Name <a@b>").
     if (address.includes('<')) return address;
-    return `${branding.platformName} <${address}>`;
+    // The stored sender name wins; without one, the platform name is the
+    // display name (as before). The name is quoted — fromName is stripped
+    // of `"` on write, so quoting is always safe.
+    const name = smtp?.fromName?.trim() || branding.platformName;
+    return `"${name}" <${address}>`;
   }
 
   private replyTo(): string | undefined {

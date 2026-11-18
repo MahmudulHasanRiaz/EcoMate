@@ -15,7 +15,7 @@ describe('role labels', () => {
   });
 
   it('labels all four access levels', () => {
-    expect(accessLabel('none')).toBe('No access');
+    expect(accessLabel('none')).toBe('None');
     expect(accessLabel('read')).toBe('Read');
     expect(accessLabel('write')).toBe('Write');
     expect(accessLabel('full')).toBe('Full');

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useAuth } from '../auth';
-import { ErrorNote, Loading, PageHeader, useToast } from '../components/ui';
+import { ErrorNote, PageHeader, Skeleton, useToast } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
 import { formatMoney } from '../lib/format';
 import type { Lead, Plan, Tenant } from '../types';
@@ -189,14 +189,16 @@ export function TenantCreatePage() {
 
   return (
     <>
-      <div className="page-breadcrumb">
-        <Link to="/tenants">← Tenants</Link>
-      </div>
       <PageHeader
         eyebrow="Tenants"
         title="New tenant"
         description="Create a store and provision it immediately. The owner signs in to their admin with the email and password below."
       />
+      <p className="breadcrumb">
+        <Link to="/tenants">Tenants</Link>
+        <span>/</span>
+        <span>New tenant</span>
+      </p>
 
       {error ? <ErrorNote message={error} /> : null}
       {leadId && lead ? (
@@ -213,12 +215,10 @@ export function TenantCreatePage() {
           ) : null}
         </div>
       ) : null}
-      {leadLoading ? (
-        <Loading label="Loading lead…" />
-      ) : plansLoading ? (
-        <Loading label="Loading plans…" />
+      {leadLoading || plansLoading ? (
+        <Skeleton />
       ) : (
-        <section className="card">
+        <section className="card form-narrow">
           <form onSubmit={submit} autoComplete="off">
             <div className="inline-form">
               <label>
@@ -317,7 +317,7 @@ export function TenantCreatePage() {
                 />
               </label>
             </div>
-            <p className="muted-note" style={{ marginTop: 12 }}>
+            <p className="muted-note muted-note--gap-top">
               The store is provisioned right away — this can take up to about
               30 seconds while the workspace is seeded. The owner&apos;s
               subdomain becomes live once provisioning succeeds.
@@ -325,7 +325,7 @@ export function TenantCreatePage() {
             <div className="form-actions">
               <button
                 type="submit"
-                className="button button--primary"
+                className="button button--accent"
                 disabled={busy || planOptions.length === 0}
               >
                 {busy ? 'Creating and provisioning…' : 'Create tenant'}

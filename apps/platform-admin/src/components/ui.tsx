@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { formatStatus, statusTone } from '../lib/format';
 
 export function StatusBadge({ status }: { status: string }) {
@@ -43,6 +44,111 @@ export function PageHeader({
 
 export function Loading({ label = 'Loading…' }: { label?: string }) {
   return <p className="muted-note">{label}</p>;
+}
+
+/**
+ * Skeleton loading bars (live StackMate settings): ~5–6 full-width grey
+ * bars (~24px high, gap ~16) shown while a page loads, instead of a
+ * bare "Loading…" line. `rows` defaults to 5; the last bar is short.
+ */
+export function Skeleton({ rows = 5 }: { rows?: number }) {
+  return (
+    <div className="skeleton" aria-label="Loading" role="status">
+      {Array.from({ length: rows }, (_, index) => (
+        <div
+          key={index}
+          className={`skeleton-bar${index === rows - 1 ? ' skeleton-bar--short' : ''}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Shared empty state (live StackMate pattern): centred icon + 14px
+ * semibold title + 13px muted body, ~48px top padding. The body
+ * (children) carries the explanation and any action link.
+ */
+export function EmptyState({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="empty-state">
+      <span className="empty-state-icon" aria-hidden="true">
+        <Icon size={20} strokeWidth={2} />
+      </span>
+      <p className="empty-state-title">{title}</p>
+      {children ? <div className="empty-state-body">{children}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * Shared list pager (live StackMate footer): "Showing A–B of N" (13px
+ * muted) left, rows-per-page select (~28px) + Prev/Next (~28px) right.
+ * Used by Tenants, Leads and Audit — the three paged lists.
+ */
+export function Pager({
+  page,
+  totalPages,
+  total,
+  limit,
+  onPage,
+  onLimit,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  limit: number;
+  onPage: (page: number) => void;
+  onLimit: (limit: number) => void;
+}) {
+  const from = total === 0 ? 0 : (page - 1) * limit + 1;
+  const to = Math.min(page * limit, total);
+  const last = Math.max(1, totalPages);
+  return (
+    <div className="pager">
+      <span className="pager-count">
+        Showing {from}–{to} of {total}
+      </span>
+      <label className="pager-size">
+        <span>Rows per page</span>
+        <select
+          value={limit}
+          onChange={(event) => onLimit(Number(event.target.value))}
+          aria-label="Rows per page"
+        >
+          {[10, 20, 50].map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        className="button button--ghost button--sm"
+        disabled={page <= 1}
+        onClick={() => onPage(Math.max(1, page - 1))}
+      >
+        Previous
+      </button>
+      <button
+        type="button"
+        className="button button--ghost button--sm"
+        disabled={page >= last}
+        onClick={() => onPage(page + 1)}
+      >
+        Next
+      </button>
+    </div>
+  );
 }
 
 export function ErrorNote({ message }: { message: string }) {
@@ -123,7 +229,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
  * Controlled in-app confirmation. Replaces every native confirm dialog in
  * the console. `danger` renders the confirm action as the solid red button
  * (Neon rule) and `dangerNote` renders the red warning panel above the
- * buttons (the StackMate "danger-warning" pattern).
+ * buttons (the StackMate "danger-warning" pattern). A non-danger confirm
+ * is the OUTLINE ACCENT button — live StackMate's dialog main action.
  */
 export function ConfirmDialog({
   open,
@@ -191,7 +298,7 @@ export function ConfirmDialog({
           <button
             type="button"
             className={
-              danger ? 'button button--danger-solid' : 'button button--primary'
+              danger ? 'button button--danger-solid' : 'button button--accent'
             }
             onClick={() => void onConfirm()}
             disabled={busy}

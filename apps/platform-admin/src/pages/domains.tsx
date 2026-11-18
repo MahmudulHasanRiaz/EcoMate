@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Globe } from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
-import { formatDateTime } from '../lib/format';
+import { formatDateTime, formatStatus } from '../lib/format';
 import type {
   DomainConfig,
   Page,
@@ -10,9 +11,10 @@ import type {
 } from '../types';
 import {
   ConfirmDialog,
+  EmptyState,
   ErrorNote,
-  Loading,
   PageHeader,
+  Skeleton,
   StatusBadge,
 } from '../components/ui';
 
@@ -192,7 +194,7 @@ export function DomainsPage() {
           {notice}
         </div>
       ) : null}
-      {!config && busy ? <Loading /> : null}
+      {!config && busy ? <Skeleton /> : null}
 
       {config ? (
         <section className="card">
@@ -277,7 +279,7 @@ export function DomainsPage() {
           <div className="progress-actions">
             <button
               type="button"
-              className="button button--primary"
+              className="button button--accent"
               onClick={saveConfig}
               disabled={!!busy}
             >
@@ -324,7 +326,7 @@ export function DomainsPage() {
           </label>
           <button
             type="button"
-            className="button"
+            className="button button--accent"
             onClick={addDomain}
             disabled={!!busy}
           >
@@ -360,7 +362,7 @@ export function DomainsPage() {
               placeholder="Search host or tenant"
               aria-label="Search domains"
             />
-            <button type="submit" className="button button--ghost">
+            <button type="submit" className="button">
               Search
             </button>
           </form>
@@ -388,14 +390,16 @@ export function DomainsPage() {
             >
               {DOMAIN_STATUSES.map((value) => (
                 <option key={value || 'all'} value={value}>
-                  {value || 'All statuses'}
+                  {value ? formatStatus(value) : 'All statuses'}
                 </option>
               ))}
             </select>
           </label>
         </div>
         {domains && domains.data.length === 0 ? (
-          <p className="muted-note">No domains match this filter.</p>
+          <EmptyState icon={Globe} title="No domains match this filter">
+            Try a different search or status.
+          </EmptyState>
         ) : null}
         {domains && domains.data.length > 0 ? (
           <div className="table-wrap">
@@ -408,7 +412,7 @@ export function DomainsPage() {
                   <th>Status</th>
                   <th>TLS</th>
                   <th>Last checked</th>
-                  <th />
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -432,7 +436,7 @@ export function DomainsPage() {
                     <td>
                       <StatusBadge status={domain.status} />
                     </td>
-                    <td>{domain.tlsStatus || '—'}</td>
+                    <td>{domain.tlsStatus ? formatStatus(domain.tlsStatus) : '—'}</td>
                     <td>{formatDateTime(domain.lastCheckedAt)}</td>
                     <td>
                       <div className="row-action">

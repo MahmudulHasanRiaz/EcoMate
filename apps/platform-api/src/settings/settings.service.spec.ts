@@ -339,6 +339,137 @@ describe('SettingsService', () => {
     );
   });
 
+  it('stores the sender name split from the from address', async () => {
+    const { service, stored } = buildService({
+      smtp: { host: 'smtp.example.test' },
+    });
+    await service.onModuleInit();
+
+    const next = await service.updateSmtp({
+      from: 'no-reply@ecomate.bd',
+      fromName: 'EcoMate',
+    });
+
+    expect(next.from).toBe('no-reply@ecomate.bd');
+    expect(next.fromName).toBe('EcoMate');
+    expect(service.getSmtp()).toMatchObject({
+      from: 'no-reply@ecomate.bd',
+      fromName: 'EcoMate',
+    });
+    expect(stored.smtp).toMatchObject({
+      from: 'no-reply@ecomate.bd',
+      fromName: 'EcoMate',
+    });
+  });
+
+  it('parses a legacy combined from value on read', async () => {
+    const { service } = buildService({
+      smtp: {
+        host: 'smtp.example.test',
+        // Pre-fromName rows stored the display name inside `from`.
+        from: 'EcoMate <no-reply@ecomate.bd>',
+      },
+    });
+    await service.onModuleInit();
+
+    expect(service.getSmtpPublic()).toMatchObject({
+      from: 'no-reply@ecomate.bd',
+      fromName: 'EcoMate',
+    });
+    expect(service.getSmtp()).toMatchObject({
+      from: 'no-reply@ecomate.bd',
+      fromName: 'EcoMate',
+    });
+  });
+
+  it('splits a legacy combined from value on write instead of rejecting it', async () => {
+    const { service, stored } = buildService({
+      smtp: { host: 'smtp.example.test' },
+    });
+    await service.onModuleInit();
+
+    // The old combined value must not 400: validateSmtp requires a bare
+    // email, so the split happens before validation.
+    const next = await service.updateSmtp({
+      from: 'EcoMate <no-reply@ecomate.bd>',
+    });
+
+    expect(next.from).toBe('no-reply@ecomate.bd');
+    expect(next.fromName).toBe('EcoMate');
+    expect(stored.smtp).toMatchObject({
+      from: 'no-reply@ecomate.bd',
+      fromName: 'EcoMate',
+    });
+  });
+
+  it('keeps the sender name on a partial SMTP update', async () => {
+    const { service } = buildService({
+      smtp: {
+        host: 'smtp.example.test',
+        from: 'no-reply@ecomate.bd',
+        fromName: 'EcoMate',
+      },
+    });
+    await service.onModuleInit();
+
+    await service.updateSmtp({ port: 465, secure: true });
+
+    expect(service.getSmtp()).toMatchObject({ fromName: 'EcoMate' });
+  });
+
+  it('clears the sender name when explicitly emptied', async () => {
+    const { service } = buildService({
+      smtp: {
+        host: 'smtp.example.test',
+        from: 'no-reply@ecomate.bd',
+        fromName: 'EcoMate',
+      },
+    });
+    await service.onModuleInit();
+
+    await service.updateSmtp({ fromName: '' });
+
+    expect(service.getSmtp()).toMatchObject({ fromName: '' });
+  });
+
+  it('rejects a sender name over 100 characters', async () => {
+    const { service } = buildService({
+      smtp: { host: 'smtp.example.test' },
+    });
+    await service.onModuleInit();
+
+    await expect(
+      service.updateSmtp({ fromName: 'x'.repeat(101) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('strips quotes and angle brackets from the sender name', async () => {
+    const { service } = buildService({
+      smtp: { host: 'smtp.example.test' },
+    });
+    await service.onModuleInit();
+
+    const next = await service.updateSmtp({
+      from: 'no-reply@ecomate.bd',
+      fromName: 'Evil "Name" <injected>',
+    });
+
+    expect(next.fromName).toBe('Evil Name injected');
+  });
+
+  it('parses a combined SMTP_FROM env var', async () => {
+    process.env.SMTP_HOST = 'env.smtp.test';
+    process.env.SMTP_FROM = 'EcoMate Team <team@ecomate.bd>';
+    const { service } = buildService();
+    await service.onModuleInit();
+
+    expect(service.getSmtpPublic()).toMatchObject({
+      source: 'env',
+      from: 'team@ecomate.bd',
+      fromName: 'EcoMate Team',
+    });
+  });
+
   it('rejects out-of-range trial/grace values', async () => {
     const { service } = buildService();
     await service.onModuleInit();

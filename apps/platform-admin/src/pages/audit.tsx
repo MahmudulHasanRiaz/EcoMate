@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ScrollText } from 'lucide-react';
 import { useAuth } from '../auth';
-import { ErrorNote, Loading, PageHeader } from '../components/ui';
+import { EmptyState, ErrorNote, Pager, PageHeader, Skeleton } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
 import { auditPayloadText, auditQueryString } from '../lib/audit';
 import { formatDateTime } from '../lib/format';
@@ -20,6 +21,7 @@ export function AuditPage() {
   const [to, setTo] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
 
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +35,7 @@ export function AuditPage() {
     setError(null);
     try {
       const result = await api(
-        `/audit${auditQueryString({ ...filters, page, limit: 20 })}`,
+        `/audit${auditQueryString({ ...filters, page, limit })}`,
       ).then((r) => readJson<Page<AuditLogEntry>>(r));
       setEntries(result.data);
       setMeta(result.meta);
@@ -45,7 +47,7 @@ export function AuditPage() {
     // Filters are read from state at call time; the effect below re-runs
     // on refresh/page changes only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, page, refresh]);
+  }, [api, page, limit, refresh]);
 
   useEffect(() => {
     void load();
@@ -135,7 +137,7 @@ export function AuditPage() {
       {notice ? <div className="notice notice--success">{notice}</div> : null}
       {error ? <ErrorNote message={error} /> : null}
 
-      <section className="panel">
+      <section className="card">
         <h2>Filters</h2>
         <form className="inline-form" onSubmit={applyFilters}>
           <label>
@@ -195,7 +197,7 @@ export function AuditPage() {
             />
           </label>
           <div className="form-actions">
-            <button type="submit" className="button button--primary">Apply filters</button>
+            <button type="submit" className="button button--accent">Apply filters</button>
             <button type="button" className="button button--ghost" onClick={clearFilters}>
               Clear
             </button>
@@ -203,16 +205,19 @@ export function AuditPage() {
         </form>
       </section>
 
-      <section className="panel">
+      <section className="card">
         <h2>Entries</h2>
-        {busy === 'load' && entries.length === 0 ? <Loading label="Loading audit entries…" /> : null}
+        {busy === 'load' && entries.length === 0 ? <Skeleton /> : null}
         {entries.length === 0 && busy !== 'load' ? (
-          <p className="muted-note">No audit entries match these filters.</p>
+          <EmptyState icon={ScrollText} title="No audit entries match these filters">
+            Try widening the date range or clearing a filter.
+          </EmptyState>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Time</th>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
                 <th>Actor</th>
                 <th>Action</th>
                 <th>Entity</th>
@@ -246,8 +251,9 @@ export function AuditPage() {
                   <td>{entry.tenant ? entry.tenant.slug : '—'}</td>
                 </tr>
               ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         )}
 
         {expandedId ? (
@@ -281,33 +287,21 @@ export function AuditPage() {
           </div>
         ) : null}
 
-        <div className="pagination">
-          <button
-            type="button"
-            className="button button--ghost"
-            disabled={page <= 1}
-            onClick={() => {
-              setPage((p) => p - 1);
-              setRefresh((n) => n + 1);
-            }}
-          >
-            Previous
-          </button>
-          <span>
-            Page {meta.page} of {meta.totalPages} ({meta.total} entries)
-          </span>
-          <button
-            type="button"
-            className="button button--ghost"
-            disabled={page >= meta.totalPages}
-            onClick={() => {
-              setPage((p) => p + 1);
-              setRefresh((n) => n + 1);
-            }}
-          >
-            Next
-          </button>
-        </div>
+        <Pager
+          page={meta.page}
+          totalPages={meta.totalPages}
+          total={meta.total}
+          limit={limit}
+          onPage={(next) => {
+            setPage(next);
+            setRefresh((n) => n + 1);
+          }}
+          onLimit={(next) => {
+            setLimit(next);
+            setPage(1);
+            setRefresh((n) => n + 1);
+          }}
+        />
       </section>
     </div>
   );

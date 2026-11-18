@@ -33,9 +33,9 @@ import type {
 import {
   ConfirmDialog,
   ErrorNote,
-  Loading,
   PageHeader,
   ScrollableTabs,
+  Skeleton,
 } from '../components/ui';
 
 type ApiFn = (path: string, init?: RequestInit) => Promise<Response>;
@@ -47,7 +47,6 @@ function LocaleEditor({
   row,
   defs,
   scalar,
-  sortOrder,
   busy,
   onSave,
   onDelete,
@@ -57,7 +56,6 @@ function LocaleEditor({
   row?: LandingContentRow;
   defs: LandingFieldDef[];
   scalar: boolean;
-  sortOrder: number;
   busy: boolean;
   onSave: (locale: LandingLocale, form: LandingFormState, isActive: boolean) => void;
   onDelete: (locale: LandingLocale) => void;
@@ -101,7 +99,7 @@ function LocaleEditor({
       <h4>
         {LANDING_LOCALE_LABELS[locale]}
         {row ? null : (
-          <span className="badge"> Not saved yet</span>
+          <span className="badge">Not saved yet</span>
         )}
       </h4>
       {scalar ? (
@@ -157,7 +155,7 @@ function LocaleEditor({
       <div className="button-row">
         <button
           type="button"
-          className="button button--primary"
+          className="button button--accent"
           disabled={busy}
           onClick={save}
         >
@@ -174,7 +172,6 @@ function LocaleEditor({
           </button>
         ) : null}
       </div>
-      <p className="muted-note">Order: {sortOrder}</p>
     </div>
   );
 }
@@ -317,7 +314,6 @@ function LandingRowCard({
             row={locale === 'en' ? group.en : group.bn}
             defs={defs}
             scalar={scalar}
-            sortOrder={orderValid ? order : group.sortOrder}
             busy={busy}
             onSave={(loc, form, isActive) =>
               void saveLocale(loc, form, isActive)
@@ -388,28 +384,30 @@ function AddRowForm({
   if (LANDING_SCALAR_SECTIONS.has(section)) {
     if (scalarOptions.length === 0) return null;
     return (
-      <form className="inline-form" onSubmit={submit}>
-        <label>
-          Add a field
-          <select
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-            required
-          >
-            <option value="">Choose a field…</option>
-            {scalarOptions.map((name) => (
-              <option key={name} value={name}>
-                {landingScalarFieldLabel(section, name)} ({name})
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="form-actions">
-          <button type="submit" className="button button--primary">
-            Add field
-          </button>
-        </div>
-      </form>
+      <section className="card">
+        <form className="inline-form" onSubmit={submit}>
+          <label>
+            Add a field
+            <select
+              value={key}
+              onChange={(event) => setKey(event.target.value)}
+              required
+            >
+              <option value="">Choose a field…</option>
+              {scalarOptions.map((name) => (
+                <option key={name} value={name}>
+                  {landingScalarFieldLabel(section, name)} ({name})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="form-actions">
+            <button type="submit" className="button button--accent">
+              Add field
+            </button>
+          </div>
+        </form>
+      </section>
     );
   }
 
@@ -418,51 +416,55 @@ function AddRowForm({
   if (LANDING_OBJECT_SECTIONS.has(section)) {
     if (taken.has(LANDING_OBJECT_KEY)) return null;
     return (
-      <form
-        className="inline-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onAdd(LANDING_OBJECT_KEY);
-        }}
-      >
-        <p className="muted-note">
-          This section has one content block per locale — add it to start
-          editing the landing copy.
-        </p>
-        <div className="form-actions">
-          <button type="submit" className="button button--primary">
-            Add content
-          </button>
-        </div>
-      </form>
+      <section className="card">
+        <form
+          className="inline-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onAdd(LANDING_OBJECT_KEY);
+          }}
+        >
+          <p className="muted-note">
+            This section has one content block per locale — add it to start
+            editing the landing copy.
+          </p>
+          <div className="form-actions">
+            <button type="submit" className="button button--accent">
+              Add content
+            </button>
+          </div>
+        </form>
+      </section>
     );
   }
 
   if (section === 'capabilities') {
     if (capabilityOptions.length === 0) return null;
     return (
-      <form className="inline-form" onSubmit={submit}>
-        <label>
-          Add a capability section
-          <select
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-            required
-          >
-            <option value="">Choose a section…</option>
-            {capabilityOptions.map((name) => (
-              <option key={name} value={name}>
-                {CAPABILITY_LABELS[name] ?? name} ({name})
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="form-actions">
-          <button type="submit" className="button button--primary">
-            Add section
-          </button>
-        </div>
-      </form>
+      <section className="card">
+        <form className="inline-form" onSubmit={submit}>
+          <label>
+            Add a capability section
+            <select
+              value={key}
+              onChange={(event) => setKey(event.target.value)}
+              required
+            >
+              <option value="">Choose a section…</option>
+              {capabilityOptions.map((name) => (
+                <option key={name} value={name}>
+                  {CAPABILITY_LABELS[name] ?? name} ({name})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="form-actions">
+            <button type="submit" className="button button--accent">
+              Add section
+            </button>
+          </div>
+        </form>
+      </section>
     );
   }
 
@@ -477,22 +479,24 @@ function AddRowForm({
             ? 'footer-5'
             : 'partner-brand-name';
   return (
-    <form className="inline-form" onSubmit={submit}>
-      <label>
-        New item key
-        <input
-          value={key}
-          onChange={(event) => setKey(event.target.value)}
-          placeholder={placeholder}
-          required
-        />
-      </label>
-      <div className="form-actions">
-        <button type="submit" className="button button--primary">
-          Add item
-        </button>
-      </div>
-    </form>
+    <section className="card">
+      <form className="inline-form" onSubmit={submit}>
+        <label>
+          New item key
+          <input
+            value={key}
+            onChange={(event) => setKey(event.target.value)}
+            placeholder={placeholder}
+            required
+          />
+        </label>
+        <div className="form-actions">
+          <button type="submit" className="button button--accent">
+            Add item
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -653,24 +657,24 @@ export function LandingPage() {
             >
               {LANDING_SECTION_LABELS[value]}
               {missing > 0 ? (
-                <span className="badge badge--muted"> {missing} untranslated</span>
+                <span className="badge badge--muted">{missing} untranslated</span>
               ) : null}
             </button>
           );
         })}
       </ScrollableTabs>
 
-      <section className="card">
-        <AddRowForm
-          section={section}
-          existingKeys={groups.map((g) => g.key)}
-          pendingKeys={pendingKeys}
-          onAdd={(key) => setPendingKeys((current) => [...current, key])}
-          onError={setError}
-        />
-      </section>
+      {/* The add-form card renders inside AddRowForm: when a section has
+          nothing left to add it returns null, so no empty card shows. */}
+      <AddRowForm
+        section={section}
+        existingKeys={groups.map((g) => g.key)}
+        pendingKeys={pendingKeys}
+        onAdd={(key) => setPendingKeys((current) => [...current, key])}
+        onError={setError}
+      />
 
-      {loading && rows.length === 0 ? <Loading /> : null}
+      {loading && rows.length === 0 ? <Skeleton /> : null}
       {!loading && groups.length === 0 ? (
         <p className="muted-note">
           Nothing managed in this section yet — the landing shows its

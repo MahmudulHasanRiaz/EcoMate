@@ -17,7 +17,7 @@ export function roleLabel(role: string): string {
 }
 
 const ACCESS_LABELS: Record<string, string> = {
-  none: 'No access',
+  none: 'None',
   read: 'Read',
   write: 'Write',
   full: 'Full',

@@ -78,7 +78,7 @@ export function TrialSection({
       <div className="progress-actions">
         <button
           type="button"
-          className="button button--primary"
+          className="button button--accent"
           onClick={() => void saveTrial()}
           disabled={busy}
         >

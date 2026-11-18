@@ -3,8 +3,11 @@
  *
  * Design direction: StackMate Neon (owner decision 2026-11-17) — dark-first
  * developer-tool aesthetic, near-black surfaces, subtle 1px borders, minimal
- * elevation — with EcoMate's own BLUE accent (#4f6bf2) in place of Neon's
- * green #00E599 (owner decision 2026-11-17 ~19:46). Dark is the DEFAULT
+ * elevation — with the EcoMate LANDING indigo palette as the accent
+ * (owner decision 2026-11-18 ~15:00: design/UI/behavior follow the LIVE
+ * StackMate staging admin; COLOR follows EcoMate-Landing instead of green —
+ * the landing's mk-* tokens are the source of truth and replace the
+ * earlier #4f6bf2 note where they differ). Dark is the DEFAULT
  * theme; light is the alternate.
  *
  * Rules (StackMate tokens.css, adapted): no color/size/radius/shadow/
@@ -13,20 +16,29 @@
  * sans — mono is reserved for IDs/keys/tokens. Contrast: body text
  * >= 4.5:1, UI >= 3:1 (both themes).
  *
- * Button system (Neon): exactly three variants. PRIMARY solid WHITE bg +
- * black text (dark) / solid BLACK bg + white text (light); SECONDARY
- * transparent bg + 1px grey border; ACCENT transparent bg + 1px BLUE
- * border + blue text (brand CTAs only), hover fills with the LIGHT blue
- * gradient. NO solid blue fill anywhere on buttons. DANGER is the solid
- * red confirm action.
+ * Button system (Neon, live StackMate): exactly three variants. PRIMARY
+ * solid WHITE bg + black text (dark) / solid BLACK bg + white text
+ * (light) — list-page CTAs only; SECONDARY transparent bg + 1px grey
+ * border; ACCENT transparent bg + 1px INDIGO border + indigo text —
+ * the main action in Settings sections and dialogs, hover fills with
+ * the LIGHT indigo gradient. NO solid indigo fill anywhere on buttons.
+ * DANGER is the solid red confirm action.
  *
  * Accent vs success: Neon conflates its green accent with success green.
- * EcoMate does NOT — the brand accent is blue, success stays green
- * #10b981 (EcoMate theme.css semantic hue). Danger/warning/info keep
- * EcoMate's semantic hues (#f43f5e / #f59e0b / #0ea5e9).
+ * EcoMate does NOT — the brand accent is landing indigo, success stays
+ * green #10b981 (semantic only). Danger/warning/info keep EcoMate's
+ * semantic hues (#f43f5e / #f59e0b / #0ea5e9).
  *
- * Radius: max 4px on every visible surface; dialogs 6px. 999px survives
- * ONLY for true status pills (dot + word), status dots, and the spinner.
+ * Radius (live StackMate measurements, ±2–3px): inputs/buttons/selects
+ * 6px; cards/dialogs/menus 8px. 999px survives ONLY for true status
+ * pills (dot + word), status dots, and the spinner.
+ *
+ * Focus: bright accent 2px outline, no glow (live StackMate).
+ *
+ * Dashboard stat cards: each card carries its own SUBTLE gradient tint
+ * — but ONLY tonal variations of the landing indigo palette (indigo /
+ * violet / deep indigo from the landing's mk-g1/mk-g2 glows). No other
+ * hues (owner decision 2026-11-18 ~16:54).
  */
 
 /* ------------------------------------------------------------------ */
@@ -50,33 +62,33 @@
   --em-text: #f5f5f5;
   --em-text-muted: #b0b1b2;
 
-  /* The one brand accent — EcoMate blue. Text on accent is white for
-     small text on dark (the #4f6bf2 fill is never used as a button bg,
+  /* The one brand accent — EcoMate LANDING indigo (apps/landing
+     --mk-ac #6366f1 dark / #4f46e5 light). Text on accent is white for
+     small text on dark (the indigo fill is never used as a button bg,
      so this token is for links, icons, focus rings, outlines). */
-  --em-accent: #4f6bf2;
-  --em-accent-hover: #6b85f5;
-  --em-accent-soft: rgba(79, 107, 242, 0.1);
-  --em-accent-04: rgba(79, 107, 242, 0.04);
-  --em-accent-05: rgba(79, 107, 242, 0.05);
-  --em-accent-08: rgba(79, 107, 242, 0.08);
-  --em-accent-10: rgba(79, 107, 242, 0.1);
-  --em-accent-15: rgba(79, 107, 242, 0.15);
-  --em-accent-20: rgba(79, 107, 242, 0.2);
-  --em-accent-30: rgba(79, 107, 242, 0.3);
-  --em-accent-40: rgba(79, 107, 242, 0.4);
-  --em-accent-50: rgba(79, 107, 242, 0.5);
-  --em-accent-60: rgba(79, 107, 242, 0.6);
-  /* Accent gradient: LIGHT blue, mixed with white — never dark-ending. */
-  --em-accent-gradient: linear-gradient(180deg, #a8b8f8 0%, #4f6bf2 100%);
+  --em-accent: #6366f1;
+  --em-accent-hover: #818cf8;
+  --em-accent-soft: rgba(99, 102, 241, 0.1);
+  --em-accent-04: rgba(99, 102, 241, 0.04);
+  --em-accent-05: rgba(99, 102, 241, 0.05);
+  --em-accent-08: rgba(99, 102, 241, 0.08);
+  --em-accent-10: rgba(99, 102, 241, 0.1);
+  --em-accent-15: rgba(99, 102, 241, 0.15);
+  --em-accent-20: rgba(99, 102, 241, 0.2);
+  --em-accent-30: rgba(99, 102, 241, 0.3);
+  --em-accent-40: rgba(99, 102, 241, 0.4);
+  --em-accent-50: rgba(99, 102, 241, 0.5);
+  --em-accent-60: rgba(99, 102, 241, 0.6);
+  /* Accent gradient: LIGHT indigo, mixed with white — never dark-ending. */
+  --em-accent-gradient: linear-gradient(180deg, #c7d2fe 0%, #6366f1 100%);
   --em-btn-accent-bg: transparent;
   --em-btn-secondary-bg: transparent;
-  --em-tab-active: #4f6bf2;
 
   /* Primary button — Neon: solid WHITE bg + BLACK text in dark mode.
-     Hover is a SOLID lighter-blue fill + black text. */
+     Hover is a SOLID lighter-indigo fill + black text. */
   --em-btn-primary-bg: #ffffff;
   --em-btn-primary-text: #000000;
-  --em-btn-primary-hover: #8ea2f7;
+  --em-btn-primary-hover: #a5b4fc;
   --em-btn-primary-hover-text: #000000;
 
   /* Status — EcoMate semantic hues (apps/admin theme.css). */
@@ -102,7 +114,28 @@
   --em-info-border: rgba(14, 165, 233, 0.35);
 
   --em-overlay: rgba(0, 0, 0, 0.7);
-  --em-focus-ring: 0 0 0 2px #000000, 0 0 0 4px #4f6bf2;
+  /* Focus — live StackMate: bright accent 2px outline, no glow. */
+  --em-focus-ring: 0 0 0 2px #6366f1;
+
+  /* Dashboard stat-card tints — tonal variations of the landing indigo
+     palette ONLY (see header note). Each card: gradient wash + tinted
+     border + icon chip bg + icon color. */
+  --em-stat-1-wash: rgba(99, 102, 241, 0.16);
+  --em-stat-1-border: rgba(99, 102, 241, 0.35);
+  --em-stat-1-chip: rgba(99, 102, 241, 0.18);
+  --em-stat-1-icon: #a5b4fc;
+  --em-stat-2-wash: rgba(168, 85, 247, 0.14);
+  --em-stat-2-border: rgba(168, 85, 247, 0.32);
+  --em-stat-2-chip: rgba(168, 85, 247, 0.16);
+  --em-stat-2-icon: #c4b5fd;
+  --em-stat-3-wash: rgba(129, 140, 248, 0.14);
+  --em-stat-3-border: rgba(129, 140, 248, 0.32);
+  --em-stat-3-chip: rgba(129, 140, 248, 0.16);
+  --em-stat-3-icon: #c7d2fe;
+  --em-stat-4-wash: rgba(79, 70, 229, 0.18);
+  --em-stat-4-border: rgba(79, 70, 229, 0.38);
+  --em-stat-4-chip: rgba(79, 70, 229, 0.2);
+  --em-stat-4-icon: #a5b4fc;
 
   /* Typography — Inter Variable (self-hosted via npm). */
   --em-font-sans: 'Inter Variable', sans-serif;
@@ -129,11 +162,11 @@
   --em-settings-nav-width: 240px;
   --em-topbar-height: 48px;
 
-  /* Radii — max 4px; dialogs 6px. */
+  /* Radii — live StackMate: inputs/buttons 6px; cards/dialogs 8px. */
   --em-radius-sm: 4px;
-  --em-radius-md: 4px;
-  --em-radius-lg: 4px;
-  --em-radius-xl: 6px;
+  --em-radius-md: 6px;
+  --em-radius-lg: 8px;
+  --em-radius-xl: 8px;
 
   /* Elevation — minimal in dark (Neon: borders do the work, not shadows). */
   --em-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
@@ -152,9 +185,8 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Light theme — alternate. Same blue hue, darkened for contrast on    */
-/* white (bright #4f6bf2 as text on white is readable at ~4.6:1, but   */
-/* the ink variant #3b54c4 is safer for small text).                   */
+/* Light theme — alternate. Same indigo hue, darkened for contrast on  */
+/* white (landing --mk-ac #4f46e5).                                   */
 /* ------------------------------------------------------------------ */
 [data-theme='light'] {
   color-scheme: light;
@@ -172,18 +204,17 @@
   --em-text: #0f172a;
   --em-text-muted: #475569;
 
-  --em-accent: #3b54c4;
-  --em-accent-hover: #2f45a3;
-  --em-accent-soft: rgba(79, 107, 242, 0.1);
-  --em-btn-accent-bg: rgba(79, 107, 242, 0.12);
+  --em-accent: #4f46e5;
+  --em-accent-hover: #4338ca;
+  --em-accent-soft: rgba(79, 70, 229, 0.1);
+  --em-btn-accent-bg: rgba(79, 70, 229, 0.12);
   --em-btn-secondary-bg: #ffffff;
-  --em-tab-active: #0f172a;
 
   /* Primary button, light mode — the inversion: solid BLACK bg + WHITE
-     text. Hover is a SOLID dark-blue fill + white text. */
+     text. Hover is a SOLID indigo fill + white text. */
   --em-btn-primary-bg: #0f172a;
   --em-btn-primary-text: #ffffff;
-  --em-btn-primary-hover: #3b54c4;
+  --em-btn-primary-hover: #4f46e5;
   --em-btn-primary-hover-text: #ffffff;
 
   --em-success-bg: rgba(16, 185, 129, 0.08);
@@ -206,7 +237,25 @@
   --em-info-border: rgba(30, 64, 175, 0.35);
 
   --em-overlay: rgba(15, 23, 42, 0.45);
-  --em-focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #3b54c4;
+  --em-focus-ring: 0 0 0 2px #4f46e5;
+
+  /* Stat-card tints, light theme — lighter washes, darker icons. */
+  --em-stat-1-wash: rgba(99, 102, 241, 0.08);
+  --em-stat-1-border: rgba(99, 102, 241, 0.3);
+  --em-stat-1-chip: rgba(99, 102, 241, 0.12);
+  --em-stat-1-icon: #4f46e5;
+  --em-stat-2-wash: rgba(168, 85, 247, 0.07);
+  --em-stat-2-border: rgba(168, 85, 247, 0.28);
+  --em-stat-2-chip: rgba(168, 85, 247, 0.1);
+  --em-stat-2-icon: #7c3aed;
+  --em-stat-3-wash: rgba(129, 140, 248, 0.1);
+  --em-stat-3-border: rgba(129, 140, 248, 0.3);
+  --em-stat-3-chip: rgba(129, 140, 248, 0.12);
+  --em-stat-3-icon: #6366f1;
+  --em-stat-4-wash: rgba(79, 70, 229, 0.09);
+  --em-stat-4-border: rgba(79, 70, 229, 0.32);
+  --em-stat-4-chip: rgba(79, 70, 229, 0.12);
+  --em-stat-4-icon: #4338ca;
 
   --em-shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
   --em-shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08);

@@ -2,7 +2,7 @@ import { useLocation } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth';
 import { QrCode } from '../components/qr-code';
-import { ErrorNote, Loading, PageHeader, StatusBadge } from '../components/ui';
+import { ErrorNote, Modal, PageHeader, Skeleton, StatusBadge } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import { groupSecret } from '../lib/mfa';
@@ -24,6 +24,8 @@ export function AccountPage() {
     otpauthUrl: string;
   } | null>(null);
   const [mfaCode, setMfaCode] = useState('');
+  const [disableOpen, setDisableOpen] = useState(false);
+  const [disableCode, setDisableCode] = useState('');
   const [mfaRecoveryCodes, setMfaRecoveryCodes] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
 
@@ -139,6 +141,10 @@ export function AccountPage() {
     }
   }
 
+  // AC3/AC4: disabling MFA is a destructive action — it goes through a
+  // danger confirm dialog with its OWN code field. The old form submitted
+  // directly from a danger button and shared the regenerate form's code
+  // field ("Disabling needs the same code field above").
   async function disableMfa(event: React.FormEvent) {
     event.preventDefault();
     setBusy('mfa-disable');
@@ -147,9 +153,10 @@ export function AccountPage() {
     try {
       await api('/auth/mfa/disable', {
         method: 'POST',
-        body: JSON.stringify({ code: mfaCode.trim() }),
+        body: JSON.stringify({ code: disableCode.trim() }),
       }).then((r) => readJson(r));
-      setMfaCode('');
+      setDisableCode('');
+      setDisableOpen(false);
       setNotice('Two-factor authentication is now disabled.');
       await load();
     } catch (err) {
@@ -200,10 +207,10 @@ export function AccountPage() {
 
       {notice ? <div className="notice notice--success">{notice}</div> : null}
       {error ? <ErrorNote message={error} /> : null}
-      {busy === 'load' && !mfaStatus ? <Loading label="Loading profile…" /> : null}
+      {busy === 'load' && !mfaStatus ? <Skeleton /> : null}
 
       {user ? (
-        <section className="panel" id="profile">
+        <section className="card" id="profile">
           <h2>Profile</h2>
           <dl className="detail-list">
             <dt>Email</dt>
@@ -226,7 +233,7 @@ export function AccountPage() {
         </section>
       ) : null}
 
-      <section className="panel">
+      <section className="card">
         <h2>Two-factor authentication</h2>
         {mfaStatus ? (
           <>
@@ -239,7 +246,7 @@ export function AccountPage() {
             </p>
             {!mfaStatus.enabled && !mfaSetup ? (
               <div className="form-actions">
-                <button type="button" className="button button--primary" onClick={() => void startSetup()} disabled={busy === 'mfa-setup'}>
+                <button type="button" className="button button--accent" onClick={() => void startSetup()} disabled={busy === 'mfa-setup'}>
                   {busy === 'mfa-setup' ? 'Starting…' : 'Set up two-factor authentication'}
                 </button>
               </div>
@@ -285,7 +292,7 @@ export function AccountPage() {
                     />
                   </label>
                   <div className="form-actions">
-                    <button type="submit" className="button button--primary" disabled={busy === 'mfa-verify'}>
+                    <button type="submit" className="button button--accent" disabled={busy === 'mfa-verify'}>
                       {busy === 'mfa-verify' ? 'Verifying…' : 'Verify and enable'}
                     </button>
                   </div>
@@ -308,7 +315,7 @@ export function AccountPage() {
                     />
                   </label>
                   <div className="form-actions">
-                    <button type="submit" className="button" disabled={busy === 'mfa-codes'}>
+                    <button type="submit" className="button button--accent" disabled={busy === 'mfa-codes'}>
                       {busy === 'mfa-codes'
                         ? 'Issuing…'
                         : 'Issue new recovery codes'}
@@ -322,18 +329,15 @@ export function AccountPage() {
                     users list.
                   </p>
                 ) : (
-                  <form className="inline-form" onSubmit={disableMfa}>
-                    <div className="form-actions">
-                      <button type="submit" className="button button--danger" disabled={busy === 'mfa-disable'}>
-                        {busy === 'mfa-disable'
-                          ? 'Disabling…'
-                          : 'Disable two-factor authentication'}
-                      </button>
-                    </div>
-                    <p className="muted-note">
-                      Disabling needs the same code field above.
-                    </p>
-                  </form>
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="button button--danger"
+                      onClick={() => setDisableOpen(true)}
+                    >
+                      Disable two-factor authentication
+                    </button>
+                  </div>
                 )}
               </>
             ) : null}
@@ -346,7 +350,7 @@ export function AccountPage() {
               once if you lose your authenticator. They are shown only this
               once.
             </p>
-            <ul className="mono">
+            <ul className="recovery-codes">
               {mfaRecoveryCodes.map((rc) => (
                 <li key={rc}>{rc}</li>
               ))}
@@ -355,7 +359,50 @@ export function AccountPage() {
         ) : null}
       </section>
 
-      <section className="panel" id="password">
+      <Modal
+        open={disableOpen}
+        title="Disable two-factor authentication?"
+        onClose={() => setDisableOpen(false)}
+      >
+        <p className="muted-note">
+          Your account will no longer require a code at sign-in. Enter a
+          code from your authenticator app to confirm.
+        </p>
+        <form className="inline-form" onSubmit={disableMfa}>
+          <label>
+            Current code
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={disableCode}
+              onChange={(e) => setDisableCode(e.target.value)}
+              required
+              placeholder="123456"
+            />
+          </label>
+          <div className="form-actions">
+            <button
+              type="submit"
+              className="button button--danger-solid"
+              disabled={busy === 'mfa-disable' || !disableCode.trim()}
+            >
+              {busy === 'mfa-disable'
+                ? 'Disabling…'
+                : 'Disable two-factor authentication'}
+            </button>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => setDisableOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <section className="card" id="password">
         <h2>Change password</h2>
         <p className="muted-note">
           At least 12 characters. Changing your password signs out all other
@@ -395,7 +442,7 @@ export function AccountPage() {
             />
           </label>
           <div className="form-actions">
-            <button type="submit" className="button button--primary" disabled={busy === 'password'}>
+            <button type="submit" className="button button--accent" disabled={busy === 'password'}>
               Change password
             </button>
           </div>

@@ -23,20 +23,51 @@ import { AccountMenu } from './account-menu';
 import { SearchPalette } from './search-palette';
 
 /* Nav icons (lucide-react 1.x: Building / ChartColumn are the current
- * names — Building2 / BarChart3 were removed as deprecated aliases). */
-const NAV: { to: string; label: string; icon: LucideIcon }[] = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard },
-  { to: '/tenants', label: 'Tenants', icon: Building },
-  { to: '/leads', label: 'Leads', icon: UserPlus },
-  { to: '/billing', label: 'Billing', icon: CreditCard },
-  { to: '/domains', label: 'Domains', icon: Globe },
-  { to: '/usage', label: 'Usage', icon: Gauge },
-  { to: '/metrics', label: 'Metrics', icon: ChartColumn },
-  { to: '/plans', label: 'Plans', icon: Layers },
-  { to: '/landing', label: 'Landing', icon: LayoutTemplate },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
-  { to: '/users', label: 'Users', icon: Users },
-  { to: '/audit', label: 'Audit', icon: ScrollText },
+ * names — Building2 / BarChart3 were removed as deprecated aliases).
+ * Live StackMate behaviour: the sidebar nav is grouped under 12px muted
+ * labels with thin dividers between groups (not a flat list). */
+const NAV_GROUPS: {
+  label: string;
+  items: { to: string; label: string; icon: LucideIcon }[];
+}[] = [
+  {
+    label: 'Overview',
+    items: [{ to: '/', label: 'Overview', icon: LayoutDashboard }],
+  },
+  {
+    label: 'Tenants',
+    items: [
+      { to: '/tenants', label: 'Tenants', icon: Building },
+      { to: '/leads', label: 'Leads', icon: UserPlus },
+    ],
+  },
+  {
+    label: 'Billing',
+    items: [
+      { to: '/billing', label: 'Billing', icon: CreditCard },
+      { to: '/plans', label: 'Plans', icon: Layers },
+    ],
+  },
+  {
+    label: 'Platform',
+    items: [
+      { to: '/domains', label: 'Domains', icon: Globe },
+      { to: '/usage', label: 'Usage', icon: Gauge },
+      { to: '/metrics', label: 'Metrics', icon: ChartColumn },
+    ],
+  },
+  {
+    label: 'Website',
+    items: [{ to: '/landing', label: 'Landing', icon: LayoutTemplate }],
+  },
+  {
+    label: 'Administration',
+    items: [
+      { to: '/settings', label: 'Settings', icon: SettingsIcon },
+      { to: '/users', label: 'Users', icon: Users },
+      { to: '/audit', label: 'Audit', icon: ScrollText },
+    ],
+  },
 ];
 
 function BrandMark() {
@@ -102,7 +133,7 @@ function SidebarCollapseIcon() {
 }
 
 /**
- * Console shell (StackMate Neon layout, EcoMate blue accent).
+ * Console shell (StackMate Neon layout, EcoMate landing-indigo accent).
  *
  * - Topbar (48px, sticky, all widths): mobile hamburger + brand (mobile
  *   only), the global search button (desktop, centered), and the account
@@ -115,7 +146,9 @@ function SidebarCollapseIcon() {
  * - secondaryNav: an optional second nav column beside the content (used
  *   by Settings). Entering a page with a secondary nav collapses the main
  *   menu VISUALLY ONLY — the stored pin is untouched, so leaving restores
- *   it. Only an explicit toggle press persists (StackMate pin rule).
+ *   it. Only an explicit toggle press persists (StackMate pin rule). The
+ *   hover flyout is suppressed on these pages (data-secondary-nav): the
+ *   overlay would cover the secondary nav's links.
  */
 export function AppShell({
   children,
@@ -172,6 +205,7 @@ export function AppShell({
       className="shell"
       data-nav-open={navOpen ? 'true' : 'false'}
       data-nav-collapsed={navCollapsed ? 'true' : 'false'}
+      data-secondary-nav={secondaryNav ? 'true' : 'false'}
     >
       <button
         type="button"
@@ -188,30 +222,42 @@ export function AppShell({
           </span>
         </Link>
         <nav className="nav" aria-label="SaaS navigation">
-          {NAV.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                activeOptions={{ exact: item.to === '/' }}
-                className="nav-link"
-                activeProps={{ className: 'nav-link nav-link--active' }}
-                title={item.label}
-                onClick={() => setNavOpen(false)}
-              >
-                <Icon size={16} strokeWidth={2} aria-hidden="true" />
-                <span className="nav-label">{item.label}</span>
-              </Link>
-            );
-          })}
+          {NAV_GROUPS.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <div className="nav-group-label">{group.label}</div>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    activeOptions={{ exact: item.to === '/' }}
+                    className="nav-link"
+                    activeProps={{ className: 'nav-link nav-link--active' }}
+                    onClick={() => setNavOpen(false)}
+                  >
+                    <Icon size={16} strokeWidth={2} aria-hidden="true" />
+                    <span className="nav-label">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
         <button
           type="button"
           className="nav-collapse-btn"
           aria-label={navCollapsed ? 'Expand menu' : 'Collapse menu'}
           aria-expanded={!navCollapsed}
-          onClick={toggleCollapsed}
+          onClick={(event) => {
+            toggleCollapsed();
+            // The flyout opens on :focus-within, so without this the
+            // button keeps focus after collapsing and the sidebar stays
+            // expanded as an overlay instead of visibly collapsing to
+            // the 64px rail. Blurring lets the rail actually collapse;
+            // keyboard users still get the flyout by tabbing to a link.
+            event.currentTarget.blur();
+          }}
         >
           {navCollapsed ? <SidebarExpandIcon /> : <SidebarCollapseIcon />}
           <span className="nav-label">
@@ -273,6 +319,11 @@ export function AppShell({
         ) : (
           <main className="main">{children}</main>
         )}
+        <footer className="shell-footer">
+          <span>
+            {platformName} · SaaS console
+          </span>
+        </footer>
       </div>
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>

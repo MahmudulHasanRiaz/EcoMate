@@ -2,7 +2,7 @@ import { Navigate, useParams } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth';
 import { AppShell } from '../components/app-shell';
-import { ErrorNote, Loading, PageHeader } from '../components/ui';
+import { ErrorNote, PageHeader, Skeleton } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
 import type { PaymentMethod, PlatformSettings } from '../types';
 import {
@@ -90,19 +90,21 @@ export function SettingsPage() {
             : ''}
         </div>
       ) : null}
-      {!settings && busy ? <Loading /> : null}
+      {!settings && busy ? <Skeleton /> : null}
 
       <SettingsTabs activeId={section.id} />
 
-      <Section
-        settings={settings}
-        methods={methods}
-        onSaved={(message) => {
-          setNotice(message);
-          setRefresh((value) => value + 1);
-        }}
-        onError={(message) => setError(message || null)}
-      />
+      <div className="settings-content">
+        <Section
+          settings={settings}
+          methods={methods}
+          onSaved={(message) => {
+            setNotice(message);
+            setRefresh((value) => value + 1);
+          }}
+          onError={(message) => setError(message || null)}
+        />
+      </div>
     </AppShell>
   );
 }

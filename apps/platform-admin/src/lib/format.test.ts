@@ -13,13 +13,19 @@ describe('format', () => {
     expect(formatStatus('TRIAL')).toBe('Trial');
   });
 
-  it('maps status tones', () => {
-    expect(statusTone('ACTIVE')).toBe('success');
-    expect(statusTone('PAST_DUE')).toBe('warning');
-    expect(statusTone('DELETED')).toBe('muted');
-    expect(statusTone('NEW')).toBe('info');
-    expect(statusTone('CONTACTED')).toBe('success');
-    expect(statusTone('CLOSED')).toBe('muted');
+  it('maps status tones (accent only for positive states)', () => {
+    expect(statusTone('ACTIVE')).toBe('accent');
+    expect(statusTone('PAID')).toBe('accent');
+    expect(statusTone('APPROVED')).toBe('accent');
+    expect(statusTone('WON')).toBe('accent');
+    expect(statusTone('VERIFIED')).toBe('accent');
+    expect(statusTone('CONTACTED')).toBe('neutral');
+    expect(statusTone('PAST_DUE')).toBe('neutral');
+    expect(statusTone('SUSPENDED')).toBe('neutral');
+    expect(statusTone('TRIAL')).toBe('neutral');
+    expect(statusTone('NEW')).toBe('neutral');
+    expect(statusTone('DELETED')).toBe('neutral');
+    expect(statusTone('CLOSED')).toBe('neutral');
     expect(statusTone('UNKNOWN')).toBe('neutral');
   });
 

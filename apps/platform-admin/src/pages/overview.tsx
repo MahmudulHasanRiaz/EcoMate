@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
+import {
+  BadgeCheck,
+  Building,
+  Hourglass,
+  TriangleAlert,
+} from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDate, planLabel } from '../lib/format';
 import type { Page, Tenant } from '../types';
-import { ErrorNote, Loading, PageHeader, StatusBadge } from '../components/ui';
+import { EmptyState, ErrorNote, PageHeader, Skeleton, StatusBadge } from '../components/ui';
 
 export function OverviewPage() {
   const { api } = useAuth();
@@ -72,26 +78,41 @@ export function OverviewPage() {
       />
       {error ? <ErrorNote message={error} /> : null}
       {loading ? (
-        <Loading />
+        <Skeleton />
       ) : (
         <>
+          {/* Colored stat cards (Boss 2026-11-18): each card its own
+              SUBTLE gradient tint — indigo family only, from the landing
+              palette tokens (--em-stat-1..4). No outside colors. */}
           <section className="metric-grid">
-            <article className="metric">
+            <article className="metric metric--tint-1">
+              <span className="metric-icon" aria-hidden="true">
+                <Building size={16} strokeWidth={2} />
+              </span>
               <span>Total tenants</span>
               <strong>{total}</strong>
               <small>Across all statuses</small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-2">
+              <span className="metric-icon" aria-hidden="true">
+                <Hourglass size={16} strokeWidth={2} />
+              </span>
               <span>On trial</span>
               <strong>{trial}</strong>
               <small>Provisioned and evaluating</small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-3">
+              <span className="metric-icon" aria-hidden="true">
+                <BadgeCheck size={16} strokeWidth={2} />
+              </span>
               <span>Active</span>
               <strong>{active}</strong>
               <small>Paying or converted</small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-4">
+              <span className="metric-icon" aria-hidden="true">
+                <TriangleAlert size={16} strokeWidth={2} />
+              </span>
               <span>Needs attention</span>
               <strong>{attention}</strong>
               <small>Past due, suspended or mid-setup</small>
@@ -109,11 +130,10 @@ export function OverviewPage() {
               </Link>
             </div>
             {tenants.length === 0 ? (
-              <p className="muted-note">
-                No tenants yet.{' '}
+              <EmptyState icon={Building} title="No tenants yet">
                 <Link to="/tenants/new">Create the first tenant</Link> to
                 provision a store.
-              </p>
+              </EmptyState>
             ) : (
               <div className="table-wrap">
                 <table>

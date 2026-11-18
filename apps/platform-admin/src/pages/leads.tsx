@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { UserPlus } from 'lucide-react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
@@ -12,10 +13,12 @@ import {
 } from '../lib/leads';
 import type { Lead, LeadStatus, Page } from '../types';
 import {
+  EmptyState,
   ErrorNote,
-  Loading,
   Modal,
+  Pager,
   PageHeader,
+  Skeleton,
   StatusBadge,
 } from '../components/ui';
 
@@ -27,6 +30,7 @@ export function LeadsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +49,7 @@ export function LeadsPage() {
 
   const load = () => {
     setLoading(true);
-    api(`/leads${leadsQueryString({ status, search, page, limit: 20 })}`)
+    api(`/leads${leadsQueryString({ status, search, page, limit })}`)
       .then((response) => readJson<Page<Lead>>(response))
       .then((result) => setData(result))
       .catch((err) => setError(errorMessage(err)))
@@ -55,7 +59,7 @@ export function LeadsPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, status, search, page]);
+  }, [api, status, search, page, limit]);
 
   // Keep the status picker in sync with the open lead. NEW is not a
   // triage target, so a new lead starts on the first triage status.
@@ -141,15 +145,62 @@ export function LeadsPage() {
         </div>
       ) : null}
 
+      {/* One aligned filter row on the Tenants pattern: search form +
+          active-search chip + styled status filter + Export (LE1 — the
+          old toolbar scattered a bare native select, a nested inline
+          form and the export button across two uneven rows). */}
       <div className="toolbar">
-        <label>
-          Status
+        <form
+          className="toolbar-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSearch(searchInput.trim());
+            setPage(1);
+          }}
+        >
+          <input
+            value={searchInput}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSearchInput(next);
+              // Same as Tenants (F12): clearing the box clears the filter.
+              if (next.trim() === '' && search !== '') {
+                setSearch('');
+                setPage(1);
+              }
+            }}
+            placeholder="Name, contact, or message…"
+            aria-label="Search leads"
+          />
+          <button type="submit" className="button">
+            Search
+          </button>
+        </form>
+        {search ? (
+          <span className="filter-chip">
+            Search: {search}
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => {
+                setSearchInput('');
+                setSearch('');
+                setPage(1);
+              }}
+            >
+              ×
+            </button>
+          </span>
+        ) : null}
+        <label className="toolbar-filter">
+          <span>Status</span>
           <select
             value={status}
             onChange={(event) => {
               setStatus(event.target.value);
               setPage(1);
             }}
+            aria-label="Lead status filter"
           >
             <option value="">All statuses</option>
             {LEAD_STATUSES.map((value) => (
@@ -159,41 +210,6 @@ export function LeadsPage() {
             ))}
           </select>
         </label>
-        <form
-          className="inline-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setSearch(searchInput.trim());
-            setPage(1);
-          }}
-        >
-          <label>
-            Search
-            <input
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Name, contact, or message…"
-            />
-          </label>
-          <div className="form-actions">
-            <button type="submit" className="button">
-              Search
-            </button>
-            {search ? (
-              <button
-                type="button"
-                className="button button--ghost"
-                onClick={() => {
-                  setSearchInput('');
-                  setSearch('');
-                  setPage(1);
-                }}
-              >
-                Clear
-              </button>
-            ) : null}
-          </div>
-        </form>
         {canExport ? (
           <button
             type="button"
@@ -206,7 +222,7 @@ export function LeadsPage() {
         ) : null}
       </div>
 
-      {loading && !data ? <Loading /> : null}
+      {loading && !data ? <Skeleton /> : null}
       {data ? (
         <section className="card">
           <div className="card-head">
@@ -220,11 +236,14 @@ export function LeadsPage() {
             </div>
           </div>
           {data.data.length === 0 ? (
-            <p className="muted-note">
+            <EmptyState
+              icon={UserPlus}
+              title={status ? 'No leads match this filter' : 'No leads yet'}
+            >
               {status
-                ? 'No leads match this filter.'
-                : 'No leads yet. Leads arrive from the landing lead form.'}
-            </p>
+                ? 'Try a different search or status.'
+                : 'Leads arrive from the landing lead form.'}
+            </EmptyState>
           ) : (
             <div className="table-wrap">
               <table>
@@ -266,27 +285,17 @@ export function LeadsPage() {
               </table>
             </div>
           )}
-          <div className="pager">
-            <button
-              type="button"
-              className="button button--ghost"
-              disabled={page <= 1}
-              onClick={() => setPage((value) => Math.max(1, value - 1))}
-            >
-              Previous
-            </button>
-            <span>
-              {data.meta.page} / {Math.max(1, data.meta.totalPages)}
-            </span>
-            <button
-              type="button"
-              className="button button--ghost"
-              disabled={page >= data.meta.totalPages}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              Next
-            </button>
-          </div>
+          <Pager
+            page={data.meta.page}
+            totalPages={data.meta.totalPages}
+            total={data.meta.total}
+            limit={limit}
+            onPage={setPage}
+            onLimit={(next) => {
+              setLimit(next);
+              setPage(1);
+            }}
+          />
         </section>
       ) : null}
 
@@ -353,7 +362,7 @@ export function LeadsPage() {
               ) : null}
             </dl>
             <h3 className="subhead">Message</h3>
-            <p className="muted-note" style={{ whiteSpace: 'pre-wrap' }}>
+            <p className="muted-note muted-note--prewrap">
               {selected.message || 'No message.'}
             </p>
             <div className="inline-form">
@@ -373,23 +382,23 @@ export function LeadsPage() {
                   ))}
                 </select>
               </label>
-              <div className="form-actions">
-                <button
-                  type="button"
-                  className="button button--primary"
-                  disabled={
-                    busy || !nextStatus || nextStatus === selected.status
-                  }
-                  onClick={() =>
-                    nextStatus &&
-                    void setLeadStatus(selected, nextStatus as LeadStatus)
-                  }
-                >
-                  {busy ? 'Saving…' : 'Update status'}
-                </button>
-              </div>
             </div>
+            {/* One dialog footer (LE4): Update status [accent] +
+                Convert [secondary] + Close [ghost]. */}
             <div className="form-actions">
+              <button
+                type="button"
+                className="button button--accent"
+                disabled={
+                  busy || !nextStatus || nextStatus === selected.status
+                }
+                onClick={() =>
+                  nextStatus &&
+                  void setLeadStatus(selected, nextStatus as LeadStatus)
+                }
+              >
+                {busy ? 'Saving…' : 'Update status'}
+              </button>
               {canConvert && !selected.convertedTenant ? (
                 <button
                   type="button"

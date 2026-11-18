@@ -45,4 +45,10 @@ export class UpdateSmtpSettingsDto {
   @IsEmail()
   @MaxLength(255)
   from?: string;
+
+  /** Display name for outgoing mail ("EcoMate" in "EcoMate <a@b>"). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  fromName?: string;
 }

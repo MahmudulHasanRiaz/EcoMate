@@ -1,17 +1,26 @@
-const TONES: Record<string, string> = {
-  PENDING_VERIFICATION: 'neutral',
-  PROVISIONING: 'info',
-  TRIAL: 'info',
-  ACTIVE: 'success',
-  PAST_DUE: 'warning',
-  SUSPENDED: 'danger',
-  CANCELLED: 'danger',
-  DELETED: 'muted',
-  // Lead triage statuses.
-  NEW: 'info',
-  CONTACTED: 'success',
-  CLOSED: 'muted',
-};
+/**
+ * Status-pill tones (live StackMate rule): the ACCENT pill is reserved
+ * for POSITIVE states only (Active, Enabled, Paid, Approved, Won,
+ * Verified, Used, OK) — every other status is a NEUTRAL grey
+ * pill, including attention states (Past Due, Suspended, Overdue). The
+ * text still names the state; the pill never shouts. Semantic colors
+ * (green/red/amber) survive only outside pills: toasts, notices, usage
+ * bars. Unknown statuses fall through to 'neutral'.
+ */
+const POSITIVE_STATUSES = new Set([
+  'ACTIVE',
+  'PAID',
+  'APPROVED',
+  'WON',
+  'VERIFIED',
+  'USED',
+  'OK',
+  'ENABLED',
+]);
+
+export function statusTone(status: string): string {
+  return POSITIVE_STATUSES.has(status) ? 'accent' : 'neutral';
+}
 
 export function formatStatus(status: string): string {
   return status
@@ -19,10 +28,6 @@ export function formatStatus(status: string): string {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
-}
-
-export function statusTone(status: string): string {
-  return TONES[status] ?? 'neutral';
 }
 
 export function formatDate(value?: string | null): string {

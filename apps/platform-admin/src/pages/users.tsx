@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth';
-import { ConfirmDialog, ErrorNote, Loading, PageHeader, StatusBadge } from '../components/ui';
+import { ConfirmDialog, ErrorNote, PageHeader, Skeleton, StatusBadge } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import {
@@ -276,29 +276,34 @@ export function UsersPage() {
           Temporary password for {tempPasswordFor}:{' '}
           <code>{tempPassword}</code> — shown once. Share it out of band; the
           user should change it after signing in.{' '}
-          <button type="button" onClick={() => setTempPassword(null)}>
+          <button
+            type="button"
+            className="button button--ghost button--sm"
+            onClick={() => setTempPassword(null)}
+          >
             Dismiss
           </button>
         </div>
       ) : null}
-      {busy === 'load' ? <Loading label="Loading users…" /> : null}
+      {busy === 'load' ? <Skeleton /> : null}
 
-      <section className="panel">
+      <section className="card">
         <h2>Platform users</h2>
         {users.length === 0 && busy !== 'load' ? (
           <p className="muted-note">No platform users found.</p>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Email</th>
-                <th>Name</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Last login</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Last login</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
             <tbody>
               {users.map((user) => (
                 <tr key={user.id}>
@@ -331,7 +336,7 @@ export function UsersPage() {
                       disabled={user.id === session?.user.id}
                       onClick={() => setConfirm({ kind: 'reset', user })}
                     >
-                      Reset password
+                      Reset
                     </button>
                     <button
                       type="button"
@@ -352,8 +357,9 @@ export function UsersPage() {
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         )}
 
         {editingId ? (
@@ -393,7 +399,7 @@ export function UsersPage() {
             <div className="form-actions">
               <button
                 type="submit"
-                className="button button--primary"
+                className="button button--accent"
                 disabled={busy === 'edit'}
               >
                 Save changes
@@ -410,7 +416,7 @@ export function UsersPage() {
         ) : null}
       </section>
 
-      <section className="panel">
+      <section className="card">
         <h2>Create user</h2>
         <p className="muted-note">
           Creates an account with a password you set. Prefer invites when the
@@ -461,7 +467,7 @@ export function UsersPage() {
           <div className="form-actions">
             <button
               type="submit"
-              className="button button--primary"
+              className="button button--accent"
               disabled={busy === 'create'}
             >
               Create user
@@ -470,7 +476,7 @@ export function UsersPage() {
         </form>
       </section>
 
-      <section className="panel">
+      <section className="card">
         <h2>Invite by email</h2>
         <p className="muted-note">
           The invite link is valid for 72 hours. Inviting the same email again
@@ -510,7 +516,7 @@ export function UsersPage() {
           <div className="form-actions">
             <button
               type="submit"
-              className="button button--primary"
+              className="button button--accent"
               disabled={busy === 'invite'}
             >
               Send invite
@@ -547,7 +553,7 @@ export function UsersPage() {
         {invites.length === 0 ? (
           <p className="muted-note">No pending invites.</p>
         ) : (
-          <>
+          <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
@@ -578,11 +584,11 @@ export function UsersPage() {
                 ))}
               </tbody>
             </table>
-          </>
+          </div>
         )}
       </section>
 
-      <section className="panel">
+      <section className="card">
         <h2>Role matrix</h2>
         <p className="muted-note">
           What each role can do, as enforced by the platform API.
@@ -590,10 +596,11 @@ export function UsersPage() {
         {roles.length === 0 ? (
           <p className="muted-note">Role matrix unavailable.</p>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Role</th>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Role</th>
                 {roles[0].capabilities.map((cap) => (
                   <th key={cap.area}>{cap.area}</th>
                 ))}
@@ -613,8 +620,9 @@ export function UsersPage() {
                   ))}
                 </tr>
               ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 

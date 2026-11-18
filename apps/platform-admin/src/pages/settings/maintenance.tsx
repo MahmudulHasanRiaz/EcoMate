@@ -87,7 +87,7 @@ export function MaintenanceSection({
         <div className="progress-actions">
           <button
             type="button"
-            className="button button--primary"
+            className="button button--accent"
             onClick={() => {
               if (maintenanceEnabled && !settings?.maintenance.enabled) {
                 setConfirmEnable(true);
@@ -108,7 +108,7 @@ export function MaintenanceSection({
           title="Enable maintenance mode?"
           body="Writes are blocked platform-wide except sign-in, health, internal sync and these settings. Reads keep working."
           confirmLabel="Enable maintenance"
-          danger={false}
+          danger
           busy={busy}
           onConfirm={async () => {
             setConfirmEnable(false);

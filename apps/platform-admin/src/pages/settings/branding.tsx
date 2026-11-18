@@ -132,38 +132,44 @@ export function BrandingSection({
         </label>
         <label className="inline-field">
           <span>Logo URL</span>
+          <input
+            value={logoUrl.startsWith('data:') ? '' : logoUrl}
+            onChange={(event) => setLogoUrl(event.target.value)}
+            placeholder={
+              logoUrl.startsWith('data:')
+                ? 'Uploaded image — see the preview below'
+                : 'https://… (optional)'
+            }
+            aria-label="Logo URL"
+            disabled={logoUrl.startsWith('data:')}
+          />
           {logoUrl.startsWith('data:') ? (
             <span className="muted-note">
-              Uploaded image — see the preview below. Clear it to use a
-              URL again.
+              Clear it below to use a URL again.
             </span>
-          ) : (
-            <input
-              value={logoUrl}
-              onChange={(event) => setLogoUrl(event.target.value)}
-              placeholder="https://… (optional)"
-              aria-label="Logo URL"
-            />
-          )}
+          ) : null}
         </label>
         <label className="inline-field">
           <span>Favicon URL</span>
+          <input
+            value={faviconUrl.startsWith('data:') ? '' : faviconUrl}
+            onChange={(event) => setFaviconUrl(event.target.value)}
+            placeholder={
+              faviconUrl.startsWith('data:')
+                ? 'Uploaded image — see the preview below'
+                : 'https://… (optional, falls back to the logo)'
+            }
+            aria-label="Favicon URL"
+            disabled={faviconUrl.startsWith('data:')}
+          />
           {faviconUrl.startsWith('data:') ? (
             <span className="muted-note">
-              Uploaded image — see the preview below. Clear it to use a
-              URL again.
+              Clear it below to use a URL again.
             </span>
-          ) : (
-            <input
-              value={faviconUrl}
-              onChange={(event) => setFaviconUrl(event.target.value)}
-              placeholder="https://… (optional, falls back to the logo)"
-              aria-label="Favicon URL"
-            />
-          )}
+          ) : null}
         </label>
       </div>
-      <div className="domain-config-grid" style={{ marginTop: 14 }}>
+      <div className="domain-config-grid domain-config-grid--gap-top">
         <div>
           <p className="muted-note">Logo file (max 200 KB)</p>
           <div className="upload-box">
@@ -186,7 +192,7 @@ export function BrandingSection({
             {logoUrl ? (
               <button
                 type="button"
-                className="button button--ghost button--sm"
+                className="button button--sm"
                 onClick={() => setLogoUrl('')}
               >
                 Clear
@@ -216,7 +222,7 @@ export function BrandingSection({
             {faviconUrl ? (
               <button
                 type="button"
-                className="button button--ghost button--sm"
+                className="button button--sm"
                 onClick={() => setFaviconUrl('')}
               >
                 Clear
@@ -228,7 +234,7 @@ export function BrandingSection({
       <div className="progress-actions">
         <button
           type="button"
-          className="button button--primary"
+          className="button button--accent"
           onClick={() => void saveBranding()}
           disabled={busy}
         >

@@ -1,10 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
+  BadgeCheck,
+  Building,
   Clock,
   CornerDownLeft,
+  CreditCard,
+  FileText,
+  Globe,
+  Layers,
+  LayoutTemplate,
+  Mail,
+  Receipt,
+  RefreshCw,
+  ScrollText,
   Search as SearchIcon,
+  Ticket,
+  UserPlus,
+  Users,
+  Wallet,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
@@ -33,7 +49,32 @@ import { ScrollableTabs } from './ui';
  * The status filter only appears when a single type with a status
  * vocabulary is selected — status values differ per entity, so a status
  * filter without a type would be ambiguous.
+ *
+ * The palette UI follows live StackMate (centred ~480px modal, title,
+ * ~36px rows with accent-tinted type icons, selected-row bg) — but the
+ * SCOPE stays data-entity search per the owner's order, never
+ * nav-only.
  */
+
+/** Accent-tinted icon per entity type (live StackMate palette rows). */
+const TYPE_ICONS: Record<string, LucideIcon> = {
+  tenant: Building,
+  user: Users,
+  plan: Layers,
+  invoice: Receipt,
+  payment: CreditCard,
+  proof: BadgeCheck,
+  subscription: RefreshCw,
+  coupon: Ticket,
+  'credit-note': FileText,
+  method: Wallet,
+  job: Clock,
+  lead: UserPlus,
+  domain: Globe,
+  audit: ScrollText,
+  invite: Mail,
+  landing: LayoutTemplate,
+};
 export function SearchPalette({
   open,
   onClose,
@@ -180,6 +221,17 @@ export function SearchPalette({
         aria-label="Search the console"
         onClick={(event) => event.stopPropagation()}
       >
+        <div className="search-palette-header">
+          <span className="search-palette-title">Search</span>
+          <button
+            type="button"
+            className="search-palette-clear"
+            aria-label="Close search"
+            onClick={onClose}
+          >
+            <X size={16} strokeWidth={2} />
+          </button>
+        </div>
         <div className="search-palette-input-row">
           <SearchIcon size={18} strokeWidth={2} aria-hidden="true" />
           <input
@@ -330,6 +382,7 @@ export function SearchPalette({
                   {group.items.map((item) => {
                     flatIndex += 1;
                     const index = flatIndex;
+                    const ItemIcon = TYPE_ICONS[item.type] ?? SearchIcon;
                     return (
                       <button
                         key={`${item.type}:${item.id}`}
@@ -342,6 +395,12 @@ export function SearchPalette({
                         onClick={() => goTo(item)}
                         onMouseEnter={() => setActiveIndex(index)}
                       >
+                        <span
+                          className="search-result-icon"
+                          aria-hidden="true"
+                        >
+                          <ItemIcon size={16} strokeWidth={2} />
+                        </span>
                         <span className="search-result-text">
                           <span className="search-result-title">
                             {item.title}

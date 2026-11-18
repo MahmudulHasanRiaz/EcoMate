@@ -10,7 +10,7 @@ import {
   usageTone,
 } from '../lib/usage';
 import type { UsageMetricRow, UsageOverview } from '../types';
-import { ErrorNote, Loading, PageHeader, StatusBadge } from '../components/ui';
+import { ErrorNote, PageHeader, Skeleton, StatusBadge } from '../components/ui';
 
 function MetricCell({ metric }: { metric: UsageMetricRow }) {
   const tone = usageTone(metric);
@@ -109,7 +109,7 @@ export function UsagePage() {
         actions={
           <button
             type="button"
-            className="button button--primary"
+            className="button button--accent"
             onClick={refreshAll}
             disabled={busy}
           >
@@ -123,7 +123,7 @@ export function UsagePage() {
           {notice}
         </div>
       ) : null}
-      {loading && !overview ? <Loading /> : null}
+      {loading && !overview ? <Skeleton /> : null}
 
       {totals ? (
         <section className="metric-grid">
@@ -179,7 +179,7 @@ export function UsagePage() {
                   <th>Orders / month</th>
                   <th>Storage MB</th>
                   <th>Last collected</th>
-                  <th />
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>

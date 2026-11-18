@@ -14,7 +14,7 @@ import {
   sharePercent,
 } from '../lib/metrics';
 import type { MetricsOverview } from '../types';
-import { ErrorNote, Loading, PageHeader, StatusBadge } from '../components/ui';
+import { ErrorNote, PageHeader, Skeleton, StatusBadge } from '../components/ui';
 
 const STATUS_ORDER = [
   'ACTIVE',
@@ -75,15 +75,15 @@ export function MetricsPage() {
         title="Recurring revenue, trials and churn"
         description="Every figure is derived from stored subscriptions, tenants, payments and invoices — currencies are reported separately, never summed."
         actions={
-          <div className="toolbar-filter" role="group" aria-label="Window">
+          <div className="segmented" role="group" aria-label="Window">
             {WINDOW_PRESETS.map((preset) => (
               <button
                 key={preset.days}
                 type="button"
                 className={
                   preset.days === window
-                    ? 'button button--primary button--sm'
-                    : 'button button--ghost button--sm'
+                    ? 'button button--accent button--sm'
+                    : 'button button--sm'
                 }
                 aria-pressed={preset.days === window}
                 onClick={() => setWindow(preset.days)}
@@ -95,7 +95,7 @@ export function MetricsPage() {
         }
       />
       {error ? <ErrorNote message={error} /> : null}
-      {loading && !overview ? <Loading /> : null}
+      {loading && !overview ? <Skeleton /> : null}
 
       {overview ? (
         <>

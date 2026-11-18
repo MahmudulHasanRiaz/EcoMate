@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Building } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
-import { formatDate, planLabel } from '../lib/format';
+import { formatDate, formatStatus, planLabel } from '../lib/format';
 import type { Page, Tenant } from '../types';
-import { ErrorNote, Loading, PageHeader, StatusBadge } from '../components/ui';
+import { EmptyState, ErrorNote, Pager, PageHeader, Skeleton, StatusBadge } from '../components/ui';
 
 const STATUSES = [
   '',
@@ -20,6 +21,7 @@ export function TenantsPage() {
   const { api } = useAuth();
   const [data, setData] = useState<Page<Tenant> | null>(null);
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
   const [status, setStatus] = useState('');
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState('');
@@ -29,7 +31,7 @@ export function TenantsPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: '20' });
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (status) params.set('status', status);
     if (search) params.set('search', search);
     api(`/tenants?${params.toString()}`)
@@ -48,7 +50,7 @@ export function TenantsPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, page, status, search]);
+  }, [api, page, limit, status, search]);
 
   return (
     <>
@@ -88,7 +90,7 @@ export function TenantsPage() {
             placeholder="Search name, slug or owner email"
             aria-label="Search tenants"
           />
-          <button type="submit" className="button button--ghost">
+          <button type="submit" className="button">
             Search
           </button>
         </form>
@@ -119,7 +121,7 @@ export function TenantsPage() {
           >
             {STATUSES.map((value) => (
               <option key={value || 'all'} value={value}>
-                {value ? value.replaceAll('_', ' ') : 'All statuses'}
+                {value ? formatStatus(value) : 'All statuses'}
               </option>
             ))}
           </select>
@@ -127,7 +129,7 @@ export function TenantsPage() {
       </div>
 
       {error ? <ErrorNote message={error} /> : null}
-      {loading && !data ? <Loading /> : null}
+      {loading && !data ? <Skeleton /> : null}
 
       {data ? (
         <section className="card">
@@ -141,13 +143,14 @@ export function TenantsPage() {
           </div>
           {data.data.length === 0 ? (
             search || status ? (
-              <p className="muted-note">No tenants match this filter.</p>
+              <EmptyState icon={Building} title="No tenants match this filter">
+                Try a different search or status.
+              </EmptyState>
             ) : (
-              <p className="muted-note">
-                No tenants yet.{' '}
+              <EmptyState icon={Building} title="No tenants yet">
                 <Link to="/tenants/new">Create the first tenant</Link> to
                 provision a store.
-              </p>
+              </EmptyState>
             )
           ) : (
             <div className="table-wrap">
@@ -194,27 +197,17 @@ export function TenantsPage() {
               </table>
             </div>
           )}
-          <div className="pager">
-            <button
-              type="button"
-              className="button button--ghost"
-              disabled={page <= 1}
-              onClick={() => setPage((value) => Math.max(1, value - 1))}
-            >
-              Previous
-            </button>
-            <span>
-              {data.meta.page} / {Math.max(1, data.meta.totalPages)}
-            </span>
-            <button
-              type="button"
-              className="button button--ghost"
-              disabled={page >= data.meta.totalPages}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              Next
-            </button>
-          </div>
+          <Pager
+            page={data.meta.page}
+            totalPages={data.meta.totalPages}
+            total={data.meta.total}
+            limit={limit}
+            onPage={setPage}
+            onLimit={(next) => {
+              setLimit(next);
+              setPage(1);
+            }}
+          />
         </section>
       ) : null}
     </>

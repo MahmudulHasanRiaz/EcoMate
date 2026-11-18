@@ -469,6 +469,8 @@ export interface SmtpSettingsPublic {
   secure: boolean;
   user: string;
   from: string;
+  /** Display name for outgoing mail (split from the legacy combined `from`). */
+  fromName: string;
   configured: boolean;
   source: 'env' | 'setting' | 'none';
 }

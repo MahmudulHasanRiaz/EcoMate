@@ -132,7 +132,7 @@ export function PaymentMethodsSection({
 
   return (
     <>
-      <section className="card">
+      <section className="card card--wide">
         <div className="card-head">
           <div>
             <h2>Payment methods</h2>
@@ -143,7 +143,7 @@ export function PaymentMethodsSection({
           </div>
           <button
             type="button"
-            className="button button--primary"
+            className="button button--accent"
             onClick={startAddMethod}
             disabled={!!busy}
           >
@@ -178,36 +178,38 @@ export function PaymentMethodsSection({
                     <td>{method.sortOrder}</td>
                     <td>
                       <span
-                        className={`badge badge--${method.isActive ? 'success' : 'muted'}`}
+                        className={`badge badge--${method.isActive ? 'accent' : 'neutral'}`}
                       >
                         {method.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="button button--sm"
-                        onClick={() => startEditMethod(method)}
-                        disabled={!!busy}
-                      >
-                        Edit
-                      </button>{' '}
-                      <button
-                        type="button"
-                        className="button button--sm button--ghost"
-                        onClick={() => setConfirm({ kind: 'method-toggle', method })}
-                        disabled={!!busy}
-                      >
-                        {method.isActive ? 'Deactivate' : 'Activate'}
-                      </button>{' '}
-                      <button
-                        type="button"
-                        className="button button--sm button--danger"
-                        onClick={() => setConfirm({ kind: 'method-delete', method })}
-                        disabled={!!busy}
-                      >
-                        Delete
-                      </button>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="button button--sm"
+                          onClick={() => startEditMethod(method)}
+                          disabled={!!busy}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--sm button--ghost"
+                          onClick={() => setConfirm({ kind: 'method-toggle', method })}
+                          disabled={!!busy}
+                        >
+                          {method.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--sm button--danger"
+                          onClick={() => setConfirm({ kind: 'method-delete', method })}
+                          disabled={!!busy}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -216,106 +218,114 @@ export function PaymentMethodsSection({
           </div>
         )}
         {showMethodForm ? (
-          <div className="domain-config-grid">
-            <label className="inline-field">
-              <span>Type</span>
-              <select
-                value={methodType}
-                onChange={(event) => setMethodType(event.target.value)}
-                aria-label="Payment method type"
-              >
-                {PAYMENT_METHOD_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {paymentMethodLabel(type)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="inline-field">
-              <span>Name</span>
-              <input
-                value={methodName}
-                onChange={(event) => setMethodName(event.target.value)}
-                placeholder="bKash Personal"
-                aria-label="Payment method name"
-              />
-            </label>
-            <label className="inline-field">
-              <span>Account name</span>
-              <input
-                value={methodAccountName}
-                onChange={(event) => setMethodAccountName(event.target.value)}
-                placeholder="Optional"
-                aria-label="Account name"
-              />
-            </label>
-            <label className="inline-field">
-              <span>Account number</span>
-              <input
-                value={methodAccountNumber}
-                onChange={(event) =>
-                  setMethodAccountNumber(event.target.value)
-                }
-                placeholder="Optional"
-                aria-label="Account number"
-              />
-            </label>
-            <label className="inline-field">
-              <span>Sort order</span>
-              <input
-                type="number"
-                min="0"
-                value={methodSortOrder}
-                onChange={(event) => setMethodSortOrder(event.target.value)}
-                aria-label="Sort order"
-              />
-            </label>
-            <label className="inline-field">
-              <span>QR image URL</span>
-              <input
-                value={methodQrUrl}
-                onChange={(event) => setMethodQrUrl(event.target.value)}
-                placeholder="Optional"
-                aria-label="QR image URL"
-              />
-            </label>
-            <label className="inline-field">
-              <span>Payment instructions</span>
-              <input
-                value={methodInstructions}
-                onChange={(event) =>
-                  setMethodInstructions(event.target.value)
-                }
-                placeholder="Shown to tenants at payment time"
-                aria-label="Payment instructions"
-              />
-            </label>
-            <div className="progress-actions">
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => void saveMethod()}
-                disabled={!!busy}
-              >
-                {busy === 'method'
-                  ? 'Saving…'
-                  : editingMethodId
-                    ? 'Save changes'
-                    : 'Add method'}
-              </button>{' '}
-              <button
-                type="button"
-                className="button button--ghost"
-                onClick={() => {
-                  setShowMethodForm(false);
-                  setEditingMethodId(null);
-                }}
-                disabled={!!busy}
-              >
-                Cancel
-              </button>
+          <>
+            <div className="section-divider" aria-hidden="true" />
+            <h3 className="subsection-title">
+              {editingMethodId
+                ? `Edit ${methodName || 'method'}`
+                : 'Add method'}
+            </h3>
+            <div className="domain-config-grid">
+              <label className="inline-field">
+                <span>Type</span>
+                <select
+                  value={methodType}
+                  onChange={(event) => setMethodType(event.target.value)}
+                  aria-label="Payment method type"
+                >
+                  {PAYMENT_METHOD_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {paymentMethodLabel(type)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="inline-field">
+                <span>Name</span>
+                <input
+                  value={methodName}
+                  onChange={(event) => setMethodName(event.target.value)}
+                  placeholder="bKash Personal"
+                  aria-label="Payment method name"
+                />
+              </label>
+              <label className="inline-field">
+                <span>Account name</span>
+                <input
+                  value={methodAccountName}
+                  onChange={(event) => setMethodAccountName(event.target.value)}
+                  placeholder="Optional"
+                  aria-label="Account name"
+                />
+              </label>
+              <label className="inline-field">
+                <span>Account number</span>
+                <input
+                  value={methodAccountNumber}
+                  onChange={(event) =>
+                    setMethodAccountNumber(event.target.value)
+                  }
+                  placeholder="Optional"
+                  aria-label="Account number"
+                />
+              </label>
+              <label className="inline-field">
+                <span>Sort order</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={methodSortOrder}
+                  onChange={(event) => setMethodSortOrder(event.target.value)}
+                  aria-label="Sort order"
+                />
+              </label>
+              <label className="inline-field">
+                <span>QR image URL</span>
+                <input
+                  value={methodQrUrl}
+                  onChange={(event) => setMethodQrUrl(event.target.value)}
+                  placeholder="Optional"
+                  aria-label="QR image URL"
+                />
+              </label>
+              <label className="inline-field">
+                <span>Payment instructions</span>
+                <input
+                  value={methodInstructions}
+                  onChange={(event) =>
+                    setMethodInstructions(event.target.value)
+                  }
+                  placeholder="Shown to tenants at payment time"
+                  aria-label="Payment instructions"
+                />
+              </label>
+              <div className="progress-actions">
+                <button
+                  type="button"
+                  className="button button--accent"
+                  onClick={() => void saveMethod()}
+                  disabled={!!busy}
+                >
+                  {busy === 'method'
+                    ? 'Saving…'
+                    : editingMethodId
+                      ? 'Save changes'
+                      : 'Add method'}
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={() => {
+                    setShowMethodForm(false);
+                    setEditingMethodId(null);
+                  }}
+                  disabled={!!busy}
+                >
+                  Cancel
+                </button>
+                </div>
             </div>
-          </div>
+          </>
         ) : null}
       </section>
 

@@ -202,6 +202,25 @@ button {
   gap: 4px;
 }
 
+/* Nav groups (live StackMate): 12px muted labels, thin dividers
+   between groups. Single-item groups keep their label — the label is
+   the section name, not decoration. */
+.nav-group {
+  display: grid;
+  gap: 4px;
+}
+.nav-group + .nav-group {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--em-border);
+}
+.nav-group-label {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--em-muted);
+  padding: 0 var(--em-space-3) 2px;
+}
+
 .nav-link {
   width: 100%;
   display: flex;
@@ -210,11 +229,11 @@ button {
   text-align: left;
   background: transparent;
   border: none;
-  border-left: 2px solid transparent;
-  padding: var(--em-space-1-5) var(--em-space-2-5);
+  padding: 8px var(--em-space-3);
   border-radius: var(--em-radius-md);
   color: var(--em-text-muted);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -233,7 +252,6 @@ button {
   background: var(--em-nav-active-bg);
   color: var(--em-text);
   font-weight: 600;
-  border-left-color: var(--em-accent);
 }
 
 .nav-link--active svg {
@@ -253,10 +271,11 @@ button {
   background: transparent;
   border: none;
   border-top: 1px solid var(--em-border);
-  padding: var(--em-space-1-5) var(--em-space-2-5);
+  padding: 8px var(--em-space-3);
   border-radius: var(--em-radius-md);
   color: var(--em-text-muted);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -270,16 +289,41 @@ button {
 }
 
 /* Collapsed sidebar = 64px icon rail (desktop only; mobile keeps the
-   drawer). Labels and the brand name hide; icons stay centered, with
-   title tooltips on the links. No hover-peek (StackMate has one; the
-   console skips it — title tooltips cover the labels). */
+   drawer). Labels and the brand name hide; icons stay centered.
+   Live StackMate behaviour: hovering (or keyboard-focusing into) the
+   rail temporarily expands the FULL sidebar as an overlay flyout over
+   the content — labels, groups and the toggle all reappear — and moving
+   away collapses it again. NO tooltips on the rail: hover expands the
+   sidebar instead. The flyout is position:fixed, so the 64px grid
+   column stays put and the content never shifts.
+   The flyout is SUPPRESSED on pages with a secondary nav (Settings):
+   the overlay would cover the secondary nav column — including the
+   section links — and trap the mouse, since moving toward a link keeps
+   the pointer over the overlay. On those pages the rail stays a rail
+   and the toggle still expands the sidebar. */
 @media (min-width: 901px) {
+  /* The content column must be pinned explicitly: when the flyout makes
+     the sidebar position:fixed, the sidebar leaves the grid flow and
+     auto-placement would drop .shell-main into the 64px first column —
+     the whole page would crush into a 64px strip hidden behind the
+     overlay. (Desktop only: at <=900px the shell is a single column.) */
+  .shell-main {
+    grid-column: 2;
+  }
   .shell[data-nav-collapsed='true'] {
     grid-template-columns: var(--em-sidebar-rail-width) minmax(0, 1fr);
   }
   .shell[data-nav-collapsed='true'] .sidebar .brand-name,
-  .shell[data-nav-collapsed='true'] .nav-label {
+  .shell[data-nav-collapsed='true'] .nav-label,
+  .shell[data-nav-collapsed='true'] .nav-group-label {
     display: none;
+  }
+  /* The rail is icons only — group dividers collapse away with the
+     labels so the rail stays a tight icon column. */
+  .shell[data-nav-collapsed='true'] .nav-group + .nav-group {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
   }
   .shell[data-nav-collapsed='true'] .sidebar .brand {
     justify-content: center;
@@ -289,6 +333,45 @@ button {
   .shell[data-nav-collapsed='true'] .nav-collapse-btn {
     justify-content: center;
     padding: var(--em-space-2);
+  }
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--em-sidebar-width);
+    box-shadow: var(--em-shadow-lg);
+    z-index: var(--em-z-drawer);
+  }
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .brand-name,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .brand-name,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-label,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-label,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-group-label,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-group-label {
+    display: initial;
+  }
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-group + .nav-group,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true'])
+    .sidebar:focus-within
+    .nav-group
+    + .nav-group {
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--em-border);
+  }
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .brand,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .brand {
+    justify-content: flex-start;
+    padding: var(--em-space-1) var(--em-space-2);
+  }
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-link,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-link,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:hover .nav-collapse-btn,
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']) .sidebar:focus-within .nav-collapse-btn {
+    justify-content: flex-start;
+    padding: 8px var(--em-space-3);
   }
 }
 
@@ -355,13 +438,13 @@ button {
   flex: none;
 }
 
-/* Global search trigger (StackMate QuickNav pattern): a 280px search
+/* Global search trigger (StackMate QuickNav pattern): a 260px search
    button with a ⌘K hint. The icon-only variant shows on mobile instead. */
 .search-trigger {
   display: flex;
   align-items: center;
   gap: var(--em-space-2);
-  width: 280px;
+  width: 260px;
   max-width: 100%;
   height: 32px;
   padding: 0 var(--em-space-2-5);
@@ -428,8 +511,20 @@ kbd,
   /* Grid item must be able to shrink below a wide table's min-content so
      `.table-wrap` scrolls instead of pushing the page sideways. */
   min-width: 0;
-  padding: var(--em-space-5);
+  padding: var(--em-space-6);
   margin: 0 auto;
+}
+
+/* Shell footer — pins to the viewport bottom on short pages
+   (margin-top: auto in the .shell-main flex column) so short pages
+   end on a deliberate baseline instead of an empty black void. */
+.shell-footer {
+  margin-top: auto;
+  padding: var(--em-space-3) var(--em-space-6);
+  border-top: 1px solid var(--em-border);
+  color: var(--em-text-muted);
+  font-size: 12px;
+  flex: none;
 }
 
 /* ---------- account menu ---------- */
@@ -490,8 +585,8 @@ kbd,
   line-height: 1;
 }
 .account-avatar--lg {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   font-size: 14px;
 }
 
@@ -499,12 +594,12 @@ kbd,
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  min-width: 264px;
+  min-width: 320px;
   background: var(--em-dialog-bg);
   border: 1px solid var(--em-border);
-  border-radius: var(--em-radius-md);
+  border-radius: var(--em-radius-lg);
   box-shadow: var(--em-shadow-md);
-  padding: 4px;
+  padding: 8px;
   z-index: var(--em-z-dropdown);
 }
 
@@ -545,10 +640,8 @@ kbd,
 }
 
 .menu-section-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--em-text-muted);
   padding: var(--em-space-2) var(--em-space-3) var(--em-space-1);
 }
@@ -564,12 +657,13 @@ kbd,
   display: flex;
   align-items: center;
   gap: var(--em-space-2);
-  padding: var(--em-space-2) var(--em-space-3);
+  padding: 8px var(--em-space-3);
   background: transparent;
   border: none;
   border-radius: var(--em-radius-md);
   color: var(--em-text);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -605,12 +699,12 @@ kbd,
   position: absolute;
   right: calc(100% + 4px);
   top: 0;
-  min-width: 160px;
+  min-width: 200px;
   background: var(--em-dialog-bg);
   border: 1px solid var(--em-border);
-  border-radius: var(--em-radius-md);
+  border-radius: var(--em-radius-lg);
   box-shadow: var(--em-shadow-md);
-  padding: 4px;
+  padding: 8px;
   z-index: var(--em-z-dropdown);
 }
 
@@ -654,10 +748,8 @@ kbd,
 }
 
 .settings-nav-group-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--em-text-muted);
   padding: var(--em-space-3) var(--em-space-2-5) var(--em-space-1);
 }
@@ -666,11 +758,11 @@ kbd,
   display: flex;
   align-items: center;
   gap: var(--em-space-2);
-  padding: var(--em-space-1-5) var(--em-space-2-5);
-  border-left: 2px solid transparent;
+  padding: 8px var(--em-space-3);
   border-radius: var(--em-radius-md);
   color: var(--em-text-muted);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   text-decoration: none;
   transition:
@@ -686,10 +778,32 @@ kbd,
   background: var(--em-nav-active-bg);
   color: var(--em-text);
   font-weight: 600;
-  border-left-color: var(--em-accent);
 }
 .settings-nav-link--active svg {
   color: var(--em-accent);
+}
+
+/* "Back to admin" — pinned at the bottom of the settings nav
+   (StackMate pattern), above the fold on tall screens, after the
+   sections on short ones (the column scrolls). */
+.settings-nav-back {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  padding: 8px var(--em-space-3);
+  border-top: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  color: var(--em-text-muted);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.settings-nav-back:hover {
+  background: var(--em-nav-hover-bg);
+  color: var(--em-text);
+  text-decoration: none;
 }
 
 /* Mobile settings nav: the same sections as a scrollable tab strip. */
@@ -710,7 +824,7 @@ kbd,
 }
 
 .search-palette {
-  width: min(640px, calc(100vw - 32px));
+  width: min(480px, calc(100vw - 32px));
   max-height: min(80vh, 640px);
   background: var(--em-dialog-bg);
   border: 1px solid var(--em-border);
@@ -721,11 +835,27 @@ kbd,
   overflow: hidden;
 }
 
+.search-palette-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--em-space-2);
+  padding: var(--em-space-3) var(--em-space-4) 0;
+  flex: none;
+}
+
+.search-palette-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--em-text);
+}
+
 .search-palette-input-row {
   display: flex;
   align-items: center;
   gap: var(--em-space-2-5);
-  padding: 14px var(--em-space-4);
+  padding: 8px var(--em-space-4);
   border-bottom: 1px solid var(--em-border);
   color: var(--em-text-muted);
   flex: none;
@@ -738,7 +868,8 @@ kbd,
   background: transparent;
   color: var(--em-text);
   font: inherit;
-  font-size: 15px;
+  font-size: 14px;
+  line-height: 20px;
   outline: none;
   padding: 0;
 }
@@ -815,10 +946,8 @@ kbd,
   justify-content: space-between;
   gap: var(--em-space-2);
   padding: var(--em-space-2) var(--em-space-3) var(--em-space-1);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--em-text-muted);
 }
 
@@ -828,20 +957,27 @@ kbd,
   display: flex;
   align-items: center;
   gap: var(--em-space-2-5);
-  padding: var(--em-space-2) var(--em-space-3);
+  padding: 8px var(--em-space-3);
   background: transparent;
   border: none;
   border-radius: var(--em-radius-md);
   color: var(--em-text);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   text-align: left;
   cursor: pointer;
 }
 .search-result-item:hover,
 .search-recent-item:hover,
 .search-result-item[data-active='true'] {
-  background: var(--em-nav-hover-bg);
+  background: var(--em-nav-active-bg);
   outline: none;
+}
+
+.search-result-icon {
+  color: var(--em-accent);
+  display: inline-flex;
+  flex: none;
 }
 
 .search-result-text {
@@ -902,7 +1038,7 @@ kbd,
   align-items: center;
   justify-content: space-between;
   gap: var(--em-space-4);
-  margin-bottom: var(--em-space-2);
+  margin-bottom: var(--em-space-4);
   flex-wrap: wrap;
 }
 
@@ -929,16 +1065,18 @@ kbd,
   align-items: center;
 }
 
-.page-breadcrumb {
-  margin-bottom: var(--em-space-4);
-}
-
+/* Breadcrumbs sit BELOW the page subtitle (live StackMate pattern),
+   tightened against the header above. */
 .breadcrumb {
   display: flex;
   gap: 8px;
   color: var(--em-text-muted);
   font-size: 13px;
   margin-bottom: 16px;
+}
+
+.page-head + .breadcrumb {
+  margin-top: -8px;
 }
 
 .breadcrumb a {
@@ -960,6 +1098,23 @@ kbd,
   line-height: 24px;
 }
 
+/* Bare headings/notes directly in a card (Users, Audit, Account
+   sections) — the old .panel rules, folded into .card. */
+.card > h2 {
+  margin-bottom: 4px;
+}
+
+.card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  margin: 18px 0 8px;
+}
+
+.card > .muted-note {
+  margin-bottom: 12px;
+}
+
 .card-head {
   display: flex;
   align-items: flex-start;
@@ -975,34 +1130,6 @@ kbd,
   margin-top: 4px;
 }
 
-/* Panel — the card variant used by Users/Account/Audit (was unstyled). */
-.panel {
-  background: var(--em-surface-raised);
-  border: 1px solid var(--em-border);
-  border-radius: var(--em-radius-lg);
-  box-shadow: var(--em-shadow-sm);
-  padding: var(--em-space-4);
-  margin-bottom: var(--em-space-4);
-}
-
-.panel h2 {
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 24px;
-  margin-bottom: 4px;
-}
-
-.panel h3 {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-  margin: 18px 0 8px;
-}
-
-.panel > .muted-note {
-  margin-bottom: 12px;
-}
-
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1015,17 +1142,97 @@ kbd,
   margin-bottom: 0;
 }
 
-/* KPI cards are Neon's flat metric cards: pure-black bg + 1px border
-   only, SQUARE corners, no shadow. Light mode: white cards. */
+/* KPI cards — Neon's flat metric cards with a SUBTLE per-card gradient
+   tint (owner decision 2026-11-18: each card its own tint, but ONLY
+   tonal variations of the landing indigo palette — see tokens.css).
+   The wash fades from the top-left; the border and icon chip carry the
+   same tint. Radius 8 (live StackMate). */
 .metric {
+  position: relative;
   background: var(--em-bg);
   border: 1px solid var(--em-border);
-  border-radius: 0;
-  padding: var(--em-space-3) var(--em-space-4);
+  border-radius: var(--em-radius-lg);
+  padding: var(--em-space-4);
   min-width: 0;
+  overflow: hidden;
 }
 [data-theme='light'] .metric {
   background: #ffffff;
+}
+
+.metric--tint-1 {
+  background:
+    linear-gradient(135deg, var(--em-stat-1-wash) 0%, transparent 70%),
+    var(--em-bg);
+  border-color: var(--em-stat-1-border);
+}
+.metric--tint-2 {
+  background:
+    linear-gradient(135deg, var(--em-stat-2-wash) 0%, transparent 70%),
+    var(--em-bg);
+  border-color: var(--em-stat-2-border);
+}
+.metric--tint-3 {
+  background:
+    linear-gradient(135deg, var(--em-stat-3-wash) 0%, transparent 70%),
+    var(--em-bg);
+  border-color: var(--em-stat-3-border);
+}
+.metric--tint-4 {
+  background:
+    linear-gradient(135deg, var(--em-stat-4-wash) 0%, transparent 70%),
+    var(--em-bg);
+  border-color: var(--em-stat-4-border);
+}
+[data-theme='light'] .metric--tint-1 {
+  background:
+    linear-gradient(135deg, var(--em-stat-1-wash) 0%, transparent 70%),
+    #ffffff;
+}
+[data-theme='light'] .metric--tint-2 {
+  background:
+    linear-gradient(135deg, var(--em-stat-2-wash) 0%, transparent 70%),
+    #ffffff;
+}
+[data-theme='light'] .metric--tint-3 {
+  background:
+    linear-gradient(135deg, var(--em-stat-3-wash) 0%, transparent 70%),
+    #ffffff;
+}
+[data-theme='light'] .metric--tint-4 {
+  background:
+    linear-gradient(135deg, var(--em-stat-4-wash) 0%, transparent 70%),
+    #ffffff;
+}
+
+/* Icon chip, top-right of the card — tinted bg + tinted icon. */
+.metric-icon {
+  position: absolute;
+  top: var(--em-space-3);
+  right: var(--em-space-3);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--em-radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.metric--tint-1 .metric-icon {
+  background: var(--em-stat-1-chip);
+  color: var(--em-stat-1-icon);
+}
+.metric--tint-2 .metric-icon {
+  background: var(--em-stat-2-chip);
+  color: var(--em-stat-2-icon);
+}
+.metric--tint-3 .metric-icon {
+  background: var(--em-stat-3-chip);
+  color: var(--em-stat-3-icon);
+}
+.metric--tint-4 .metric-icon {
+  background: var(--em-stat-4-chip);
+  color: var(--em-stat-4-icon);
 }
 
 .metric--plain {
@@ -1184,6 +1391,14 @@ kbd,
   color: var(--em-info-text);
 }
 
+/* Accent pill — the ONLY colored status pill (live StackMate: accent
+   for positive states — Active, Enabled, Paid, Approved, Won — and
+   neutral grey for everything else). */
+.badge--accent {
+  background: var(--em-accent-soft);
+  color: var(--em-accent);
+}
+
 .badge--success {
   background: var(--em-success-bg);
   color: var(--em-success-text);
@@ -1250,8 +1465,8 @@ kbd,
   align-items: center;
   justify-content: center;
   gap: var(--em-space-2);
-  height: 30px;
-  padding: 0 var(--em-space-3);
+  height: 32px;
+  padding: 0 var(--em-space-4);
   border-radius: var(--em-radius-md);
   border: 1px solid var(--em-border-strong);
   background: var(--em-btn-secondary-bg);
@@ -1334,7 +1549,7 @@ kbd,
 }
 
 .button--sm {
-  height: 26px;
+  height: 28px;
   padding: 0 var(--em-space-2-5);
   font-size: 13px;
 }
@@ -1357,22 +1572,69 @@ kbd,
   color: var(--em-danger-text);
 }
 
+/* Single-form pages (tenant create) cap the form column so the fields
+   do not stretch across the full 1400px content width (spec ~640px;
+   720px here keeps the 2-col grid comfortable). */
+.form-narrow {
+  max-width: 720px;
+}
+
+/* Recovery codes: bordered box, 2-col mono grid, no bullets (shared
+   by Account + Login). */
+.recovery-codes {
+  list-style: none;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  background: var(--em-bg);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+  font-family: var(--em-font-mono);
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .recovery-codes {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Segmented control (Metrics window presets): a tight row of small
+   buttons — active is accent-outline, inactive is bordered secondary. */
+.segmented {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* Note spacing helpers (dialog notes that used inline styles). */
+.muted-note--gap-top {
+  margin-top: 12px;
+}
+.muted-note--gap-bottom {
+  margin-bottom: 12px;
+}
+.muted-note--prewrap {
+  white-space: pre-wrap;
+}
+
 /* ---------- forms ---------- */
 
 .field {
   display: grid;
   gap: 6px;
   margin-top: 18px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 16px;
+  line-height: 20px;
   color: var(--em-text);
 }
 
-.field input,
+.field input:not([type='checkbox']),
 .field select,
 .field textarea {
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 0 12px;
@@ -1398,17 +1660,17 @@ kbd,
   display: flex;
   flex-direction: column;
   gap: var(--em-space-1);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 16px;
+  line-height: 20px;
   color: var(--em-text);
   min-width: 0;
 }
 
-.inline-form input,
+.inline-form input:not([type='checkbox']),
 .inline-form select,
 .inline-form textarea {
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 0 10px;
@@ -1425,6 +1687,12 @@ kbd,
 
 .inline-form .form-actions {
   grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+.inline-form > h3 {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .form-actions {
@@ -1435,10 +1703,11 @@ kbd,
   align-items: center;
 }
 
-/* Buttons inside unstyled contexts (audit/users/account) get the
-   secondary button treatment by default so a bare <button> never
-   renders as a browser-default control. */
-.panel button:not(.button):not(.link-button),
+/* Buttons inside unstyled contexts get the secondary button treatment
+   by default so a bare <button> never renders as a browser-default
+   control. .plan-title / .table-link are excluded: they are heading- /
+   link-styled buttons with their own resets. */
+.card button:not(.button):not(.link-button):not(.plan-title):not(.table-link),
 .detail-panel button:not(.button),
 .pagination button:not(.button),
 .form-actions button:not(.button),
@@ -1447,8 +1716,8 @@ kbd,
   align-items: center;
   justify-content: center;
   gap: var(--em-space-2);
-  height: 30px;
-  padding: 0 var(--em-space-3);
+  height: 32px;
+  padding: 0 var(--em-space-4);
   border-radius: var(--em-radius-md);
   border: 1px solid var(--em-border-strong);
   background: var(--em-btn-secondary-bg);
@@ -1458,7 +1727,7 @@ kbd,
   white-space: nowrap;
 }
 
-.panel button:not(.button):not(.link-button):hover:not(:disabled),
+.card button:not(.button):not(.link-button):not(.plan-title):not(.table-link):hover:not(:disabled),
 .detail-panel button:not(.button):hover:not(:disabled),
 .pagination button:not(.button):hover:not(:disabled),
 .form-actions button:not(.button):hover:not(:disabled),
@@ -1466,7 +1735,7 @@ kbd,
   background: var(--em-surface-muted);
 }
 
-.panel button:not(.button):disabled,
+.card button:not(.button):not(.link-button):not(.plan-title):not(.table-link):disabled,
 .detail-panel button:not(.button):disabled,
 .pagination button:not(.button):disabled,
 .form-actions button:not(.button):disabled,
@@ -1488,17 +1757,17 @@ kbd,
   grid-template-columns: 1fr;
   gap: 4px;
   width: 100%;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 16px;
+  line-height: 20px;
   color: var(--em-text);
   min-width: 0;
 }
 
-.inline-field input,
+.inline-field input:not([type='checkbox']),
 .inline-field select,
 .inline-field textarea {
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 0 10px;
@@ -1558,6 +1827,28 @@ kbd,
 }
 
 /* File-upload drop area (branding logo/favicon). */
+.domain-config-grid--gap-top {
+  margin-top: 14px;
+}
+
+/* The native file-picker button ("Choose file") matches the secondary
+   button instead of rendering UA grey (BR2). */
+input[type='file']::file-selector-button {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: var(--em-radius-md);
+  border: 1px solid var(--em-border-strong);
+  background: var(--em-btn-secondary-bg);
+  color: var(--em-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-right: 8px;
+}
+input[type='file']::file-selector-button:hover {
+  background: var(--em-surface-muted);
+}
 .upload-box {
   border: 1px dashed var(--em-border-strong);
   border-radius: var(--em-radius-md);
@@ -1623,7 +1914,7 @@ kbd,
    wrapped to a second line at 1160px). */
 .tabs {
   display: flex;
-  gap: 4px;
+  gap: 24px;
   border-bottom: 1px solid var(--em-border);
   margin-bottom: 18px;
   overflow-x: auto;
@@ -1682,9 +1973,10 @@ kbd,
 .tab {
   border: 0;
   background: none;
-  padding: 10px 14px;
+  padding: 8px 2px;
   color: var(--em-text-muted);
-  font-size: 13.5px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 600;
   border-bottom: 2px solid transparent;
   display: inline-flex;
@@ -1699,8 +1991,8 @@ kbd,
 }
 
 .tab[data-active='true'] {
-  color: var(--em-text);
-  border-bottom-color: var(--em-tab-active);
+  color: var(--em-accent);
+  border-bottom-color: var(--em-accent);
 }
 
 .tab span {
@@ -1731,10 +2023,10 @@ kbd,
   min-width: 220px;
 }
 
-.toolbar-search input {
+.toolbar-search input:not([type='checkbox']) {
   flex: 1;
   min-width: 0;
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 0 12px;
@@ -1751,7 +2043,7 @@ kbd,
 }
 
 .toolbar-filter select {
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   background: var(--em-surface);
@@ -1774,7 +2066,7 @@ table {
 th,
 td {
   text-align: left;
-  padding: 10px var(--em-space-4);
+  padding: 14px var(--em-space-4);
   border-bottom: 1px solid var(--em-border);
   vertical-align: middle;
   font-size: 14px;
@@ -1791,13 +2083,15 @@ td:last-child {
   padding-right: 16px;
 }
 
-/* Neon header: small WHITE semibold text, not uppercase, no background
-   block — just a bottom border. */
+/* Neon header: 13px WHITE semibold text, not uppercase, no background
+   block — just a bottom border. Header row ~40px. */
 th {
   font-weight: 600;
   color: var(--em-text);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
+  padding-top: 12px;
+  padding-bottom: 12px;
   position: sticky;
   top: 0;
   z-index: var(--em-z-sticky);
@@ -1837,7 +2131,7 @@ td time,
 .data-table th,
 .data-table td {
   text-align: left;
-  padding: 10px var(--em-space-3);
+  padding: 14px var(--em-space-3);
   border-bottom: 1px solid var(--em-border);
   vertical-align: middle;
 }
@@ -1845,8 +2139,10 @@ td time,
 .data-table th {
   font-weight: 600;
   color: var(--em-text);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
+  padding-top: 12px;
+  padding-bottom: 12px;
   white-space: nowrap;
   background: transparent;
   position: static;
@@ -1880,7 +2176,7 @@ td time,
 }
 
 .row-action select {
-  min-height: 30px;
+  min-height: 32px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 0 8px;
@@ -1894,12 +2190,23 @@ td time,
   color: var(--em-accent);
 }
 
+/* A <button> wearing .table-link (the lead name) needs the native button
+   chrome reset — otherwise the UA grey background/border/padding turn
+   the link into a grey pill (LE2). */
+button.table-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
 .table-link:hover {
   text-decoration: underline;
 }
 
-.pager,
-.pagination {
+.pager {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1908,6 +2215,31 @@ td time,
   font-size: 12.5px;
   color: var(--em-text-muted);
   flex-wrap: wrap;
+}
+
+.pager-count {
+  font-size: 13px;
+  color: var(--em-muted);
+  margin-right: auto;
+}
+
+.pager-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--em-text-muted);
+}
+
+.pager-size select {
+  min-height: 28px;
+  border: 1px solid var(--em-border-strong);
+  border-radius: var(--em-radius-md);
+  background: var(--em-surface);
+  padding: 0 8px;
+  color: var(--em-text);
+  font: inherit;
+  font-size: 13px;
 }
 
 /* ---------- billing extras ---------- */
@@ -1933,9 +2265,9 @@ td time,
   min-width: 280px;
 }
 
-.reject-box input {
+.reject-box input:not([type='checkbox']) {
   flex: 1;
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 0 10px;
@@ -1957,8 +2289,8 @@ td time,
   margin-top: 16px;
 }
 
-.credit-form input {
-  min-height: 38px;
+.credit-form input:not([type='checkbox']) {
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 0 10px;
@@ -1986,7 +2318,7 @@ td time,
 
 .plan-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 18px;
 }
 
@@ -1996,6 +2328,7 @@ td time,
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  max-width: 520px;
 }
 
 .plan-head {
@@ -2080,9 +2413,9 @@ td time,
 }
 
 .action-block select,
-.action-block input {
+.action-block input:not([type='checkbox']) {
   width: 100%;
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   background: var(--em-surface);
@@ -2194,7 +2527,7 @@ td time,
 .login-card .button {
   width: 100%;
   margin-top: 18px;
-  min-height: 38px;
+  min-height: 36px;
 }
 
 .login-card .button-row .button {
@@ -2320,9 +2653,9 @@ td time,
   gap: 6px;
 }
 
-.usage-override-form input {
+.usage-override-form input:not([type='checkbox']) {
   width: 78px;
-  min-height: 30px;
+  min-height: 32px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 0 8px;
@@ -2426,12 +2759,36 @@ td time,
 /* Honest empty state for the trend chart (D9): when every month is
    zero, say so instead of rendering six empty boxes. */
 .empty-state {
-  border: 1px dashed var(--em-border-strong);
-  border-radius: var(--em-radius-md);
-  padding: var(--em-space-6) var(--em-space-4);
+  padding: 48px 16px 32px;
   text-align: center;
   color: var(--em-text-muted);
   font-size: 13px;
+}
+
+.empty-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--em-radius-md);
+  background: var(--em-accent-soft);
+  color: var(--em-accent);
+  margin-bottom: 12px;
+}
+
+.empty-state-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--em-text);
+  margin: 0 0 4px;
+}
+
+.empty-state-body {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--em-text-muted);
 }
 
 /* ---------- dialog / modal / toast (in-app primitives) ---------- */
@@ -2455,7 +2812,7 @@ td time,
   width: min(480px, 100%);
   max-height: calc(100vh - 64px);
   overflow-y: auto;
-  padding: var(--em-space-5);
+  padding: var(--em-space-6);
 }
 
 .dialog--wide {
@@ -2574,8 +2931,8 @@ td time,
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     border: 1px solid var(--em-border-strong);
     border-radius: var(--em-radius-md);
     background: transparent;
@@ -2697,6 +3054,23 @@ td time,
     display: none;
   }
 
+  /* Topbar brand: name only — the "SaaS console" sublabel crowds the
+     375px topbar (hamburger + brand + search icon + avatar). */
+  .brand--topbar small {
+    display: none;
+  }
+
+  /* The theme submenu flies LEFT on desktop, but at 375px the menu's
+     left edge sits at ~95px — the 200px submenu would span off the left
+     edge of the viewport (SH5). On narrow screens it expands inline
+     below the Theme row instead (tap toggles it). */
+  .menu-sub {
+    position: static;
+    min-width: 0;
+    box-shadow: none;
+    margin-top: 4px;
+  }
+
   .toolbar {
     flex-direction: column;
     align-items: stretch;
@@ -2733,6 +3107,7 @@ td time,
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--em-space-4);
+  align-items: start;
 }
 
 @media (max-width: 900px) {
@@ -2760,16 +3135,16 @@ td time,
   display: flex;
   flex-direction: column;
   gap: var(--em-space-1);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 16px;
+  line-height: 20px;
   color: var(--em-text);
   min-width: 0;
 }
 
-.locale-col input,
+.locale-col input:not([type='checkbox']),
 .locale-col textarea {
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 8px 10px;
@@ -2803,13 +3178,126 @@ td time,
   font-weight: 600;
 }
 
-.landing-order input {
+.landing-order input:not([type='checkbox']) {
   width: 72px;
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid var(--em-border-strong);
   border-radius: var(--em-radius-md);
   padding: 0 10px;
   background: var(--em-surface);
   color: var(--em-text);
   font: inherit;
+}
+
+/* ---------- square checkboxes (live StackMate) ---------- */
+
+/* Every checkbox in the console is a SQUARE ~18px box: grey border when
+   off, ACCENT fill + white tick when on. There are no pill toggles.
+   This rule MUST stay last in the file: the broad `input` rules above
+   (locale-col, inline-field, ...) are scoped with :not([type=checkbox])
+   AND this rule wins any remaining specificity tie by order. A bare
+   native checkbox inside .locale-col used to render ~40px (the
+   width:100% + min-height:38px text-input rules matched it) — that is
+   the giant-checkbox bug from the staging screenshot. */
+input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--em-border-strong);
+  border-radius: 3px;
+  background: var(--em-surface);
+  color: var(--em-text);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+}
+input[type='checkbox']:checked {
+  background-color: var(--em-accent);
+  border-color: var(--em-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+  background-size: 14px 14px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+input[type='checkbox']:focus-visible {
+  outline: none;
+  box-shadow: var(--em-focus-ring);
+}
+input[type='checkbox']:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- skeleton loading (live StackMate settings) ---------- */
+
+/* Settings pages first show ~5–6 full-width grey bars (~24px high,
+   gap ~16), then content. */
+.skeleton {
+  display: grid;
+  gap: 16px;
+  padding: 4px 0;
+}
+.skeleton-bar {
+  height: 24px;
+  border-radius: var(--em-radius-md);
+  background: var(--em-surface-muted);
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+.skeleton-bar--short {
+  width: 55%;
+}
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ---------- settings content column ---------- */
+
+/* Live StackMate: form sections max ~640px wide; tables and wide
+   sections opt out with .card--wide. */
+.settings-content > .card:not(.card--wide) {
+  max-width: 640px;
+}
+.card--wide {
+  max-width: none;
+}
+
+/* ---------- in-card sub-section (SMTP test email) ---------- */
+
+/* Divider + heading + one aligned row (input + button) + note below.
+   Replaces the scattered two-grid layout where the Save button, the
+   test input, the Send button and the note each landed in a different
+   grid cell at different heights. */
+.section-divider {
+  border: 0;
+  border-top: 1px solid var(--em-border);
+  margin: 20px 0 16px;
+}
+.subsection-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  margin: 0 0 12px;
+}
+.test-row {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+.test-row .inline-field {
+  flex: 1;
+}
+.test-row .button {
+  flex: none;
 }

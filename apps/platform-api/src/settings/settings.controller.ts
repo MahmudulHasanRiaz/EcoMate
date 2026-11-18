@@ -1,7 +1,9 @@
 import {
+  BadGatewayException,
   Body,
   Controller,
   Get,
+  HttpException,
   Patch,
   Post,
   UseGuards,
@@ -11,7 +13,10 @@ import { PlatformAuthGuard } from '../auth/platform-auth.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AuditService } from '../common/audit.service';
-import { PlatformMailService } from '../common/platform-mail.service';
+import {
+  PlatformMailService,
+  sanitizeMailErrorMessage,
+} from '../common/platform-mail.service';
 import { TestSmtpDto } from './dto/test-smtp.dto';
 import { UpdateBrandingSettingsDto } from './dto/update-branding-settings.dto';
 import { UpdateLandingSettingsDto } from './dto/update-landing-settings.dto';
@@ -65,7 +70,20 @@ export class SettingsController {
     @Body() dto: TestSmtpDto,
     @CurrentPlatformUser() user?: { id: string },
   ) {
-    const result = await this.mail.sendTest(dto.to);
+    let result: { delivered: boolean };
+    try {
+      result = await this.mail.sendTest(dto.to);
+    } catch (err) {
+      // A raw transport error (nodemailer) would otherwise surface as a
+      // bare 500 "Internal server error" and hide the real cause — a
+      // TLS/port mismatch, bad credentials, or a refused connection.
+      // Map it to a 502 carrying the sanitized mail error so the
+      // console can render the specific cause inline. HTTP exceptions
+      // from the service (e.g. the 503 "not configured") already carry
+      // a message — pass them through untouched.
+      if (err instanceof HttpException) throw err;
+      throw new BadGatewayException(sanitizeMailErrorMessage(err));
+    }
     await this.audit.record({
       actorId: user?.id,
       action: 'settings.smtp.test',

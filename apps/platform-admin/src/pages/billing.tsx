@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
-import { formatDate, formatDateTime, formatMoney } from '../lib/format';
+import { formatDate, formatDateTime, formatMoney, formatStatus } from '../lib/format';
 import type {
   BillingSummary,
   Coupon,
@@ -20,9 +20,9 @@ import type {
 import {
   ConfirmDialog,
   ErrorNote,
-  Loading,
   PageHeader,
   ScrollableTabs,
+  Skeleton,
   StatusBadge,
 } from '../components/ui';
 
@@ -599,7 +599,7 @@ export function BillingPage() {
               >
                 {PROOF_STATUSES.map((status) => (
                   <option key={status} value={status}>
-                    {status}
+                    {formatStatus(status)}
                   </option>
                 ))}
               </select>
@@ -612,7 +612,7 @@ export function BillingPage() {
                 <p>Oldest pending transfer first.</p>
               </div>
             </div>
-            {!proofs && busy ? <Loading /> : null}
+            {!proofs && busy ? <Skeleton /> : null}
             {proofs && proofs.data.length === 0 ? (
               <p className="muted-note">No proofs in this state.</p>
             ) : null}
@@ -628,7 +628,7 @@ export function BillingPage() {
                       <th>Amount</th>
                       <th>Transaction</th>
                       <th>Status</th>
-                      <th />
+                      <th aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody>
@@ -734,7 +734,7 @@ export function BillingPage() {
             <div className="review-actions">
               <button
                 type="button"
-                className="button button--primary"
+                className="button button--accent"
                 onClick={() => setConfirmApprove(selectedProof)}
                 disabled={!!busy}
               >
@@ -783,7 +783,7 @@ export function BillingPage() {
               >
                 {INVOICE_STATUSES.map((status) => (
                   <option key={status || 'all'} value={status}>
-                    {status || 'All invoices'}
+                    {status ? formatStatus(status) : 'All invoices'}
                   </option>
                 ))}
               </select>
@@ -854,7 +854,7 @@ export function BillingPage() {
               </label>
               <button
                 type="button"
-                className="button"
+                className="button button--accent"
                 onClick={() => void createInvoice()}
                 disabled={!!busy}
               >
@@ -884,7 +884,7 @@ export function BillingPage() {
                       <th>Total</th>
                       <th>Paid</th>
                       <th>Due</th>
-                      <th />
+                      <th aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody>
@@ -1416,7 +1416,7 @@ export function BillingPage() {
               </label>
               <button
                 type="button"
-                className="button button--primary"
+                className="button button--accent"
                 onClick={createCoupon}
                 disabled={!!busy}
               >
@@ -1446,7 +1446,7 @@ export function BillingPage() {
                       <th>Redeemed</th>
                       <th>Expires</th>
                       <th>Status</th>
-                      <th />
+                      <th aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody>
@@ -1474,7 +1474,7 @@ export function BillingPage() {
                           <span
                             className={`badge ${
                               coupon.isActive
-                                ? 'badge--success'
+                                ? 'badge--accent'
                                 : 'badge--muted'
                             }`}
                           >
@@ -1536,7 +1536,7 @@ export function BillingPage() {
                       <th>Job</th>
                       <th>Last run</th>
                       <th>Last result</th>
-                      <th />
+                      <th aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody>
@@ -1623,7 +1623,7 @@ export function BillingPage() {
                       </td>
                       <td>
                         <span
-                          className={`badge ${method.isActive ? 'badge--success' : 'badge--muted'}`}
+                          className={`badge ${method.isActive ? 'badge--accent' : 'badge--neutral'}`}
                         >
                           {method.isActive ? 'Active' : 'Inactive'}
                         </span>

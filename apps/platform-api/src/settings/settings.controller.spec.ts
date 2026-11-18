@@ -1,3 +1,7 @@
+import {
+  HttpException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { SettingsController } from './settings.controller';
 
 function makeController() {
@@ -84,6 +88,89 @@ describe('SettingsController', () => {
       }),
     );
     expect(result).toEqual({ delivered: true });
+  });
+
+  it('maps a transport auth error to a 502 carrying the cause', async () => {
+    const { controller, mail, audit } = makeController();
+    const transportError: any = Object.assign(
+      new Error(
+        'Invalid login: 535-5.7.8 Username and Password not accepted',
+      ),
+      { code: 'EAUTH' },
+    );
+    mail.sendTest.mockRejectedValueOnce(transportError);
+
+    const caught: any = await controller
+      .testSmtp({ to: 'ops@test.com' } as any, { id: 'user-1' })
+      .then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+    expect(caught).toBeInstanceOf(HttpException);
+    expect(caught.getStatus()).toBe(502);
+    expect(caught.message).toContain('SMTP authentication failed');
+    expect(caught.message).toContain('Invalid login');
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('maps a TLS handshake failure to a 502 naming the handshake', async () => {
+    const { controller, mail } = makeController();
+    // The classic TLS/port mismatch: implicit TLS against a STARTTLS
+    // port (587) fails the handshake with EPROTO "wrong version number".
+    const transportError: any = Object.assign(
+      new Error(
+        'write EPROTO 1408F10B:SSL routines:ssl3_get_record:wrong version number',
+      ),
+      { code: 'EPROTO' },
+    );
+    mail.sendTest.mockRejectedValueOnce(transportError);
+
+    const caught: any = await controller
+      .testSmtp({ to: 'ops@test.com' } as any, { id: 'user-1' })
+      .then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+    expect(caught).toBeInstanceOf(HttpException);
+    expect(caught.getStatus()).toBe(502);
+    expect(caught.message).toContain('TLS handshake failed');
+    expect(caught.message).toContain('wrong version number');
+  });
+
+  it('redacts credential-shaped text from the surfaced message', async () => {
+    const { controller, mail } = makeController();
+    mail.sendTest.mockRejectedValueOnce(
+      new Error(
+        'connect failed for smtp.example.com password=hunter2 user=ops@example.com',
+      ),
+    );
+
+    const caught: any = await controller
+      .testSmtp({ to: 'ops@test.com' } as any, { id: 'user-1' })
+      .then(
+        () => null,
+        (err: unknown) => err,
+      );
+
+    expect(caught.getStatus()).toBe(502);
+    expect(caught.message).not.toContain('hunter2');
+    expect(caught.message).toContain('[redacted]');
+    // Host wording is the operator's own config — it stays.
+    expect(caught.message).toContain('smtp.example.com');
+  });
+
+  it('passes an HTTP exception from the mail service through unchanged', async () => {
+    const { controller, mail } = makeController();
+    const notConfigured = new ServiceUnavailableException(
+      'Email delivery is not configured. Set SMTP settings first.',
+    );
+    mail.sendTest.mockRejectedValueOnce(notConfigured);
+
+    await expect(
+      controller.testSmtp({ to: 'ops@test.com' } as any, { id: 'user-1' }),
+    ).rejects.toBe(notConfigured);
   });
 
   it('audits trial, tax, branding and maintenance updates with before/after', async () => {

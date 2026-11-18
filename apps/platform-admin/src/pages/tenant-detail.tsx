@@ -7,6 +7,7 @@ import {
   formatDateTime,
   formatMoney,
   planLabel,
+  formatStatus,
 } from '../lib/format';
 import {
   barWidth,
@@ -24,8 +25,8 @@ import type {
 import {
   ConfirmDialog,
   ErrorNote,
-  Loading,
   PageHeader,
+  Skeleton,
   StatusBadge,
 } from '../components/ui';
 
@@ -454,7 +455,7 @@ export function TenantDetailPage() {
     );
   }
 
-  if (loading && !tenant) return <Loading label="Loading tenant…" />;
+  if (loading && !tenant) return <Skeleton />;
   if (error) return <ErrorNote message={error} />;
   if (!tenant) return null;
 
@@ -527,11 +528,6 @@ export function TenantDetailPage() {
 
   return (
     <>
-      <p className="breadcrumb">
-        <Link to="/tenants">Tenants</Link>
-        <span>/</span>
-        <span>{tenant.name}</span>
-      </p>
       <PageHeader
         eyebrow={tenant.slug}
         title={tenant.name}
@@ -591,6 +587,11 @@ export function TenantDetailPage() {
           </div>
         }
       />
+      <p className="breadcrumb">
+        <Link to="/tenants">Tenants</Link>
+        <span>/</span>
+        <span>{tenant.name}</span>
+      </p>
 
       {actionError ? <ErrorNote message={actionError} /> : null}
       {notice ? (
@@ -835,7 +836,13 @@ export function TenantDetailPage() {
             </div>
             <div>
               <dt>Subscription</dt>
-              <dd>{tenant.subscription?.status || '—'}</dd>
+              <dd>
+                {tenant.subscription?.status ? (
+                  <StatusBadge status={tenant.subscription.status} />
+                ) : (
+                  '—'
+                )}
+              </dd>
             </div>
             <div>
               <dt>Price</dt>
@@ -912,7 +919,7 @@ export function TenantDetailPage() {
           </div>
         ) : null}
         {usageLoading ? (
-          <Loading label="Loading usage…" />
+          <Skeleton />
         ) : !usage ? (
           <p className="muted-note">
             Usage is unavailable right now.{' '}
@@ -1052,8 +1059,12 @@ export function TenantDetailPage() {
                   <tr key={domain.id}>
                     <td className="mono">{domain.host}</td>
                     <td>{domain.type}</td>
-                    <td>{domain.status}</td>
-                    <td>{domain.tlsStatus || '—'}</td>
+                    <td>
+                      <StatusBadge status={domain.status} />
+                    </td>
+                    <td>
+                      {domain.tlsStatus ? formatStatus(domain.tlsStatus) : '—'}
+                    </td>
                     <td>{domain.isPrimary ? 'Yes' : '—'}</td>
                   </tr>
                 ))}

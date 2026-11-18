@@ -7,8 +7,9 @@ import { SETTINGS_SECTIONS, settingsGroups } from './sections';
  * Settings nav — StackMate SettingsShell pattern: a 240px column beside
  * the main nav rail, with a brand block ("Settings") and the sections
  * grouped under headings. Desktop only (the shell hides it ≤900px).
- * No "Back to admin" link: unlike StackMate, the main nav rail stays
- * visible beside this column, so every console page is one click away.
+ * "← Back to admin" is pinned at the bottom (StackMate pattern) — the
+ * main nav rail stays visible beside this column, but the explicit exit
+ * link is the spec behaviour.
  */
 export function SettingsNav({ activeId }: { activeId: string }) {
   return (
@@ -40,6 +41,9 @@ export function SettingsNav({ activeId }: { activeId: string }) {
           )}
         </div>
       ))}
+      <Link to="/" className="settings-nav-back">
+        ← Back to admin
+      </Link>
     </nav>
   );
 }

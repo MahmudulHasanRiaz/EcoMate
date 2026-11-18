@@ -17,6 +17,7 @@ export function SmtpSection({
   const [smtpUser, setSmtpUser] = useState('');
   const [smtpPass, setSmtpPass] = useState('');
   const [smtpFrom, setSmtpFrom] = useState('');
+  const [smtpFromName, setSmtpFromName] = useState('');
   const [testEmail, setTestEmail] = useState('');
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export function SmtpSection({
     setSmtpUser(settings.smtp.user);
     setSmtpPass('');
     setSmtpFrom(settings.smtp.from);
+    setSmtpFromName(settings.smtp.fromName ?? '');
   }, [settings]);
 
   if (!settings) return null;
@@ -58,6 +60,7 @@ export function SmtpSection({
         secure: smtpSecure,
         user: smtpUser.trim(),
         from: smtpFrom.trim(),
+        fromName: smtpFromName.trim(),
       };
       if (smtpPass) body.pass = smtpPass;
       await api('/settings/smtp', {
@@ -111,7 +114,7 @@ export function SmtpSection({
           </p>
         </div>
         <span
-          className={`badge badge--${settings.smtp.configured ? 'success' : 'warning'}`}
+          className={`badge badge--${settings.smtp.configured ? 'accent' : 'neutral'}`}
         >
           {settings.smtp.configured ? 'Configured' : 'Not configured'}
         </span>
@@ -161,36 +164,55 @@ export function SmtpSection({
           />
         </label>
         <label className="inline-field">
+          <span>Sender name</span>
+          <input
+            value={smtpFromName}
+            onChange={(event) => setSmtpFromName(event.target.value)}
+            placeholder="EcoMate"
+            aria-label="Sender name"
+            maxLength={100}
+          />
+        </label>
+        <label className="inline-field">
           <span>From address</span>
           <input
+            type="email"
             value={smtpFrom}
             onChange={(event) => setSmtpFrom(event.target.value)}
             placeholder="no-reply@ecomate.bd"
             aria-label="From address"
           />
         </label>
-        <div className="domain-flags">
-          <label>
-            <input
-              type="checkbox"
-              checked={smtpSecure}
-              onChange={(event) => setSmtpSecure(event.target.checked)}
-            />
-            Use TLS (port 465)
-          </label>
-        </div>
+      </div>
+      {/* The TLS flag is not a grid field — it sits below the grid, like
+          the flags in the Tax and Landing sections. */}
+      <div className="domain-flags">
+        <label>
+          <input
+            type="checkbox"
+            checked={smtpSecure}
+            onChange={(event) => setSmtpSecure(event.target.checked)}
+          />
+          Use TLS (port 465)
+        </label>
       </div>
       <div className="progress-actions">
         <button
           type="button"
-          className="button button--primary"
+          className="button button--accent"
           onClick={() => void saveSmtp()}
           disabled={!!busy}
         >
           {busy === 'smtp' ? 'Saving…' : 'Save SMTP settings'}
         </button>
       </div>
-      <div className="domain-config-grid">
+      {/* Test email is its own sub-section: divider + heading, one
+          aligned input+button row, note below (SM1 — the old layout
+          scattered the Save button, test input, Send button and note
+          across two grids with no separation). */}
+      <div className="section-divider" aria-hidden="true" />
+      <h3 className="subsection-title">Test email</h3>
+      <div className="test-row">
         <label className="inline-field">
           <span>Send a test email to</span>
           <input
@@ -201,23 +223,21 @@ export function SmtpSection({
             aria-label="Test email address"
           />
         </label>
-        <div className="progress-actions">
-          <button
-            type="button"
-            className="button"
-            onClick={() => void sendTestEmail()}
-            disabled={!!busy || !testEmail.trim()}
-          >
-            {busy === 'smtp-test' ? 'Sending…' : 'Send test email'}
-          </button>
-          {!settings.smtp.configured ? (
-            <p className="muted-note">
-              SMTP is not configured yet — sending will show the setup
-              error until it is.
-            </p>
-          ) : null}
-        </div>
+        <button
+          type="button"
+          className="button"
+          onClick={() => void sendTestEmail()}
+          disabled={!!busy || !testEmail.trim()}
+        >
+          {busy === 'smtp-test' ? 'Sending…' : 'Send test email'}
+        </button>
       </div>
+      {!settings.smtp.configured ? (
+        <p className="muted-note">
+          SMTP is not configured yet — sending will show the setup error
+          until it is.
+        </p>
+      ) : null}
       {testResult ? (
         <p className="muted-note" role="status">
           {testResult}

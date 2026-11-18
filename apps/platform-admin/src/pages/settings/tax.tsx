@@ -76,21 +76,21 @@ export function TaxSection({
             aria-label="Tax label"
           />
         </label>
-        <div className="domain-flags">
-          <label>
-            <input
-              type="checkbox"
-              checked={taxInclusive}
-              onChange={(event) => setTaxInclusive(event.target.checked)}
-            />
-            Prices include tax
-          </label>
-        </div>
+      </div>
+      <div className="domain-flags">
+        <label>
+          <input
+            type="checkbox"
+            checked={taxInclusive}
+            onChange={(event) => setTaxInclusive(event.target.checked)}
+          />
+          Prices include tax
+        </label>
       </div>
       <div className="progress-actions">
         <button
           type="button"
-          className="button button--primary"
+          className="button button--accent"
           onClick={() => void saveTax()}
           disabled={busy}
         >

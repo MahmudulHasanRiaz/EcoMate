@@ -90,7 +90,7 @@ describe('PlatformMailService', () => {
     );
     expect(mockSendMail).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: 'EcoMate <noreply@example.test>',
+        from: '"EcoMate" <noreply@example.test>',
         to: 'owner@test.com',
         subject: 'Verify your email for Acme',
       }),
@@ -114,8 +114,28 @@ describe('PlatformMailService', () => {
 
     expect(mockSendMail).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: 'Acme Cloud <noreply@example.test>',
+        from: '"Acme Cloud" <noreply@example.test>',
         replyTo: 'help@acme.test',
+      }),
+    );
+  });
+
+  it('prefers the stored sender name over the branding platform name', async () => {
+    const { service } = makeService({
+      ...SMTP_CONFIG,
+      fromName: 'EcoMate Billing',
+    });
+
+    await service.sendWelcome({
+      to: 'owner@test.com',
+      tenantName: 'Acme',
+      adminUrl: 'https://acme.ecomate.bd/admin',
+      storefrontUrl: 'https://acme.ecomate.bd',
+    });
+
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: '"EcoMate Billing" <noreply@example.test>',
       }),
     );
   });

@@ -335,7 +335,7 @@ export function LoginPage() {
               in once if you lose your authenticator. They are shown only this
               once.
             </p>
-            <ul className="mono">
+            <ul className="recovery-codes">
               {recoveryCodes.map((rc) => (
                 <li key={rc}>{rc}</li>
               ))}

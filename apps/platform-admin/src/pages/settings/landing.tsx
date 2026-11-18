@@ -109,7 +109,7 @@ export function LandingSection({
       <div className="progress-actions">
         <button
           type="button"
-          className="button button--primary"
+          className="button button--accent"
           disabled={busy}
           onClick={() => void saveLanding()}
         >

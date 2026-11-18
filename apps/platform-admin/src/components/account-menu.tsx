@@ -27,6 +27,7 @@ import {
   type ThemeChoice,
 } from '../lib/theme';
 import { roleLabel } from '../lib/users';
+import { ChangePasswordDialog, ProfileDialog } from './account-dialogs';
 
 /* ------------------------------------------------------------------ */
 /* Avatar — square initials tile (Neon: 28px md / 36px lg, accent-soft */
@@ -312,17 +313,18 @@ export function MenuSub({
 }
 
 /* ------------------------------------------------------------------ */
-/* Account menu — StackMate Neon image-78, EcoMate blue accent.        */
-/* ONE button (avatar + name + chevron) in the topbar opens a square   */
-/* dark menu: header (avatar, name, email, role), "Manage" (Profile,   */
-/* Change password, Settings, Theme submenu), a live API Status row,   */
-/* then Sign out. The theme choice lives ONLY here — there is no       */
+/* Account menu — StackMate Neon, landing-indigo accent. ONE button    */
+/* (avatar + name + chevron) in the topbar opens a ~320px dark menu:   */
+/* header (avatar, name, email, role), "Manage" (Profile, Change      */
+/* password, Settings, Theme submenu), a live API Status row, then     */
+/* Sign out. The theme choice lives ONLY here — there is no           */
 /* standalone theme toggle anywhere else in the console.               */
 /*                                                                     */
-/* Every option maps to a real console function: Profile and Change    */
-/* password go to /account (password scrolls to its section via the    */
-/* #password hash); Settings goes to /settings; Theme switches the     */
-/* console theme; Status reads GET /api/health once per session.       */
+/* Profile and Change password open CENTRED MODAL DIALOGS (live        */
+/* StackMate) — they do not navigate. MFA setup + recovery codes live  */
+/* on /account, reached from the Profile dialog's 2FA row. Settings    */
+/* goes to /settings; Theme switches the console theme; Status reads   */
+/* GET /api/health once per session.                                   */
 /* ------------------------------------------------------------------ */
 
 const THEME_CHOICES: { key: ThemeChoice; label: string }[] = [
@@ -358,6 +360,8 @@ export function AccountMenu() {
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>(() =>
     resolveThemeChoice(),
   );
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const apiStatus = useApiStatus();
 
   if (!session) return null;
@@ -369,21 +373,22 @@ export function AccountMenu() {
   };
 
   return (
-    <Menu
-      triggerLabel="Account menu"
-      triggerClassName="account-btn"
-      trigger={
-        <>
-          <Avatar name={user.name} />
-          <span className="account-name">{user.name}</span>
-          <ChevronDown
-            size={14}
-            strokeWidth={2}
-            className="account-chevron"
-          />
-        </>
-      }
-    >
+    <>
+      <Menu
+        triggerLabel="Account menu"
+        triggerClassName="account-btn"
+        trigger={
+          <>
+            <Avatar name={user.name} />
+            <span className="account-name">{user.name}</span>
+            <ChevronDown
+              size={14}
+              strokeWidth={2}
+              className="account-chevron"
+            />
+          </>
+        }
+      >
       <MenuHeader>
         <Avatar name={user.name} size="lg" />
         <div className="menu-header-body">
@@ -395,17 +400,10 @@ export function AccountMenu() {
         </div>
       </MenuHeader>
       <MenuDivider />
-      <MenuSectionLabel>Manage</MenuSectionLabel>
-      <MenuItem
-        icon={User}
-        onClick={() => void navigate({ to: '/account' })}
-      >
+      <MenuItem icon={User} onClick={() => setProfileOpen(true)}>
         Profile
       </MenuItem>
-      <MenuItem
-        icon={KeyRound}
-        onClick={() => void navigate({ to: '/account', hash: 'password' })}
-      >
+      <MenuItem icon={KeyRound} onClick={() => setPasswordOpen(true)}>
         Change password
       </MenuItem>
       <MenuItem
@@ -429,7 +427,7 @@ export function AccountMenu() {
       <div className="menu-status-row" role="status">
         <span className="menu-item-label">Status</span>
         {apiStatus === 'ok' ? (
-          <span className="badge badge--success">All OK</span>
+          <span className="badge badge--accent">All OK</span>
         ) : apiStatus === 'down' ? (
           <span className="badge badge--danger">Unavailable</span>
         ) : (
@@ -447,6 +445,12 @@ export function AccountMenu() {
       >
         Sign out
       </MenuItem>
-    </Menu>
+      </Menu>
+      <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} />
+      <ChangePasswordDialog
+        open={passwordOpen}
+        onClose={() => setPasswordOpen(false)}
+      />
+    </>
   );
 }
