@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
+import {
+  CalendarRange,
+  CreditCard,
+  Hourglass,
+  Receipt,
+  TrendingDown,
+  TrendingUp,
+  TriangleAlert,
+  UserX,
+} from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDateTime, formatMoney } from '../lib/format';
@@ -100,19 +110,28 @@ export function MetricsPage() {
       {overview ? (
         <>
           <section className="metric-grid" aria-label="Headline metrics">
-            <article className="metric">
+            <article className="metric metric--tint-1">
+              <span className="metric-icon" aria-hidden="true">
+                <TrendingUp size={16} strokeWidth={2} />
+              </span>
               <span>MRR ({currency})</span>
               <strong>{formatMoney(headline?.mrr ?? 0, currency)}</strong>
               <small>
                 {`${headline?.subscriptions ?? 0} paying subscription${(headline?.subscriptions ?? 0) === 1 ? '' : 's'}`}
               </small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-2">
+              <span className="metric-icon" aria-hidden="true">
+                <CalendarRange size={16} strokeWidth={2} />
+              </span>
               <span>ARR ({currency})</span>
               <strong>{formatMoney(headline?.arr ?? 0, currency)}</strong>
               <small>Annualised from the same MRR</small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-3">
+              <span className="metric-icon" aria-hidden="true">
+                <CreditCard size={16} strokeWidth={2} />
+              </span>
               <span>Paying subscriptions</span>
               <strong>{overview.revenue.paying}</strong>
               <small>
@@ -121,31 +140,46 @@ export function MetricsPage() {
                   : `${overview.conversion.rate}% conversion of ${overview.conversion.total}`}
               </small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-4">
+              <span className="metric-icon" aria-hidden="true">
+                <TriangleAlert size={16} strokeWidth={2} />
+              </span>
               <span>Past due · at risk</span>
               <strong>{formatMoney(headline?.atRiskMrr ?? 0, currency)}</strong>
               <small>
                 {`${overview.revenue.atRisk} subscription${overview.revenue.atRisk === 1 ? '' : 's'} — never counted in MRR`}
               </small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-1">
+              <span className="metric-icon" aria-hidden="true">
+                <Hourglass size={16} strokeWidth={2} />
+              </span>
               <span>Active trials</span>
               <strong>{overview.trials.active}</strong>
               <small>{overview.trials.endingSoon} ending within 7 days</small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-2">
+              <span className="metric-icon" aria-hidden="true">
+                <UserX size={16} strokeWidth={2} />
+              </span>
               <span>Trials ended unconverted</span>
               <strong>{overview.trials.expired}</strong>
               <small>Trial date passed while still on trial</small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-3">
+              <span className="metric-icon" aria-hidden="true">
+                <TrendingDown size={16} strokeWidth={2} />
+              </span>
               <span>Churn rate</span>
               <strong>{churnRateLabel(overview.churn.rate)}</strong>
               <small>
                 {`${overview.churn.churned} of ${overview.churn.base} live at window start`}
               </small>
             </article>
-            <article className="metric">
+            <article className="metric metric--tint-4">
+              <span className="metric-icon" aria-hidden="true">
+                <Receipt size={16} strokeWidth={2} />
+              </span>
               <span>Open invoices</span>
               <strong>{outstanding?.open.count ?? 0}</strong>
               <small>

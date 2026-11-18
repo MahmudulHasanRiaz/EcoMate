@@ -37,7 +37,7 @@ import {
   type SearchGroup,
   type SearchResultItem,
 } from '../lib/search';
-import { formatStatus } from '../lib/format';
+import { formatStatus, statusTone } from '../lib/format';
 import { ScrollableTabs } from './ui';
 
 /**
@@ -410,7 +410,9 @@ export function SearchPalette({
                           </span>
                         </span>
                         {item.status ? (
-                          <span className="badge badge--muted">
+                          <span
+                            className={`badge badge--${statusTone(item.status)}`}
+                          >
                             {formatStatus(item.status)}
                           </span>
                         ) : null}

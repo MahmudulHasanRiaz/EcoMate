@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { Banknote, Receipt } from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import {
@@ -1084,11 +1085,17 @@ export function TenantDetailPage() {
           </div>
         </div>
         <div className="metric-grid metric-grid--compact">
-          <div className="metric metric--plain">
+          <div className="metric metric--tint-1">
+            <span className="metric-icon" aria-hidden="true">
+              <Receipt size={16} strokeWidth={2} />
+            </span>
             <span>Invoices</span>
             <strong>{tenant._count?.invoices ?? 0}</strong>
           </div>
-          <div className="metric metric--plain">
+          <div className="metric metric--tint-2">
+            <span className="metric-icon" aria-hidden="true">
+              <Banknote size={16} strokeWidth={2} />
+            </span>
             <span>Payments</span>
             <strong>{tenant._count?.payments ?? 0}</strong>
           </div>

@@ -1184,24 +1184,28 @@ kbd,
     var(--em-bg);
   border-color: var(--em-stat-4-border);
 }
+/* Light theme — FLAT pale washes, not gradients (live StackMate: flat
+   pale mint in light vs a subtle top gradient in dark). The wash tokens
+   are already paler in light; the flat layer keeps the card evenly
+   tinted instead of fading to white. */
 [data-theme='light'] .metric--tint-1 {
   background:
-    linear-gradient(135deg, var(--em-stat-1-wash) 0%, transparent 70%),
+    linear-gradient(var(--em-stat-1-wash), var(--em-stat-1-wash)),
     #ffffff;
 }
 [data-theme='light'] .metric--tint-2 {
   background:
-    linear-gradient(135deg, var(--em-stat-2-wash) 0%, transparent 70%),
+    linear-gradient(var(--em-stat-2-wash), var(--em-stat-2-wash)),
     #ffffff;
 }
 [data-theme='light'] .metric--tint-3 {
   background:
-    linear-gradient(135deg, var(--em-stat-3-wash) 0%, transparent 70%),
+    linear-gradient(var(--em-stat-3-wash), var(--em-stat-3-wash)),
     #ffffff;
 }
 [data-theme='light'] .metric--tint-4 {
   background:
-    linear-gradient(135deg, var(--em-stat-4-wash) 0%, transparent 70%),
+    linear-gradient(var(--em-stat-4-wash), var(--em-stat-4-wash)),
     #ffffff;
 }
 
@@ -1233,10 +1237,6 @@ kbd,
 .metric--tint-4 .metric-icon {
   background: var(--em-stat-4-chip);
   color: var(--em-stat-4-icon);
-}
-
-.metric--plain {
-  background: var(--em-bg);
 }
 
 .metric span {
@@ -1391,9 +1391,10 @@ kbd,
   color: var(--em-info-text);
 }
 
-/* Accent pill — the ONLY colored status pill (live StackMate: accent
-   for positive states — Active, Enabled, Paid, Approved, Won — and
-   neutral grey for everything else). */
+/* Accent pill — the POSITIVE tone of the semantic status system
+   (lib/format.ts statusTone): Active, Enabled, Paid, Approved, Won,
+   Verified, Used, OK. Warning (amber), danger (red) and info (sky)
+   pills below complete the system; neutral grey is the inert tone. */
 .badge--accent {
   background: var(--em-accent-soft);
   color: var(--em-accent);

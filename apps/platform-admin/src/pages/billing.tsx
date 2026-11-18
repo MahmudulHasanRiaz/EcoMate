@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
+import {
+  AlarmClock,
+  Banknote,
+  FileCheck,
+  Receipt,
+} from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDate, formatDateTime, formatMoney, formatStatus } from '../lib/format';
@@ -470,22 +476,34 @@ export function BillingPage() {
       ) : null}
 
       <section className="metric-grid">
-        <article className="metric">
+        <article className="metric metric--tint-1">
+          <span className="metric-icon" aria-hidden="true">
+            <FileCheck size={16} strokeWidth={2} />
+          </span>
           <span>Pending proofs</span>
           <strong>{summary?.pendingProofs ?? '—'}</strong>
           <small>Awaiting review</small>
         </article>
-        <article className="metric">
+        <article className="metric metric--tint-2">
+          <span className="metric-icon" aria-hidden="true">
+            <Receipt size={16} strokeWidth={2} />
+          </span>
           <span>Open invoices</span>
           <strong>{summary?.openInvoices ?? '—'}</strong>
           <small>Unpaid</small>
         </article>
-        <article className="metric">
+        <article className="metric metric--tint-3">
+          <span className="metric-icon" aria-hidden="true">
+            <AlarmClock size={16} strokeWidth={2} />
+          </span>
           <span>Overdue</span>
           <strong>{summary?.overdueInvoices ?? '—'}</strong>
           <small>Past due date</small>
         </article>
-        <article className="metric">
+        <article className="metric metric--tint-4">
+          <span className="metric-icon" aria-hidden="true">
+            <Banknote size={16} strokeWidth={2} />
+          </span>
           <span>Collected</span>
           <strong>
             {summary ? formatMoney(summary.collectedAmount) : '—'}
@@ -636,7 +654,17 @@ export function BillingPage() {
                       <tr key={proof.id}>
                         <td>{formatDate(proof.createdAt)}</td>
                         <td>
-                          <strong>{proof.tenant?.name ?? '—'}</strong>
+                          {proof.tenant ? (
+                            <Link
+                              to="/tenants/$tenantId"
+                              params={{ tenantId: proof.tenant.id }}
+                              className="table-link"
+                            >
+                              {proof.tenant.name}
+                            </Link>
+                          ) : (
+                            '—'
+                          )}
                           <span className="sub">{proof.tenant?.slug}</span>
                         </td>
                         <td className="mono">{proof.invoice?.number ?? '—'}</td>
@@ -892,7 +920,17 @@ export function BillingPage() {
                       <tr key={invoice.id}>
                         <td className="mono">{invoice.number}</td>
                         <td>
-                          <strong>{invoice.tenant?.name ?? '—'}</strong>
+                          {invoice.tenant ? (
+                            <Link
+                              to="/tenants/$tenantId"
+                              params={{ tenantId: invoice.tenant.id }}
+                              className="table-link"
+                            >
+                              {invoice.tenant.name}
+                            </Link>
+                          ) : (
+                            '—'
+                          )}
                           <span className="sub">{invoice.tenant?.slug}</span>
                         </td>
                         <td>
@@ -1166,7 +1204,17 @@ export function BillingPage() {
                     <tr key={payment.id}>
                       <td>{formatDate(payment.receivedAt)}</td>
                       <td>
-                        <strong>{payment.tenant?.name ?? '—'}</strong>
+                        {payment.tenant ? (
+                          <Link
+                            to="/tenants/$tenantId"
+                            params={{ tenantId: payment.tenant.id }}
+                            className="table-link"
+                          >
+                            {payment.tenant.name}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
                         <span className="sub">{payment.tenant?.slug}</span>
                       </td>
                       <td className="mono">{payment.invoice?.number ?? '—'}</td>
@@ -1211,7 +1259,17 @@ export function BillingPage() {
                   {subscriptions.data.map((subscription) => (
                     <tr key={subscription.id}>
                       <td>
-                        <strong>{subscription.tenant?.name ?? '—'}</strong>
+                        {subscription.tenant ? (
+                          <Link
+                            to="/tenants/$tenantId"
+                            params={{ tenantId: subscription.tenant.id }}
+                            className="table-link"
+                          >
+                            {subscription.tenant.name}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
                         <span className="sub">{subscription.tenant?.slug}</span>
                       </td>
                       <td>
@@ -1305,7 +1363,17 @@ export function BillingPage() {
                     <tr key={note.id}>
                       <td>{formatDate(note.createdAt)}</td>
                       <td>
-                        <strong>{note.tenant?.name ?? '—'}</strong>
+                        {note.tenant ? (
+                          <Link
+                            to="/tenants/$tenantId"
+                            params={{ tenantId: note.tenant.id }}
+                            className="table-link"
+                          >
+                            {note.tenant.name}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
                         <span className="sub">{note.tenant?.slug}</span>
                       </td>
                       <td className="mono">

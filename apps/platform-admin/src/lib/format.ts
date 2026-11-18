@@ -1,13 +1,30 @@
 /**
- * Status-pill tones (live StackMate rule): the ACCENT pill is reserved
- * for POSITIVE states only (Active, Enabled, Paid, Approved, Won,
- * Verified, Used, OK) — every other status is a NEUTRAL grey
- * pill, including attention states (Past Due, Suspended, Overdue). The
- * text still names the state; the pill never shouts. Semantic colors
- * (green/red/amber) survive only outside pills: toasts, notices, usage
- * bars. Unknown statuses fall through to 'neutral'.
+ * Status-pill tones — ONE semantic mapping for the whole console
+ * (StackMate colour round, 2026-11-18: StackMate's failure was a single
+ * grey pill for Unpaid, Partially paid and Awaiting payment, so those
+ * states were indistinguishable at a glance. This mapping makes them
+ * visibly different, and every page renders statuses through StatusBadge,
+ * so it holds on dashboards, tables, detail pages and search results
+ * alike).
+ *
+ * - 'accent' (landing indigo): positive, resolved-good states.
+ * - 'info' (existing --em-info sky tokens): in-progress / live-but-
+ *   temporary states — provisioning, running, trial, lead pipeline.
+ * - 'warning' (existing --em-warning amber tokens): needs attention
+ *   soon — pending, awaiting, open invoices, expiring soon.
+ * - 'danger' (existing --em-danger rose tokens): bad or terminal states
+ *   needing action now — past due, suspended, failed, expired.
+ * - 'neutral' (grey): inert states — draft, void, disabled, inactive,
+ *   deleted, closed, new, never — and anything unknown.
+ *
+ * No new hues: every tone reuses a token from tokens.css. Success green
+ * (#10b981) stays out of pills — it survives in toasts, notices and
+ * usage bars only — so 'accent' is the single positive pill tone.
+ * Defensive entries (UNPAID, OVERDUE, REVOKED, LIVE, COMPLETED,
+ * AWAITING, PARTIALLY_PAID) cover statuses the API does not emit yet
+ * but the billing domain will (pricing, payment states).
  */
-const POSITIVE_STATUSES = new Set([
+const ACCENT_STATUSES = new Set([
   'ACTIVE',
   'PAID',
   'APPROVED',
@@ -16,10 +33,53 @@ const POSITIVE_STATUSES = new Set([
   'USED',
   'OK',
   'ENABLED',
+  'SUCCEEDED',
+  'LIVE',
+  'COMPLETED',
+]);
+
+const INFO_STATUSES = new Set([
+  'PROVISIONING',
+  'RUNNING',
+  'TRIAL',
+  'CONTACTED',
+  'QUALIFIED',
+  'DEMO_SCHEDULED',
+]);
+
+const WARNING_STATUSES = new Set([
+  'PENDING',
+  'PENDING_EMAIL',
+  'PENDING_VERIFICATION',
+  'OPEN',
+  'EXPIRING_SOON',
+  'AWAITING',
+  'AWAITING_PAYMENT',
+  'PARTIALLY_PAID',
+  'PARTIAL',
+]);
+
+const DANGER_STATUSES = new Set([
+  'PAST_DUE',
+  'SUSPENDED',
+  'CANCELLED',
+  'EXPIRED',
+  'FAILED',
+  'ERROR',
+  'REJECTED',
+  'UNCOLLECTIBLE',
+  'UNPAID',
+  'OVERDUE',
+  'REVOKED',
+  'UNREACHABLE',
 ]);
 
 export function statusTone(status: string): string {
-  return POSITIVE_STATUSES.has(status) ? 'accent' : 'neutral';
+  if (ACCENT_STATUSES.has(status)) return 'accent';
+  if (INFO_STATUSES.has(status)) return 'info';
+  if (WARNING_STATUSES.has(status)) return 'warning';
+  if (DANGER_STATUSES.has(status)) return 'danger';
+  return 'neutral';
 }
 
 export function formatStatus(status: string): string {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { Globe } from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
@@ -429,14 +430,30 @@ export function DomainsPage() {
                       ) : null}
                     </td>
                     <td>
-                      <strong>{domain.tenant?.name ?? '—'}</strong>
+                      {domain.tenant ? (
+                        <Link
+                          to="/tenants/$tenantId"
+                          params={{ tenantId: domain.tenant.id }}
+                          className="table-link"
+                        >
+                          {domain.tenant.name}
+                        </Link>
+                      ) : (
+                        '—'
+                      )}
                       <span className="sub">{domain.tenant?.slug}</span>
                     </td>
                     <td>{domain.type}</td>
                     <td>
                       <StatusBadge status={domain.status} />
                     </td>
-                    <td>{domain.tlsStatus ? formatStatus(domain.tlsStatus) : '—'}</td>
+                    <td>
+                      {domain.tlsStatus ? (
+                        <StatusBadge status={domain.tlsStatus} />
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td>{formatDateTime(domain.lastCheckedAt)}</td>
                     <td>
                       <div className="row-action">

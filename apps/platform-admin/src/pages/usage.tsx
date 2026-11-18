@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
+import {
+  Building,
+  CloudOff,
+  Gauge,
+  TriangleAlert,
+} from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDateTime } from '../lib/format';
@@ -127,22 +133,34 @@ export function UsagePage() {
 
       {totals ? (
         <section className="metric-grid">
-          <article className="metric">
+          <article className="metric metric--tint-1">
+            <span className="metric-icon" aria-hidden="true">
+              <Building size={16} strokeWidth={2} />
+            </span>
             <span>Tenants</span>
             <strong>{totals.tenants}</strong>
             <small>{totals.tracked} with a stored snapshot</small>
           </article>
-          <article className="metric">
+          <article className="metric metric--tint-2">
+            <span className="metric-icon" aria-hidden="true">
+              <Gauge size={16} strokeWidth={2} />
+            </span>
             <span>Over limit</span>
             <strong>{totals.overLimitMetrics}</strong>
             <small>Metric rows above their effective limit</small>
           </article>
-          <article className="metric">
+          <article className="metric metric--tint-3">
+            <span className="metric-icon" aria-hidden="true">
+              <TriangleAlert size={16} strokeWidth={2} />
+            </span>
             <span>Warnings</span>
             <strong>{totals.warningMetrics}</strong>
             <small>At 80% or more, still under the limit</small>
           </article>
-          <article className="metric">
+          <article className="metric metric--tint-4">
+            <span className="metric-icon" aria-hidden="true">
+              <CloudOff size={16} strokeWidth={2} />
+            </span>
             <span>Not collected</span>
             <strong>{totals.missing}</strong>
             <small>No snapshot in the last {overview.windowDays} days</small>
