@@ -5,15 +5,14 @@ import {
 } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
 import { SettingsService } from '../settings/settings.service';
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+import {
+  escapeHtml,
+  link,
+  para,
+  renderDetails,
+  renderEmailLayout,
+  type EmailBrand,
+} from './mail/email-layout';
 
 const DHAKA_DATE = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Dhaka',
@@ -168,6 +167,21 @@ export class PlatformMailService {
   }
 
   /**
+   * Branding for the email layout: platform name + support contact +
+   * logo URL. The layout only ever renders the logo when it is an https
+   * URL (data: URLs from console uploads are blocked by most email
+   * clients) and falls back to the text wordmark otherwise.
+   */
+  private brand(): EmailBrand {
+    const branding = this.settings.getBranding();
+    return {
+      platformName: branding.platformName,
+      supportEmail: branding.supportEmail,
+      logoUrl: branding.logoUrl,
+    };
+  }
+
+  /**
    * Phase 8 Stage 2 item 20 — ops alert mail (billing-job failure,
    * purge-sweep failure, TLS expiry, primary-domain health). Plain
    * text-first; same fail-closed-in-production / dev-log-fallback
@@ -205,9 +219,18 @@ export class PlatformMailService {
       text:
         `Hi,\n\nThis is a test email from your ${platformName} platform. ` +
         `If you received it, SMTP delivery is working.\n`,
-      html: `<p>Hi,</p><p>This is a test email from your <strong>${escapeHtml(
-        platformName,
-      )}</strong> platform. If you received it, SMTP delivery is working.</p>`,
+      html: renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Test email',
+        preheader: `A test email from your ${platformName} platform.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `This is a test email from your <strong>${escapeHtml(
+              platformName,
+            )}</strong> platform. If you received it, SMTP delivery is working.`,
+          ),
+      }),
     });
     return { delivered: true };
   }
@@ -241,10 +264,20 @@ export class PlatformMailService {
         `Hi,\n\nConfirm your email to continue setting up ${input.tenantName}:\n\n` +
         `${input.verificationUrl}\n\n` +
         `This link expires in 24 hours. If you did not request this, ignore this email.`,
-      html:
-        `<p>Hi,</p><p>Confirm your email to continue setting up <strong>${name}</strong>:</p>` +
-        `<p><a href="${escapeHtml(input.verificationUrl)}">Verify email</a></p>` +
-        `<p>This link expires in 24 hours. If you did not request this, ignore this email.</p>`,
+      html: renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Confirm your email',
+        preheader: `Confirm your email to continue setting up ${input.tenantName}.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `Confirm your email to continue setting up <strong>${name}</strong>:`,
+          ) +
+          para(
+            'This link expires in 24 hours. If you did not request this, ignore this email.',
+          ),
+        cta: { label: 'Verify email', url: input.verificationUrl },
+      }),
     });
     return { delivered: true };
   }
@@ -283,12 +316,22 @@ export class PlatformMailService {
         `Accept the invite and set your password:\n\n` +
         `${input.acceptUrl}\n\n` +
         `This link expires in 72 hours. If you did not expect this, ignore this email.`,
-      html:
-        `<p>Hi ${name},</p><p>You have been invited to the ` +
-        `<strong>${escapeHtml(platformName)}</strong> platform console as ` +
-        `<strong>${role}</strong>.</p>` +
-        `<p><a href="${escapeHtml(input.acceptUrl)}">Accept the invite and set your password</a></p>` +
-        `<p>This link expires in 72 hours. If you did not expect this, ignore this email.</p>`,
+      html: renderEmailLayout({
+        brand: this.brand(),
+        heading: `You're invited to ${platformName}`,
+        preheader: `You've been invited to the ${platformName} platform console as ${input.role}.`,
+        bodyHtml:
+          para(`Hi ${name},`) +
+          para(
+            `You have been invited to the ` +
+              `<strong>${escapeHtml(platformName)}</strong> platform console as ` +
+              `<strong>${role}</strong>.`,
+          ) +
+          para(
+            'Accept the invite and set your password. This link expires in 72 hours. If you did not expect this, ignore this email.',
+          ),
+        cta: { label: 'Accept invite', url: input.acceptUrl },
+      }),
     });
     return { delivered: true };
   }
@@ -349,13 +392,25 @@ export class PlatformMailService {
         `Amount due: ${amount}\nDue date: ${due}\n\n` +
         `Pay with bKash, Nagad or bank transfer, then submit the transaction ` +
         `id from your admin billing page so we can verify the payment.`,
-      `<p>Hi,</p><p>Your invoice <strong>${escapeHtml(
-        input.invoiceNumber,
-      )}</strong>${escapeHtml(period)} is ready.</p>` +
-        `<p>Amount due: <strong>${escapeHtml(amount)}</strong><br/>` +
-        `Due date: <strong>${escapeHtml(due)}</strong></p>` +
-        `<p>Pay with bKash, Nagad or bank transfer, then submit the ` +
-        `transaction id from your admin billing page so we can verify the payment.</p>`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Your invoice is ready',
+        preheader: `Invoice ${input.invoiceNumber} — ${amount} due ${due}.`,
+        bodyHtml:
+          para('Hi,') +
+          renderDetails([
+            { label: 'Invoice', value: input.invoiceNumber },
+            ...(input.periodLabel
+              ? [{ label: 'Period', value: input.periodLabel }]
+              : []),
+            { label: 'Amount due', value: amount },
+            { label: 'Due date', value: due },
+          ]) +
+          para(
+            'Pay with bKash, Nagad or bank transfer, then submit the ' +
+              'transaction id from your admin billing page so we can verify the payment.',
+          ),
+      }),
       `invoice ${input.invoiceNumber} (${amount}, due ${due})`,
     );
   }
@@ -375,10 +430,20 @@ export class PlatformMailService {
       `Hi,\n\nYour payment of ${amount} for invoice ${input.invoiceNumber} ` +
         `has been approved. Your subscription is active and your workspace ` +
         `is fully available.\n\nThank you for paying on time.`,
-      `<p>Hi,</p><p>Your payment of <strong>${escapeHtml(amount)}</strong> ` +
-        `for invoice <strong>${escapeHtml(input.invoiceNumber)}</strong> ` +
-        `has been approved. Your subscription is active and your workspace ` +
-        `is fully available.</p><p>Thank you for paying on time.</p>`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Payment approved',
+        preheader: `Your payment of ${amount} for invoice ${input.invoiceNumber} has been approved.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `Your payment of <strong>${escapeHtml(amount)}</strong> ` +
+              `for invoice <strong>${escapeHtml(input.invoiceNumber)}</strong> ` +
+              `has been approved. Your subscription is active and your workspace ` +
+              `is fully available.`,
+          ) +
+          para('Thank you for paying on time.'),
+      }),
       `payment approved for invoice ${input.invoiceNumber} (${amount})`,
     );
   }
@@ -398,11 +463,22 @@ export class PlatformMailService {
         `${input.invoiceNumber}.\n\nReason: ${input.reason}\n\n` +
         `Please check the transaction details and submit a new proof from ` +
         `your admin billing page.`,
-      `<p>Hi,</p><p>We could not verify your payment proof for invoice ` +
-        `<strong>${escapeHtml(input.invoiceNumber)}</strong>.</p>` +
-        `<p>Reason: ${reason}</p>` +
-        `<p>Please check the transaction details and submit a new proof from ` +
-        `your admin billing page.</p>`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: "Payment proof couldn't be verified",
+        preheader: `We could not verify your payment proof for invoice ${input.invoiceNumber}.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `We could not verify your payment proof for invoice ` +
+              `<strong>${escapeHtml(input.invoiceNumber)}</strong>.`,
+          ) +
+          para(`Reason: ${reason}`) +
+          para(
+            'Please check the transaction details and submit a new proof from ' +
+              'your admin billing page.',
+          ),
+      }),
       `payment rejected for invoice ${input.invoiceNumber}`,
     );
   }
@@ -424,13 +500,24 @@ export class PlatformMailService {
         `invoice from your admin billing page before then.\n\n` +
         `After the trial ends you will have a short grace period before ` +
         `the workspace becomes read-only.`,
-      `<p>Hi,</p><p>Your <strong>${plan}</strong> trial for ` +
-        `<strong>${escapeHtml(input.tenantName)}</strong> ends on ` +
-        `<strong>${escapeHtml(ends)}</strong>. To keep your workspace fully ` +
-        `available, pay the renewal invoice from your admin billing page ` +
-        `before then.</p>` +
-        `<p>After the trial ends you will have a short grace period before ` +
-        `the workspace becomes read-only.</p>`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Your trial ends soon',
+        preheader: `Your ${input.planName} trial ends on ${ends}.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `Your <strong>${plan}</strong> trial for ` +
+              `<strong>${escapeHtml(input.tenantName)}</strong> ends on ` +
+              `<strong>${escapeHtml(ends)}</strong>. To keep your workspace fully ` +
+              `available, pay the renewal invoice from your admin billing page ` +
+              `before then.`,
+          ) +
+          para(
+            'After the trial ends you will have a short grace period before ' +
+              'the workspace becomes read-only.',
+          ),
+      }),
       `trial ending for ${input.tenantName} (${ends})`,
     );
   }
@@ -444,9 +531,6 @@ export class PlatformMailService {
     const reason = input.reason
       ? `\n\nReason: ${input.reason}`
       : '';
-    const reasonHtml = input.reason
-      ? `<p>Reason: ${escapeHtml(input.reason)}</p>`
-      : '';
     return this.deliver(
       input.to,
       `Your workspace ${input.tenantName} has been suspended — ${platformName}`,
@@ -454,12 +538,26 @@ export class PlatformMailService {
         `an invoice is overdue past the grace period.${reason}\n\n` +
         `Pay the outstanding invoice from your admin billing page to ` +
         `restore full access. Your data is safe.`,
-      `<p>Hi,</p><p>Your workspace <strong>${escapeHtml(
-        input.tenantName,
-      )}</strong> has been suspended because an invoice is overdue past the ` +
-        `grace period.</p>${reasonHtml}` +
-        `<p>Pay the outstanding invoice from your admin billing page to ` +
-        `restore full access. Your data is safe.</p>`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Your workspace is suspended',
+        preheader: `Your workspace ${input.tenantName} has been suspended.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `Your workspace <strong>${escapeHtml(
+              input.tenantName,
+            )}</strong> has been suspended because an invoice is overdue past the ` +
+              `grace period.`,
+          ) +
+          (input.reason
+            ? para(`Reason: ${escapeHtml(input.reason)}`)
+            : '') +
+          para(
+            'Pay the outstanding invoice from your admin billing page to ' +
+              'restore full access. Your data is safe.',
+          ),
+      }),
       `suspension for ${input.tenantName}`,
     );
   }
@@ -474,9 +572,18 @@ export class PlatformMailService {
       `Your workspace ${input.tenantName} is active again — ${platformName}`,
       `Hi,\n\nGood news — your workspace ${input.tenantName} is active ` +
         `again and fully available. Thank you for your payment.`,
-      `<p>Hi,</p><p>Good news — your workspace <strong>${escapeHtml(
-        input.tenantName,
-      )}</strong> is active again and fully available. Thank you for your payment.</p>`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Your workspace is active again',
+        preheader: `Your workspace ${input.tenantName} is active again.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `Good news — your workspace <strong>${escapeHtml(
+              input.tenantName,
+            )}</strong> is active again and fully available. Thank you for your payment.`,
+          ),
+      }),
       `reactivation for ${input.tenantName}`,
     );
   }
@@ -496,19 +603,11 @@ export class PlatformMailService {
     monthlyOrders?: string | null;
   }): Promise<{ delivered: boolean }> {
     const platformName = this.settings.getBranding().platformName;
-    const name = escapeHtml(input.name);
-    const contact = escapeHtml(input.contact);
     const contactLabel = input.contactType === 'email' ? 'Email' : 'Phone';
-    const orders = input.monthlyOrders?.trim()
-      ? escapeHtml(input.monthlyOrders.trim())
-      : 'Not shared';
     const ordersText = input.monthlyOrders?.trim()
       ? input.monthlyOrders.trim()
       : 'Not shared';
     const message = input.message?.trim() ?? '';
-    const messageHtml = message
-      ? `<p>Message:<br/>${escapeHtml(message).replace(/\n/g, '<br/>')}</p>`
-      : '<p>No message.</p>';
     const messageText = message ? `\n\nMessage:\n${message}` : '\n\nNo message.';
     return this.deliver(
       input.to,
@@ -516,10 +615,24 @@ export class PlatformMailService {
       `Hi,\n\nA new lead came in from the landing page.\n\n` +
         `Name: ${input.name}\n${contactLabel}: ${input.contact}\n` +
         `Monthly orders: ${ordersText}${messageText}`,
-      `<p>Hi,</p><p>A new lead came in from the landing page.</p>` +
-        `<p>Name: <strong>${name}</strong><br/>` +
-        `${contactLabel}: <strong>${contact}</strong><br/>` +
-        `Monthly orders: <strong>${orders}</strong></p>${messageHtml}`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: 'New lead from the landing page',
+        preheader: `New lead: ${input.name} (${input.contact}).`,
+        bodyHtml:
+          para('Hi,') +
+          para('A new lead came in from the landing page.') +
+          renderDetails([
+            { label: 'Name', value: input.name },
+            { label: contactLabel, value: input.contact },
+            { label: 'Monthly orders', value: ordersText },
+          ]) +
+          (message
+            ? para(
+                `Message:<br/>${escapeHtml(message).replace(/\n/g, '<br/>')}`,
+              )
+            : para('No message.')),
+      }),
       `lead notification for ${input.name} (${input.contact})`,
     );
   }
@@ -544,8 +657,6 @@ export class PlatformMailService {
     }
 
     const name = escapeHtml(input.tenantName);
-    const admin = escapeHtml(input.adminUrl);
-    const store = escapeHtml(input.storefrontUrl);
     await transporter.sendMail({
       from: this.fromAddress(),
       replyTo: this.replyTo(),
@@ -555,11 +666,19 @@ export class PlatformMailService {
         `Hi,\n\n${input.tenantName} is ready.\n\n` +
         `Admin: ${input.adminUrl}\nStorefront: ${input.storefrontUrl}\n\n` +
         `Sign in with the email and password you used at signup.`,
-      html:
-        `<p>Hi,</p><p><strong>${name}</strong> is ready.</p>` +
-        `<p><a href="${admin}">Open the admin</a><br/>` +
-        `<a href="${store}">Open the storefront</a></p>` +
-        `<p>Sign in with the email and password you used at signup.</p>`,
+      html: renderEmailLayout({
+        brand: this.brand(),
+        heading: `${input.tenantName} is ready`,
+        preheader: `${input.tenantName} is ready — open the admin to start setting up your store.`,
+        bodyHtml:
+          para('Hi,') +
+          para(`<strong>${name}</strong> is ready.`) +
+          para(
+            `Your storefront is live too: ${link(input.storefrontUrl, 'Open the storefront')}`,
+          ) +
+          para('Sign in with the email and password you used at signup.'),
+        cta: { label: 'Open the admin', url: input.adminUrl },
+      }),
     });
     return { delivered: true };
   }

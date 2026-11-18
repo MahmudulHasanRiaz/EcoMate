@@ -346,4 +346,258 @@ describe('PlatformMailService', () => {
       ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
+
+  describe('branded email layout', () => {
+    async function sendAll(service: PlatformMailService) {
+      const mails: Array<{ name: string; mail: any }> = [];
+      const collect = (name: string) => {
+        mails.push({ name, mail: mockSendMail.mock.calls.at(-1)[0] });
+      };
+      await service.sendTest('ops@test.com');
+      collect('test');
+      await service.sendVerification({
+        to: 'owner@test.com',
+        tenantName: 'Acme',
+        verificationUrl: 'https://www.ecomate.bd/verify-email?token=abc123',
+      });
+      collect('verification');
+      await service.sendInvite({
+        to: 'invited@test.com',
+        name: 'Invited User',
+        role: 'BILLING',
+        acceptUrl: 'https://saas.ecomate.test/accept-invite?token=abc123',
+      });
+      collect('invite');
+      await service.sendInvoice({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        invoiceNumber: 'INV-2611-0001',
+        total: 1150,
+        currency: 'BDT',
+        dueAt: new Date('2026-11-23T00:00:00.000Z'),
+        periodLabel: '2026-11-16 to 2026-12-16',
+      });
+      collect('invoice');
+      await service.sendPaymentApproved({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        invoiceNumber: 'INV-2611-0001',
+        amount: 1150,
+        currency: 'BDT',
+      });
+      collect('approved');
+      await service.sendPaymentRejected({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        invoiceNumber: 'INV-2611-0001',
+        reason: 'Wrong transaction id',
+      });
+      collect('rejected');
+      await service.sendTrialEnding({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        trialEndsAt: new Date('2026-11-19T00:00:00.000Z'),
+        planName: 'Growth',
+      });
+      collect('trial');
+      await service.sendSuspension({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        reason: 'Grace period ended with an unpaid invoice',
+      });
+      collect('suspension');
+      await service.sendReactivation({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+      });
+      collect('reactivation');
+      await service.sendLeadNotification({
+        to: 'sales@ecomate.bd',
+        name: 'Lead Test',
+        contact: '01700000000',
+        contactType: 'phone',
+        message: 'Hello\nSecond line',
+        monthlyOrders: '100-500',
+      });
+      collect('lead');
+      await service.sendWelcome({
+        to: 'owner@test.com',
+        tenantName: 'Acme',
+        adminUrl: 'https://acme.ecomate.bd/admin',
+        storefrontUrl: 'https://acme.ecomate.bd',
+      });
+      collect('welcome');
+      return mails;
+    }
+
+    const SUBJECTS: Record<string, string> = {
+      test: 'EcoMate test email',
+      verification: 'Verify your email for Acme',
+      invite: 'Your EcoMate platform invite',
+      invoice:
+        'Invoice INV-2611-0001 from EcoMate — BDT 1,150.00 due 2026-11-23',
+      approved: 'Payment approved for invoice INV-2611-0001 — EcoMate',
+      rejected: 'Payment proof rejected for invoice INV-2611-0001 — EcoMate',
+      trial: 'Your Growth trial ends on 2026-11-19 — EcoMate',
+      suspension: 'Your workspace Acme has been suspended — EcoMate',
+      reactivation: 'Your workspace Acme is active again — EcoMate',
+      lead: 'New lead: Lead Test — EcoMate',
+      welcome: 'Acme is ready',
+    };
+
+    it('renders every user-facing template in the shared branded layout with unchanged subjects', async () => {
+      const { service } = makeService();
+      const mails = await sendAll(service);
+      expect(mails).toHaveLength(11);
+      for (const { name, mail } of mails) {
+        expect(mail.subject).toBe(SUBJECTS[name]);
+        expect(mail.html).toContain('<!DOCTYPE html>');
+        expect(mail.html).toContain('<table');
+        expect(mail.html).toContain('max-width:600px');
+        expect(mail.html).toContain('EcoMate');
+        expect(mail.html).toContain(
+          `&copy; ${new Date().getFullYear()} EcoMate.`,
+        );
+        expect(mail.html).not.toContain('<style');
+        expect(mail.html).not.toContain('<script');
+        expect(mail.html).not.toContain('data:');
+        expect(mail.text).toBeTruthy();
+      }
+    });
+
+    it('carries the key link or amount in both the HTML and the text part', async () => {
+      const { service } = makeService();
+      const mails = await sendAll(service);
+      const byName = Object.fromEntries(mails.map((m) => [m.name, m.mail]));
+      expect(byName.verification.text).toContain(
+        'https://www.ecomate.bd/verify-email?token=abc123',
+      );
+      expect(byName.verification.html).toContain(
+        'https://www.ecomate.bd/verify-email?token=abc123',
+      );
+      expect(byName.welcome.text).toContain('https://acme.ecomate.bd/admin');
+      expect(byName.welcome.text).toContain('https://acme.ecomate.bd');
+      expect(byName.welcome.html).toContain('https://acme.ecomate.bd/admin');
+      expect(byName.welcome.html).toContain('https://acme.ecomate.bd');
+      expect(byName.invite.text).toContain(
+        'https://saas.ecomate.test/accept-invite?token=abc123',
+      );
+      expect(byName.invoice.text).toContain('1,150');
+      expect(byName.invoice.text).toContain('2026-11-23');
+      expect(byName.invoice.html).toContain('BDT 1,150.00');
+      expect(byName.invoice.html).toContain('2026-11-23');
+      expect(byName.invoice.html).toContain('INV-2611-0001');
+      expect(byName.invoice.html).toContain('2026-11-16 to 2026-12-16');
+    });
+
+    it('shows one indigo CTA button with a fallback link on action emails', async () => {
+      const { service } = makeService();
+      const mails = await sendAll(service);
+      const byName = Object.fromEntries(mails.map((m) => [m.name, m.mail]));
+      for (const name of ['verification', 'invite', 'welcome']) {
+        // The button's padding is the CTA marker: the header wordmark
+        // also uses the indigo bgcolor, so bgcolor alone cannot tell
+        // them apart.
+        expect(byName[name].html).toContain('padding:12px 24px');
+        expect(byName[name].html).toContain('copy and paste this link');
+      }
+      expect(byName.verification.html).toContain('>Verify email</a>');
+      expect(byName.invite.html).toContain('>Accept invite</a>');
+      expect(byName.welcome.html).toContain('>Open the admin</a>');
+      // No action URL exists for the billing lifecycle mails — no button.
+      for (const name of [
+        'invoice',
+        'approved',
+        'rejected',
+        'trial',
+        'suspension',
+        'reactivation',
+        'lead',
+        'test',
+      ]) {
+        expect(byName[name].html).not.toContain('padding:12px 24px');
+      }
+    });
+
+    it('escapes interpolated values in the HTML part', async () => {
+      const { service } = makeService();
+      await service.sendWelcome({
+        to: 'owner@test.com',
+        tenantName: 'Acme <script>alert(1)</script> & Sons',
+        adminUrl: 'https://acme.ecomate.bd/admin',
+        storefrontUrl: 'https://acme.ecomate.bd',
+      });
+      const welcome = mockSendMail.mock.calls[0][0];
+      expect(welcome.html).toContain(
+        'Acme &lt;script&gt;alert(1)&lt;/script&gt; &amp; Sons',
+      );
+      expect(welcome.html).not.toContain('<script>alert(1)</script>');
+
+      jest.clearAllMocks();
+      await service.sendLeadNotification({
+        to: 'sales@ecomate.bd',
+        name: 'Lead <b>Bold</b>',
+        contact: '01700000000',
+        contactType: 'phone',
+        message: '<img src=x onerror=alert(1)>\nSecond line',
+        monthlyOrders: null,
+      });
+      const lead = mockSendMail.mock.calls[0][0];
+      expect(lead.html).toContain('Lead &lt;b&gt;Bold&lt;/b&gt;');
+      expect(lead.html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+      expect(lead.html).not.toContain('<img src=x');
+      expect(lead.html).toContain('Second line');
+      expect(lead.html).toContain('Not shared');
+    });
+
+    it('uses the https logo when configured and falls back to the wordmark otherwise', async () => {
+      const { settings, service } = makeService();
+      settings.getBranding.mockReturnValue({
+        platformName: 'EcoMate',
+        supportEmail: 'support@ecomate.bd',
+        logoUrl: 'https://cdn.ecomate.bd/logo.png',
+      });
+      await service.sendWelcome({
+        to: 'owner@test.com',
+        tenantName: 'Acme',
+        adminUrl: 'https://acme.ecomate.bd/admin',
+        storefrontUrl: 'https://acme.ecomate.bd',
+      });
+      let mail = mockSendMail.mock.calls[0][0];
+      expect(mail.html).toContain(
+        '<img src="https://cdn.ecomate.bd/logo.png" alt="EcoMate"',
+      );
+
+      jest.clearAllMocks();
+      settings.getBranding.mockReturnValue({
+        platformName: 'EcoMate',
+        supportEmail: '',
+        logoUrl: 'data:image/png;base64,iVBORw0KGgo=',
+      });
+      await service.sendWelcome({
+        to: 'owner@test.com',
+        tenantName: 'Acme',
+        adminUrl: 'https://acme.ecomate.bd/admin',
+        storefrontUrl: 'https://acme.ecomate.bd',
+      });
+      mail = mockSendMail.mock.calls[0][0];
+      expect(mail.html).not.toContain('<img');
+      expect(mail.html).not.toContain('data:');
+      expect(mail.html).toContain('>EcoMate</td>');
+    });
+
+    it('keeps the internal ops alert plain (no branded layout)', async () => {
+      const { service } = makeService();
+      await service.sendOpsAlert({
+        to: 'ops@test.com',
+        subject: 'Job failed',
+        text: 'Line one\nLine two',
+      });
+      const mail = mockSendMail.mock.calls[0][0];
+      expect(mail.subject).toBe('[EcoMate ops] Job failed');
+      expect(mail.text).toBe('Line one\nLine two');
+      expect(mail.html).toBe('<p>Line one<br/>Line two</p>');
+      expect(mail.html).not.toContain('<!DOCTYPE html>');
+    });
+  });
 });
