@@ -151,12 +151,16 @@ function SidebarCollapseIcon() {
  *   by Settings). Entering a page with a secondary nav collapses the main
  *   menu VISUALLY ONLY — the stored pin is untouched, so leaving restores
  *   it. Only an explicit toggle press persists (StackMate pin rule). The
- *   hover flyout is suppressed on these pages (data-secondary-nav): the
- *   overlay would cover the secondary nav's links.
- * - After a toggle click the flyout is suppressed until the pointer leaves
- *   the sidebar (data-flyout-suppressed): without this, collapsing leaves
- *   the pointer resting over the rail, the hover flyout re-opens at once,
- *   and the click looks like it did nothing (Boss, 2026-11-18).
+ *   hover expansion is suppressed on these pages (data-secondary-nav):
+ *   the push would shift the secondary nav's links under the pointer.
+ * - Hovering the collapsed rail expands the sidebar IN FLOW — the grid
+ *   column widens and the canvas shifts aside (Boss, 2026-11-18: even a
+ *   hover-expand must move the canvas, never overlay it).
+ * - After a toggle click the hover expansion is suppressed until the
+ *   pointer leaves the sidebar (data-flyout-suppressed): without this,
+ *   collapsing leaves the pointer resting over the rail, the hover
+ *   re-expands at once, and the click looks like it did nothing (Boss,
+ *   2026-11-18).
  */
 export function AppShell({
   children,

@@ -305,28 +305,34 @@ button {
    is preserved, and group dividers/spacing stay — so hovering the rail
    only reveals labels, and nothing on screen moves. (Position changes
    on expand are bad UX: the item under the cursor must stay put.)
-   Live StackMate behaviour: hovering (or keyboard-focusing into) the
-   rail temporarily expands the FULL sidebar as an overlay flyout over
-   the content — labels, groups and the toggle all reappear — and moving
-   away collapses it again. NO tooltips on the rail: hover expands the
-   sidebar instead. The flyout is position:fixed, so the 64px grid
-   column stays put and the content never shifts.
-   The flyout is SUPPRESSED on pages with a secondary nav (Settings):
-   the overlay would cover the secondary nav column — including the
-   section links — and trap the mouse, since moving toward a link keeps
-   the pointer over the overlay. On those pages the rail stays a rail
-   and the toggle still expands the sidebar. */
+   Hovering (or keyboard-focusing into) the rail temporarily expands the
+   FULL sidebar — and the expansion PUSHES the canvas aside: the grid's
+   first column widens to the full sidebar width, so the content shifts
+   right and nothing ever sits underneath the expanded sidebar. (Boss,
+   2026-11-18: even a hover-expand must move the canvas, not overlay it.
+   The earlier overlay flyout was replaced for exactly this reason.)
+   NO tooltips on the rail: hover expands the sidebar instead.
+   The hover expansion is SUPPRESSED on pages with a secondary nav
+   (Settings): the push would shift the secondary nav column under the
+   pointer — moving toward a section link collapses the sidebar again
+   and the link jumps away. On those pages the rail stays a rail and the
+   toggle still expands the sidebar. */
 @media (min-width: 901px) {
-  /* The content column must be pinned explicitly: when the flyout makes
-     the sidebar position:fixed, the sidebar leaves the grid flow and
-     auto-placement would drop .shell-main into the 64px first column —
-     the whole page would crush into a 64px strip hidden behind the
-     overlay. (Desktop only: at <=900px the shell is a single column.) */
-  .shell-main {
-    grid-column: 2;
+  /* Smooth push: the grid column animates between the 64px rail and the
+     full 248px sidebar on hover-expand AND on toggle. */
+  .shell {
+    transition: grid-template-columns 0.18s ease;
   }
   .shell[data-nav-collapsed='true'] {
     grid-template-columns: var(--em-sidebar-rail-width) minmax(0, 1fr);
+  }
+  /* Hover (or keyboard focus) expands the sidebar IN FLOW: the grid
+     column widens and the canvas shifts aside — the sidebar never
+     overlays the content. :has() lets the grid respond to the sidebar's
+     hover state; the sidebar itself stays in its grid cell. */
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']):has(.sidebar:hover),
+  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']):has(.sidebar:focus-within) {
+    grid-template-columns: var(--em-sidebar-width) minmax(0, 1fr);
   }
   .shell[data-nav-collapsed='true'] .sidebar .brand-name,
   .shell[data-nav-collapsed='true'] .nav-label {
@@ -337,19 +343,9 @@ button {
   .shell[data-nav-collapsed='true'] .nav-group-label {
     visibility: hidden;
   }
-  /* The flyout is also gated on data-flyout-suppressed: after a toggle
+  /* The expansion is also gated on data-flyout-suppressed: after a toggle
      click the pointer still rests over the rail, and without the gate the
-     flyout would re-open at once and mask the collapse. */
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:hover,
-  .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:focus-within {
-    position: fixed;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: var(--em-sidebar-width);
-    box-shadow: var(--em-shadow-lg);
-    z-index: var(--em-z-drawer);
-  }
+     hover would re-expand at once and mask the collapse. */
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:hover .brand-name,
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:focus-within .brand-name,
   .shell[data-nav-collapsed='true']:not([data-secondary-nav='true']):not([data-flyout-suppressed='true']) .sidebar:hover .nav-label,
