@@ -57,6 +57,14 @@ COPY --from=builder /app/apps/platform-api/prisma ./prisma
 # truth with the runtime). tsx transpiles it on demand, so the generated
 # client source must exist in the runtime image alongside prisma/.
 COPY --from=builder /app/apps/platform-api/src/generated ./src/generated
+# prisma/seed.ts also imports the landing-content seeder from src/
+# (../src/landing-content/landing-content-seed). That module is
+# dependency-free (no imports), so copying this one file is enough — but
+# without it the seed crashes with MODULE_NOT_FOUND and the container
+# never becomes healthy (proven live on staging, run #13 redeploy).
+# seed-image-coverage.spec.ts fails the build if seed.ts ever imports a
+# src/ module that is not copied here.
+COPY --from=builder /app/apps/platform-api/src/landing-content/landing-content-seed.ts ./src/landing-content/landing-content-seed.ts
 COPY --from=builder /app/apps/platform-api/prisma.config.ts ./
 COPY --from=builder /app/apps/platform-api/package.json ./
 COPY apps/platform-api/startup.sh ./startup.sh
