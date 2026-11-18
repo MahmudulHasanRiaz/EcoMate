@@ -230,7 +230,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
  * the console. `danger` renders the confirm action as the solid red button
  * (Neon rule) and `dangerNote` renders the red warning panel above the
  * buttons (the StackMate "danger-warning" pattern). A non-danger confirm
- * is the OUTLINE ACCENT button — live StackMate's dialog main action.
+ * is the FILLED INDIGO button (Boss Q18, 2026-11-18) — the dialog's
+ * main action. (Live StackMate uses outline-accent here; EcoMate's
+ * form/dialog primary is filled indigo per Boss's call.)
  */
 export function ConfirmDialog({
   open,

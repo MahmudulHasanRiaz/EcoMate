@@ -63,9 +63,10 @@
   --em-text-muted: #b0b1b2;
 
   /* The one brand accent — EcoMate LANDING indigo (apps/landing
-     --mk-ac #6366f1 dark / #4f46e5 light). Text on accent is white for
-     small text on dark (the indigo fill is never used as a button bg,
-     so this token is for links, icons, focus rings, outlines). */
+     --mk-ac #6366f1 dark / #4f46e5 light). Text on accent is white.
+     The indigo fill is the form/dialog primary-action button bg
+     (Boss Q18, 2026-11-18); the token also serves links, icons,
+     focus rings and outlines. */
   --em-accent: #6366f1;
   --em-accent-hover: #818cf8;
   --em-accent-soft: rgba(99, 102, 241, 0.1);

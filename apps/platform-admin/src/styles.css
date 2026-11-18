@@ -1463,9 +1463,13 @@ kbd,
   font-size: 12.5px;
 }
 
-/* Buttons — Neon: three variants + ghost. PRIMARY is white/black,
-   SECONDARY is a grey outline, ACCENT is a blue outline for brand CTAs
-   only. NO solid blue fill anywhere. DANGER is the solid red confirm. */
+/* Buttons — Neon, with Boss's Q18 mix (2026-11-18): primary actions
+   are solid WHITE on list pages (PRIMARY) and FILLED INDIGO inside
+   forms and dialogs (ACCENT), per importance, as Neon does. SECONDARY
+   is a grey outline; ACCENT-OUTLINE is the old outline treatment,
+   kept ONLY for selected-state toggles (segmented controls, view
+   toggles) — it is not a primary action. DANGER is the solid red
+   confirm. */
 .button {
   display: inline-flex;
   align-items: center;
@@ -1510,13 +1514,33 @@ kbd,
   color: var(--em-btn-primary-hover-text);
 }
 
+/* Filled-indigo primary action for forms and dialogs (Boss Q18,
+   2026-11-18): Save / Create / Confirm. Hover uses the accent-hover
+   token (lighter indigo dark, darker indigo light). Focus is the
+   standard outside accent ring, which stays visible against the page
+   background around the filled button. */
 .button--accent {
+  background: var(--em-accent);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.button--accent:hover:not(:disabled) {
+  background: var(--em-accent-hover);
+  color: #ffffff;
+}
+
+/* Outline accent — the pre-Q18 accent treatment, kept ONLY for
+   selected-state toggles (Metrics window presets, Media grid/list
+   view). NOT a primary action: the filled-indigo signal stays reserved
+   for Save / Create / Confirm. */
+.button--accent-outline {
   background: var(--em-btn-accent-bg);
   border-color: var(--em-accent);
   color: var(--em-accent);
 }
 
-.button--accent:hover:not(:disabled) {
+.button--accent-outline:hover:not(:disabled) {
   background-image: var(--em-accent-gradient);
   color: #000000;
   border-color: transparent;

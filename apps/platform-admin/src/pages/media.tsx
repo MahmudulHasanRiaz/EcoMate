@@ -331,7 +331,7 @@ export function MediaPage() {
         <div className="media-view-toggle" role="group" aria-label="View">
           <button
             type="button"
-            className={`button button--sm${view === 'grid' ? ' button--accent' : ''}`}
+            className={`button button--sm${view === 'grid' ? ' button--accent-outline' : ''}`}
             onClick={() => setView('grid')}
             aria-pressed={view === 'grid'}
           >
@@ -339,7 +339,7 @@ export function MediaPage() {
           </button>
           <button
             type="button"
-            className={`button button--sm${view === 'list' ? ' button--accent' : ''}`}
+            className={`button button--sm${view === 'list' ? ' button--accent-outline' : ''}`}
             onClick={() => setView('list')}
             aria-pressed={view === 'list'}
           >

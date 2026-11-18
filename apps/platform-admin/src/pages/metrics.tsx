@@ -92,7 +92,7 @@ export function MetricsPage() {
                 type="button"
                 className={
                   preset.days === window
-                    ? 'button button--accent button--sm'
+                    ? 'button button--accent-outline button--sm'
                     : 'button button--sm'
                 }
                 aria-pressed={preset.days === window}
