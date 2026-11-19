@@ -21,6 +21,11 @@
  * Both locales. Re-running overwrites the JSON (the JSON is the seed
  * INPUT; the DB seed itself is create-if-not-exists and never clobbers
  * admin edits).
+ *
+ * WARNING: this generator does NOT emit the hand-added sections (Batch 1
+ * object/scalar/list sections, visibility, legal.*) — re-running it
+ * drops those rows from the JSON. Extend it before re-running, or edit
+ * the JSON by hand (see the Group A seed script in the evidence dir).
  */
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -177,15 +182,22 @@ function generate() {
       });
     });
 
-    // testimonials from proof.caseStudies
+    // testimonials from proof.caseStudies — including category /
+    // challenge / solution (the merge passes them through; the old
+    // generator dropped them and the merge forced them to ''). The
+    // built-in stories carry no video/image URLs, so format is 'text'.
     content.proof.caseStudies.forEach((study, index) => {
       const value = {
         businessName: study.businessName,
+        category: study.category,
         founderName: study.founderName,
         role: study.role,
         location: study.location,
         website: study.website,
         quote: study.quote,
+        challenge: study.challenge,
+        solution: study.solution,
+        format: 'text',
         metrics: study.metrics ?? [],
       };
       if (study.videoDuration !== undefined) {

@@ -3194,6 +3194,66 @@ button.table-link {
   resize: vertical;
 }
 
+/* Media-URL field (CMS item 14): URL input + library picker button. */
+.media-field {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.media-field input {
+  flex: 1;
+  min-width: 0;
+  /* The .locale-col input rule sets width: 100% — flex sizing wins. */
+  width: auto;
+}
+
+.media-field .button {
+  flex-shrink: 0;
+}
+
+/* Section visibility toggles (CMS item 11): one row per page section. */
+.visibility-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.visibility-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--em-border);
+}
+
+.visibility-row:last-child {
+  border-bottom: none;
+}
+
+.visibility-row label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.visibility-row label small {
+  font-weight: 400;
+  color: var(--em-muted);
+}
+
+.visibility-row .badge {
+  flex-shrink: 0;
+}
+
 .landing-card {
   margin-bottom: var(--em-space-4);
 }
@@ -3221,6 +3281,40 @@ button.table-link {
   background: var(--em-surface);
   color: var(--em-text);
   font: inherit;
+}
+
+/* ---------- landing revision history (CMS batch 2, item 17) ---------- */
+
+.revision-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--em-space-3);
+}
+
+.revision-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--em-space-3);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  padding: 12px 14px;
+  background: var(--em-surface);
+}
+
+.revision-row p {
+  margin: 4px 0;
+}
+
+.revision-preview {
+  display: block;
+  margin-top: var(--em-space-1);
+  font-size: 12px;
+  color: var(--em-text-muted);
+  word-break: break-word;
 }
 
 /* ---------- square checkboxes (live StackMate) ---------- */
@@ -3649,3 +3743,313 @@ button.media-card:hover,
 
 /* media-library: end */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* leads kanban + overdue (Batch 2, items 12–13): start                */
+/* ------------------------------------------------------------------ */
+
+/* Visually-hidden label text (kanban Move-to selects keep an
+   accessible name without a visible label). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Active filter chip (overdue): accent text + border + translucent
+   bg, same pattern as the media kind chips. */
+.filter-chip--active {
+  color: var(--em-accent);
+  border-color: var(--em-accent);
+  background: var(--em-accent-08);
+}
+
+/* Kanban board: one column per status, horizontal scroll on narrow
+   screens (7 columns never fit a phone width). Colour is minimal —
+   indigo-family only; the Overdue badge reuses the semantic danger
+   badge. Radii from tokens (4px max). */
+.kanban {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.kanban-column {
+  flex: 1 0 240px;
+  min-width: 240px;
+  max-width: 320px;
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  background: var(--em-surface);
+  padding: 12px;
+}
+
+.kanban-column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.kanban-column-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--em-text);
+}
+
+.kanban-count {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--em-accent-10);
+  color: var(--em-accent);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.kanban-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.kanban-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  background: var(--em-surface-raised);
+  padding: 10px 12px;
+}
+
+.kanban-card-name {
+  text-align: left;
+  font-weight: 600;
+}
+
+.kanban-card .badge {
+  margin-left: 6px;
+}
+
+.kanban-move {
+  margin-top: 4px;
+}
+
+.kanban-move select {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--em-border-strong);
+  border-radius: var(--em-radius-md);
+  background: var(--em-surface);
+  color: var(--em-text);
+  font: inherit;
+  font-size: 13px;
+  padding: 0 8px;
+}
+
+/* leads kanban + overdue: end */
+
+/* ---------- blog (Landing CMS Batch 2, item 20) ---------- */
+
+.blog-show-deleted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--em-text-muted);
+  white-space: nowrap;
+}
+
+tr[data-deleted] {
+  opacity: 0.6;
+}
+
+.blog-tree-indent {
+  display: inline-block;
+}
+
+.blog-editor-section {
+  margin: 28px 0 10px;
+  font-size: 15px;
+}
+
+.blog-tag-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 12px;
+}
+
+.blog-tag-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.blog-featured-preview {
+  display: block;
+  max-width: 320px;
+  max-height: 180px;
+  object-fit: cover;
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  margin-top: 12px;
+}
+
+/* ---------- rich text editor (Tiptap) ---------- */
+
+.rte {
+  border: 1px solid var(--em-border-strong);
+  border-radius: var(--em-radius-md);
+  background: var(--em-surface);
+  overflow: hidden;
+}
+
+.rte-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--em-border);
+  background: var(--em-surface-muted);
+}
+
+.rte-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--em-radius-sm);
+  background: transparent;
+  color: var(--em-text-muted);
+  cursor: pointer;
+}
+
+.rte-menu-btn:hover:not(:disabled) {
+  background: var(--em-surface-hover);
+  color: var(--em-text);
+}
+
+.rte-menu-btn[data-on] {
+  background: var(--em-accent);
+  color: #fff;
+}
+
+.rte-menu-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rte-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--em-border);
+  margin: 0 4px;
+}
+
+.rte-content {
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--em-text);
+  outline: none;
+  overflow-y: auto;
+}
+
+.rte-content > *:first-child {
+  margin-top: 0;
+}
+
+.rte-content h1,
+.rte-content h2,
+.rte-content h3 {
+  line-height: 1.3;
+  margin: 16px 0 8px;
+}
+
+.rte-content h1 {
+  font-size: 22px;
+}
+
+.rte-content h2 {
+  font-size: 18px;
+}
+
+.rte-content h3 {
+  font-size: 16px;
+}
+
+.rte-content p {
+  margin: 0 0 10px;
+}
+
+.rte-content ul,
+.rte-content ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.rte-content blockquote {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--em-accent);
+  background: var(--em-surface-muted);
+  color: var(--em-text-muted);
+}
+
+.rte-content pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: var(--em-radius-md);
+  background: var(--em-surface-muted);
+  font-family: var(--em-font-mono);
+  font-size: 12.5px;
+  overflow-x: auto;
+}
+
+.rte-content code {
+  font-family: var(--em-font-mono);
+  font-size: 12.5px;
+}
+
+.rte-content img {
+  max-width: 100%;
+  border-radius: var(--em-radius-md);
+}
+
+.rte-content a {
+  color: var(--em-accent);
+}
+
+/* Tiptap placeholder (empty editor). */
+.rte-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--em-text-muted);
+}

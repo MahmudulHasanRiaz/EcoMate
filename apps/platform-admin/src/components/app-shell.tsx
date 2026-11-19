@@ -1,6 +1,7 @@
 import { Link, Navigate } from '@tanstack/react-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
+  BookOpen,
   Building,
   ChartColumn,
   CreditCard,
@@ -10,6 +11,7 @@ import {
   Layers,
   LayoutDashboard,
   LayoutTemplate,
+  Newspaper,
   Puzzle,
   ScrollText,
   Search as SearchIcon,
@@ -41,6 +43,7 @@ const NAV_GROUPS: {
     items: [
       { to: '/tenants', label: 'Tenants', icon: Building },
       { to: '/leads', label: 'Leads', icon: UserPlus },
+      { to: '/blog', label: 'Blog', icon: Newspaper },
     ],
   },
   {
@@ -64,6 +67,7 @@ const NAV_GROUPS: {
     items: [
       { to: '/landing', label: 'Landing', icon: LayoutTemplate },
       { to: '/media', label: 'Media', icon: Images },
+      { to: '/case-studies', label: 'Case studies', icon: BookOpen },
     ],
   },
   {

@@ -36,6 +36,10 @@ const PUBLIC_CONTROLLERS: Record<string, string> = {
   PublicPlansController: 'public plan catalogue for the landing page',
   PublicBrandingController:
     'public branding for the console login page (platform name + logo/favicon URLs only, no tenant data)',
+  PublicBlogController:
+    'public blog for the landing (published posts only, cacheable)',
+  PublicCaseStudiesController:
+    'public case studies for the landing (published studies only, cacheable)',
   PublicMediaController:
     'public media bytes for the landing (logos/landing images rendered for anonymous visitors; SVG sanitized at upload + sandbox CSP; the library itself is authenticated)',
   HealthController: 'liveness probe, no data',
@@ -190,10 +194,13 @@ describe('authorization coverage', () => {
     // automatically; update this count only when a controller is added or
     // removed on purpose.
     expect(controllers).toEqual([
+      'AdDispatchController',
       'AddOnsController',
       'AuditController',
       'AuthController',
       'BillingController',
+      'BlogController',
+      'CaseStudiesController',
       'DomainsAdminController',
       'EmailBalanceController',
       'EmailBalanceOverviewController',
@@ -212,7 +219,9 @@ describe('authorization coverage', () => {
       'PlansController',
       'PricingController',
       'PrometheusMetricsController',
+      'PublicBlogController',
       'PublicBrandingController',
+      'PublicCaseStudiesController',
       'PublicLandingContentController',
       'PublicLeadsController',
       'PublicMediaController',

@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AdDispatchModule } from './ad-dispatch/ad-dispatch.module';
 import { AuditQueryModule } from './audit/audit-query.module';
 import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
+import { BlogModule } from './blog/blog.module';
+import { CaseStudiesModule } from './case-studies/case-studies.module';
 import { AuditModule } from './common/audit.module';
 import { EncryptionModule } from './common/encryption.module';
 import { PlatformMailModule } from './common/platform-mail.module';
@@ -37,6 +40,7 @@ import { UsersModule } from './users/users.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AuditModule,
+    AdDispatchModule,
     EncryptionModule,
     RateLimitModule,
     AuditQueryModule,
@@ -44,6 +48,8 @@ import { UsersModule } from './users/users.module';
     TenantRefreshModule,
     AuthModule,
     BillingModule,
+    BlogModule,
+    CaseStudiesModule,
     DomainConfigModule,
     DomainsModule,
     EmailBalanceModule,

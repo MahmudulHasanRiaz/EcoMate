@@ -1,11 +1,13 @@
 import type { LandingContentRow } from '../types';
 
 /**
- * The 20 landing sections, in console tab order (mirrors
+ * The 23 landing sections, in console tab order (mirrors
  * LANDING_SECTIONS in the platform API's landing-content.constants.ts).
  * Scalar sections hold one string per row; object sections hold one
  * flat object per locale (fixed key 'main'); list sections hold one
- * object row per item.
+ * object row per item; map sections hold one object row per key.
+ * The two legal sections render as ONE "Legal" tab in the console
+ * (see pages/landing.tsx); visibility renders as the "Sections" tab.
  */
 export const LANDING_SECTIONS = [
   'hero',
@@ -28,6 +30,9 @@ export const LANDING_SECTIONS = [
   'nav',
   'footer',
   'footerLinks',
+  'visibility',
+  'legal.privacy',
+  'legal.terms',
 ] as const;
 
 export type LandingSection = (typeof LANDING_SECTIONS)[number];
@@ -53,6 +58,9 @@ export const LANDING_SECTION_LABELS: Record<LandingSection, string> = {
   nav: 'Navigation',
   footer: 'Footer',
   footerLinks: 'Footer links',
+  visibility: 'Sections',
+  'legal.privacy': 'Privacy',
+  'legal.terms': 'Terms',
 };
 
 export const LANDING_LOCALES = ['en', 'bn'] as const;
@@ -100,6 +108,18 @@ export const LANDING_LIST_SECTIONS: ReadonlySet<string> = new Set([
   'partners',
   'nav',
   'footerLinks',
+  'legal.privacy',
+  'legal.terms',
+]);
+
+/**
+ * Sections whose rows are a `{ key: value }` map (one object row per
+ * key). Capabilities map section ids to partial section objects;
+ * visibility maps page-section ids to `{ visible: boolean }`.
+ */
+export const LANDING_MAP_SECTIONS: ReadonlySet<string> = new Set([
+  'capabilities',
+  'visibility',
 ]);
 
 /** The 10 capability section ids the landing renders (in page order). */
@@ -129,7 +149,53 @@ export const CAPABILITY_LABELS: Record<string, string> = {
   infra: 'Infra tracking',
 };
 
-export type LandingFieldKind = 'text' | 'textarea' | 'lines' | 'metrics';
+/**
+ * The 17 toggleable page sections (CMS Batch 2, item 11), in page
+ * order: the 10 capability sections, then the standalone sections.
+ * Walkthrough and videoSection are not top-level sections — they hide
+ * inside the lead form and the proof section respectively. Hero,
+ * header, footer and dock are never hideable. Visibility is
+ * locale-independent: one 'en' row per id.
+ */
+export const SECTION_VISIBILITY_IDS = [
+  'fragmented',
+  'packing',
+  'revenue',
+  'logistics',
+  'adDefense',
+  'stores',
+  'omnichannel',
+  'finance',
+  'team',
+  'infra',
+  'gettingStarted',
+  'proof',
+  'pricing',
+  'faq',
+  'leadForm',
+  'walkthrough',
+  'videoSection',
+] as const;
+
+export const SECTION_VISIBILITY_LABELS: Record<string, string> = {
+  ...CAPABILITY_LABELS,
+  gettingStarted: 'Getting started',
+  proof: 'Proof (customer stories)',
+  pricing: 'Pricing',
+  faq: 'FAQ',
+  leadForm: 'Lead form',
+  walkthrough: 'Walkthrough pitch (beside the lead form)',
+  videoSection: 'Video (in the proof section)',
+};
+
+export type LandingFieldKind =
+  | 'text'
+  | 'textarea'
+  | 'lines'
+  | 'metrics'
+  | 'select'
+  | 'media'
+  | 'number';
 
 export interface LandingFieldDef {
   name: string;
@@ -137,6 +203,8 @@ export interface LandingFieldDef {
   kind: LandingFieldKind;
   /** Hint shown under the input (e.g. the lines format). */
   hint?: string;
+  /** Options for 'select' fields (an empty choice is always offered). */
+  options?: { value: string; label: string }[];
 }
 
 function text(name: string, label: string): LandingFieldDef {
@@ -231,11 +299,44 @@ const FAQ_FIELDS: LandingFieldDef[] = [
 
 const TESTIMONIAL_FIELDS: LandingFieldDef[] = [
   text('businessName', 'Business name'),
+  text('category', 'Category'),
   text('founderName', 'Founder name'),
   text('role', 'Role'),
   text('location', 'Location'),
   text('website', 'Website'),
   area('quote', 'Quote'),
+  area('challenge', 'Challenge'),
+  area('solution', 'Solution'),
+  {
+    name: 'format',
+    label: 'Format',
+    kind: 'select',
+    options: [
+      { value: 'text', label: 'Text' },
+      { value: 'image', label: 'Image' },
+      { value: 'video_short', label: 'Video (short)' },
+      { value: 'video_standard', label: 'Video (standard)' },
+    ],
+  },
+  text('videoUrl', 'Video URL (YouTube)'),
+  {
+    name: 'imageUrl',
+    label: 'Photo URL',
+    kind: 'media',
+    hint: 'Founder photo — pick from the media library or paste an https URL.',
+  },
+  {
+    name: 'logoUrl',
+    label: 'Logo URL',
+    kind: 'media',
+    hint: 'Company logo — pick from the media library or paste an https URL.',
+  },
+  {
+    name: 'rating',
+    label: 'Rating',
+    kind: 'number',
+    hint: '1–5 stars (leave blank for none).',
+  },
   text('videoDuration', 'Video duration'),
   text('videoTitle', 'Video title'),
   {
@@ -244,9 +345,25 @@ const TESTIMONIAL_FIELDS: LandingFieldDef[] = [
     kind: 'metrics',
     hint: 'One per line: "stat | label" (e.g. "3x | Faster packing").',
   },
+  {
+    name: 'caseStudySlug',
+    label: 'Case study slug',
+    kind: 'text',
+    hint: 'Links the story card to /case-studies/<slug> (leave blank for none).',
+  },
 ];
 
 const PARTNER_FIELDS: LandingFieldDef[] = [text('name', 'Brand name')];
+
+const LEGAL_FIELDS: LandingFieldDef[] = [
+  text('heading', 'Heading'),
+  {
+    name: 'body',
+    label: 'Body',
+    kind: 'textarea',
+    hint: 'Paragraphs separated by blank lines. Lines starting with "- " become a list. **bold** renders bold.',
+  },
+];
 
 const SEO_FIELDS: LandingFieldDef[] = [
   text('title', 'Page title'),
@@ -392,6 +509,9 @@ export function landingFieldDefs(
   if (section === 'testimonials') return TESTIMONIAL_FIELDS;
   if (section === 'partners') return PARTNER_FIELDS;
   if (section === 'nav' || section === 'footerLinks') return NAV_FIELDS;
+  if (section === 'legal.privacy' || section === 'legal.terms') {
+    return LEGAL_FIELDS;
+  }
   return [];
 }
 
@@ -467,6 +587,10 @@ export function groupLandingRows(rows: LandingContentRow[]): LandingRowGroup[] {
 export type LandingFormState = Record<string, string>;
 
 function valueAsString(value: unknown): string {
+  // Numbers stringify (a rating stored as 5 must show as "5", not as
+  // a blank field that would clobber the value on save); anything
+  // else non-string (booleans, objects) still reads as blank.
+  if (typeof value === 'number') return String(value);
   return typeof value === 'string' ? value : '';
 }
 
@@ -570,6 +694,21 @@ export function landingFormToValue(
       const parsed = parseMetricsLines(raw);
       if ('error' in parsed) return parsed;
       value[def.name] = parsed.metrics;
+    } else if (def.kind === 'number') {
+      // Numbers round-trip as numbers (a rating saves as 5, not "5").
+      // Blank stays blank ('' — the landing merge treats it as absent,
+      // same as any other empty field); non-numeric input is an error
+      // rather than a silent NaN.
+      const trimmed = raw.trim();
+      if (trimmed === '') {
+        value[def.name] = '';
+      } else {
+        const parsed = Number(trimmed);
+        if (Number.isNaN(parsed)) {
+          return { error: `"${def.label}" must be a number.` };
+        }
+        value[def.name] = parsed;
+      }
     } else {
       value[def.name] = raw.trim();
     }

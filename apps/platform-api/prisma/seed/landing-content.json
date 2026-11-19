@@ -353,11 +353,15 @@
     "locale": "bn",
     "value": {
       "businessName": "Aranya Apparel",
+      "category": "Fashion",
       "founderName": "Founder",
       "role": "Founder · Fashion",
       "location": "ঢাকা",
       "website": "aranya-apparel.example",
       "quote": "আমাদের প্যাকিং টেবিলে এখন আর কোন সাইজ গেল তা নিয়ে তর্ক হয় না।",
+      "challenge": "প্যাকিং টেবিলে সাইজ নিয়ে তর্ক।",
+      "solution": "স্ক্যান-ভেরিফাইড প্যাকিং।",
+      "format": "text",
       "metrics": [],
       "videoDuration": "02:41",
       "videoTitle": "Customer story"
@@ -371,11 +375,15 @@
     "locale": "bn",
     "value": {
       "businessName": "Meghna Home & Living",
+      "category": "Home",
       "founderName": "Operations Manager",
       "role": "Operations Manager · Home",
       "location": "ঢাকা",
       "website": "meghna-living.example",
       "quote": "অনলাইন আর শোরুমের স্টক এক জায়গায় দেখতে পাওয়াটাই আমাদের সবচেয়ে বড় স্বস্তি।",
+      "challenge": "অনলাইন ও শোরুম স্টক আলাদা জায়গায়।",
+      "solution": "একটি সেন্ট্রাল ইনভেন্টরি।",
+      "format": "text",
       "metrics": [],
       "videoDuration": "02:41",
       "videoTitle": "Customer story"
@@ -389,11 +397,15 @@
     "locale": "bn",
     "value": {
       "businessName": "Tarango Electronics",
+      "category": "Electronics",
       "founderName": "Head of E-commerce",
       "role": "Head of E-commerce · Electronics",
       "location": "সারা দেশ",
       "website": "tarango.example",
       "quote": "কুরিয়ারের হিসাব মেলানো এখন আর মাসের শেষের দুশ্চিন্তা না।",
+      "challenge": "মাসের শেষে কুরিয়ার হিসাব মেলানো।",
+      "solution": "অটোমেটেড সিওডি ম্যাচিং।",
+      "format": "text",
       "metrics": [],
       "videoDuration": "02:41",
       "videoTitle": "Customer story"
@@ -755,11 +767,15 @@
     "locale": "en",
     "value": {
       "businessName": "Aranya Apparel",
+      "category": "Fashion",
       "founderName": "Founder",
       "role": "Founder · Fashion",
       "location": "Dhaka",
       "website": "aranya-apparel.example",
       "quote": "Our packing table no longer argues about which size went out.",
+      "challenge": "Packing-desk size disputes.",
+      "solution": "Scan-verified packing.",
+      "format": "text",
       "metrics": [],
       "videoDuration": "02:41",
       "videoTitle": "Customer story"
@@ -773,11 +789,15 @@
     "locale": "en",
     "value": {
       "businessName": "Meghna Home & Living",
+      "category": "Home",
       "founderName": "Operations Manager",
       "role": "Operations Manager · Home",
       "location": "Dhaka",
       "website": "meghna-living.example",
       "quote": "Seeing online and showroom stock in one place is our biggest relief.",
+      "challenge": "Online and showroom stock lived in different places.",
+      "solution": "One central inventory.",
+      "format": "text",
       "metrics": [],
       "videoDuration": "02:41",
       "videoTitle": "Customer story"
@@ -791,11 +811,15 @@
     "locale": "en",
     "value": {
       "businessName": "Tarango Electronics",
+      "category": "Electronics",
       "founderName": "Head of E-commerce",
       "role": "Head of E-commerce · Electronics",
       "location": "Nationwide",
       "website": "tarango.example",
       "quote": "Courier reconciliation is no longer a month-end worry.",
+      "challenge": "Month-end courier reconciliation.",
+      "solution": "Automated COD matching.",
+      "format": "text",
       "metrics": [],
       "videoDuration": "02:41",
       "videoTitle": "Customer story"
@@ -1361,6 +1385,385 @@
       "href": "#pricing"
     },
     "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "fragmented",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "packing",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "revenue",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "logistics",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "adDefense",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "stores",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 5,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "omnichannel",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 6,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "finance",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 7,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "team",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 8,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "infra",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 9,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "gettingStarted",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 10,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "proof",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 11,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "pricing",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 12,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "faq",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 13,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "leadForm",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 14,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "walkthrough",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 15,
+    "isActive": true
+  },
+  {
+    "section": "visibility",
+    "key": "videoSection",
+    "locale": "en",
+    "value": {
+      "visible": true
+    },
+    "sortOrder": 16,
+    "isActive": true
+  },
+  {
+    "section": "legal.privacy",
+    "key": "privacy-1",
+    "locale": "en",
+    "value": {
+      "heading": "1. What we collect",
+      "body": "We collect only what the service needs to run:\n\n- **Account data:** store name, store address (subdomain), owner email and phone, and a hashed password. Passwords are never stored in plain text.\n- **Workspace data:** the products, orders, customers, media, and settings you create inside your workspace.\n- **Billing data:** plan, subscription, invoices, payment proofs (including transaction references), and payment records.\n- **Operational data:** audit logs of operator and billing actions, security events (such as failed logins), and service logs needed to run and debug the platform."
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "legal.privacy",
+    "key": "privacy-2",
+    "locale": "en",
+    "value": {
+      "heading": "2. How your data is isolated",
+      "body": "EcoMate is multi-tenant: many workspaces share the same infrastructure, but your data is isolated at the database level (row-level security keyed to your workspace id). No other tenant can read or write your data. Platform operators can access workspace data only for support, billing, and safety — every such access is recorded in the audit log."
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "legal.privacy",
+    "key": "privacy-3",
+    "locale": "en",
+    "value": {
+      "heading": "3. How we use your data",
+      "body": "- To provide the service: hosting your storefront, admin, and data.\n- To bill you: invoices, payment proofs, and subscription management.\n- To communicate with you: verification email, welcome and invoice email, trial and payment reminders, and support replies.\n- To keep the platform safe: abuse prevention, rate limiting, and auditing.\n\nWe do not sell your data. We do not use your store data to train models or to advertise to your customers."
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "legal.privacy",
+    "key": "privacy-4",
+    "locale": "en",
+    "value": {
+      "heading": "4. Cookies and tracking",
+      "body": "The service uses strictly necessary cookies for authentication (session and refresh tokens). The signup page may use a Cloudflare Turnstile challenge to block bots; Turnstile is governed by Cloudflare’s privacy policy. Your own storefront may load analytics or tracking pixels you configure (for example Meta Pixel or Google Analytics) — those are under your control and your responsibility to disclose to your shoppers."
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "legal.privacy",
+    "key": "privacy-5",
+    "locale": "en",
+    "value": {
+      "heading": "5. Data retention and deletion",
+      "body": "While your workspace is active, your data is retained for as long as you use the service. When a workspace is deleted, its data is kept for 30 days (the restore window) and then permanently purged — including uploaded media. A full export is taken before the purge and retained for 90 days, after which it is deleted too. Backups rotate on a daily/weekly/monthly/yearly schedule; a deleted workspace disappears from backups as the rotation passes. You can ask for a copy of your data (export) at any time from the platform support team."
+    },
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "legal.privacy",
+    "key": "privacy-6",
+    "locale": "en",
+    "value": {
+      "heading": "6. Your shoppers’ data",
+      "body": "Customer data collected through your storefront (names, phones, addresses, order history) is processed on your behalf as the store owner. You are responsible for telling your shoppers how you use their data and for handling their requests; we provide the tools (export, deletion) to honour them."
+    },
+    "sortOrder": 5,
+    "isActive": true
+  },
+  {
+    "section": "legal.privacy",
+    "key": "privacy-7",
+    "locale": "en",
+    "value": {
+      "heading": "7. Security",
+      "body": "Data is encrypted in transit (TLS) and sensitive platform secrets are encrypted at rest. Platform operator access requires multi-factor authentication. No system is perfectly secure — if you suspect a breach affecting your workspace, contact support immediately."
+    },
+    "sortOrder": 6,
+    "isActive": true
+  },
+  {
+    "section": "legal.privacy",
+    "key": "privacy-8",
+    "locale": "en",
+    "value": {
+      "heading": "8. Changes to this policy",
+      "body": "We may update this policy; material changes are announced by email to workspace owners at least 14 days before they take effect."
+    },
+    "sortOrder": 7,
+    "isActive": true
+  },
+  {
+    "section": "legal.privacy",
+    "key": "privacy-9",
+    "locale": "en",
+    "value": {
+      "heading": "9. Contact",
+      "body": "Privacy questions or requests (access, export, deletion): contact support from your workspace admin or by email to the support address shown in your workspace."
+    },
+    "sortOrder": 8,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-1",
+    "locale": "en",
+    "value": {
+      "heading": "1. The service",
+      "body": "EcoMate provides a multi-tenant commerce workspace: a storefront, product and order management, inventory, couriers, and accounting, hosted as a service. Each workspace (a “tenant”) is isolated from every other tenant at the database level — your products, orders, customers, and settings are visible only inside your workspace."
+    },
+    "sortOrder": 0,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-2",
+    "locale": "en",
+    "value": {
+      "heading": "2. Accounts",
+      "body": "You sign up with a store name, a store address (subdomain), an owner email address, and a password. Your email must be verified before your workspace is created; verification links expire after 24 hours and can be re-sent. You are responsible for keeping your owner credentials safe and for everything done with them. Passwords must be at least 12 characters."
+    },
+    "sortOrder": 1,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-3",
+    "locale": "en",
+    "value": {
+      "heading": "3. Trials, plans, and billing",
+      "body": "New workspaces start on a trial of the plan shown on the pricing page. No payment card is required to start a trial. When the trial ends, the workspace moves to a grace period; if the renewal invoice stays unpaid past the grace period, the workspace is suspended (reads keep working, writes are blocked) and later cancelled. Invoices are issued per billing period; payment is confirmed by submitting a payment proof, which our team reviews. Prices shown on the pricing page are the current prices; plan changes take effect immediately or at the next period, as chosen."
+    },
+    "sortOrder": 2,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-4",
+    "locale": "en",
+    "value": {
+      "heading": "4. Your content and data",
+      "body": "Your store content — products, orders, customers, media, and settings — remains yours. You grant us only the rights needed to operate the service (hosting, backups, and support). You are responsible for the legality of what you sell and publish through your workspace, including compliance with applicable law in Bangladesh and any market you sell into."
+    },
+    "sortOrder": 3,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-5",
+    "locale": "en",
+    "value": {
+      "heading": "5. Acceptable use",
+      "body": "You must not use the service to break the law, to infringe others’ rights, to send spam or phishing, to attack the platform or other tenants, or to probe other tenants’ data. We may suspend a workspace that violates this section, with notice where practical."
+    },
+    "sortOrder": 4,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-6",
+    "locale": "en",
+    "value": {
+      "heading": "6. Availability and support",
+      "body": "We aim to keep the service available, but we do not guarantee uninterrupted availability. Scheduled maintenance is announced in advance where possible. Support is provided by email; response times depend on your plan."
+    },
+    "sortOrder": 5,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-7",
+    "locale": "en",
+    "value": {
+      "heading": "7. Suspension, cancellation, and deletion",
+      "body": "We may suspend a workspace for unpaid invoices (after the grace period), for a violation of these terms, or to protect the platform. You may request deletion of your workspace at any time. After deletion, your data is kept for 30 days (the restore window) and then permanently purged, including your uploaded media; a full export is taken before the purge and retained for 90 days. After the purge, the data cannot be recovered."
+    },
+    "sortOrder": 6,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-8",
+    "locale": "en",
+    "value": {
+      "heading": "8. Liability",
+      "body": "The service is provided “as is”, without warranties of any kind. To the maximum extent permitted by law, our liability for any claim arising from the service is limited to the fees you paid in the 12 months before the claim. Nothing in this section limits liability that cannot be limited by law."
+    },
+    "sortOrder": 7,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-9",
+    "locale": "en",
+    "value": {
+      "heading": "9. Changes to these terms",
+      "body": "We may update these terms; material changes are announced by email to workspace owners at least 14 days before they take effect. Continued use after the effective date means you accept the new terms."
+    },
+    "sortOrder": 8,
+    "isActive": true
+  },
+  {
+    "section": "legal.terms",
+    "key": "terms-10",
+    "locale": "en",
+    "value": {
+      "heading": "10. Contact",
+      "body": "Questions about these terms: contact support from your workspace admin or by email to the support address shown in your workspace."
+    },
+    "sortOrder": 9,
     "isActive": true
   }
 ]

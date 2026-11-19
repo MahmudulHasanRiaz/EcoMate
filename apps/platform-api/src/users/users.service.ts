@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,6 +15,7 @@ import { PlatformPrismaService } from '../prisma/prisma.service';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
+import { ResetTotpDto } from './dto/reset-totp.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ROLE_MATRIX } from './role-matrix';
 
@@ -269,6 +271,141 @@ export class UsersService {
       entity: 'PlatformUser',
       entityId: id,
       after: { sessionsRevoked: true },
+    });
+    return { success: true };
+  }
+
+  /**
+   * Per-operator session list (CMS item 15). A session is one refresh-token
+   * rotation family (familyId): one login mints a family, every refresh
+   * keeps it. Rows are grouped per family; device/IP come from the newest
+   * row that carries them, lastUsedAt is the newest activity, expiry is
+   * the newest live token's expiry (or the newest overall when revoked).
+   * SUPERADMIN only (controller) — sessions reveal device/IP, so they stay
+   * with the role that already manages users.
+   */
+  async listSessions(id: string) {
+    const user = await this.prisma.platformUser.findUnique({
+      where: { id },
+    });
+    if (!user) throw new NotFoundException('Platform user not found');
+
+    const rows = await this.prisma.platformRefreshToken.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        familyId: true,
+        userAgent: true,
+        ipAddress: true,
+        lastUsedAt: true,
+        expiresAt: true,
+        revokedAt: true,
+        createdAt: true,
+      },
+    });
+
+    const byFamily = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const list = byFamily.get(row.familyId);
+      if (list) list.push(row);
+      else byFamily.set(row.familyId, [row]);
+    }
+
+    const sessions = [...byFamily.entries()].map(([familyId, family]) => {
+      // Rows arrive newest-first; the newest row carrying metadata wins.
+      const withMeta = family.find((r) => r.userAgent || r.ipAddress);
+      const live = family.filter((r) => !r.revokedAt);
+      const lastUsed = family.reduce<Date | null>((max, r) => {
+        const at = r.lastUsedAt ?? r.createdAt;
+        return !max || at > max ? at : max;
+      }, null);
+      const created = family.reduce<Date>(
+        (min, r) => (r.createdAt < min ? r.createdAt : min),
+        family[0].createdAt,
+      );
+      const pool = live.length > 0 ? live : family;
+      const expires = pool.reduce<Date>(
+        (max, r) => (r.expiresAt > max ? r.expiresAt : max),
+        pool[0].expiresAt,
+      );
+      return {
+        id: familyId,
+        userAgent: withMeta?.userAgent ?? null,
+        ipAddress: withMeta?.ipAddress ?? null,
+        createdAt: created,
+        lastUsedAt: lastUsed,
+        expiresAt: expires,
+        revoked: live.length === 0,
+        tokenCount: family.length,
+      };
+    });
+    sessions.sort(
+      (a, b) => (b.lastUsedAt?.getTime() ?? 0) - (a.lastUsedAt?.getTime() ?? 0),
+    );
+    return { data: sessions };
+  }
+
+  /**
+   * Revoke one session: kills the WHOLE rotation family (consistent with
+   * the replay-revokes-family rule in AuthService.refresh), so every token
+   * minted by that login stops working. Audited. Idempotent: revoking an
+   * already-revoked family succeeds with revokedCount 0.
+   */
+  async revokeSession(id: string, familyId: string, actorId: string) {
+    const user = await this.prisma.platformUser.findUnique({
+      where: { id },
+    });
+    if (!user) throw new NotFoundException('Platform user not found');
+    const rows = await this.prisma.platformRefreshToken.findMany({
+      where: { userId: id, familyId },
+      select: { id: true },
+    });
+    if (rows.length === 0) {
+      throw new NotFoundException('Session not found');
+    }
+    const { count } = await this.prisma.platformRefreshToken.updateMany({
+      where: { userId: id, familyId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await this.audit.record({
+      actorId,
+      action: 'users.session.revoke',
+      entity: 'PlatformRefreshToken',
+      entityId: familyId,
+      after: { userId: id, revokedCount: count },
+    });
+    return { success: true, revokedCount: count };
+  }
+
+  /**
+   * Admin TOTP reset (CMS item 16): superadmin-only, audited, never
+   * returns a secret, no self-reset (403). Clears the whole enrollment
+   * (secret, pending secret, enabled-at, recovery codes — via
+   * MfaService.clearMfa, which also revokes all sessions). A SUPERADMIN
+   * target must re-enroll at next login (AuthService.login returns
+   * mfaSetupRequired); other roles log in without MFA until they enroll
+   * again. The optional reason is audit metadata only.
+   */
+  async resetTotp(id: string, actorId: string, dto: ResetTotpDto = {}) {
+    const current = await this.prisma.platformUser.findUnique({
+      where: { id },
+    });
+    if (!current) throw new NotFoundException('Platform user not found');
+    if (id === actorId) {
+      throw new ForbiddenException('You cannot reset your own TOTP enrollment');
+    }
+
+    await this.mfa.clearMfa(id);
+    const reason = dto.reason?.trim();
+    await this.audit.record({
+      actorId,
+      action: 'users.totp.reset',
+      entity: 'PlatformUser',
+      entityId: id,
+      after: {
+        sessionsRevoked: true,
+        ...(reason ? { reason } : {}),
+      },
     });
     return { success: true };
   }

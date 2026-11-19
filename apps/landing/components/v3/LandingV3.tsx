@@ -39,9 +39,17 @@ import { MkPricing } from './Pricing';
 import { MkFaq, MkLeadForm } from './Closing';
 
 export function LandingV3({ plans }: { plans: PublicPlan[] }) {
-  const { locale } = useLanding();
+  const { locale, content } = useLanding();
   // Mobile nav drawer state lives here so the dock can hide while it is open.
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Section visibility (CMS Batch 2, item 11): a missing id — or no
+  // managed map at all — means VISIBLE. Walkthrough and videoSection
+  // are not top-level sections: they hide inside MkLeadForm (Closing)
+  // and MkTrust respectively, from the same map.
+  const isVisible = (id: string) => content.visibility?.[id] !== false;
+  // R-PRICING-NAV, extended: the #pricing nav/footer link drops when
+  // there are no public plans OR when pricing is hidden in the CMS.
+  const hasPricing = plans.length > 0 && isVisible('pricing');
 
   return (
     // D3 locale transition: key remounts on locale switch so the page-enter fade +
@@ -53,57 +61,87 @@ export function LandingV3({ plans }: { plans: PublicPlan[] }) {
       <MkHeader
         drawerOpen={drawerOpen}
         onDrawerChange={setDrawerOpen}
-        hasPricing={plans.length > 0}
+        hasPricing={hasPricing}
       />
       <main>
         <MkHero />
-        <Reveal delay={staggerDelayMs(0)}>
-          <MkFragmented />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(1)}>
-          <MkPacking />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(2)}>
-          <MkRevenue />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(1)}>
-          <MkLogistics />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(2)}>
-          <MkAdDefense />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(1)}>
-          <MkStores />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(2)}>
-          <MkOmnichannel />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(1)}>
-          <MkFinance />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(2)}>
-          <MkTeam />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(1)}>
-          <MkInfra />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(2)}>
-          <MkGettingStarted />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(1)}>
-          <MkTrust />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(2)}>
-          <MkPricing plans={plans} />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(1)}>
-          <MkFaq />
-        </Reveal>
-        <Reveal delay={staggerDelayMs(0)}>
-          <MkLeadForm />
-        </Reveal>
+        {isVisible('fragmented') && (
+          <Reveal delay={staggerDelayMs(0)}>
+            <MkFragmented />
+          </Reveal>
+        )}
+        {isVisible('packing') && (
+          <Reveal delay={staggerDelayMs(1)}>
+            <MkPacking />
+          </Reveal>
+        )}
+        {isVisible('revenue') && (
+          <Reveal delay={staggerDelayMs(2)}>
+            <MkRevenue />
+          </Reveal>
+        )}
+        {isVisible('logistics') && (
+          <Reveal delay={staggerDelayMs(1)}>
+            <MkLogistics />
+          </Reveal>
+        )}
+        {isVisible('adDefense') && (
+          <Reveal delay={staggerDelayMs(2)}>
+            <MkAdDefense />
+          </Reveal>
+        )}
+        {isVisible('stores') && (
+          <Reveal delay={staggerDelayMs(1)}>
+            <MkStores />
+          </Reveal>
+        )}
+        {isVisible('omnichannel') && (
+          <Reveal delay={staggerDelayMs(2)}>
+            <MkOmnichannel />
+          </Reveal>
+        )}
+        {isVisible('finance') && (
+          <Reveal delay={staggerDelayMs(1)}>
+            <MkFinance />
+          </Reveal>
+        )}
+        {isVisible('team') && (
+          <Reveal delay={staggerDelayMs(2)}>
+            <MkTeam />
+          </Reveal>
+        )}
+        {isVisible('infra') && (
+          <Reveal delay={staggerDelayMs(1)}>
+            <MkInfra />
+          </Reveal>
+        )}
+        {isVisible('gettingStarted') && (
+          <Reveal delay={staggerDelayMs(2)}>
+            <MkGettingStarted />
+          </Reveal>
+        )}
+        {isVisible('proof') && (
+          <Reveal delay={staggerDelayMs(1)}>
+            <MkTrust />
+          </Reveal>
+        )}
+        {isVisible('pricing') && (
+          <Reveal delay={staggerDelayMs(2)}>
+            <MkPricing plans={plans} />
+          </Reveal>
+        )}
+        {isVisible('faq') && (
+          <Reveal delay={staggerDelayMs(1)}>
+            <MkFaq />
+          </Reveal>
+        )}
+        {isVisible('leadForm') && (
+          <Reveal delay={staggerDelayMs(0)}>
+            <MkLeadForm />
+          </Reveal>
+        )}
       </main>
-      <MkFooter hasPricing={plans.length > 0} />
+      <MkFooter hasPricing={hasPricing} />
       <MkDock drawerOpen={drawerOpen} />
     </div>
   );

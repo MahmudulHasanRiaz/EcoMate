@@ -10,12 +10,15 @@ import {
   landingScalarFieldNames,
   landingValueToForm,
   LANDING_LIST_SECTIONS,
+  LANDING_MAP_SECTIONS,
   LANDING_OBJECT_SECTIONS,
   LANDING_SCALAR_SECTIONS,
   LANDING_SECTIONS,
   LANDING_SECTION_LABELS,
   metricsToLines,
   parseMetricsLines,
+  SECTION_VISIBILITY_IDS,
+  SECTION_VISIBILITY_LABELS,
 } from './landing-content';
 
 function row(
@@ -29,6 +32,8 @@ function row(
     value: {},
     sortOrder: 0,
     isActive: true,
+    status: 'published',
+    version: 1,
     createdAt: '2026-11-17T00:00:00Z',
     updatedAt: '2026-11-17T00:00:00Z',
     ...overrides,
@@ -36,19 +41,28 @@ function row(
 }
 
 describe('landing sections', () => {
-  it('has 20 sections, every one labelled, every one classified', () => {
-    expect(LANDING_SECTIONS).toHaveLength(20);
+  it('has 23 sections, every one labelled, every one classified', () => {
+    expect(LANDING_SECTIONS).toHaveLength(23);
     for (const section of LANDING_SECTIONS) {
       expect(LANDING_SECTION_LABELS[section].length).toBeGreaterThan(0);
       const kinds = [
         LANDING_SCALAR_SECTIONS.has(section),
         LANDING_OBJECT_SECTIONS.has(section),
         LANDING_LIST_SECTIONS.has(section),
-        section === 'capabilities',
+        LANDING_MAP_SECTIONS.has(section),
       ].filter(Boolean);
-      // Exactly one kind per section (capabilities is its own kind).
+      // Exactly one kind per section (map sections cover capabilities
+      // and visibility).
       expect(kinds).toHaveLength(1);
     }
+  });
+
+  it('classifies the Batch 2 sections (visibility map, legal lists)', () => {
+    expect(LANDING_MAP_SECTIONS.has('visibility')).toBe(true);
+    expect(LANDING_MAP_SECTIONS.has('capabilities')).toBe(true);
+    expect(LANDING_LIST_SECTIONS.has('legal.privacy')).toBe(true);
+    expect(LANDING_LIST_SECTIONS.has('legal.terms')).toBe(true);
+    expect(LANDING_SECTION_LABELS.visibility).toBe('Sections');
   });
 });
 
@@ -121,6 +135,49 @@ describe('landingFieldDefs', () => {
     expect(
       landingFieldDefs('footerLinks', 'footer-1').map((f) => f.name),
     ).toEqual(['label', 'href']);
+  });
+
+  it('returns the extended testimonial fields (item 14)', () => {
+    const defs = landingFieldDefs('testimonials', 'story-x');
+    const names = defs.map((f) => f.name);
+    for (const name of [
+      'businessName',
+      'category',
+      'challenge',
+      'solution',
+      'format',
+      'videoUrl',
+      'imageUrl',
+      'logoUrl',
+      'rating',
+      'caseStudySlug',
+      'metrics',
+    ]) {
+      expect(names).toContain(name);
+    }
+    const format = defs.find((f) => f.name === 'format')!;
+    expect(format.kind).toBe('select');
+    expect(format.options?.map((o) => o.value)).toEqual([
+      'text',
+      'image',
+      'video_short',
+      'video_standard',
+    ]);
+    expect(defs.find((f) => f.name === 'imageUrl')!.kind).toBe('media');
+    expect(defs.find((f) => f.name === 'logoUrl')!.kind).toBe('media');
+  });
+
+  it('returns heading + body for the legal sections (item 22)', () => {
+    expect(
+      landingFieldDefs('legal.privacy', 'privacy-1').map((f) => f.name),
+    ).toEqual(['heading', 'body']);
+    expect(
+      landingFieldDefs('legal.terms', 'terms-1').map((f) => f.name),
+    ).toEqual(['heading', 'body']);
+    const body = landingFieldDefs('legal.privacy', 'privacy-1').find(
+      (f) => f.name === 'body',
+    )!;
+    expect(body.kind).toBe('textarea');
   });
 
   it('returns the full field list for object sections', () => {
@@ -229,6 +286,32 @@ describe('landingFieldDefs', () => {
   });
 });
 
+describe('section visibility (item 11)', () => {
+  it('lists 17 toggleable ids in page order, every one labelled', () => {
+    expect(SECTION_VISIBILITY_IDS).toHaveLength(17);
+    // The 10 capability ids first, in capability order.
+    expect([...SECTION_VISIBILITY_IDS.slice(0, 10)]).toEqual([
+      ...CAPABILITY_KEYS,
+    ]);
+    expect([...SECTION_VISIBILITY_IDS.slice(10)]).toEqual([
+      'gettingStarted',
+      'proof',
+      'pricing',
+      'faq',
+      'leadForm',
+      'walkthrough',
+      'videoSection',
+    ]);
+    for (const id of SECTION_VISIBILITY_IDS) {
+      expect(SECTION_VISIBILITY_LABELS[id].length).toBeGreaterThan(0);
+    }
+    // Hero/header/footer/dock are never hideable.
+    for (const id of ['hero', 'header', 'footer', 'dock']) {
+      expect(SECTION_VISIBILITY_IDS).not.toContain(id);
+    }
+  });
+});
+
 describe('isValidLandingKey', () => {
   it('accepts slugs and camelCase field names', () => {
     expect(isValidLandingKey('faq-1')).toBe(true);
@@ -277,19 +360,47 @@ describe('landingValueToForm / landingFormToValue', () => {
     const defs = landingFieldDefs('testimonials', 'story-x');
     const value = {
       businessName: 'Aranya',
+      category: 'Fashion',
       founderName: 'Ayesha',
       role: 'Founder',
       location: 'Dhaka',
       website: 'aranya.example',
       quote: 'Great.',
+      challenge: 'Packing disputes.',
+      solution: 'Scan-verified packing.',
+      format: 'video_short',
+      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      imageUrl: 'https://cdn.example.com/photo.jpg',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      rating: 5,
       videoDuration: '2:41',
       videoTitle: 'Story',
       metrics: [{ stat: '3x', label: 'Growth' }],
+      caseStudySlug: 'aranya-apparel',
     };
     const form = landingValueToForm(value, defs, false);
     expect(form.businessName).toBe('Aranya');
     expect(form.metrics).toBe('3x | Growth');
+    expect(form.format).toBe('video_short');
+    // A numeric rating displays as "5" and saves back as the NUMBER 5
+    // (not the string "5", and never a blank that would clobber it).
+    expect(form.rating).toBe('5');
     expect(landingFormToValue(form, defs, false)).toEqual({ value });
+  });
+
+  it('number fields: blank stays blank, non-numeric is an error', () => {
+    const defs = landingFieldDefs('testimonials', 'story-x');
+    const blank = landingFormToValue({ rating: '' }, defs, false);
+    expect(blank).toEqual({
+      value: expect.objectContaining({ rating: '' }),
+    });
+    expect(landingFormToValue({ rating: 'abc' }, defs, false)).toEqual({
+      error: '"Rating" must be a number.',
+    });
+    // A numeric string in the stored value also displays (the API
+    // accepts either form; the merge normalises both).
+    const form = landingValueToForm({ rating: '4' }, defs, false);
+    expect(form.rating).toBe('4');
   });
 
   it('round-trips a lines field, dropping blank lines', () => {

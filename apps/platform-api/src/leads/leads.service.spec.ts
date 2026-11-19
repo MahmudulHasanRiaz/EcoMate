@@ -89,6 +89,11 @@ describe('LeadsService.create — validation', () => {
         consentText: null,
         utmSource: null,
         utmCampaign: null,
+        fbp: null,
+        fbc: null,
+        eventId: null,
+        ttclid: null,
+        tiktokEventId: null,
         ip: '1.2.3.4',
         userAgent: 'test-agent',
       },
@@ -381,6 +386,7 @@ describe('LeadsService — admin reads and triage', () => {
         take: 20,
         include: {
           convertedTenant: { select: { id: true, name: true, slug: true } },
+          assignedTo: { select: { id: true, name: true, email: true } },
         },
       }),
     );

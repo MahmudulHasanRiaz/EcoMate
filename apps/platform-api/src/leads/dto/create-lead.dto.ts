@@ -77,6 +77,37 @@ export class CreateLeadDto {
   @MaxLength(255)
   utmCampaign?: string;
 
+  /**
+   * Ad attribution capture (CMS batch 2, item 21): Meta browser id /
+   * click id / dedup event id, TikTok click id / dedup event id. All
+   * optional — the form sends what it has (usually none: no Pixel is
+   * loaded on the landing, so _fbp/_fbc cookies rarely exist).
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  fbp?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  fbc?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  eventId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  ttclid?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  tiktokEventId?: string;
+
   /** Cloudflare Turnstile token. Optional — never required (see LeadsService). */
   @IsOptional()
   @IsString()

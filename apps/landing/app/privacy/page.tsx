@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/site-header';
+import { LegalBlocks } from '@/components/legal-content';
+import { fetchManagedLegal } from '@/lib/landing-content';
+import { formatLegalUpdatedAt } from '@/lib/legal';
 import { fetchBranding } from '@/lib/branding';
 
 export const metadata: Metadata = {
@@ -9,16 +12,32 @@ export const metadata: Metadata = {
 };
 
 export default async function PrivacyPage() {
-  const { platformName } = await fetchBranding();
+  // Managed blocks (console /landing "Legal" tab, English) with the
+  // hardcoded copy below as the fallback — the fetch never throws, so
+  // a downed API still serves a complete policy. "Last updated" comes
+  // from the latest managed row update when managed content serves.
+  const [{ platformName }, legal] = await Promise.all([
+    fetchBranding(),
+    fetchManagedLegal('privacy', 'en'),
+  ]);
+  const updated = formatLegalUpdatedAt(legal?.updatedAt ?? null);
   return (
     <>
       <SiteHeader />
       <main className="mk-legal">
         <p className="eyebrow">Privacy Policy</p>
         <h1>Privacy Policy</h1>
-        <p className="legal-updated">Last updated: 17 November 2026.</p>
+        <p className="legal-updated">
+          {updated
+            ? `Last updated: ${updated}.`
+            : 'Last updated: 17 November 2026.'}
+        </p>
 
         <div className="mk-prose">
+        {legal ? (
+          <LegalBlocks blocks={legal.blocks} />
+        ) : (
+          <>
         <h2>1. What we collect</h2>
         <p>We collect only what the service needs to run:</p>
         <ul>
@@ -122,6 +141,8 @@ export default async function PrivacyPage() {
           support from your workspace admin or by email to the support
           address shown in your workspace.
         </p>
+          </>
+        )}
         </div>
       </main>
     </>

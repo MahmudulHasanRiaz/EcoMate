@@ -35,8 +35,8 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(200)
-  refresh(@Body() dto: RefreshTokenDto) {
-    return this.auth.refresh(dto.refreshToken);
+  refresh(@Body() dto: RefreshTokenDto, @Req() req: any) {
+    return this.auth.refresh(dto.refreshToken, requestMeta(req));
   }
 
   @Post('logout')

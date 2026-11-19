@@ -23,8 +23,9 @@ describe('settings sections registry', () => {
     // a top-level nav item, not a setting — it is intentionally absent.
     // Landing (Batch 1) is the 7th section; Media storage (media
     // library) is the 8th; SaaS SMTP (email-balance rate + expiry) is
-    // the 9th.
+    // the 9th; Ad tracking (CMS batch 2, item 21) is the 10th.
     expect(SETTINGS_SECTIONS.map((s) => s.id).sort()).toEqual([
+      'ad-tracking',
       'branding',
       'landing',
       'maintenance',

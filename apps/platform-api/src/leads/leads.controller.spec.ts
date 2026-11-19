@@ -43,12 +43,13 @@ function guardContext(handler: any, role?: string): any {
 describe('LeadsController', () => {
   it('lists with the query params and returns the detail row', async () => {
     const { controller, leads } = makeController();
-    await controller.list('2', '10', 'NEW', 'ayesha');
+    await controller.list('2', '10', 'NEW', 'ayesha', 'true');
     expect(leads.list).toHaveBeenCalledWith({
       page: '2',
       limit: '10',
       status: 'NEW',
       search: 'ayesha',
+      overdue: 'true',
     });
     await expect(controller.detail('lead-1')).resolves.toEqual({
       id: 'lead-1',
@@ -62,12 +63,18 @@ describe('LeadsController', () => {
       rows: [{ id: 'lead-1' }],
       truncated: false,
     });
-    const result: any = await controller.export('WON', undefined, {
-      id: 'user-1',
-    });
+    const result: any = await controller.export(
+      'WON',
+      undefined,
+      {
+        id: 'user-1',
+      },
+      'true',
+    );
     expect(leads.exportRows).toHaveBeenCalledWith({
       status: 'WON',
       search: undefined,
+      overdue: 'true',
     });
     expect(leads.toCsv).toHaveBeenCalledWith([{ id: 'lead-1' }]);
     expect(result.options.type).toBe('text/csv; charset=utf-8');

@@ -1,6 +1,13 @@
 export type Locale = 'en' | 'bn';
 export type Theme = 'light' | 'dark';
 
+/** Testimonial format (CMS Batch 2, item 14 — reference TestimonialForm). */
+export type TestimonialFormat =
+  | 'text'
+  | 'image'
+  | 'video_short'
+  | 'video_standard';
+
 export interface NavItem {
   label: string;
   href: string;
@@ -23,6 +30,18 @@ export interface CaseStudy {
   solution: string;
   videoDuration?: string;
   videoTitle?: string;
+  /** Slug of a published case study this story links to (optional). */
+  caseStudySlug?: string;
+  /** CMS Batch 2, item 14 — all optional, absent on built-in stories. */
+  format?: TestimonialFormat;
+  /** YouTube URL for the story's own video (beats the section video). */
+  videoUrl?: string;
+  /** Founder photo URL (media library or https URL). */
+  imageUrl?: string;
+  /** Company logo URL (media library or https URL). */
+  logoUrl?: string;
+  /** 1–5 stars; absent when the CMS row has no valid rating. */
+  rating?: number;
 }
 
 /**
@@ -367,4 +386,14 @@ export interface LandingContent {
     }[];
     ctaLabel: string;
   };
+  /**
+   * Section visibility (CMS Batch 2, item 11): section id → visible.
+   * Only present when the merge ran with managed visibility rows; a
+   * missing id (or a missing map) means VISIBLE — hiding is opt-in,
+   * so an unmanaged or downed API never hides a section. The built-in
+   * fallback carries no map (everything visible). Keys are the 10
+   * capability ids + gettingStarted, proof, pricing, faq, leadForm,
+   * walkthrough, videoSection.
+   */
+  visibility?: Record<string, boolean>;
 }

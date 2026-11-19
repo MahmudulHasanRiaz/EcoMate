@@ -196,6 +196,8 @@ model PlatformUser {
   impersonations ImpersonationSession[]
   invitesCreated PlatformUserInvite[]
   mediaUploads   MediaAsset[]          @relation("MediaUploadedBy")
+  /// Leads assigned to this operator (Batch 2, item 12).
+  assignedLeads  Lead[]                @relation("LeadAssignedTo")
 
   @@index([role, status])
 }
@@ -226,9 +228,19 @@ model PlatformRefreshToken {
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime     @default(now())
+  /// Device/browser the session logged in from (User-Agent, capped at 512
+  /// chars when recorded). Null for tokens minted before session metadata.
+  userAgent  String?
+  /// IP address the session logged in from (or last refreshed from).
+  ipAddress  String?
+  /// Last login or refresh in this token's rotation family. Access-token
+  /// use does not touch the DB, so this is login/refresh activity, not
+  /// the last API call.
+  lastUsedAt DateTime?
 
   @@index([userId, expiresAt])
   @@index([familyId])
+  @@index([userId, lastUsedAt])
 }
 
 model Tenant {
@@ -820,15 +832,68 @@ model Lead {
   consentText   String?         @db.Text
   utmSource     String?
   utmCampaign   String?
+  /// Operator the lead is assigned to (Batch 2, item 12). SetNull on
+  /// operator delete so the lead survives its assignee. Back-field on
+  /// PlatformUser is `assignedLeads` (same pattern as
+  /// LeadConvertedTenant / convertedFromLeads).
+  assignedToId  String?
+  assignedTo    PlatformUser? @relation("LeadAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  /// When the next follow-up is due. Overdue = followUpAt < now AND
+  /// status NOT IN (WON, CLOSED, LOST) — see LeadsService.buildWhere.
+  followUpAt    DateTime?
+  /// Operator-only working notes (never shown to the lead).
+  internalNotes String?       @db.Text
   convertedTenantId String?
   convertedTenant Tenant?       @relation("LeadConvertedTenant", fields: [convertedTenantId], references: [id], onDelete: SetNull)
   ip            String?
   userAgent     String?         @db.Text
+  /// Ad attribution capture (CMS batch 2, item 21): Meta browser id /
+  /// click id / dedup event id + TikTok click id / dedup event id, sent
+  /// by the lead form when present. No Pixel is loaded on the landing,
+  /// so these are usually null — the dispatchers send only what exists.
+  fbp           String?
+  fbc           String?
+  eventId       String?
+  ttclid        String?
+  tiktokEventId String?
+  adDispatches  AdDispatch[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
   @@index([status, createdAt])
   @@index([convertedTenantId])
+  @@index([assignedToId])
+  @@index([followUpAt])
+}
+
+/// One ad-platform dispatch for a lead (CMS batch 2, item 21): a durable
+/// retry-queue row for Meta Conversions API / TikTok Events API (and any
+/// future platform — `platform` is a String validated at the API layer
+/// against the configured platforms, so a new platform needs no
+/// migration). Backoff ladder 1m/5m/30m/2h/12h (mirror of the reference
+/// dispatch_queue): 5 retries, so after the 6th failed attempt the row
+/// is terminal `failed` until an operator retries it from the lead drawer.
+///
+/// status: pending = queued or retrying (nextRetryAt in the future);
+/// sent = delivered (sentAt set); failed = ladder exhausted.
+/// attempts counts send attempts; lastError carries the last failure
+/// for the lead drawer.
+model AdDispatch {
+  id          String    @id @default(uuid())
+  leadId      String
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  platform    String
+  eventName   String
+  status      String    @default("pending")
+  attempts    Int       @default(0)
+  lastError   String?   @db.Text
+  nextRetryAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([leadId, platform, eventName])
+  @@index([status, nextRetryAt])
 }
 
 /// One manageable piece of the public SaaS landing content (plan §13:
@@ -857,11 +922,73 @@ model LandingContent {
   value     Json
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
+  /// Draft/publish (CMS batch 2, item 17): 'draft' | 'published'.
+  /// A String validated at the API layer — like sections, intentionally
+  /// NOT a Prisma enum. New rows are drafts; the migration backfills
+  /// existing rows as published (they were live the moment they were
+  /// saved). Public read serves published + active rows; a draft row's
+  /// last published revision still serves as the live copy.
+  status    String   @default("draft")
+  /// Optimistic-locking counter. PATCH requires expectedVersion and
+  /// bumps this on every successful edit; publish never changes it.
+  version   Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  revisions LandingContentRevision[]
+
   @@unique([section, key, locale])
   @@index([section, locale, sortOrder])
+  @@index([status, isActive])
+}
+
+/// Snapshot of a published LandingContent payload (CMS batch 2,
+/// item 17). Created on publish (the payload that went live) and when
+/// a published row is edited or restored (so the live copy survives
+/// the edit as a draft). Append-only: a restore creates a NEW draft
+/// version holding the snapshot's payload — history is never
+/// rewritten. version = the row's version at snapshot time.
+model LandingContentRevision {
+  id               String         @id @default(uuid())
+  landingContentId String
+  landingContent   LandingContent @relation(fields: [landingContentId], references: [id], onDelete: Cascade)
+  version          Int
+  value            Json
+  actorId          String?
+  note             String?
+  createdAt        DateTime       @default(now())
+
+  @@index([landingContentId, version])
+  @@index([landingContentId, createdAt])
+}
+
+/// A published customer case study for the public landing
+/// (/case-studies + /case-studies/[slug]; console /case-studies).
+/// A dedicated model, not a LandingContent section: slugs must be
+/// unique and routable, and the public list/detail reads are
+/// slug-keyed. Metrics are [{ stat, label }] lines — the same shape
+/// as testimonial metrics. Only isPublished rows are ever served by
+/// the public endpoints; drafts exist for the console only.
+model CaseStudy {
+  id               String   @id @default(uuid())
+  title            String
+  slug             String   @unique
+  client           String
+  businessType     String
+  problem          String   @db.Text
+  solution         String   @db.Text
+  outcome          String   @db.Text
+  metrics          Json     @default("[]")
+  featuredImageUrl String?
+  videoUrl         String?
+  websiteUrl       String?
+  seoTitle         String?
+  seoDescription   String?  @db.Text
+  isPublished      Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([isPublished, createdAt])
 }
 
 /// One file in the platform media library (console /media; StackMate
@@ -1086,4 +1213,117 @@ model TenantEmailAccount {
   freeGrantClaimed     Boolean   @default(false)
   lowBalanceNotifiedAt DateTime?
   updatedAt            DateTime  @updatedAt
+}
+
+/// ── Blog (Landing CMS Batch 2, item 20) ─────────────────────────────
+/// Public SaaS landing blog: bilingual posts, hierarchical categories,
+/// tags. Migration 20261119140000_blog.
+///
+/// SLUG UNIQUENESS: slugs are unique among LIVE posts only — a soft-
+/// deleted post FREES its slug (a new post may reuse it). Prisma has
+/// no partial-unique-index support, so the schema deliberately has NO
+/// @@unique([slug]) here; the partial unique index
+///   CREATE UNIQUE INDEX "BlogPost_slug_live_key"
+///     ON "BlogPost"("slug") WHERE "deletedAt" IS NULL
+/// lives in the migration SQL, and BlogService enforces live-slug
+/// uniqueness in code (409 on clash) with the index as a race backstop
+/// (P2002 → 409).
+///
+/// STATUS is a String validated at the API layer
+/// (draft | scheduled | published | archived) — intentionally NOT a
+/// Prisma enum, like the landing sections: a new status needs no
+/// migration. A post with status 'scheduled' and publishedAt <= now
+/// counts as published in public reads (on-read publish check —
+/// no cron; see BlogService.effectiveStatus).
+///
+/// CONTENT is Tiptap HTML (console editor), NOT markdown. The landing
+/// sanitizes it with isomorphic-dompurify before rendering.
+model BlogPost {
+  id               String        @id @default(uuid())
+  titleEn          String
+  titleBn          String
+  /// URL slug. Unique among live posts only (see the header comment).
+  slug             String
+  excerptEn        String?
+  excerptBn        String?
+  /// Tiptap HTML.
+  contentEn        String        @db.Text
+  contentBn        String        @db.Text @default("")
+  author           String        @default("")
+  categoryId       String?
+  category         BlogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  featuredImageUrl String?
+  videoUrl         String?
+  galleryUrls      String[]      @default([])
+  /// Minutes. Auto-computed from contentEn on save when omitted.
+  readTime         Int?
+  /// draft | scheduled | published | archived (API-validated).
+  status           String        @default("draft")
+  /// Publish time: for 'scheduled' posts the go-live moment; for
+  /// 'published' posts the display date (auto-set to now on publish
+  /// when omitted).
+  publishedAt      DateTime?
+  seoTitleEn       String?
+  seoTitleBn       String?
+  seoDescEn        String?
+  seoDescBn        String?
+  canonicalUrl     String?
+  /// Soft delete (slug freed — see the header comment).
+  deletedAt        DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  tags BlogPostTag[]
+
+  @@index([status, publishedAt])
+  @@index([categoryId])
+  @@index([slug])
+  /// The public-list predicate (deletedAt IS NULL + status +
+  /// publishedAt ordering) in one index.
+  @@index([deletedAt, status, publishedAt])
+}
+
+/// Hierarchical blog category (Category → Sub-category →
+/// Sub-sub-category, …). Children of a deleted category become roots
+/// (parentId SetNull); posts of a deleted category lose it (SetNull).
+model BlogCategory {
+  id        String         @id @default(uuid())
+  nameEn    String
+  nameBn    String
+  descEn    String?
+  descBn    String?
+  slug      String         @unique
+  parentId  String?
+  parent    BlogCategory?  @relation("BlogCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  BlogCategory[] @relation("BlogCategoryTree")
+  sortOrder Int            @default(0)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  posts BlogPost[]
+
+  @@index([parentId])
+}
+
+model BlogTag {
+  id        String   @id @default(uuid())
+  nameEn    String
+  nameBn    String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts BlogPostTag[]
+}
+
+model BlogPostTag {
+  id        String   @id @default(uuid())
+  postId    String
+  post      BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       BlogTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, tagId])
+  @@index([tagId])
 }

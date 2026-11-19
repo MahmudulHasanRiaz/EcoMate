@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/site-header';
+import { LegalBlocks } from '@/components/legal-content';
+import { fetchManagedLegal } from '@/lib/landing-content';
+import { formatLegalUpdatedAt } from '@/lib/legal';
 import { fetchBranding } from '@/lib/branding';
 
 export const metadata: Metadata = {
@@ -9,16 +12,32 @@ export const metadata: Metadata = {
 };
 
 export default async function TermsPage() {
-  const { platformName } = await fetchBranding();
+  // Managed blocks (console /landing "Legal" tab, English) with the
+  // hardcoded copy below as the fallback — the fetch never throws, so
+  // a downed API still serves complete terms. "Last updated" comes
+  // from the latest managed row update when managed content serves.
+  const [{ platformName }, legal] = await Promise.all([
+    fetchBranding(),
+    fetchManagedLegal('terms', 'en'),
+  ]);
+  const updated = formatLegalUpdatedAt(legal?.updatedAt ?? null);
   return (
     <>
       <SiteHeader />
       <main className="mk-legal">
         <p className="eyebrow">Terms of Service</p>
         <h1>Terms of Service</h1>
-        <p className="legal-updated">Last updated: 17 November 2026.</p>
+        <p className="legal-updated">
+          {updated
+            ? `Last updated: ${updated}.`
+            : 'Last updated: 17 November 2026.'}
+        </p>
 
         <div className="mk-prose">
+        {legal ? (
+          <LegalBlocks blocks={legal.blocks} />
+        ) : (
+          <>
         <h2>1. The service</h2>
         <p>
           {platformName} provides a multi-tenant commerce workspace: a
@@ -112,6 +131,8 @@ export default async function TermsPage() {
           Questions about these terms: contact support from your workspace
           admin or by email to the support address shown in your workspace.
         </p>
+          </>
+        )}
         </div>
       </main>
     </>

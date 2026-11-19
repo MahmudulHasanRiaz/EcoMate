@@ -71,6 +71,18 @@ describe('seedLandingContent', () => {
     expect(rows.size).toBe(3);
   });
 
+  it('seeds rows as PUBLISHED version 1 (visible on the landing from the first boot)', async () => {
+    const { client, rows, keyOf } = makeClient();
+    await seedLandingContent(client, SEED_ROWS);
+    const row = rows.get(keyOf('hero', 'badge', 'en'))!;
+    expect(row.status).toBe('published');
+    expect(row.version).toBe(1);
+    for (const stored of rows.values()) {
+      expect(stored.status).toBe('published');
+      expect(stored.version).toBe(1);
+    }
+  });
+
   it('is idempotent: a second run creates nothing', async () => {
     const { client, rows } = makeClient();
     await seedLandingContent(client, SEED_ROWS);

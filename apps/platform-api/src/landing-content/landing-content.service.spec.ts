@@ -1,6 +1,12 @@
 import { validate } from 'class-validator';
 import { CreateLandingContentDto } from './dto/create-landing-content.dto';
+import { UpdateLandingContentDto } from './dto/update-landing-content.dto';
 import { LandingContentService } from './landing-content.service';
+
+/** Mock rows are live (published) rows unless a test says otherwise. */
+function liveAll<T extends Record<string, unknown>>(rows: T[]) {
+  return rows.map((row) => ({ status: 'published', ...row }));
+}
 
 function makeService() {
   const prisma: any = {
@@ -17,20 +23,36 @@ function makeService() {
         updatedAt: new Date(),
         ...data,
       })),
-      update: jest.fn().mockImplementation(async ({ data }: any) => ({
-        id: 'row-1',
+      update: jest.fn().mockImplementation(async ({ where, data }: any) => ({
+        id: where.id,
         value: data.value ?? 'old',
         sortOrder: data.sortOrder ?? 0,
         isActive: data.isActive ?? true,
+        version: data.version ?? 1,
+        status: data.status ?? 'draft',
       })),
       delete: jest.fn().mockResolvedValue({ id: 'row-1' }),
     },
+    landingContentRevision: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockImplementation(async ({ data }: any) => ({
+        id: 'rev-1',
+        createdAt: new Date(),
+        ...data,
+      })),
+    },
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  const cache = {
+    purge: jest.fn().mockResolvedValue({ revalidated: ['landing-content'] }),
+  };
   return {
     prisma,
     audit,
-    service: new LandingContentService(prisma, audit as any),
+    cache,
+    service: new LandingContentService(prisma, audit as any, cache as any),
   };
 }
 
@@ -49,7 +71,7 @@ describe('LandingContentService.publicGrouped', () => {
 
   it('groups active rows by locale then section with the exact public shape', async () => {
     const { service, prisma } = makeService();
-    prisma.landingContent.findMany.mockResolvedValue([
+    prisma.landingContent.findMany.mockResolvedValue(liveAll([
       {
         section: 'hero',
         key: 'badge',
@@ -134,7 +156,7 @@ describe('LandingContentService.publicGrouped', () => {
         value: '+8801894828290',
         sortOrder: 0,
       },
-    ]);
+    ]));
     await expect(service.publicGrouped()).resolves.toEqual({
       en: {
         hero: { badge: 'Commerce OS', headlinePart1: 'Run your' },
@@ -177,7 +199,7 @@ describe('LandingContentService.publicGrouped', () => {
 
   it('omits sections with zero active rows', async () => {
     const { service, prisma } = makeService();
-    prisma.landingContent.findMany.mockResolvedValue([
+    prisma.landingContent.findMany.mockResolvedValue(liveAll([
       {
         section: 'contact',
         key: 'email',
@@ -185,7 +207,7 @@ describe('LandingContentService.publicGrouped', () => {
         value: 'sales@ecomate.bd',
         sortOrder: 0,
       },
-    ]);
+    ]));
     await expect(service.publicGrouped()).resolves.toEqual({
       en: {},
       bn: { contact: { email: 'sales@ecomate.bd' } },
@@ -194,7 +216,7 @@ describe('LandingContentService.publicGrouped', () => {
 
   it('skips rows with an unknown locale or section', async () => {
     const { service, prisma } = makeService();
-    prisma.landingContent.findMany.mockResolvedValue([
+    prisma.landingContent.findMany.mockResolvedValue(liveAll([
       {
         section: 'hero',
         key: 'badge',
@@ -209,7 +231,7 @@ describe('LandingContentService.publicGrouped', () => {
         value: 'nope',
         sortOrder: 0,
       },
-    ]);
+    ]));
     await expect(service.publicGrouped()).resolves.toEqual({
       en: {},
       bn: {},
@@ -233,7 +255,7 @@ describe('LandingContentService.publicGrouped', () => {
 
   it('serves seo as a scalar map, object sections as one object, and nav/footerLinks as lists', async () => {
     const { service, prisma } = makeService();
-    prisma.landingContent.findMany.mockResolvedValue([
+    prisma.landingContent.findMany.mockResolvedValue(liveAll([
       {
         section: 'seo',
         key: 'title',
@@ -283,7 +305,7 @@ describe('LandingContentService.publicGrouped', () => {
         value: { label: 'Packing', href: '#packing' },
         sortOrder: 0,
       },
-    ]);
+    ]));
     await expect(service.publicGrouped()).resolves.toEqual({
       en: {
         seo: {
@@ -308,7 +330,7 @@ describe('LandingContentService.publicGrouped', () => {
 
   it('serves only the first object row per locale when duplicates exist', async () => {
     const { service, prisma } = makeService();
-    prisma.landingContent.findMany.mockResolvedValue([
+    prisma.landingContent.findMany.mockResolvedValue(liveAll([
       {
         section: 'dock',
         key: 'main',
@@ -323,31 +345,178 @@ describe('LandingContentService.publicGrouped', () => {
         value: { fabLabel: 'Shadow' },
         sortOrder: 1,
       },
-    ]);
+    ]));
     await expect(service.publicGrouped()).resolves.toEqual({
       en: { dock: { fabLabel: 'Contact' } },
       bn: {},
     });
+  });
+
+  it('serves visibility as a keyed map and legal sections as lists', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue(liveAll([
+      {
+        section: 'visibility',
+        key: 'faq',
+        locale: 'en',
+        value: { visible: false },
+        sortOrder: 13,
+      },
+      {
+        section: 'visibility',
+        key: 'pricing',
+        locale: 'en',
+        value: { visible: true },
+        sortOrder: 12,
+      },
+      {
+        section: 'legal.privacy',
+        key: 'privacy-1',
+        locale: 'en',
+        value: { heading: '1. What we collect', body: 'Only what we need.' },
+        sortOrder: 0,
+      },
+      {
+        section: 'legal.terms',
+        key: 'terms-1',
+        locale: 'en',
+        value: { heading: '1. The service', body: 'EcoMate provides…' },
+        sortOrder: 0,
+      },
+    ]));
+    await expect(service.publicGrouped()).resolves.toEqual({
+      en: {
+        visibility: {
+          faq: { visible: false },
+          pricing: { visible: true },
+        },
+        'legal.privacy': [
+          {
+            key: 'privacy-1',
+            heading: '1. What we collect',
+            body: 'Only what we need.',
+          },
+        ],
+        'legal.terms': [
+          { key: 'terms-1', heading: '1. The service', body: 'EcoMate provides…' },
+        ],
+      },
+      bn: {},
+    });
+  });
+});
+
+describe('LandingContentService.publicLegal', () => {
+  it('returns blocks in order plus the latest row update', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue([
+      {
+        id: 'row-1',
+        key: 'privacy-1',
+        value: { heading: '1. What we collect', body: 'Only what we need.' },
+        status: 'published',
+        updatedAt: new Date('2026-11-19T08:00:00Z'),
+      },
+      {
+        id: 'row-2',
+        key: 'privacy-2',
+        value: { heading: '2. Isolation', body: 'Row-level security.' },
+        status: 'published',
+        updatedAt: new Date('2026-11-19T09:30:00Z'),
+      },
+    ]);
+    await expect(service.publicLegal('privacy', 'en')).resolves.toEqual({
+      doc: 'privacy',
+      locale: 'en',
+      blocks: [
+        {
+          key: 'privacy-1',
+          heading: '1. What we collect',
+          body: 'Only what we need.',
+        },
+        {
+          key: 'privacy-2',
+          heading: '2. Isolation',
+          body: 'Row-level security.',
+        },
+      ],
+      updatedAt: '2026-11-19T09:30:00.000Z',
+    });
+    expect(prisma.landingContent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { section: 'legal.privacy', locale: 'en', isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }],
+      }),
+    );
+  });
+
+  it('serves a draft row’s last published revision and hides never-published drafts', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue([
+      {
+        id: 'row-draft',
+        key: 'terms-1',
+        value: { heading: 'DRAFT', body: 'Not live yet.' },
+        status: 'draft',
+        updatedAt: new Date('2026-11-19T10:00:00Z'),
+      },
+      {
+        id: 'row-new',
+        key: 'terms-2',
+        value: { heading: 'Never published', body: 'Invisible.' },
+        status: 'draft',
+        updatedAt: new Date('2026-11-19T10:05:00Z'),
+      },
+    ]);
+    prisma.landingContentRevision.findMany.mockResolvedValue([
+      {
+        landingContentId: 'row-draft',
+        value: { heading: '1. The service', body: 'Live copy.' },
+      },
+    ]);
+    await expect(service.publicLegal('terms', 'en')).resolves.toEqual({
+      doc: 'terms',
+      locale: 'en',
+      blocks: [
+        { key: 'terms-1', heading: '1. The service', body: 'Live copy.' },
+      ],
+      updatedAt: '2026-11-19T10:00:00.000Z',
+    });
+  });
+
+  it('returns empty blocks and a null updatedAt for an empty section', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue([]);
+    await expect(service.publicLegal('privacy', 'bn')).resolves.toEqual({
+      doc: 'privacy',
+      locale: 'bn',
+      blocks: [],
+      updatedAt: null,
+    });
+    expect(
+      prisma.landingContentRevision.findMany,
+    ).not.toHaveBeenCalled();
   });
 });
 
 describe('LandingContentService.health', () => {
   it('counts rows, published rows and the translation gap per section', async () => {
     const { service, prisma } = makeService();
-    prisma.landingContent.findMany.mockResolvedValue([
+    prisma.landingContent.findMany.mockResolvedValue(liveAll([
       { section: 'hero', key: 'badge', locale: 'en', isActive: true },
       { section: 'hero', key: 'badge', locale: 'bn', isActive: true },
       { section: 'hero', key: 'subtitle', locale: 'en', isActive: false },
       { section: 'faq', key: 'faq-1', locale: 'en', isActive: true },
       { section: 'faq', key: 'faq-1', locale: 'bn', isActive: true },
       { section: 'faq', key: 'faq-2', locale: 'bn', isActive: true },
-    ]);
+    ]));
     const result = await service.health();
     const hero = result.sections.find((s) => s.section === 'hero')!;
     expect(hero).toEqual({
       section: 'hero',
       total: 3,
       published: 2,
+      draft: 0,
       missingEn: 0,
       missingBn: 1,
     });
@@ -356,15 +525,37 @@ describe('LandingContentService.health', () => {
       section: 'faq',
       total: 3,
       published: 3,
+      draft: 0,
       missingEn: 1,
       missingBn: 0,
     });
     expect(result.totals).toEqual({
       total: 6,
       published: 5,
+      draft: 0,
       missingEn: 1,
       missingBn: 1,
     });
+  });
+
+  it('counts drafts separately and never counts a draft as published', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue([
+      { section: 'hero', key: 'badge', locale: 'en', isActive: true, status: 'published' },
+      { section: 'hero', key: 'badge', locale: 'bn', isActive: true, status: 'draft' },
+      { section: 'hero', key: 'subtitle', locale: 'en', isActive: false, status: 'draft' },
+    ]);
+    const result = await service.health();
+    const hero = result.sections.find((s) => s.section === 'hero')!;
+    expect(hero).toEqual({
+      section: 'hero',
+      total: 3,
+      published: 1,
+      draft: 2,
+      missingEn: 0,
+      missingBn: 1,
+    });
+    expect(result.totals.draft).toBe(2);
   });
 
   it('lists every known section even with zero rows', async () => {
@@ -373,12 +564,37 @@ describe('LandingContentService.health', () => {
     const result = await service.health();
     expect(result.sections.map((s) => s.section)).toContain('seo');
     expect(result.sections.map((s) => s.section)).toContain('leadForm');
+    expect(result.sections.map((s) => s.section)).toContain('visibility');
+    expect(result.sections.map((s) => s.section)).toContain('legal.privacy');
+    expect(result.sections.map((s) => s.section)).toContain('legal.terms');
     expect(result.totals).toEqual({
       total: 0,
       published: 0,
+      draft: 0,
       missingEn: 0,
       missingBn: 0,
     });
+  });
+
+  it('never counts a missing bn row as a gap for the locale-independent visibility section', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue(liveAll([
+      { section: 'visibility', key: 'faq', locale: 'en', isActive: true },
+      { section: 'visibility', key: 'pricing', locale: 'en', isActive: true },
+    ]));
+    const result = await service.health();
+    const visibility = result.sections.find(
+      (s) => s.section === 'visibility',
+    )!;
+    expect(visibility).toEqual({
+      section: 'visibility',
+      total: 2,
+      published: 2,
+      draft: 0,
+      missingEn: 0,
+      missingBn: 0,
+    });
+    expect(result.totals.missingBn).toBe(0);
   });
 });
 
@@ -420,8 +636,8 @@ describe('LandingContentService — admin CRUD', () => {
     );
   });
 
-  it('creates a row and audits it', async () => {
-    const { service, audit } = makeService();
+  it('creates a DRAFT row (version 1) and audits it', async () => {
+    const { service, prisma, audit } = makeService();
     const row = await service.create(
       {
         section: 'faq',
@@ -433,6 +649,13 @@ describe('LandingContentService — admin CRUD', () => {
       'user-1',
     );
     expect(row.section).toBe('faq');
+    expect(row.status).toBe('draft');
+    expect(row.version).toBe(1);
+    expect(prisma.landingContent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'draft', version: 1 }),
+      }),
+    );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: 'user-1',
@@ -471,33 +694,94 @@ describe('LandingContentService — admin CRUD', () => {
     ).rejects.toThrow('boom');
   });
 
-  it('updates a row partially and audits before/after', async () => {
+  it('updates a row partially, bumps the version, stays a draft, and audits before/after', async () => {
     const { service, prisma, audit } = makeService();
     prisma.landingContent.findUnique.mockResolvedValue({
       id: 'row-1',
       value: 'old',
       sortOrder: 0,
       isActive: true,
+      status: 'draft',
+      version: 2,
     });
-    await service.update('row-1', { isActive: false }, 'user-1');
+    await service.update(
+      'row-1',
+      { expectedVersion: 2, isActive: false },
+      'user-1',
+    );
     expect(prisma.landingContent.update).toHaveBeenCalledWith({
       where: { id: 'row-1' },
-      data: { isActive: false },
+      data: { isActive: false, version: 3, status: 'draft' },
     });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'landing-content.update',
-        before: { value: 'old', sortOrder: 0, isActive: true },
+        before: {
+          value: 'old',
+          sortOrder: 0,
+          isActive: true,
+          version: 2,
+          status: 'draft',
+        },
       }),
     );
+  });
+
+  it('editing a published row snapshots the live copy first, then stages a draft', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      key: 'badge',
+      value: 'Live copy',
+      sortOrder: 0,
+      isActive: true,
+      status: 'published',
+      version: 1,
+    });
+    // No revision exists at v1 (seeded/backfilled row).
+    prisma.landingContentRevision.findFirst.mockResolvedValue(null);
+    await service.update(
+      'row-1',
+      { expectedVersion: 1, value: 'New draft copy' },
+      'user-1',
+    );
+    expect(prisma.landingContentRevision.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          landingContentId: 'row-1',
+          version: 1,
+          value: 'Live copy',
+        }),
+      }),
+    );
+    expect(prisma.landingContent.update).toHaveBeenCalledWith({
+      where: { id: 'row-1' },
+      data: { value: 'New draft copy', version: 2, status: 'draft' },
+    });
+  });
+
+  it('editing a published row with an existing snapshot does not duplicate it', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      key: 'badge',
+      value: 'Live copy',
+      sortOrder: 0,
+      isActive: true,
+      status: 'published',
+      version: 1,
+    });
+    prisma.landingContentRevision.findFirst.mockResolvedValue({ id: 'rev-1' });
+    await service.update('row-1', { expectedVersion: 1, value: 'Edit' });
+    expect(prisma.landingContentRevision.create).not.toHaveBeenCalled();
   });
 
   it('404s on update/delete for an unknown row', async () => {
     const { service, prisma } = makeService();
     prisma.landingContent.findUnique.mockResolvedValue(null);
-    await expect(service.update('missing', { isActive: false })).rejects.toThrow(
-      'Landing content row not found',
-    );
+    await expect(
+      service.update('missing', { expectedVersion: 1, isActive: false }),
+    ).rejects.toThrow('Landing content row not found');
     await expect(service.delete('missing')).rejects.toThrow(
       'Landing content row not found',
     );
@@ -522,6 +806,385 @@ describe('LandingContentService — admin CRUD', () => {
         action: 'landing-content.delete',
         before: { section: 'faq', key: 'faq-1', locale: 'en' },
       }),
+    );
+  });
+});
+
+describe('LandingContentService.publicGrouped — draft/publish', () => {
+  it('hides a never-published draft row from the public endpoint', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue(
+      liveAll([
+        {
+          id: 'row-draft',
+          section: 'faq',
+          key: 'faq-9',
+          locale: 'en',
+          value: { question: 'Draft Q', answer: 'Draft A' },
+          sortOrder: 0,
+          status: 'draft',
+        },
+        {
+          id: 'row-live',
+          section: 'hero',
+          key: 'badge',
+          locale: 'en',
+          value: 'Live badge',
+          sortOrder: 0,
+        },
+      ]),
+    );
+    await expect(service.publicGrouped()).resolves.toEqual({
+      en: { hero: { badge: 'Live badge' } },
+      bn: {},
+    });
+  });
+
+  it('serves the last published revision for a draft row (the live copy survives the edit)', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue(
+      liveAll([
+        {
+          id: 'row-1',
+          section: 'hero',
+          key: 'badge',
+          locale: 'en',
+          value: 'New draft badge',
+          sortOrder: 0,
+          status: 'draft',
+        },
+      ]),
+    );
+    prisma.landingContentRevision.findMany.mockResolvedValue([
+      { landingContentId: 'row-1', value: 'Old live badge' },
+    ]);
+    await expect(service.publicGrouped()).resolves.toEqual({
+      en: { hero: { badge: 'Old live badge' } },
+      bn: {},
+    });
+    expect(prisma.landingContentRevision.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { landingContentId: { in: ['row-1'] } },
+        distinct: ['landingContentId'],
+      }),
+    );
+  });
+
+  it('skips the revision query entirely when no draft rows exist', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findMany.mockResolvedValue(
+      liveAll([
+        {
+          id: 'row-1',
+          section: 'hero',
+          key: 'badge',
+          locale: 'en',
+          value: 'Live badge',
+          sortOrder: 0,
+        },
+      ]),
+    );
+    await service.publicGrouped();
+    expect(prisma.landingContentRevision.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('LandingContentService.update — optimistic locking', () => {
+  async function conflictResponse(
+    service: LandingContentService,
+    dto: Record<string, unknown>,
+  ) {
+    let caught: any;
+    try {
+      await service.update('row-1', dto as any);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect(caught.getStatus()).toBe(409);
+    return caught.getResponse();
+  }
+
+  it('409s on a stale expectedVersion with the changed top-level keys', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      key: 'faq-1',
+      value: { question: 'Q', answer: 'A' },
+      sortOrder: 0,
+      isActive: true,
+      status: 'draft',
+      version: 2,
+    });
+    const response = await conflictResponse(service, {
+      expectedVersion: 1,
+      value: { question: 'Q2', answer: 'A' },
+    });
+    expect(response).toEqual({
+      statusCode: 409,
+      message: expect.any(String),
+      currentVersion: 2,
+      changedKeys: ['question'],
+    });
+    expect(prisma.landingContent.update).not.toHaveBeenCalled();
+  });
+
+  it('409s with the row key for a scalar value', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      key: 'badge',
+      value: 'old',
+      sortOrder: 0,
+      isActive: true,
+      status: 'draft',
+      version: 3,
+    });
+    const response = await conflictResponse(service, {
+      expectedVersion: 2,
+      value: 'new',
+    });
+    expect(response.changedKeys).toEqual(['badge']);
+    expect(response.currentVersion).toBe(3);
+  });
+
+  it('diffs against the snapshot at the expected version when one exists', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      key: 'faq-1',
+      value: { question: 'Q0', answer: 'A2' },
+      sortOrder: 0,
+      isActive: true,
+      status: 'draft',
+      version: 2,
+    });
+    // The value at the version the editor loaded: only the answer
+    // changed since then — even though the editor's own submission
+    // also changes the question, the banner shows the OTHER edit.
+    prisma.landingContentRevision.findFirst.mockResolvedValue({
+      value: { question: 'Q0', answer: 'A' },
+    });
+    const response = await conflictResponse(service, {
+      expectedVersion: 1,
+      value: { question: 'Q-new', answer: 'A' },
+    });
+    expect(response.changedKeys).toEqual(['answer']);
+  });
+
+  it('includes differing metadata fields in changedKeys', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      key: 'faq-1',
+      value: { question: 'Q', answer: 'A' },
+      sortOrder: 0,
+      isActive: true,
+      status: 'draft',
+      version: 2,
+    });
+    const response = await conflictResponse(service, {
+      expectedVersion: 1,
+      sortOrder: 5,
+    });
+    expect(response.changedKeys).toEqual(['sortOrder']);
+  });
+});
+
+describe('LandingContentService.publish', () => {
+  it('publishes a draft, snapshots it, purges the cache, and audits', async () => {
+    const { service, prisma, audit, cache } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      section: 'hero',
+      key: 'badge',
+      locale: 'en',
+      value: 'Go live',
+      sortOrder: 0,
+      isActive: true,
+      status: 'draft',
+      version: 2,
+    });
+    prisma.landingContentRevision.findFirst.mockResolvedValue(null);
+    const result = await service.publish('row-1', 'user-1');
+    expect(prisma.landingContent.update).toHaveBeenCalledWith({
+      where: { id: 'row-1' },
+      data: { status: 'published' },
+    });
+    expect(prisma.landingContentRevision.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          landingContentId: 'row-1',
+          version: 2,
+          value: 'Go live',
+          actorId: 'user-1',
+        }),
+      }),
+    );
+    expect(cache.purge).toHaveBeenCalled();
+    expect(result.cachePurged).toBe(true);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'user-1',
+        action: 'landing-content.publish',
+        entity: 'LandingContent',
+        entityId: 'row-1',
+        before: { status: 'draft', version: 2 },
+        after: { status: 'published', version: 2 },
+      }),
+    );
+  });
+
+  it('is an idempotent no-op for an already-published row', async () => {
+    const { service, prisma, cache } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      value: 'Live',
+      status: 'published',
+      version: 1,
+    });
+    const result = await service.publish('row-1', 'user-1');
+    expect(prisma.landingContent.update).not.toHaveBeenCalled();
+    expect(prisma.landingContentRevision.create).not.toHaveBeenCalled();
+    expect(cache.purge).not.toHaveBeenCalled();
+    expect(result.cachePurged).toBe(false);
+  });
+
+  it('still publishes when the cache purge fails (cachePurged false)', async () => {
+    const { service, prisma, cache } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      value: 'Go live',
+      status: 'draft',
+      version: 1,
+    });
+    cache.purge.mockRejectedValue(new Error('landing down'));
+    const result = await service.publish('row-1');
+    expect(result.cachePurged).toBe(false);
+    expect(prisma.landingContent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'published' } }),
+    );
+  });
+
+  it('404s for an unknown row', async () => {
+    const { service } = makeService();
+    await expect(service.publish('missing')).rejects.toThrow(
+      'Landing content row not found',
+    );
+  });
+});
+
+describe('LandingContentService.revisions + restore', () => {
+  it('lists revisions newest first', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({ id: 'row-1' });
+    prisma.landingContentRevision.findMany.mockResolvedValue([
+      { id: 'rev-2', version: 2 },
+      { id: 'rev-1', version: 1 },
+    ]);
+    const result = await service.revisions('row-1');
+    expect(prisma.landingContentRevision.findMany).toHaveBeenCalledWith({
+      where: { landingContentId: 'row-1' },
+      orderBy: [{ createdAt: 'desc' }, { version: 'desc' }],
+    });
+    expect(result).toHaveLength(2);
+  });
+
+  it('404s revisions for an unknown row', async () => {
+    const { service } = makeService();
+    await expect(service.revisions('missing')).rejects.toThrow(
+      'Landing content row not found',
+    );
+  });
+
+  it('restores forward-only: a new draft version, history intact, never published', async () => {
+    const { service, prisma, audit } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      value: { question: 'Current', answer: 'Now' },
+      sortOrder: 0,
+      isActive: true,
+      status: 'draft',
+      version: 3,
+    });
+    prisma.landingContentRevision.findUnique.mockResolvedValue({
+      id: 'rev-9',
+      landingContentId: 'row-1',
+      version: 1,
+      value: { question: 'Old', answer: 'Then' },
+    });
+    const result = await service.restore('row-1', 'rev-9', 'user-1');
+    expect(prisma.landingContent.update).toHaveBeenCalledWith({
+      where: { id: 'row-1' },
+      data: {
+        value: { question: 'Old', answer: 'Then' },
+        version: 4,
+        status: 'draft',
+      },
+    });
+    // No revision is rewritten or deleted: history stays intact.
+    expect(prisma.landingContentRevision.create).not.toHaveBeenCalled();
+    expect(result.status).toBe('draft');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'landing-content.restore',
+        after: expect.objectContaining({
+          restoredFromRevision: 'rev-9',
+          restoredFromVersion: 1,
+        }),
+      }),
+    );
+  });
+
+  it('restore snapshots a published row before replacing it', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      value: 'Live copy',
+      sortOrder: 0,
+      isActive: true,
+      status: 'published',
+      version: 2,
+    });
+    prisma.landingContentRevision.findUnique.mockResolvedValue({
+      id: 'rev-9',
+      landingContentId: 'row-1',
+      version: 1,
+      value: 'Old copy',
+    });
+    prisma.landingContentRevision.findFirst.mockResolvedValue(null);
+    await service.restore('row-1', 'rev-9');
+    expect(prisma.landingContentRevision.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ version: 2, value: 'Live copy' }),
+      }),
+    );
+  });
+
+  it('404s restore for a missing row, a missing revision, or a foreign revision', async () => {
+    const { service, prisma } = makeService();
+    prisma.landingContent.findUnique.mockResolvedValue(null);
+    await expect(service.restore('missing', 'rev-1')).rejects.toThrow(
+      'Landing content row not found',
+    );
+    prisma.landingContent.findUnique.mockResolvedValue({
+      id: 'row-1',
+      value: 'v',
+      status: 'draft',
+      version: 1,
+    });
+    prisma.landingContentRevision.findUnique.mockResolvedValue(null);
+    await expect(service.restore('row-1', 'rev-gone')).rejects.toThrow(
+      'Revision not found',
+    );
+    prisma.landingContentRevision.findUnique.mockResolvedValue({
+      id: 'rev-1',
+      landingContentId: 'other-row',
+      version: 1,
+      value: 'v',
+    });
+    await expect(service.restore('row-1', 'rev-1')).rejects.toThrow(
+      'Revision not found',
     );
   });
 });
@@ -593,6 +1256,35 @@ describe('CreateLandingContentDto — class-validator', () => {
     ).toEqual([]);
   });
 
+  it('accepts the Batch 2 sections (visibility map, dotted legal names)', async () => {
+    // Dotted section names validate by list membership (@IsIn) — only
+    // ROW keys follow the no-dots pattern.
+    expect(
+      await errorsFor({
+        section: 'visibility',
+        key: 'faq',
+        locale: 'en',
+        value: { visible: false },
+      }),
+    ).toEqual([]);
+    expect(
+      await errorsFor({
+        section: 'legal.privacy',
+        key: 'privacy-1',
+        locale: 'en',
+        value: { heading: '1. What we collect', body: 'Only what we need.' },
+      }),
+    ).toEqual([]);
+    expect(
+      await errorsFor({
+        section: 'legal.terms',
+        key: 'terms-1',
+        locale: 'en',
+        value: { heading: '1. The service', body: 'EcoMate provides…' },
+      }),
+    ).toEqual([]);
+  });
+
   it('rejects a bad key', async () => {
     for (const key of ['faq 1', '-faq', 'faq_', 'a'.repeat(81)]) {
       const errors = await errorsFor({ ...valid, key });
@@ -615,5 +1307,36 @@ describe('CreateLandingContentDto — class-validator', () => {
   it('rejects a negative sortOrder', async () => {
     const errors = await errorsFor({ ...valid, sortOrder: -1 });
     expect(errors.map((e) => e.property)).toContain('sortOrder');
+  });
+});
+
+describe('UpdateLandingContentDto — class-validator', () => {
+  async function errorsFor(input: Record<string, unknown>) {
+    return validate(Object.assign(new UpdateLandingContentDto(), input));
+  }
+
+  it('requires expectedVersion (optimistic locking)', async () => {
+    const errors = await errorsFor({ isActive: false });
+    expect(errors.map((e) => e.property)).toContain('expectedVersion');
+  });
+
+  it('rejects a non-positive expectedVersion', async () => {
+    for (const expectedVersion of [0, -1, 1.5, '2']) {
+      const errors = await errorsFor({ expectedVersion });
+      expect(errors.map((e) => e.property)).toContain('expectedVersion');
+    }
+  });
+
+  it('accepts a valid partial update with expectedVersion', async () => {
+    expect(
+      await errorsFor({
+        expectedVersion: 3,
+        value: { question: 'Q', answer: 'A' },
+        sortOrder: 1,
+      }),
+    ).toEqual([]);
+    expect(await errorsFor({ expectedVersion: 1, isActive: false })).toEqual(
+      [],
+    );
   });
 });

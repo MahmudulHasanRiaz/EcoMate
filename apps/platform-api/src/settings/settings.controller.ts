@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpException,
+  Param,
   Patch,
   Post,
   UseGuards,
@@ -18,6 +19,7 @@ import {
   sanitizeMailErrorMessage,
 } from '../common/platform-mail.service';
 import { TestSmtpDto } from './dto/test-smtp.dto';
+import { UpdateAdTrackingSettingsDto } from './dto/update-ad-tracking-settings.dto';
 import { UpdateBrandingSettingsDto } from './dto/update-branding-settings.dto';
 import { UpdateLandingSettingsDto } from './dto/update-landing-settings.dto';
 import { UpdateMaintenanceSettingsDto } from './dto/update-maintenance-settings.dto';
@@ -209,6 +211,37 @@ export class SettingsController {
       action: 'settings.saas-smtp.update',
       entity: 'PlatformSetting',
       entityId: 'saas_smtp',
+      before,
+      after: next,
+    });
+    return next;
+  }
+
+  @Get('ad-tracking')
+  @Roles(...READ_ROLES)
+  getAdTracking() {
+    return this.settings.getAdTracking();
+  }
+
+  /**
+   * Per-platform ad tracking config (CMS batch 2, item 21). The audit
+   * record carries the public view only — the access token never
+   * appears in before/after (it is not in the public view at all).
+   */
+  @Patch('ad-tracking/:platform')
+  @Roles('SUPERADMIN')
+  async updateAdTracking(
+    @Param('platform') platform: string,
+    @Body() dto: UpdateAdTrackingSettingsDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    const before = this.settings.getAdTracking()[platform] ?? null;
+    const next = await this.settings.updateAdTracking(platform, dto);
+    await this.audit.record({
+      actorId: user?.id,
+      action: 'settings.ad-tracking.update',
+      entity: 'PlatformSetting',
+      entityId: 'ad_tracking',
       before,
       after: next,
     });

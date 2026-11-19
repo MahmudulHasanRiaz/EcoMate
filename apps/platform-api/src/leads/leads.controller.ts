@@ -17,6 +17,9 @@ import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AuditService } from '../common/audit.service';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
+import { AssignLeadDto } from './dto/assign-lead.dto';
+import { UpdateLeadFollowUpDto } from './dto/update-lead-followup.dto';
+import { UpdateLeadNotesDto } from './dto/update-lead-notes.dto';
 import { UpdateLeadStatusDto } from './dto/update-lead-status.dto';
 import { LeadsService } from './leads.service';
 
@@ -41,8 +44,18 @@ export class LeadsController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
+    @Query('overdue') overdue?: string,
   ) {
-    return this.leads.list({ page, limit, status, search });
+    return this.leads.list({ page, limit, status, search, overdue });
+  }
+
+  // NOTE: 'assignees' must be declared BEFORE ':id' like 'export' —
+  // otherwise it matches the :id route and fails the UUID pipe.
+  /** Assignee roster for the lead detail drawer (Batch 2, item 12). */
+  @Get('assignees')
+  @Roles(...READ_ROLES)
+  assignees() {
+    return this.leads.assignees();
   }
 
   // NOTE: 'export' must be declared BEFORE ':id' or 'export' matches the
@@ -53,8 +66,13 @@ export class LeadsController {
     @Query('status') status?: string,
     @Query('search') search?: string,
     @CurrentPlatformUser() user?: { id: string },
+    @Query('overdue') overdue?: string,
   ) {
-    const { rows, truncated } = await this.leads.exportRows({ status, search });
+    const { rows, truncated } = await this.leads.exportRows({
+      status,
+      search,
+      overdue,
+    });
     const stamp = new Date()
       .toISOString()
       .replace(/[-:T]/g, '')
@@ -64,7 +82,7 @@ export class LeadsController {
       action: 'lead.export',
       entity: 'Lead',
       entityId: 'export',
-      after: { rows: rows.length, truncated, status: status ?? null, search: search ?? null },
+      after: { rows: rows.length, truncated, status: status ?? null, search: search ?? null, overdue: overdue ?? null },
     });
     // StreamableFile, not @Res(): the app runs Fastify, where Express-style
     // res.set() 500s (POS analytics lesson).
@@ -91,6 +109,43 @@ export class LeadsController {
     @CurrentPlatformUser() user?: { id: string },
   ) {
     return this.leads.updateStatus(id, dto, user?.id);
+  }
+
+  /**
+   * Lead assignment / follow-up / notes (Batch 2, item 12): three
+   * focused PATCH endpoints instead of one overloaded status PATCH, so
+   * each change gets its own audit action (lead.assigned,
+   * lead.followup.update, lead.notes.update) and its own validation.
+   * Same triage roles as status updates.
+   */
+  @Patch(':id/assign')
+  @Roles('SUPERADMIN', 'BILLING', 'SUPPORT')
+  assign(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignLeadDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.leads.assign(id, dto, user?.id);
+  }
+
+  @Patch(':id/follow-up')
+  @Roles('SUPERADMIN', 'BILLING', 'SUPPORT')
+  updateFollowUp(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLeadFollowUpDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.leads.updateFollowUp(id, dto, user?.id);
+  }
+
+  @Patch(':id/notes')
+  @Roles('SUPERADMIN', 'BILLING', 'SUPPORT')
+  updateNotes(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLeadNotesDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.leads.updateNotes(id, dto, user?.id);
   }
 
   /** Convert-lead-to-tenant (C1): link a lead to its tenant (sets WON). */

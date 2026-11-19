@@ -24,6 +24,10 @@ interface Story {
   website: string;
   videoDuration: string;
   videoTitle: string;
+  caseStudySlug?: string;
+  /** CMS Batch 2, item 14: category + rating shown on the panel. */
+  category: string;
+  rating?: number;
   modal: CaseStudy;
 }
 
@@ -36,8 +40,15 @@ function storyFromCaseStudy(study: CaseStudy): Story {
     website: study.website,
     videoDuration: study.videoDuration ?? '',
     videoTitle: study.videoTitle ?? 'Customer story',
+    caseStudySlug: study.caseStudySlug,
+    category: study.category ?? '',
+    rating: study.rating,
     modal: study,
   };
+}
+
+function ratingStars(rating: number): string {
+  return '★'.repeat(rating) + '☆'.repeat(5 - rating);
 }
 
 export function MkTrust() {
@@ -49,8 +60,13 @@ export function MkTrust() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [videoOpen, setVideoOpen] = useState(false);
   const selected = stories.find((story) => story.id === (selectedId ?? stories[0]?.id)) ?? stories[0];
-  // Real embed when the CMS video URL is set; the illustrated stub otherwise.
-  const embedUrl = youtubeEmbedUrl(content.videoSection.youtubeUrl);
+  // The selected story's own video wins; the section video is the
+  // fallback; the illustrated stub (opening the modal) is the last
+  // resort. Hiding `videoSection` in the CMS hides the whole block.
+  const videoVisible = content.visibility?.videoSection !== false;
+  const embedUrl =
+    youtubeEmbedUrl(selected?.modal.videoUrl ?? '') ??
+    youtubeEmbedUrl(content.videoSection.youtubeUrl);
 
   return (
     <SectionShell id="proof">
@@ -79,7 +95,7 @@ export function MkTrust() {
             ))}
           </div>
           <div className="mk-pn" aria-live="polite">
-            {embedUrl ? (
+            {videoVisible && embedUrl ? (
               <div className="mk-vid-frame">
                 <iframe
                   src={embedUrl}
@@ -89,7 +105,7 @@ export function MkTrust() {
                   allowFullScreen
                 />
               </div>
-            ) : (
+            ) : videoVisible ? (
               <div className="mk-vid">
                 <span className="mk-vid-tag">
                   {proof.chrome.featuredBadge} · {selected.videoDuration}
@@ -103,13 +119,36 @@ export function MkTrust() {
                   <Play size={22} aria-hidden="true" />
                 </button>
               </div>
-            )}
+            ) : null}
             <p className="mk-quote">“{selected.quote}”</p>
+            {(selected.category.trim().length > 0 || selected.rating) && (
+              <p className="mk-strip mk-story-meta">
+                {selected.category.trim()}
+                {selected.category.trim().length > 0 && selected.rating
+                  ? ' · '
+                  : ''}
+                {selected.rating ? (
+                  <span aria-label={`Rated ${selected.rating} out of 5`}>
+                    {ratingStars(selected.rating)}
+                  </span>
+                ) : null}
+              </p>
+            )}
             <p className="mk-strip">
               {selected.businessName}
               {selected.website.trim().length > 0 && ` · ${selected.website}`}
             </p>
-            <a href="#demo" className="mk-demo-link">
+            {/* A managed testimonial with a caseStudySlug links to its
+                full case-study page; otherwise the link keeps its
+                built-in destination. */}
+            <a
+              href={
+                selected.caseStudySlug
+                  ? `/case-studies/${selected.caseStudySlug}`
+                  : '#demo'
+              }
+              className="mk-demo-link"
+            >
               {proof.chrome.watchCaseStudy}
             </a>
           </div>

@@ -74,10 +74,21 @@ export function LandingProvider({
     }
   });
 
-  const content = useMemo(
-    () => mergeLandingContent(landingContent[locale], managed?.[locale]),
-    [locale, managed],
-  );
+  const content = useMemo(() => {
+    // Visibility is locale-independent (single 'en' rows) — inject the
+    // 'en' visibility map into every locale's merge, so hiding a
+    // section hides it in Bangla too. Without managed rows the merge
+    // leaves every section visible.
+    const localeManaged = managed?.[locale];
+    const visibility = managed?.en?.visibility;
+    const withVisibility =
+      visibility && localeManaged
+        ? { ...localeManaged, visibility }
+        : visibility
+          ? { visibility }
+          : localeManaged;
+    return mergeLandingContent(landingContent[locale], withVisibility);
+  }, [locale, managed]);
 
   const toggleLocale = useCallback(() => {
     setLocale((prev) => (prev === 'en' ? 'bn' : 'en'));

@@ -5,6 +5,7 @@ import {
   Globe,
   HardDrive,
   Mail,
+  Megaphone,
   Palette,
   Percent,
   Send,
@@ -12,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { PaymentMethod, PlatformSettings } from '../../types';
+import { AdTrackingSection } from './ad-tracking';
 import { BrandingSection } from './branding';
 import { LandingSection } from './landing';
 import { MaintenanceSection } from './maintenance';
@@ -115,6 +117,13 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     icon: HardDrive,
     group: 'Website',
     component: MediaSection,
+  },
+  {
+    id: 'ad-tracking',
+    label: 'Ad tracking',
+    icon: Megaphone,
+    group: 'Website',
+    component: AdTrackingSection,
   },
 ];
 

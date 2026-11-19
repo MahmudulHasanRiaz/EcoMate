@@ -11,6 +11,14 @@
  * - capabilities: `{ sectionId: partialSectionObject }` (one row per
  *   capability section id)
  * - list: `[{ key, ...value }]` (one row per item, sortOrder then key)
+ * - visibility: `{ sectionId: { visible: boolean } }` (one row per
+ *   page-section id, 'en' locale ONLY — visibility is
+ *   locale-independent; the landing injects the 'en' map into every
+ *   locale's merge. See LANDING_MAP_SECTIONS.)
+ * - legal.privacy / legal.terms: list rows of `{ heading, body }`
+ *   blocks per locale (sortOrder = block order). The dotted names are
+ *   fine: sections are validated by list membership (@IsIn), and only
+ *   ROW keys follow LANDING_KEY_PATTERN (no dots in keys).
  *
  * The console (apps/platform-admin/src/lib/landing-content.ts) keeps a
  * MIRROR of these lists — change both together, plus the seed rows in
@@ -38,6 +46,9 @@ export const LANDING_SECTIONS = [
   'nav',
   'footer',
   'footerLinks',
+  'visibility',
+  'legal.privacy',
+  'legal.terms',
 ] as const;
 
 export type LandingSection = (typeof LANDING_SECTIONS)[number];
@@ -67,6 +78,19 @@ export const LANDING_LIST_SECTIONS: ReadonlySet<string> = new Set([
   'partners',
   'nav',
   'footerLinks',
+  'legal.privacy',
+  'legal.terms',
+]);
+
+/**
+ * Sections whose public shape is a `{ key: value }` map (one row per
+ * key, value = the row's object). Capabilities map section ids to
+ * partial section objects; visibility maps page-section ids to
+ * `{ visible: boolean }`.
+ */
+export const LANDING_MAP_SECTIONS: ReadonlySet<string> = new Set([
+  'capabilities',
+  'visibility',
 ]);
 
 /** Sections whose public shape is a `{ field: value }` scalar map. */

@@ -50,6 +50,8 @@ export const LOGIN_LOCKOUT_MAX_MINUTES = 240;
  * 401 (covers the console's concurrent-refresh race) instead of a family
  * revoke. */
 export const REFRESH_REUSE_GRACE_MS = 30_000;
+/** User-Agent strings are capped at this length when stored on a token. */
+export const SESSION_USER_AGENT_MAX_LENGTH = 512;
 
 /** Precomputed bcrypt hash used for unknown emails, so a login attempt
  * against a nonexistent account costs the same time as a real password
@@ -108,7 +110,11 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  private async issueTokens(user: PlatformSessionUser, familyId?: string) {
+  private async issueTokens(
+    user: PlatformSessionUser,
+    familyId?: string,
+    meta: LoginMeta = {},
+  ) {
     const accessToken = await this.jwt.signAsync(
       { sub: user.id, email: user.email, role: user.role, type: 'platform' },
       { secret: this.accessSecret(), expiresIn: this.accessTtlSeconds() },
@@ -128,6 +134,11 @@ export class AuthService {
         // A fresh login starts a family; a refresh keeps the family's id.
         familyId: familyId ?? randomUUID(),
         expiresAt,
+        // Session metadata for the per-operator session list (CMS item
+        // 15): device/IP from this request, last-used is now.
+        userAgent: meta.userAgent?.slice(0, SESSION_USER_AGENT_MAX_LENGTH) ?? null,
+        ipAddress: meta.ip ?? null,
+        lastUsedAt: new Date(),
       },
     });
 
@@ -281,7 +292,7 @@ export class AuthService {
     }
 
     await this.recordSuccessfulLogin(sessionUser, meta);
-    return this.issueTokens(sessionUser);
+    return this.issueTokens(sessionUser, undefined, meta);
   }
 
   /**
@@ -306,10 +317,10 @@ export class AuthService {
       role: user.role,
     };
     await this.recordSuccessfulLogin(sessionUser, meta);
-    return this.issueTokens(sessionUser);
+    return this.issueTokens(sessionUser, undefined, meta);
   }
 
-  async refresh(refreshToken: string) {
+  async refresh(refreshToken: string, meta: LoginMeta = {}) {
     let payload: any;
     try {
       payload = await this.jwt.verifyAsync(refreshToken, {
@@ -363,6 +374,9 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
+    // The rotated token keeps the family's device/IP when this request
+    // carries none (e.g. a client without a User-Agent header), and
+    // lastUsedAt moves to now — the session stays recognisable.
     return this.issueTokens(
       {
         id: user.id,
@@ -371,6 +385,10 @@ export class AuthService {
         role: user.role,
       },
       row.familyId,
+      {
+        ip: meta.ip ?? row.ipAddress ?? undefined,
+        userAgent: meta.userAgent ?? row.userAgent ?? undefined,
+      },
     );
   }
 

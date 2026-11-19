@@ -13,6 +13,9 @@ function makeController() {
     create: jest.fn().mockResolvedValue({ id: 'row-1' }),
     update: jest.fn().mockResolvedValue({ id: 'row-1' }),
     delete: jest.fn().mockResolvedValue({ deleted: true }),
+    publish: jest.fn().mockResolvedValue({ id: 'row-1', cachePurged: true }),
+    revisions: jest.fn().mockResolvedValue([]),
+    restore: jest.fn().mockResolvedValue({ id: 'row-1' }),
   };
   return {
     content,
@@ -63,6 +66,16 @@ describe('LandingContentController', () => {
     expect(content.delete).toHaveBeenCalledWith('row-1', 'user-1');
   });
 
+  it('passes publish/revisions/restore through with the actor id', async () => {
+    const { controller, content } = makeController();
+    await controller.publish('row-1', { id: 'user-1' });
+    expect(content.publish).toHaveBeenCalledWith('row-1', 'user-1');
+    await controller.revisions('row-1');
+    expect(content.revisions).toHaveBeenCalledWith('row-1');
+    await controller.restore('row-1', 'rev-1', { id: 'user-1' });
+    expect(content.restore).toHaveBeenCalledWith('row-1', 'rev-1', 'user-1');
+  });
+
   it('serves the health summary to read roles', async () => {
     const { controller, content } = makeController();
     await controller.health();
@@ -99,6 +112,19 @@ describe('LandingContentController', () => {
     expect(rolesOf(LandingContentController.prototype.delete)).toEqual([
       'SUPERADMIN',
       'BILLING',
+    ]);
+    expect(rolesOf(LandingContentController.prototype.publish)).toEqual([
+      'SUPERADMIN',
+      'BILLING',
+    ]);
+    expect(rolesOf(LandingContentController.prototype.restore)).toEqual([
+      'SUPERADMIN',
+      'BILLING',
+    ]);
+    expect(rolesOf(LandingContentController.prototype.revisions)).toEqual([
+      'SUPERADMIN',
+      'BILLING',
+      'SUPPORT',
     ]);
   });
 

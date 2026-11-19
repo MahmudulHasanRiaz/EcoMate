@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
@@ -51,6 +52,7 @@ function makeService() {
       count: jest.fn().mockResolvedValue(1),
     },
     platformRefreshToken: {
+      findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 2 }),
     },
     platformUserInvite: {
@@ -326,6 +328,152 @@ describe('UsersService', () => {
     await expect(service.resetMfa(USER_ID, ADMIN_ID)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('lists sessions grouped by rotation family, newest activity first', async () => {
+    const { service, prisma, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+    // Family A: two rows (login + one refresh), family B: one row.
+    prisma.platformRefreshToken.findMany.mockResolvedValue([
+      {
+        familyId: 'family-a',
+        userAgent: 'Mozilla/5.0 (Macintosh)',
+        ipAddress: '203.0.113.7',
+        lastUsedAt: new Date('2026-11-19T10:00:00Z'),
+        expiresAt: new Date('2026-11-26T10:00:00Z'),
+        revokedAt: null,
+        createdAt: new Date('2026-11-19T10:00:00Z'),
+      },
+      {
+        familyId: 'family-a',
+        userAgent: 'Mozilla/5.0 (Macintosh)',
+        ipAddress: '203.0.113.7',
+        lastUsedAt: new Date('2026-11-19T09:00:00Z'),
+        expiresAt: new Date('2026-11-26T09:00:00Z'),
+        revokedAt: new Date('2026-11-19T10:00:00Z'),
+        createdAt: new Date('2026-11-19T09:00:00Z'),
+      },
+      {
+        familyId: 'family-b',
+        userAgent: null,
+        ipAddress: null,
+        lastUsedAt: null,
+        expiresAt: new Date('2026-11-25T08:00:00Z'),
+        revokedAt: new Date('2026-11-19T08:30:00Z'),
+        createdAt: new Date('2026-11-18T08:00:00Z'),
+      },
+    ]);
+
+    const result = await service.listSessions(USER_ID);
+
+    expect(result.data).toHaveLength(2);
+    const [a, b] = result.data;
+    expect(a.id).toBe('family-a');
+    expect(a.userAgent).toBe('Mozilla/5.0 (Macintosh)');
+    expect(a.ipAddress).toBe('203.0.113.7');
+    expect(a.lastUsedAt).toEqual(new Date('2026-11-19T10:00:00Z'));
+    expect(a.createdAt).toEqual(new Date('2026-11-19T09:00:00Z'));
+    expect(a.expiresAt).toEqual(new Date('2026-11-26T10:00:00Z'));
+    expect(a.revoked).toBe(false);
+    expect(a.tokenCount).toBe(2);
+    // Fully revoked family, no metadata: last-used falls back to createdAt.
+    expect(b.id).toBe('family-b');
+    expect(b.userAgent).toBeNull();
+    expect(b.revoked).toBe(true);
+    expect(b.lastUsedAt).toEqual(new Date('2026-11-18T08:00:00Z'));
+  });
+
+  it('refuses a session list for a missing user', async () => {
+    const { service, prisma } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue(null);
+    await expect(service.listSessions(USER_ID)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('revokes a whole session family and audits it', async () => {
+    const { service, prisma, audit, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+    prisma.platformRefreshToken.findMany.mockResolvedValue([
+      { id: 'row-1' },
+      { id: 'row-2' },
+    ]);
+    prisma.platformRefreshToken.updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await service.revokeSession(USER_ID, 'family-a', ADMIN_ID);
+
+    expect(result).toEqual({ success: true, revokedCount: 1 });
+    expect(prisma.platformRefreshToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID, familyId: 'family-a', revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: ADMIN_ID,
+        action: 'users.session.revoke',
+        entity: 'PlatformRefreshToken',
+        entityId: 'family-a',
+        after: { userId: USER_ID, revokedCount: 1 },
+      }),
+    );
+  });
+
+  it('revoking an unknown session 404s', async () => {
+    const { service, prisma, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+    prisma.platformRefreshToken.findMany.mockResolvedValue([]);
+    await expect(
+      service.revokeSession(USER_ID, 'no-such-family', ADMIN_ID),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('resets TOTP for another user, audits the reason, never returns a secret', async () => {
+    const { service, prisma, audit, mfa, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+
+    const result = await service.resetTotp(USER_ID, ADMIN_ID, {
+      reason: 'Lost authenticator device',
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(JSON.stringify(result)).not.toContain('secret');
+    expect(mfa.clearMfa).toHaveBeenCalledWith(USER_ID);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: ADMIN_ID,
+        action: 'users.totp.reset',
+        entityId: USER_ID,
+        after: {
+          sessionsRevoked: true,
+          reason: 'Lost authenticator device',
+        },
+      }),
+    );
+  });
+
+  it('refuses a TOTP self-reset with 403 and a missing user with 404', async () => {
+    const { service, prisma, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue(admin);
+    await expect(
+      service.resetTotp(ADMIN_ID, ADMIN_ID, {}),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    prisma.platformUser.findUnique.mockResolvedValue(null);
+    await expect(
+      service.resetTotp(USER_ID, ADMIN_ID, {}),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('invites a user, replaces a pending invite and emails the accept link', async () => {

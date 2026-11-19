@@ -18,6 +18,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
+import { ResetTotpDto } from './dto/reset-totp.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
@@ -115,6 +116,36 @@ export class UsersController {
     @CurrentPlatformUser() user: PlatformRequestUser,
   ) {
     return this.users.resetMfa(id, user.id);
+  }
+
+  @Get(':id/sessions')
+  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @Roles('SUPERADMIN')
+  listSessions(@Param('id') id: string) {
+    return this.users.listSessions(id);
+  }
+
+  @Delete(':id/sessions/:sessionId')
+  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @Roles('SUPERADMIN')
+  revokeSession(
+    @Param('id') id: string,
+    @Param('sessionId') sessionId: string,
+    @CurrentPlatformUser() user: PlatformRequestUser,
+  ) {
+    return this.users.revokeSession(id, sessionId, user.id);
+  }
+
+  @Post(':id/totp/reset')
+  @HttpCode(200)
+  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @Roles('SUPERADMIN')
+  resetTotp(
+    @Param('id') id: string,
+    @Body() dto: ResetTotpDto,
+    @CurrentPlatformUser() user: PlatformRequestUser,
+  ) {
+    return this.users.resetTotp(id, user.id, dto ?? {});
   }
 
   @Post('invite')

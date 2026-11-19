@@ -18,7 +18,12 @@
  *   string or string-array, type-checked against the built-in field).
  * - faq / testimonials / partners / nav / footerLinks: full-list
  *   replace when the managed list is non-empty.
+ * - visibility: `{ sectionId: { visible } }` map → `content.visibility`
+ *   (a missing id is visible; only boolean values are trusted).
  * - a section absent from the managed payload keeps the built-in copy.
+ *
+ * Legal documents (item 22) are NOT part of this merge: the /privacy
+ * and /terms pages fetch their own blocks via fetchManagedLegal.
  *
  * Every merge step spreads the CURRENT merged state (never the raw
  * fallback), so a copy merge and a list merge on the same top-level
@@ -31,6 +36,7 @@ import type {
   Locale,
   NavItem,
 } from '@/lib/landingTypes';
+import { isCaseStudySlug } from './case-studies';
 
 export interface ManagedTestimonial {
   key: string;
@@ -43,6 +49,28 @@ export interface ManagedTestimonial {
   videoDuration: string;
   videoTitle: string;
   metrics: { stat: string; label: string }[];
+  /**
+   * Optional slug of a published case study (/case-studies/<slug>)
+   * this testimonial links to from its Trust card. Follow-up: the
+   * console has no field for it yet (the testimonial field defs in
+   * platform-admin belong to the item-14 group) — until then it can
+   * only be set via the landing-content API directly.
+   */
+  caseStudySlug?: string;
+  /**
+   * CMS Batch 2, item 14 — all optional. category/challenge/solution
+   * used to be forced to '' in the merge; they now pass through when
+   * the row carries them. rating is 1–5 (a number or numeric string);
+   * format is one of text/image/video_short/video_standard.
+   */
+  category?: string;
+  challenge?: string;
+  solution?: string;
+  format?: string;
+  videoUrl?: string;
+  imageUrl?: string;
+  logoUrl?: string;
+  rating?: number | string;
 }
 
 export interface ManagedFaqItem {
@@ -61,6 +89,14 @@ export interface ManagedNavItem {
   label: string;
   href: string;
 }
+
+/**
+ * Managed section visibility (CMS Batch 2, item 11): one
+ * `{ visible: boolean }` row per page-section id, 'en' locale only
+ * (visibility is locale-independent — the provider injects the 'en'
+ * map into every locale's merge). A missing id means visible.
+ */
+export type ManagedVisibility = Record<string, { visible?: unknown }>;
 
 export interface ManagedLocaleContent {
   hero?: Record<string, unknown>;
@@ -83,6 +119,7 @@ export interface ManagedLocaleContent {
   nav?: ManagedNavItem[];
   footer?: Record<string, unknown>;
   footerLinks?: ManagedNavItem[];
+  visibility?: ManagedVisibility;
 }
 
 export type ManagedLandingContent = Partial<
@@ -126,6 +163,65 @@ export async function fetchManagedLandingContent(): Promise<ManagedLandingConten
     if (!response.ok) return null;
     const data: unknown = await response.json();
     return isManagedLandingContent(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One managed legal block (CMS Batch 2, item 22). */
+export interface ManagedLegalBlock {
+  key: string;
+  heading: string;
+  body: string;
+}
+
+/** One managed legal document: blocks in order + latest row update. */
+export interface ManagedLegal {
+  doc: 'privacy' | 'terms';
+  locale: Locale;
+  blocks: ManagedLegalBlock[];
+  /** ISO timestamp of the latest contributing row update, or null. */
+  updatedAt: string | null;
+}
+
+function isManagedLegalBlock(value: unknown): value is ManagedLegalBlock {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.key === 'string' &&
+    isNonEmptyString(value.heading) &&
+    isNonEmptyString(value.body)
+  );
+}
+
+/**
+ * Server-side fetch of one managed legal document
+ * (GET /public/landing-content/legal/:doc). Never throws: an unreachable
+ * API, a malformed payload, or zero usable blocks all return null and
+ * the page falls back to its hardcoded copy.
+ */
+export async function fetchManagedLegal(
+  doc: 'privacy' | 'terms',
+  locale: Locale = 'en',
+): Promise<ManagedLegal | null> {
+  try {
+    const response = await fetch(
+      `${platformApiBase()}/public/landing-content/legal/${doc}?locale=${locale}`,
+      {
+        next: { revalidate: 300, tags: ['landing-content'] },
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    if (!response.ok) return null;
+    const data: unknown = await response.json();
+    if (!isRecord(data) || !Array.isArray(data.blocks)) return null;
+    const blocks = data.blocks.filter(isManagedLegalBlock);
+    if (blocks.length === 0) return null;
+    const updatedAt =
+      typeof data.updatedAt === 'string' &&
+      !Number.isNaN(Date.parse(data.updatedAt))
+        ? data.updatedAt
+        : null;
+    return { doc, locale, blocks, updatedAt };
   } catch {
     return null;
   }
@@ -183,6 +279,57 @@ function isManagedTestimonial(value: unknown): value is ManagedTestimonial {
     isNonEmptyString(value.businessName) &&
     isNonEmptyString(value.quote)
   );
+}
+
+const TESTIMONIAL_FORMATS = [
+  'text',
+  'image',
+  'video_short',
+  'video_standard',
+] as const;
+
+/** One of the four testimonial formats, or undefined when unset/invalid. */
+function parseTestimonialFormat(
+  value: unknown,
+): (typeof TESTIMONIAL_FORMATS)[number] | undefined {
+  return typeof value === 'string' &&
+    (TESTIMONIAL_FORMATS as readonly string[]).includes(value)
+    ? (value as (typeof TESTIMONIAL_FORMATS)[number])
+    : undefined;
+}
+
+/**
+ * A testimonial media URL: https URLs and same-origin paths pass
+ * through; anything else (javascript:, data:, protocol-relative) is
+ * dropped — a managed value must never become an XSS vector in an
+ * <img> src or iframe.
+ */
+function optionalUrl(value: unknown): string | undefined {
+  if (!isNonEmptyString(value)) return undefined;
+  const trimmed = value.trim();
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return trimmed;
+  try {
+    return new URL(trimmed).protocol === 'https:' ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A testimonial rating: an integer 1–5 (a number or numeric string).
+ * Out-of-range, fractional, and non-numeric values are dropped, not
+ * clamped — a bad rating renders as no rating.
+ */
+function parseTestimonialRating(value: unknown): number | undefined {
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value.trim())
+        : Number.NaN;
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 5
+    ? parsed
+    : undefined;
 }
 
 function isPartner(value: unknown): value is ManagedPartner {
@@ -485,8 +632,9 @@ export function mergeLandingContent(
   }
 
   // Testimonials: full-list replace, mapped onto the case-study shape.
-  // Managed stories carry no challenge/solution/category — Trust only
-  // renders the fields below.
+  // CMS Batch 2, item 14: category/challenge/solution pass through
+  // when the row carries them (they used to be forced to ''), plus
+  // the extended fields (format/videoUrl/imageUrl/logoUrl/rating).
   if (
     Array.isArray(managed.testimonials) &&
     managed.testimonials.length > 0
@@ -496,17 +644,30 @@ export function mergeLandingContent(
       .map((t) => ({
         id: t.key,
         businessName: t.businessName,
-        category: '',
+        category:
+          typeof t.category === 'string' ? t.category : '',
         location: t.location,
         founderName: t.founderName,
         role: t.role,
         website: t.website,
         quote: t.quote,
         metrics: Array.isArray(t.metrics) ? t.metrics : [],
-        challenge: '',
-        solution: '',
+        challenge:
+          typeof t.challenge === 'string' ? t.challenge : '',
+        solution:
+          typeof t.solution === 'string' ? t.solution : '',
         videoDuration: t.videoDuration,
         videoTitle: t.videoTitle,
+        // Only a well-formed slug becomes a Trust-card link; anything
+        // else is dropped (a managed value must never build a bad URL).
+        caseStudySlug: isCaseStudySlug(t.caseStudySlug)
+          ? t.caseStudySlug
+          : undefined,
+        format: parseTestimonialFormat(t.format),
+        videoUrl: optionalUrl(t.videoUrl),
+        imageUrl: optionalUrl(t.imageUrl),
+        logoUrl: optionalUrl(t.logoUrl),
+        rating: parseTestimonialRating(t.rating),
       }));
     if (studies.length > 0) {
       merged.proof = { ...merged.proof, caseStudies: studies };
@@ -560,6 +721,20 @@ export function mergeLandingContent(
     }
     merged.footer = footer;
     merged.dock = dock;
+  }
+
+  // Section visibility (CMS Batch 2, item 11): only boolean `visible`
+  // values are trusted — a malformed row fails OPEN (section stays
+  // visible) so a bad payload can never hide a section. A missing id
+  // is visible too; the provider injects the 'en' map for every locale.
+  if (isRecord(managed.visibility)) {
+    const visibility: Record<string, boolean> = {};
+    for (const [sectionId, row] of Object.entries(managed.visibility)) {
+      if (isRecord(row) && typeof row.visible === 'boolean') {
+        visibility[sectionId] = row.visible;
+      }
+    }
+    merged.visibility = visibility;
   }
 
   return merged;

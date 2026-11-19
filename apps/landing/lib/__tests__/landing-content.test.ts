@@ -354,4 +354,186 @@ describe('mergeLandingContent (lib/landing-content.ts)', () => {
     });
     expect(merged.hero.headlinePart1).toBe(FALLBACK.hero.headlinePart1);
   });
+
+  // CMS Batch 2, item 11: section visibility.
+  it('merges the visibility map; a missing id stays visible', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      visibility: {
+        faq: { visible: false },
+        pricing: { visible: true },
+      },
+    });
+    expect(merged.visibility).toEqual({ faq: false, pricing: true });
+    // The built-in fallback carries no map at all.
+    expect(FALLBACK.visibility).toBeUndefined();
+    const empty = mergeLandingContent(FALLBACK, {});
+    expect(empty.visibility).toBeUndefined();
+  });
+
+  it('fails open on malformed visibility rows (never hides a section)', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      visibility: {
+        faq: { visible: 'no' },
+        pricing: { visible: 0 },
+        proof: 'hidden',
+        leadForm: {},
+      },
+    } as unknown as ManagedLocaleContent);
+    expect(merged.visibility).toEqual({});
+  });
+
+  // CMS Batch 2, item 14: testimonial field extension.
+  it('passes category/challenge/solution through instead of forcing them to empty', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      testimonials: [
+        {
+          key: 'story-acme',
+          businessName: 'Acme Store',
+          category: 'Fashion',
+          founderName: 'Ayesha Khan',
+          role: 'Founder',
+          location: 'Dhaka',
+          website: 'acme.example',
+          quote: 'It just works.',
+          challenge: 'Packing-desk size disputes.',
+          solution: 'Scan-verified packing.',
+          videoDuration: '2:10',
+          videoTitle: 'Acme story',
+          metrics: [],
+        },
+      ],
+    });
+    const [story] = merged.proof.caseStudies;
+    expect(story.category).toBe('Fashion');
+    expect(story.challenge).toBe('Packing-desk size disputes.');
+    expect(story.solution).toBe('Scan-verified packing.');
+  });
+
+  it('keeps empty category/challenge/solution when the row carries none', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      testimonials: [
+        {
+          key: 'story-acme',
+          businessName: 'Acme Store',
+          founderName: 'Ayesha Khan',
+          role: 'Founder',
+          location: 'Dhaka',
+          website: 'acme.example',
+          quote: 'It just works.',
+          videoDuration: '2:10',
+          videoTitle: 'Acme story',
+          metrics: [],
+        },
+      ],
+    });
+    const [story] = merged.proof.caseStudies;
+    expect(story.category).toBe('');
+    expect(story.challenge).toBe('');
+    expect(story.solution).toBe('');
+    expect(story.format).toBeUndefined();
+    expect(story.rating).toBeUndefined();
+  });
+
+  it('merges the extended testimonial fields with validation', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      testimonials: [
+        {
+          key: 'story-good',
+          businessName: 'Good Store',
+          founderName: 'Ayesha Khan',
+          role: 'Founder',
+          location: 'Dhaka',
+          website: 'good.example',
+          quote: 'It just works.',
+          format: 'video_short',
+          videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          imageUrl: 'https://cdn.example.com/photo.jpg',
+          logoUrl: '/media/logo.png',
+          rating: '5',
+          videoDuration: '0:45',
+          videoTitle: 'Good story',
+          metrics: [],
+        },
+        {
+          key: 'story-bad',
+          businessName: 'Bad Store',
+          founderName: 'Bob',
+          role: 'Owner',
+          location: 'Dhaka',
+          website: 'bad.example',
+          quote: 'Meh.',
+          format: 'hologram',
+          videoUrl: 'javascript:alert(1)',
+          imageUrl: 'data:image/png;base64,xxx',
+          logoUrl: 'http://insecure.example/logo.png',
+          rating: 9,
+          videoDuration: '1:00',
+          videoTitle: 'Bad story',
+          metrics: [],
+        },
+      ],
+    });
+    const [good, bad] = merged.proof.caseStudies;
+    expect(good.format).toBe('video_short');
+    expect(good.videoUrl).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    expect(good.imageUrl).toBe('https://cdn.example.com/photo.jpg');
+    expect(good.logoUrl).toBe('/media/logo.png');
+    expect(good.rating).toBe(5);
+    // Invalid values are dropped, not rendered.
+    expect(bad.format).toBeUndefined();
+    expect(bad.videoUrl).toBeUndefined();
+    expect(bad.imageUrl).toBeUndefined();
+    expect(bad.logoUrl).toBeUndefined();
+    expect(bad.rating).toBeUndefined();
+  });
+
+  it('accepts numeric ratings 1–5 and drops fractional or zero ratings', () => {
+    const merged = mergeLandingContent(FALLBACK, {
+      testimonials: [
+        {
+          key: 's1',
+          businessName: 'A',
+          founderName: 'F',
+          role: 'R',
+          location: 'L',
+          website: 'a.example',
+          quote: 'Q',
+          rating: 1,
+          videoDuration: '',
+          videoTitle: '',
+          metrics: [],
+        },
+        {
+          key: 's2',
+          businessName: 'B',
+          founderName: 'F',
+          role: 'R',
+          location: 'L',
+          website: 'b.example',
+          quote: 'Q',
+          rating: 4.5,
+          videoDuration: '',
+          videoTitle: '',
+          metrics: [],
+        },
+        {
+          key: 's3',
+          businessName: 'C',
+          founderName: 'F',
+          role: 'R',
+          location: 'L',
+          website: 'c.example',
+          quote: 'Q',
+          rating: 0,
+          videoDuration: '',
+          videoTitle: '',
+          metrics: [],
+        },
+      ],
+    });
+    const [one, frac, zero] = merged.proof.caseStudies;
+    expect(one.rating).toBe(1);
+    expect(frac.rating).toBeUndefined();
+    expect(zero.rating).toBeUndefined();
+  });
 });

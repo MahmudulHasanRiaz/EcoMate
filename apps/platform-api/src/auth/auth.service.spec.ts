@@ -129,6 +129,43 @@ describe('AuthService', () => {
       );
     });
 
+    it('records device/IP/last-used on the refresh token at login', async () => {
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ passwordHash }),
+      );
+
+      await service.login(
+        { email: 'admin@ecomate.test', password: 'correct-password' },
+        { ip: '203.0.113.9', userAgent: 'Mozilla/5.0 (X11; Linux)' },
+      );
+
+      expect(prisma.platformRefreshToken.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userAgent: 'Mozilla/5.0 (X11; Linux)',
+            ipAddress: '203.0.113.9',
+            lastUsedAt: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('caps a long User-Agent at 512 chars on the token row', async () => {
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ passwordHash }),
+      );
+
+      await service.login(
+        { email: 'admin@ecomate.test', password: 'correct-password' },
+        { ip: '203.0.113.9', userAgent: 'A'.repeat(600) },
+      );
+
+      const data = prisma.platformRefreshToken.create.mock.calls[0][0].data;
+      expect(data.userAgent).toHaveLength(512);
+    });
+
     it('returns an MFA challenge for an enrolled user instead of tokens', async () => {
       const passwordHash = await bcrypt.hash('correct-password', 4);
       prisma.platformUser.findUnique.mockResolvedValue(
@@ -357,6 +394,64 @@ describe('AuthService', () => {
       expect(prisma.platformRefreshToken.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ familyId: 'family-1' }),
+        }),
+      );
+    });
+
+    it('carries device/IP to the rotated token and refreshes lastUsedAt', async () => {
+      const refreshToken = await signedRefresh();
+      prisma.platformRefreshToken.findUnique.mockResolvedValue({
+        id: 'row-1',
+        userId: 'user-1',
+        familyId: 'family-1',
+        tokenHash: hashToken(refreshToken),
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+        userAgent: 'Mozilla/5.0 (Macintosh)',
+        ipAddress: '203.0.113.7',
+      });
+      prisma.platformUser.findUnique.mockResolvedValue(activeUser());
+
+      // No metadata on this refresh request: the family keeps its own.
+      await service.refresh(refreshToken, {});
+
+      expect(prisma.platformRefreshToken.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            familyId: 'family-1',
+            userAgent: 'Mozilla/5.0 (Macintosh)',
+            ipAddress: '203.0.113.7',
+            lastUsedAt: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('updates device/IP on refresh when the request carries new ones', async () => {
+      const refreshToken = await signedRefresh();
+      prisma.platformRefreshToken.findUnique.mockResolvedValue({
+        id: 'row-1',
+        userId: 'user-1',
+        familyId: 'family-1',
+        tokenHash: hashToken(refreshToken),
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+        userAgent: 'Mozilla/5.0 (Macintosh)',
+        ipAddress: '203.0.113.7',
+      });
+      prisma.platformUser.findUnique.mockResolvedValue(activeUser());
+
+      await service.refresh(refreshToken, {
+        ip: '198.51.100.2',
+        userAgent: 'curl/8.0',
+      });
+
+      expect(prisma.platformRefreshToken.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userAgent: 'curl/8.0',
+            ipAddress: '198.51.100.2',
+          }),
         }),
       );
     });

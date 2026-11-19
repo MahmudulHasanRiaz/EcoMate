@@ -73,4 +73,41 @@ export class LandingContentController {
   ) {
     return this.content.delete(id, user?.id);
   }
+
+  /**
+   * Publish a draft row (status → published, version unchanged) and
+   * snapshot it as a revision. The response carries `cachePurged`
+   * (the publish also purges the landing cache, best-effort).
+   * Publishing an already-published row is an idempotent no-op.
+   */
+  @Post(':id/publish')
+  @Roles('SUPERADMIN', 'BILLING')
+  publish(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.content.publish(id, user?.id);
+  }
+
+  /** Revision snapshots for one row, newest first. */
+  @Get(':id/revisions')
+  @Roles(...READ_ROLES)
+  revisions(@Param('id', ParseUUIDPipe) id: string) {
+    return this.content.revisions(id);
+  }
+
+  /**
+   * Forward-only restore: creates a NEW draft version holding the
+   * revision's payload (version++, status draft). History is never
+   * rewritten and the restore never auto-publishes.
+   */
+  @Post(':id/restore/:revisionId')
+  @Roles('SUPERADMIN', 'BILLING')
+  restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('revisionId', ParseUUIDPipe) revisionId: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.content.restore(id, revisionId, user?.id);
+  }
 }

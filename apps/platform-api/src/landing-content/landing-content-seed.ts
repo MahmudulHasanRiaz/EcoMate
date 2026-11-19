@@ -55,6 +55,9 @@ export async function seedLandingContent(
       skipped += 1;
       continue;
     }
+    // Seeded rows are PUBLISHED (the seed bypasses the API, whose
+    // POST creates drafts — seed rows must be visible on the landing
+    // from the first boot, as they were before draft/publish existed).
     await prisma.landingContent.create({
       data: {
         section: row.section,
@@ -63,6 +66,8 @@ export async function seedLandingContent(
         value: row.value,
         sortOrder: row.sortOrder ?? 0,
         isActive: row.isActive ?? true,
+        status: 'published',
+        version: 1,
       },
     });
     created += 1;

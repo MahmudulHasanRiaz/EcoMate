@@ -7,9 +7,11 @@ import {
   accessLabel,
   PLATFORM_ROLES,
   roleLabel,
+  sessionDeviceLabel,
 } from '../lib/users';
 import type {
   Page,
+  PlatformSession,
   PlatformUser,
   PlatformUserInvite,
   RoleMatrixEntry,
@@ -20,6 +22,8 @@ type UserConfirm =
   | { kind: 'delete'; user: PlatformUser }
   | { kind: 'status'; user: PlatformUser }
   | { kind: 'revoke'; invite: PlatformUserInvite }
+  | { kind: 'revokeSession'; user: PlatformUser; session: PlatformSession }
+  | { kind: 'resetTotp'; user: PlatformUser }
   | null;
 
 export function UsersPage() {
@@ -47,6 +51,12 @@ export function UsersPage() {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
   const [confirm, setConfirm] = useState<UserConfirm>(null);
+  const [totpReason, setTotpReason] = useState('');
+
+  // Per-operator sessions (CMS item 15): one expanded user at a time.
+  const [sessionsUser, setSessionsUser] = useState<PlatformUser | null>(null);
+  const [sessions, setSessions] = useState<PlatformSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
 
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -261,6 +271,59 @@ export function UsersPage() {
     }
   }
 
+  async function loadSessions(user: PlatformUser) {
+    setSessionsUser(user);
+    setSessionsLoading(true);
+    setError(null);
+    try {
+      const result = await api(`/users/${user.id}/sessions`).then((r) =>
+        readJson<{ data: PlatformSession[] }>(r),
+      );
+      setSessions(result.data);
+    } catch (err) {
+      setError(errorMessage(err));
+      setSessions([]);
+    } finally {
+      setSessionsLoading(false);
+    }
+  }
+
+  async function revokeSession(user: PlatformUser, session: PlatformSession) {
+    setBusy(`revoke-session-${session.id}`);
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/users/${user.id}/sessions/${session.id}`, {
+        method: 'DELETE',
+      }).then((r) => readJson(r));
+      setNotice('Session revoked. The device is signed out.');
+      await loadSessions(user);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function resetTotp(user: PlatformUser, reason: string) {
+    setBusy(`reset-totp-${user.id}`);
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/users/${user.id}/totp/reset`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() || undefined }),
+      }).then((r) => readJson(r));
+      setNotice(
+        `TOTP reset for ${user.email}. They must re-enroll their authenticator at next sign-in.`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -340,6 +403,29 @@ export function UsersPage() {
                     </button>
                     <button
                       type="button"
+                      className="button button--ghost button--sm"
+                      onClick={() => void loadSessions(user)}
+                    >
+                      Sessions
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--sm"
+                      disabled={user.id === session?.user.id}
+                      title={
+                        user.id === session?.user.id
+                          ? 'Manage your own MFA from your account page'
+                          : 'Clear their TOTP enrollment — they re-enroll at next sign-in'
+                      }
+                      onClick={() => {
+                        setTotpReason('');
+                        setConfirm({ kind: 'resetTotp', user });
+                      }}
+                    >
+                      Reset TOTP
+                    </button>
+                    <button
+                      type="button"
                       className="button button--danger button--sm"
                       disabled={
                         user.id === session?.user.id ||
@@ -415,6 +501,82 @@ export function UsersPage() {
           </form>
         ) : null}
       </section>
+
+      {sessionsUser ? (
+        <section className="card">
+          <h2>Sessions for {sessionsUser.email}</h2>
+          <p className="muted-note">
+            One row per signed-in device. Revoking a session signs that
+            device out everywhere it refreshed from. Last used tracks the
+            last sign-in or token refresh, not the last page view.
+          </p>
+          {sessionsLoading ? (
+            <Skeleton />
+          ) : sessions.length === 0 ? (
+            <p className="muted-note">No sessions found.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Device</th>
+                    <th>IP address</th>
+                    <th>Last used</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.map((item) => (
+                    <tr key={item.id}>
+                      <td title={item.userAgent ?? undefined}>
+                        {sessionDeviceLabel(item.userAgent)}
+                      </td>
+                      <td>{item.ipAddress ?? '—'}</td>
+                      <td>{formatDateTime(item.lastUsedAt)}</td>
+                      <td>{formatDateTime(item.expiresAt)}</td>
+                      <td>
+                        <StatusBadge
+                          status={item.revoked ? 'REVOKED' : 'ACTIVE'}
+                        />
+                      </td>
+                      <td className="row-actions">
+                        <button
+                          type="button"
+                          className="button button--danger button--sm"
+                          disabled={
+                            item.revoked ||
+                            busy === `revoke-session-${item.id}`
+                          }
+                          onClick={() =>
+                            setConfirm({
+                              kind: 'revokeSession',
+                              user: sessionsUser,
+                              session: item,
+                            })
+                          }
+                        >
+                          Revoke
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="form-actions">
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => setSessionsUser(null)}
+            >
+              Close sessions
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="card">
         <h2>Create user</h2>
@@ -638,7 +800,11 @@ export function UsersPage() {
                   ? confirm.user.status === 'DISABLED'
                     ? `Enable ${confirm.user.email}?`
                     : `Disable ${confirm.user.email}?`
-                  : `Revoke the invite for ${confirm.invite.email}?`
+                  : confirm.kind === 'revokeSession'
+                    ? `Revoke this session for ${confirm.user.email}?`
+                    : confirm.kind === 'resetTotp'
+                      ? `Reset TOTP for ${confirm.user.email}?`
+                      : `Revoke the invite for ${confirm.invite.email}?`
           }
           body={
             confirm.kind === 'reset'
@@ -649,7 +815,33 @@ export function UsersPage() {
                   ? confirm.user.status === 'DISABLED'
                     ? 'The account can sign in again.'
                     : 'The account is signed out and can no longer sign in until re-enabled.'
-                  : 'The invite link stops working immediately.'
+                  : confirm.kind === 'revokeSession'
+                    ? `The ${sessionDeviceLabel(confirm.session.userAgent)} session (${confirm.session.ipAddress ?? 'unknown IP'}) is signed out immediately.`
+                    : confirm.kind === 'resetTotp'
+                      ? (
+                          <span>
+                            Their authenticator enrollment and recovery codes
+                            are cleared and all of their sessions are signed
+                            out. They must enroll a new authenticator at next
+                            sign-in.
+                            <label className="inline-field">
+                              <span>
+                                Reason (optional, kept in the audit log)
+                              </span>
+                              <textarea
+                                aria-label="Reason"
+                                value={totpReason}
+                                maxLength={500}
+                                rows={2}
+                                onChange={(e) =>
+                                  setTotpReason(e.target.value)
+                                }
+                                placeholder="e.g. Lost authenticator device"
+                              />
+                            </label>
+                          </span>
+                        )
+                      : 'The invite link stops working immediately.'
           }
           confirmLabel={
             confirm.kind === 'reset'
@@ -660,10 +852,16 @@ export function UsersPage() {
                   ? confirm.user.status === 'DISABLED'
                     ? 'Enable account'
                     : 'Disable account'
-                  : 'Revoke invite'
+                  : confirm.kind === 'revokeSession'
+                    ? 'Revoke session'
+                    : confirm.kind === 'resetTotp'
+                      ? 'Reset TOTP'
+                      : 'Revoke invite'
           }
           danger={
             confirm.kind === 'delete' ||
+            confirm.kind === 'revokeSession' ||
+            confirm.kind === 'resetTotp' ||
             (confirm.kind === 'status' &&
               confirm.user.status !== 'DISABLED')
           }
@@ -674,14 +872,23 @@ export function UsersPage() {
                 ? busy === `reset-${confirm.user.id}`
                 : confirm.kind === 'delete'
                   ? busy === `delete-${confirm.user.id}`
-                  : busy === `status-${confirm.user.id}`
+                  : confirm.kind === 'revokeSession'
+                    ? busy === `revoke-session-${confirm.session.id}`
+                    : confirm.kind === 'resetTotp'
+                      ? busy === `reset-totp-${confirm.user.id}`
+                      : busy === `status-${confirm.user.id}`
           }
           onConfirm={async () => {
             const current = confirm;
+            const reason = totpReason;
             setConfirm(null);
             if (current.kind === 'reset') await resetPassword(current.user);
             else if (current.kind === 'delete') await deleteUser(current.user);
             else if (current.kind === 'status') await toggleStatus(current.user);
+            else if (current.kind === 'revokeSession')
+              await revokeSession(current.user, current.session);
+            else if (current.kind === 'resetTotp')
+              await resetTotp(current.user, reason);
             else await revokeInvite(current.invite);
           }}
           onClose={() => setConfirm(null)}

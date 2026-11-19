@@ -11,6 +11,8 @@ import { AddOnsPage } from './pages/add-ons';
 import { AccountPage } from './pages/account';
 import { AuditPage } from './pages/audit';
 import { BillingPage } from './pages/billing';
+import { BlogPage } from './pages/blog';
+import { CaseStudiesPage } from './pages/case-studies';
 import { DomainsPage } from './pages/domains';
 import { LandingPage } from './pages/landing';
 import { LeadsPage } from './pages/leads';
@@ -114,6 +116,16 @@ const leadsRoute = createRoute({
   ),
 });
 
+const blogRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/blog',
+  component: () => (
+    <AppShell>
+      <BlogPage />
+    </AppShell>
+  ),
+});
+
 const landingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/landing',
@@ -130,6 +142,16 @@ const mediaRoute = createRoute({
   component: () => (
     <AppShell>
       <MediaPage />
+    </AppShell>
+  ),
+});
+
+const caseStudiesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/case-studies',
+  component: () => (
+    <AppShell>
+      <CaseStudiesPage />
     </AppShell>
   ),
 });
@@ -238,6 +260,7 @@ const routeTree = rootRoute.addChildren([
   tenantRoute,
   tenantCreateRoute,
   leadsRoute,
+  blogRoute,
   billingRoute,
   domainsRoute,
   usageRoute,
@@ -246,6 +269,7 @@ const routeTree = rootRoute.addChildren([
   addOnsRoute,
   landingRoute,
   mediaRoute,
+  caseStudiesRoute,
   settingsRoute,
   settingsSectionRoute,
   usersRoute,

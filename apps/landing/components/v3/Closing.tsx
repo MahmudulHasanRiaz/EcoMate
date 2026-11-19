@@ -6,20 +6,26 @@
  * SaaS adaptation: the form posts to the platform's POST /public/leads
  * (same-origin rewrite, `/api/public/leads`) with { name, contact,
  * message?, monthlyOrders?, turnstileToken?, consentGiven, consentText,
- * utmSource?, utmCampaign? }. The consent checkbox is required, so a
- * submitted form always carries the consent text the visitor agreed to;
- * UTM parameters come from the page URL. No Meta Pixel, no CAPI dedup —
- * the platform stores the lead and notifies sales when SMTP is
- * configured. Turnstile is verify-if-present and lazy (the
- * `LazyTurnstile` on-submit pattern from the EcoMate-Landing reference):
- * nothing loads or renders on a plain page visit — the widget renders
- * only when the form is submitted, stays hidden unless Cloudflare needs
- * an interaction, and the form still submits without a token when the
- * challenge cannot run (blocked script, timeout).
+ * utmSource?, utmCampaign?, fbp?, fbc?, eventId, ttclid?,
+ * tiktokEventId }. The consent checkbox is required, so a submitted
+ * form always carries the consent text the visitor agreed to;
+ * UTM parameters come from the page URL. Ad attribution (CMS batch 2,
+ * item 21): _fbp/_fbc cookies and the ttclid URL param are captured
+ * when present (no Pixel is loaded — these are usually absent), and
+ * each submission gets fresh UUID dedup ids, so the platform's ad
+ * dispatch (Meta CAPI / TikTok Events API) can attribute the lead
+ * without double-counting a retried submit. Turnstile is
+ * verify-if-present and lazy (the `LazyTurnstile` on-submit pattern
+ * from the EcoMate-Landing reference): nothing loads or renders on a
+ * plain page visit — the widget renders only when the form is
+ * submitted, stays hidden unless Cloudflare needs an interaction, and
+ * the form still submits without a token when the challenge cannot
+ * run (blocked script, timeout).
  */
 import React, { useRef, useState } from 'react';
 import { useLanding } from '@/components/shell/useLanding';
 import { LazyTurnstile, type TurnstileHandle } from '@/components/turnstile';
+import { collectAdCapture } from '@/lib/ad-capture';
 import { SectionHead, SectionShell } from './SectionHead';
 
 export function MkFaq() {
@@ -109,9 +115,14 @@ export function MkLeadForm() {
       // is required client-side, so a submitted form always carries
       // consentGiven + the consent text the visitor agreed to; UTM
       // parameters come from the page URL (empty = not attributed).
+      // Ad attribution (CMS batch 2, item 21): _fbp/_fbc cookies +
+      // ttclid from the URL when present, plus fresh UUID dedup ids
+      // per submission (collectAdCapture reads the live cookie jar /
+      // URL at submit time, so a retried submit gets fresh ids).
       const params = new URLSearchParams(window.location.search);
       const utmSource = params.get('utm_source') ?? undefined;
       const utmCampaign = params.get('utm_campaign') ?? undefined;
+      const ad = collectAdCapture(window.location.search, document.cookie);
       const response = await fetch('/api/public/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -125,6 +136,11 @@ export function MkLeadForm() {
           consentText: form.consentLabel,
           ...(utmSource ? { utmSource } : {}),
           ...(utmCampaign ? { utmCampaign } : {}),
+          ...(ad.fbp ? { fbp: ad.fbp } : {}),
+          ...(ad.fbc ? { fbc: ad.fbc } : {}),
+          eventId: ad.eventId,
+          ...(ad.ttclid ? { ttclid: ad.ttclid } : {}),
+          tiktokEventId: ad.tiktokEventId,
         }),
       });
 
@@ -164,19 +180,25 @@ export function MkLeadForm() {
   };
 
   const walkthrough = content.walkthrough;
+  // Walkthrough is not a top-level section — it is the pitch panel
+  // beside the lead form. Hiding it in the CMS collapses the grid to
+  // the form alone (mk-demo-grid--solo).
+  const walkthroughVisible = content.visibility?.walkthrough !== false;
 
   return (
     <SectionShell id="demo">
       <SectionHead index="14" eyebrow={form.eyebrow} title={form.heading} sub={form.subheading} />
-      <div className="mk-g mk-demo-grid">
-        <div className="mk-pn">
-          <ul className="mk-check">
-            {walkthrough.bullets.map((bullet) => (
-              <li key={bullet}>{bullet}</li>
-            ))}
-          </ul>
-          <p className="mk-strip">{walkthrough.trustNote}</p>
-        </div>
+      <div className={`mk-g mk-demo-grid${walkthroughVisible ? '' : ' mk-demo-grid--solo'}`}>
+        {walkthroughVisible && (
+          <div className="mk-pn">
+            <ul className="mk-check">
+              {walkthrough.bullets.map((bullet) => (
+                <li key={bullet}>{bullet}</li>
+              ))}
+            </ul>
+            <p className="mk-strip">{walkthrough.trustNote}</p>
+          </div>
+        )}
         <div className="mk-pn">
           {isSubmitted ? (
             <div aria-live="polite">

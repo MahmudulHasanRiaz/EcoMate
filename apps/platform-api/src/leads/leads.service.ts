@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { csvCell } from '../audit/audit-query.service';
+import { AdDispatchService } from '../ad-dispatch/ad-dispatch.service';
 import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
 import { RedisRateLimitService } from '../common/rate-limit/redis-rate-limit.service';
@@ -13,6 +14,9 @@ import { PlatformPrismaService } from '../prisma/prisma.service';
 import { CaptchaService } from '../signup/captcha.service';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
+import { AssignLeadDto } from './dto/assign-lead.dto';
+import { UpdateLeadFollowUpDto } from './dto/update-lead-followup.dto';
+import { UpdateLeadNotesDto } from './dto/update-lead-notes.dto';
 import { UpdateLeadStatusDto } from './dto/update-lead-status.dto';
 import { classifyContact } from './lead-contact';
 
@@ -31,6 +35,50 @@ export const LEAD_STATUSES = [
   'LOST',
   'CLOSED',
 ] as const;
+
+/**
+ * Terminal statuses: a lead in one of these is never overdue, however
+ * old its follow-up date is (audit §4 item 12).
+ */
+export const LEAD_TERMINAL_STATUSES = ['WON', 'CLOSED', 'LOST'] as const;
+
+/** Roles that can be assigned a lead — the same triage roles that can
+ * act on leads (READONLY is login-and-own-profile only). */
+export const LEAD_ASSIGNABLE_ROLES = [
+  'SUPERADMIN',
+  'BILLING',
+  'SUPPORT',
+] as const;
+
+/**
+ * The overdue rule, in one place (audit §4 item 12): a follow-up date
+ * in the past on a lead that is NOT in a terminal status. The list
+ * filter (buildWhere) and the console (lib/leads isLeadOverdue) must
+ * both match this — the unit specs pin all three.
+ */
+export function isLeadOverdue(
+  lead: { status: string; followUpAt?: Date | string | null },
+  now: Date = new Date(),
+): boolean {
+  if (!lead.followUpAt) return false;
+  if (
+    (LEAD_TERMINAL_STATUSES as readonly string[]).includes(lead.status)
+  ) {
+    return false;
+  }
+  const due = lead.followUpAt instanceof Date
+    ? lead.followUpAt
+    : new Date(lead.followUpAt);
+  return due.getTime() < now.getTime();
+}
+
+/** Lead detail shape the console renders: the converted tenant AND the
+ * assigned operator. Shared by list/detail/assign/follow-up/notes so
+ * the modal can refresh from any mutation response. */
+const LEAD_DETAIL_INCLUDE = {
+  convertedTenant: { select: { id: true, name: true, slug: true } },
+  assignedTo: { select: { id: true, name: true, email: true } },
+} as const;
 
 export interface LeadRequestMeta {
   ip?: string;
@@ -51,6 +99,10 @@ export class LeadsService {
     private readonly rateLimit: RedisRateLimitService,
     private readonly mail: PlatformMailService,
     private readonly audit: AuditService,
+    // Optional so existing specs constructing LeadsService without it
+    // keep working; the hooks guard with `?.` (Nest always injects it
+    // — LeadsModule imports AdDispatchModule).
+    private readonly adDispatch?: AdDispatchService,
   ) {}
 
   async create(dto: CreateLeadDto, meta: LeadRequestMeta = {}) {
@@ -100,6 +152,14 @@ export class LeadsService {
     const utmCampaign = dto.utmCampaign?.trim()
       ? dto.utmCampaign.trim()
       : null;
+    // Ad attribution capture (CMS batch 2, item 21): blank = absent.
+    const fbp = dto.fbp?.trim() ? dto.fbp.trim() : null;
+    const fbc = dto.fbc?.trim() ? dto.fbc.trim() : null;
+    const eventId = dto.eventId?.trim() ? dto.eventId.trim() : null;
+    const ttclid = dto.ttclid?.trim() ? dto.ttclid.trim() : null;
+    const tiktokEventId = dto.tiktokEventId?.trim()
+      ? dto.tiktokEventId.trim()
+      : null;
 
     const lead = await this.prisma.lead.create({
       data: {
@@ -112,10 +172,21 @@ export class LeadsService {
         consentText,
         utmSource,
         utmCampaign,
+        fbp,
+        fbc,
+        eventId,
+        ttclid,
+        tiktokEventId,
         ip: meta.ip || null,
         userAgent: meta.userAgent || null,
       },
     });
+
+    // Ad dispatch (CMS batch 2, item 21): instant-mode platforms
+    // enqueue a dispatch for the new lead. Fire-and-forget — the
+    // service never throws (a dispatch failure must not fail the
+    // lead submit).
+    void this.adDispatch?.onLeadCreated(lead);
 
     // Notify sales — best effort only. A lead submit must NEVER fail
     // because mail is down or unconfigured: the row is already persisted
@@ -142,7 +213,11 @@ export class LeadsService {
     return { id: lead.id };
   }
 
-  private buildWhere(query: { status?: string; search?: string }) {
+  private buildWhere(query: {
+    status?: string;
+    search?: string;
+    overdue?: string;
+  }) {
     const where: any = {};
     if (query.status && (LEAD_STATUSES as readonly string[]).includes(query.status)) {
       where.status = query.status;
@@ -158,6 +233,16 @@ export class LeadsService {
         { message: { contains: search, mode: 'insensitive' } },
       ];
     }
+    // Overdue worklist (Batch 2, item 12): followUpAt in the past on a
+    // non-terminal lead. An explicit status filter takes precedence over
+    // the terminal-status exclusion (status=WON + overdue=true returns
+    // WON leads with a past follow-up — the operator asked for WON).
+    if (query.overdue === 'true') {
+      where.followUpAt = { lt: new Date() };
+      if (!where.status) {
+        where.status = { notIn: [...LEAD_TERMINAL_STATUSES] };
+      }
+    }
     return where;
   }
 
@@ -166,6 +251,7 @@ export class LeadsService {
     limit?: string;
     status?: string;
     search?: string;
+    overdue?: string;
   }) {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
@@ -180,9 +266,7 @@ export class LeadsService {
         // The console opens the detail modal from the list row, so the
         // list must carry the converted tenant too (else the modal's
         // "Converted to tenant" link never renders).
-        include: {
-          convertedTenant: { select: { id: true, name: true, slug: true } },
-        },
+        include: LEAD_DETAIL_INCLUDE,
       }),
       this.prisma.lead.count({ where }),
     ]);
@@ -203,7 +287,11 @@ export class LeadsService {
    * first, capped at LEAD_EXPORT_MAX_ROWS. `truncated` tells the caller
    * the cap bit. The controller audits the export.
    */
-  async exportRows(query: { status?: string; search?: string }) {
+  async exportRows(query: {
+    status?: string;
+    search?: string;
+    overdue?: string;
+  }) {
     const where = this.buildWhere(query);
     const rows = await this.prisma.lead.findMany({
       where,
@@ -257,9 +345,7 @@ export class LeadsService {
   async detail(id: string) {
     const lead = await this.prisma.lead.findUnique({
       where: { id },
-      include: {
-        convertedTenant: { select: { id: true, name: true, slug: true } },
-      },
+      include: LEAD_DETAIL_INCLUDE,
     });
     if (!lead) throw new NotFoundException('Lead not found');
     return lead;
@@ -283,6 +369,132 @@ export class LeadsService {
       entityId: id,
       before: { status: lead.status },
       after: { status: updated.status },
+    });
+    // Ad dispatch (CMS batch 2, item 21): validated-mode platforms
+    // whose trigger status this is enqueue a dispatch. Fire-and-
+    // forget (see create()).
+    void this.adDispatch?.onLeadStatusChanged(updated, dto.status);
+    return updated;
+  }
+
+  /**
+   * Assignee roster (Batch 2, item 12). The users list endpoint is
+   * SUPERADMIN-only, so BILLING/SUPPORT operators could never fill the
+   * assignee select from it — this roster is the read-scoped
+   * alternative: ACTIVE operators in a triage role, name + email only
+   * (no password hashes, no MFA state, no status beyond ACTIVE).
+   */
+  async assignees() {
+    return this.prisma.platformUser.findMany({
+      where: {
+        status: 'ACTIVE',
+        role: { in: [...LEAD_ASSIGNABLE_ROLES] },
+      },
+      select: { id: true, name: true, email: true, role: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /**
+   * Assign (or unassign, with assignedToId null) a lead. Audited like
+   * the status change. The assignee must be an ACTIVE operator in a
+   * triage role — assigning to a DISABLED or READONLY user is a 400,
+   * an unknown id is a 404.
+   */
+  async assign(id: string, dto: AssignLeadDto, actorId?: string) {
+    const lead = await this.prisma.lead.findUnique({ where: { id } });
+    if (!lead) throw new NotFoundException('Lead not found');
+    const assignedToId = dto.assignedToId?.trim() ? dto.assignedToId : null;
+    if (assignedToId) {
+      const operator = await this.prisma.platformUser.findUnique({
+        where: { id: assignedToId },
+        select: { id: true, role: true, status: true },
+      });
+      if (!operator) throw new NotFoundException('Operator not found');
+      if (
+        operator.status !== 'ACTIVE' ||
+        !(LEAD_ASSIGNABLE_ROLES as readonly string[]).includes(operator.role)
+      ) {
+        throw new BadRequestException(
+          'Only an active operator can be assigned a lead',
+        );
+      }
+    }
+    const updated = await this.prisma.lead.update({
+      where: { id },
+      data: { assignedToId },
+      include: LEAD_DETAIL_INCLUDE,
+    });
+    await this.audit.record({
+      actorId,
+      action: 'lead.assigned',
+      entity: 'Lead',
+      entityId: id,
+      before: { assignedToId: lead.assignedToId ?? null },
+      after: { assignedToId },
+    });
+    return updated;
+  }
+
+  /**
+   * Set or clear the follow-up date (null clears). Audited like the
+   * status change. Past dates are accepted (see UpdateLeadFollowUpDto).
+   */
+  async updateFollowUp(
+    id: string,
+    dto: UpdateLeadFollowUpDto,
+    actorId?: string,
+  ) {
+    const lead = await this.prisma.lead.findUnique({ where: { id } });
+    if (!lead) throw new NotFoundException('Lead not found');
+    let followUpAt: Date | null = null;
+    if (dto.followUpAt?.trim()) {
+      followUpAt = new Date(dto.followUpAt);
+      if (Number.isNaN(followUpAt.getTime())) {
+        throw new BadRequestException('followUpAt must be a valid date');
+      }
+    }
+    const updated = await this.prisma.lead.update({
+      where: { id },
+      data: { followUpAt },
+      include: LEAD_DETAIL_INCLUDE,
+    });
+    const stamp = (value: Date | string | null | undefined) =>
+      value ? new Date(value).toISOString() : null;
+    await this.audit.record({
+      actorId,
+      action: 'lead.followup.update',
+      entity: 'Lead',
+      entityId: id,
+      before: { followUpAt: stamp(lead.followUpAt) },
+      after: { followUpAt: stamp(followUpAt) },
+    });
+    return updated;
+  }
+
+  /**
+   * Replace the internal notes (null / blank clears them). Audited
+   * like the status change — the audit row carries the before/after
+   * text, which doubles as the lead's notes history.
+   */
+  async updateNotes(id: string, dto: UpdateLeadNotesDto, actorId?: string) {
+    const lead = await this.prisma.lead.findUnique({ where: { id } });
+    if (!lead) throw new NotFoundException('Lead not found');
+    const internalNotes = dto.internalNotes?.trim()
+      ? dto.internalNotes.trim()
+      : null;
+    const updated = await this.prisma.lead.update({
+      where: { id },
+      data: { internalNotes },
+      include: LEAD_DETAIL_INCLUDE,
+    });
+    await this.audit.record({
+      actorId,
+      action: 'lead.notes.update',
+      entity: 'Lead',
+      entityId: id,
+      before: { internalNotes: lead.internalNotes ?? null },
+      after: { internalNotes },
     });
     return updated;
   }

@@ -20,6 +20,11 @@ const PURGEABLE_TAGS = [
   'branding',
   'landing-settings',
   'public-plans',
+  'case-studies',
+  // Blog (Batch 2, item 20): public blog reads are tagged 'blog'
+  // (lib/blog.ts) — without this, a purge leaves published posts
+  // stale for the full 5-minute TTL.
+  'blog',
 ] as const;
 
 function secretMatches(provided: string | null, expected: string): boolean {

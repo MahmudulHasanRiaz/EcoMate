@@ -37,6 +37,8 @@ const ACCENT_STATUSES = new Set([
   'SUCCEEDED',
   'LIVE',
   'COMPLETED',
+  // Blog (lowercase API statuses): published is live = positive.
+  'published',
 ]);
 
 const INFO_STATUSES = new Set([
@@ -46,6 +48,8 @@ const INFO_STATUSES = new Set([
   'CONTACTED',
   'QUALIFIED',
   'DEMO_SCHEDULED',
+  // Blog: scheduled is in-progress (goes live at publishedAt).
+  'scheduled',
 ]);
 
 const WARNING_STATUSES = new Set([

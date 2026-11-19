@@ -6,10 +6,16 @@ import {
 } from '@nestjs/common';
 import { EncryptionService } from '../common/encryption.service';
 import {
+  AD_PLATFORMS,
+  getAdPlatform,
+  isKnownAdPlatform,
+} from '../ad-dispatch/ad-platforms';
+import {
   DEFAULT_SAAS_SMTP,
   SAAS_SMTP_FREE_ALLOWANCE_MAX,
   type SaasSmtpSettings,
 } from '../email-balance/email-balance.utils';
+import { LeadStatus } from '../generated/prisma/client';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import {
   BRANDING_IMAGE_MAX_LENGTH,
@@ -77,6 +83,47 @@ export interface LandingSettings {
   seoIndexingSource: 'env' | 'setting';
 }
 
+/**
+ * Per-platform ad tracking config (CMS batch 2, item 21). One config
+ * per platform id (meta, tiktok, …): the pixel/dataset id, the
+ * Conversions/Events API access token (ENCRYPTED at rest like the SMTP
+ * password, never returned in plaintext reads), the dispatch mode, the
+ * LeadStatus that fires a validated-mode dispatch, and the event name.
+ * Stored as one PlatformSetting row (`ad_tracking`), keyed by platform.
+ */
+export type AdTrackingMode = 'instant' | 'validated';
+
+export interface AdPlatformSettingsInternal {
+  pixelId: string;
+  /** Decrypted access token — internal only, never serialized. */
+  accessToken?: string;
+  mode: AdTrackingMode;
+  triggerStatus: string;
+  eventName: string;
+  enabled: boolean;
+}
+
+export interface AdPlatformSettingsPublic {
+  pixelId: string;
+  /** A token is stored (the value itself is never returned). */
+  hasToken: boolean;
+  /** Ready to dispatch: enabled + pixel id + token. */
+  configured: boolean;
+  mode: AdTrackingMode;
+  triggerStatus: string;
+  eventName: string;
+  enabled: boolean;
+}
+
+export type AdTrackingSettingsInternal = Record<
+  string,
+  AdPlatformSettingsInternal
+>;
+export type AdTrackingSettingsPublic = Record<
+  string,
+  AdPlatformSettingsPublic
+>;
+
 export interface AllSettings {
   smtp: SmtpSettingsPublic;
   trial: TrialSettings;
@@ -85,6 +132,7 @@ export interface AllSettings {
   maintenance: MaintenanceSettings;
   landing: LandingSettings;
   saasSmtp: SaasSmtpSettings;
+  adTracking: AdTrackingSettingsPublic;
 }
 
 export const DEFAULT_TRIAL_DAYS = 14;
@@ -118,6 +166,57 @@ const DEFAULT_LANDING: LandingSettings = {
   seoIndexingEnabled: true,
   seoIndexingSource: 'setting',
 };
+
+/** Default trigger status for validated-mode dispatch (a warm lead). */
+export const DEFAULT_AD_TRIGGER_STATUS = 'QUALIFIED';
+
+/** Fresh default config for one platform (unconfigured: no id/token). */
+export function defaultAdPlatform(
+  platformId: string,
+): AdPlatformSettingsInternal {
+  return {
+    pixelId: '',
+    accessToken: undefined,
+    mode: 'instant',
+    triggerStatus: DEFAULT_AD_TRIGGER_STATUS,
+    eventName: getAdPlatform(platformId)?.defaultEventName ?? 'Lead',
+    enabled: true,
+  };
+}
+
+function defaultAdTracking(): AdTrackingSettingsInternal {
+  const out: AdTrackingSettingsInternal = {};
+  for (const platform of AD_PLATFORMS) {
+    out[platform.id] = defaultAdPlatform(platform.id);
+  }
+  return out;
+}
+
+/** Defensive parse of one stored platform row (bad fields → defaults). */
+function parseAdPlatformRow(
+  platformId: string,
+  row: Record<string, unknown>,
+): AdPlatformSettingsInternal {
+  const fallback = defaultAdPlatform(platformId);
+  const mode = row.mode === 'validated' ? 'validated' : 'instant';
+  const triggerStatus =
+    typeof row.triggerStatus === 'string' &&
+    (Object.values(LeadStatus) as string[]).includes(row.triggerStatus)
+      ? row.triggerStatus
+      : fallback.triggerStatus;
+  const eventName =
+    typeof row.eventName === 'string' && row.eventName.trim()
+      ? row.eventName.trim()
+      : fallback.eventName;
+  return {
+    pixelId: asString(row.pixelId),
+    accessToken: asString(row.accessToken) || undefined,
+    mode,
+    triggerStatus,
+    eventName,
+    enabled: asBoolean(row.enabled, true),
+  };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -184,6 +283,7 @@ export class SettingsService implements OnModuleInit {
     ...DEFAULT_SAAS_SMTP,
     expiry: { ...DEFAULT_SAAS_SMTP.expiry },
   };
+  private adTracking: AdTrackingSettingsInternal = defaultAdTracking();
 
   constructor(
     private readonly prisma: PlatformPrismaService,
@@ -204,6 +304,7 @@ export class SettingsService implements OnModuleInit {
       maintenance: { ...this.maintenance },
       landing: { ...this.landing },
       saasSmtp: this.getSaasSmtp(),
+      adTracking: this.getAdTracking(),
     };
   }
 
@@ -256,6 +357,43 @@ export class SettingsService implements OnModuleInit {
       ...this.saasSmtp,
       expiry: { ...this.saasSmtp.expiry },
     };
+  }
+
+  /**
+   * Public per-platform ad config: tokens are replaced by `hasToken`
+   * and `configured` — the token value NEVER leaves this service via
+   * this getter. Every known platform is present (defaults merged),
+   * so the console renders a card per platform without its own list.
+   * Deep copy — callers must not mutate the cached row.
+   */
+  getAdTracking(): AdTrackingSettingsPublic {
+    const out: AdTrackingSettingsPublic = {};
+    for (const platform of AD_PLATFORMS) {
+      const cfg =
+        this.adTracking[platform.id] ?? defaultAdPlatform(platform.id);
+      const hasToken = (cfg.accessToken?.trim().length ?? 0) > 0;
+      out[platform.id] = {
+        pixelId: cfg.pixelId,
+        hasToken,
+        configured: cfg.enabled && cfg.pixelId.trim().length > 0 && hasToken,
+        mode: cfg.mode,
+        triggerStatus: cfg.triggerStatus,
+        eventName: cfg.eventName,
+        enabled: cfg.enabled,
+      };
+    }
+    return out;
+  }
+
+  /** Full per-platform ad config (decrypted tokens) for the dispatcher. Deep copy. */
+  getAdTrackingInternal(): AdTrackingSettingsInternal {
+    const out: AdTrackingSettingsInternal = {};
+    for (const platform of AD_PLATFORMS) {
+      const cfg =
+        this.adTracking[platform.id] ?? defaultAdPlatform(platform.id);
+      out[platform.id] = { ...cfg };
+    }
+    return out;
   }
 
   /** Effective search-indexing flag for the public landing. */
@@ -520,6 +658,85 @@ export class SettingsService implements OnModuleInit {
     return this.getSaasSmtp();
   }
 
+  /**
+   * Update one platform's ad tracking config (CMS batch 2, item 21).
+   * Partial: omitted fields keep their stored value. accessToken
+   * omitted = keep the stored token; an empty string clears it.
+   * `store()` encrypts the token at rest (same pattern as the SMTP
+   * password); the returned public view never carries the token.
+   */
+  async updateAdTracking(
+    platformId: string,
+    input: {
+      pixelId?: string;
+      accessToken?: string;
+      mode?: string;
+      triggerStatus?: string;
+      eventName?: string;
+      enabled?: boolean;
+    },
+  ): Promise<AdPlatformSettingsPublic> {
+    if (!isKnownAdPlatform(platformId)) {
+      throw new BadRequestException(`Unknown ad platform: ${platformId}`);
+    }
+    const current =
+      this.adTracking[platformId] ?? defaultAdPlatform(platformId);
+    const pixelId = (input.pixelId ?? current.pixelId).trim();
+    if (pixelId.length > 100) {
+      throw new BadRequestException('pixelId must be at most 100 characters');
+    }
+    // Omit = keep the stored token; an explicit value replaces it
+    // (empty clears). `current.accessToken` is already decrypted;
+    // store() re-encrypts it, so a kept token is never double-encrypted.
+    const accessToken =
+      input.accessToken !== undefined
+        ? input.accessToken.trim() || undefined
+        : current.accessToken;
+    if ((accessToken?.length ?? 0) > 500) {
+      throw new BadRequestException(
+        'accessToken must be at most 500 characters',
+      );
+    }
+    const mode = input.mode ?? current.mode;
+    if (mode !== 'instant' && mode !== 'validated') {
+      throw new BadRequestException(
+        "mode must be 'instant' or 'validated'",
+      );
+    }
+    const triggerStatus = input.triggerStatus ?? current.triggerStatus;
+    if (
+      !(Object.values(LeadStatus) as string[]).includes(triggerStatus)
+    ) {
+      throw new BadRequestException(
+        `triggerStatus must be a lead status (${Object.values(LeadStatus).join(', ')})`,
+      );
+    }
+    const eventName =
+      input.eventName !== undefined
+        ? input.eventName.trim() ||
+          getAdPlatform(platformId)?.defaultEventName ||
+          'Lead'
+        : current.eventName;
+    if (eventName.length > 100) {
+      throw new BadRequestException(
+        'eventName must be at most 100 characters',
+      );
+    }
+    const next: AdPlatformSettingsInternal = {
+      pixelId,
+      accessToken,
+      mode,
+      triggerStatus,
+      eventName,
+      enabled: input.enabled ?? current.enabled,
+    };
+    const stored = this.getAdTrackingInternal();
+    stored[platformId] = next;
+    await this.store('ad_tracking', stored);
+    this.adTracking = stored;
+    return this.getAdTracking()[platformId]!;
+  }
+
   /** Stored indexing value as last read from the DB (env-independent). */
   private storedIndexing = true;
 
@@ -594,6 +811,7 @@ export class SettingsService implements OnModuleInit {
     }
     await this.loadLanding();
     await this.loadSaasSmtp();
+    await this.loadAdTracking();
   }
 
   /**
@@ -633,6 +851,80 @@ export class SettingsService implements OnModuleInit {
       },
     };
     this.saasSmtp = next;
+  }
+
+  /**
+   * Ad tracking settings: the stored PlatformSetting, defensively
+   * parsed per platform (a malformed row falls back to defaults field
+   * by field, never crashing the boot). A missing row means no ad
+   * platform is configured — dispatch stays a no-op.
+   */
+  private async loadAdTracking(): Promise<void> {
+    const stored = await this.readAdTrackingStored();
+    const next = defaultAdTracking();
+    if (isRecord(stored)) {
+      for (const platform of AD_PLATFORMS) {
+        const row = stored[platform.id];
+        if (!isRecord(row)) continue;
+        next[platform.id] = parseAdPlatformRow(platform.id, row);
+      }
+    }
+    this.adTracking = next;
+  }
+
+  /**
+   * Read the stored ad_tracking setting with each platform's
+   * `accessToken` decrypted when it is ciphertext (same pattern as
+   * readSmtpStored, per platform). A legacy PLAINTEXT token is lazily
+   * migrated; an undecryptable token (missing/rotated key) fails
+   * closed for that platform only — the token is dropped, the
+   * platform reads as unconfigured, and the operator gets a loud log
+   * line. Other platforms are unaffected.
+   */
+  private async readAdTrackingStored(): Promise<unknown> {
+    const stored = await this.readStored('ad_tracking');
+    if (!isRecord(stored)) return stored;
+    let migrated = false;
+    const next: Record<string, unknown> = { ...stored };
+    for (const platform of AD_PLATFORMS) {
+      const row = stored[platform.id];
+      if (!isRecord(row)) continue;
+      const token = asString(row.accessToken);
+      if (!token) continue;
+      if (EncryptionService.isEncrypted(token)) {
+        try {
+          next[platform.id] = {
+            ...row,
+            accessToken: this.encryption.decrypt(token),
+          };
+        } catch (err) {
+          this.logger.error(
+            `Stored ${platform.id} ad token cannot be decrypted (APP_ENCRYPTION_KEY missing or rotated); ${platform.id} dispatch is disabled until the token is re-entered: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+          next[platform.id] = { ...row, accessToken: undefined };
+        }
+      } else if (this.encryption.isConfigured()) {
+        // Legacy plaintext row: migrate it now (no-op without a key).
+        migrated = true;
+      }
+    }
+    if (migrated) {
+      try {
+        await this.store('ad_tracking', stored);
+        this.logger.log(
+          'Migrated legacy plaintext ad token(s) to encrypted storage',
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Ad token re-encryption failed; using the plaintext row this boot: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+    return next;
   }
 
   /**
@@ -780,6 +1072,23 @@ export class SettingsService implements OnModuleInit {
       if (pass && !EncryptionService.isEncrypted(pass)) {
         value = { ...value, pass: this.encryption.encrypt(pass) };
       }
+    }
+    // Ad tracking access tokens are encrypted the same way, per
+    // platform (the ad_tracking row is a record keyed by platform id).
+    if (key === 'ad_tracking' && isRecord(value)) {
+      const next: Record<string, unknown> = {};
+      for (const [platformId, cfg] of Object.entries(value)) {
+        if (!isRecord(cfg)) {
+          next[platformId] = cfg;
+          continue;
+        }
+        const token = asString(cfg.accessToken);
+        next[platformId] =
+          token && !EncryptionService.isEncrypted(token)
+            ? { ...cfg, accessToken: this.encryption.encrypt(token) }
+            : cfg;
+      }
+      value = next;
     }
     await this.prisma.platformSetting.upsert({
       where: { key },

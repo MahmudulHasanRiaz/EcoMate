@@ -202,6 +202,19 @@ export interface PlatformUser {
   mfaRequired?: boolean;
 }
 
+/** One operator session = one refresh-token rotation family (CMS item 15). */
+export interface PlatformSession {
+  /** The rotation family id — the session id for revoke. */
+  id: string;
+  userAgent?: string | null;
+  ipAddress?: string | null;
+  createdAt?: string | null;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  revoked: boolean;
+  tokenCount: number;
+}
+
 export interface PlatformUserInvite {
   id: string;
   email: string;
@@ -652,6 +665,44 @@ export interface PlatformSettings {
   maintenance: MaintenanceSettings;
   landing: LandingSettings;
   saasSmtp: SaasSmtpSettings;
+  /** Per-platform ad tracking config (CMS batch 2, item 21). */
+  adTracking: AdTrackingSettings;
+}
+
+export type AdTrackingMode = 'instant' | 'validated';
+
+/**
+ * One platform's ad tracking config, public view (CMS batch 2, item
+ * 21). The access token is NEVER in this shape — `hasToken` says
+ * whether one is stored.
+ */
+export interface AdTrackingPlatformSettings {
+  pixelId: string;
+  hasToken: boolean;
+  configured: boolean;
+  mode: AdTrackingMode;
+  triggerStatus: LeadStatus;
+  eventName: string;
+  enabled: boolean;
+}
+
+export type AdTrackingSettings = Record<string, AdTrackingPlatformSettings>;
+
+export type AdDispatchStatus = 'pending' | 'sent' | 'failed';
+
+/** One ad-platform dispatch row for a lead (lead drawer sync status). */
+export interface AdDispatch {
+  id: string;
+  leadId: string;
+  platform: string;
+  eventName: string;
+  status: AdDispatchStatus;
+  attempts: number;
+  lastError: string | null;
+  nextRetryAt: string | null;
+  sentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface EmailBalanceLot {
@@ -765,8 +816,23 @@ export interface Lead {
   /** Tenant this lead was converted to (Batch 1, C1), if any. */
   convertedTenantId?: string | null;
   convertedTenant?: { id: string; name: string; slug: string } | null;
+  /** Operator the lead is assigned to (Batch 2, item 12), if any. */
+  assignedToId?: string | null;
+  assignedTo?: { id: string; name: string; email: string } | null;
+  /** When the next follow-up is due (Batch 2, item 12), if any. */
+  followUpAt?: string | null;
+  /** Operator-only working notes (Batch 2, item 12). */
+  internalNotes?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** One row of the GET /leads/assignees roster (Batch 2, item 12). */
+export interface LeadAssignee {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
 }
 
 export interface LandingContentRow {
@@ -777,8 +843,24 @@ export interface LandingContentRow {
   value: unknown;
   sortOrder: number;
   isActive: boolean;
+  /** Draft/publish (CMS batch 2, item 17): only published + active rows are live. */
+  status: 'draft' | 'published';
+  /** Optimistic-locking counter; PATCH requires it as `expectedVersion`. */
+  version: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** One published snapshot of a landing content row (newest first). */
+export interface LandingContentRevision {
+  id: string;
+  landingContentId: string;
+  /** The row's version at snapshot time. */
+  version: number;
+  value: unknown;
+  actorId: string | null;
+  note: string | null;
+  createdAt: string;
 }
 
 /** Per-section translation coverage (Batch 1, item 4). */
@@ -786,7 +868,10 @@ export interface LandingContentHealthSection {
   section: string;
   /** Rows in either locale (a key counts once per locale). */
   total: number;
+  /** Live on the landing: status published AND isActive. */
   published: number;
+  /** Rows with unpublished changes (status draft). */
+  draft: number;
   /** Keys present in bn but missing in en. */
   missingEn: number;
   /** Keys present in en but missing in bn. */
@@ -798,6 +883,7 @@ export interface LandingContentHealth {
   totals: {
     total: number;
     published: number;
+    draft: number;
     missingEn: number;
     missingBn: number;
   };
