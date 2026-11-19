@@ -133,6 +133,14 @@ enum LeadStatus {
   CLOSED
 }
 
+/// Tenant plan-change request lifecycle (Subscription hub): PENDING until
+/// an operator applies it (via TenantsService.changePlan) or rejects it.
+enum PlanChangeRequestStatus {
+  PENDING
+  APPLIED
+  REJECTED
+}
+
 /// Where a grant of emails came from (EmailBalanceLot.source).
 enum EmailLotSource {
   FREE_GRANT
@@ -262,6 +270,7 @@ model Tenant {
   emailLedger       EmailBalanceLedger[]
   emailTopUps       EmailTopUp[]
   emailAccount      TenantEmailAccount?
+  planChangeRequests PlanChangeRequest[]
 
   @@index([status, createdAt])
   @@index([status, graceEndsAt])
@@ -343,6 +352,8 @@ model Plan {
 
   versions PlanVersion[]
 
+  planChangeRequests PlanChangeRequest[]
+
   @@index([isActive, isPublic, sortOrder])
 }
 
@@ -378,9 +389,48 @@ model PlanVersion {
   tenants       Tenant[]
   subscriptions Subscription[]
   pendingSubscriptions Subscription[] @relation("PendingPlanVersion")
+  planChangeRequests PlanChangeRequest[]
 
   @@unique([planId, version])
   @@index([planId, effectiveFrom])
+}
+
+/// A tenant's request to move to another (public) plan, decided by an
+/// operator from the console Billing → Plan requests tab. targetPlanId
+/// is what the tenant asked for (plans are addressed by plan id — the
+/// public catalogue exposes no version id); targetPlanVersionId is the
+/// latest non-archived version resolved at request time, and apply()
+/// changes the tenant to exactly that version. Only one PENDING request
+/// per tenant may exist (enforced in the service, not by a partial
+/// unique index — Prisma has no partial-index support).
+///
+/// decidedAt doubles as the apply claim: apply() stamps decidedBy/
+/// decidedAt while the status is still PENDING (updateMany where
+/// status=PENDING AND decidedAt IS NULL), so a second operator's claim
+/// finds decidedAt set and gets a 409 instead of double-applying. If
+/// changePlan throws, the claim is rolled back to NULL and the row is a
+/// clean PENDING again.
+model PlanChangeRequest {
+  id                  String                  @id @default(uuid())
+  tenantId            String
+  tenant              Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  targetPlanId        String
+  targetPlan          Plan                    @relation(fields: [targetPlanId], references: [id])
+  targetPlanVersionId String
+  targetPlanVersion   PlanVersion             @relation(fields: [targetPlanVersionId], references: [id])
+  status              PlanChangeRequestStatus @default(PENDING)
+  note                String?
+  rejectionReason     String?
+  /// Tenant user id (backend JWT `userId`) that filed the request.
+  requestedBy         String?
+  /// Platform user id that decided the request.
+  decidedBy           String?
+  decidedAt           DateTime?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@index([tenantId, status])
+  @@index([status, createdAt])
 }
 
 model Subscription {

@@ -18,6 +18,7 @@ describe('format', () => {
     expect(statusTone('ACTIVE')).toBe('accent');
     expect(statusTone('PAID')).toBe('accent');
     expect(statusTone('APPROVED')).toBe('accent');
+    expect(statusTone('APPLIED')).toBe('accent');
     expect(statusTone('WON')).toBe('accent');
     expect(statusTone('VERIFIED')).toBe('accent');
     expect(statusTone('USED')).toBe('accent');

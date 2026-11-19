@@ -19,13 +19,16 @@ export class EntitlementsController {
 
   // Staff-only: tenant plan/usage metadata, read by the admin layout. No
   // storefront or POS caller; customers have no use for it.
-  @Roles('superadmin', 'admin', 'employee')
+  // Cashier included: the dashboard Subscription card/banner (visible to
+  // every role) reads /me, and the hub Overview reads /usage. Both are
+  // read-only plan metadata; billing reads stay employee-and-up.
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get('me')
   getMine() {
     return this.entitlements.getSnapshot();
   }
 
-  @Roles('superadmin', 'admin', 'employee')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get('usage')
   getUsage() {
     return this.limits.getUsageSnapshot();

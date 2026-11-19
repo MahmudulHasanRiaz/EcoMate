@@ -285,6 +285,29 @@ export interface PaymentProof {
   method?: { id: string; type: string; name: string };
 }
 
+/** A tenant's request to move to another plan (console Billing →
+ * Plan requests tab). Mirrors ConsolePlanChangeRequestView from the
+ * platform API. */
+export interface PlanChangeRequest {
+  id: string;
+  tenantId: string;
+  targetPlanId: string;
+  targetPlanVersionId: string;
+  targetPlanName: string;
+  status: 'PENDING' | 'APPLIED' | 'REJECTED';
+  note?: string | null;
+  rejectionReason?: string | null;
+  requestedBy?: string | null;
+  createdAt: string;
+  decidedAt?: string | null;
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    currentPlanName: string | null;
+  };
+}
+
 export interface InvoiceLine {
   id: string;
   description: string;

@@ -28,6 +28,7 @@ const ACCENT_STATUSES = new Set([
   'ACTIVE',
   'PAID',
   'APPROVED',
+  'APPLIED',
   'WON',
   'VERIFIED',
   'USED',

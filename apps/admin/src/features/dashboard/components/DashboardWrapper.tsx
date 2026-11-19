@@ -26,6 +26,7 @@ import { RecentOrders } from '../widgets/RecentOrders'
 import { SystemAlerts } from '../widgets/SystemAlerts'
 import { ActivityLog } from '../widgets/ActivityLog'
 import { LowStockAlert } from '../widgets/LowStockAlert'
+import { SubscriptionBanner } from '../widgets/SubscriptionBanner'
 
 interface DashboardWrapperProps {
   route: 'mon' | 'op'
@@ -65,6 +66,7 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
             </div>
             <DateFilter />
           </div>
+          <SubscriptionBanner />
           <DashboardGrid
             configs={configs}
             widgetProps={{ dateRange, preset, userRole }}

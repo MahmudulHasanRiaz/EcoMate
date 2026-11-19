@@ -1,5 +1,6 @@
 import type { WidgetConfig } from '../types'
 import { OperationalKpiStrip } from '../widgets/OperationalKpiStrip'
+import { SubscriptionStatus } from '../widgets/SubscriptionStatus'
 import { OrderStatusChart } from '../widgets/OrderStatusChart'
 import { NewCustomers } from '../widgets/NewCustomers'
 import { LowStockAlert } from '../widgets/LowStockAlert'
@@ -15,6 +16,9 @@ import { ActivityLog } from '../widgets/ActivityLog'
  */
 export const monWidgets: WidgetConfig[] = [
   { id: 'today-kpi', component: OperationalKpiStrip, minRole: 'employee', defaultSpan: 4, sizes: { xl: 4 }, title: 'Operational KPIs' },
+  // View-only for every role (minRole 'customer' = the lowest rung, so no
+  // staff role is filtered out) — staff seeing the renewal state is the point.
+  { id: 'subscription', component: SubscriptionStatus, minRole: 'customer', defaultSpan: 1, sizes: { xl: 1 }, title: 'Subscription' },
   { id: 'order-status', component: OrderStatusChart, minRole: 'employee', defaultSpan: 1, sizes: { xl: 1 }, title: 'Order Status' },
   { id: 'new-customers', component: NewCustomers, minRole: 'employee', defaultSpan: 1, sizes: { xl: 1 }, title: 'New Customers' },
   { id: 'low-stock', component: LowStockAlert, minRole: 'employee', defaultSpan: 1, sizes: { xl: 1 }, title: 'Low Stock' },

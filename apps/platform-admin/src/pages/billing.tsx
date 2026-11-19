@@ -14,6 +14,14 @@ import {
   INVOICE_KIND_LABELS,
   traceSourceLabel,
 } from '../lib/pricing';
+import {
+  canDecidePlanChangeRequest,
+  EFFECTIVE_AT_LABELS,
+  isValidRejectionReason,
+  planChangeSummary,
+  PLAN_CHANGE_REQUEST_STATUSES,
+  type PlanChangeEffectiveAt,
+} from '../lib/plan-change-requests';
 import type {
   BillingSummary,
   Coupon,
@@ -26,6 +34,7 @@ import type {
   PaymentMethod,
   PaymentProof,
   Plan,
+  PlanChangeRequest,
   PricingTrace,
   Subscription,
   Tenant,
@@ -44,6 +53,7 @@ type Tab =
   | 'invoices'
   | 'payments'
   | 'subscriptions'
+  | 'requests'
   | 'credits'
   | 'coupons'
   | 'methods'
@@ -53,6 +63,7 @@ const TABS: Tab[] = [
   'invoices',
   'payments',
   'subscriptions',
+  'requests',
   'credits',
   'coupons',
   'methods',
@@ -185,7 +196,10 @@ const INVOICE_STATUSES = [
 ] as const;
 
 export function BillingPage() {
-  const { api } = useAuth();
+  const { api, session } = useAuth();
+  const canDecideRequests = canDecidePlanChangeRequest(
+    session?.user.role,
+  );
   const location = useLocation();
   const tabParam = (location.search as { tab?: unknown }).tab;
   const [tab, setTab] = useState<Tab>(() => tabFromParam(tabParam));
@@ -201,6 +215,8 @@ export function BillingPage() {
   const [payments, setPayments] = useState<Page<Payment> | null>(null);
   const [subscriptions, setSubscriptions] =
     useState<Page<Subscription> | null>(null);
+  const [requests, setRequests] = useState<PlanChangeRequest[] | null>(null);
+  const [requestStatus, setRequestStatus] = useState<string>('PENDING');
   const [creditNotes, setCreditNotes] = useState<Page<CreditNote> | null>(null);
   const [coupons, setCoupons] = useState<Page<Coupon> | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -208,6 +224,13 @@ export function BillingPage() {
   const [jobs, setJobs] = useState<JobsStatus | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [confirmApprove, setConfirmApprove] = useState<PaymentProof | null>(null);
+  const [confirmApply, setConfirmApply] =
+    useState<PlanChangeRequest | null>(null);
+  const [confirmRejectRequest, setConfirmRejectRequest] =
+    useState<PlanChangeRequest | null>(null);
+  const [applyEffectiveAt, setApplyEffectiveAt] =
+    useState<PlanChangeEffectiveAt>('immediate');
+  const [requestRejectReason, setRequestRejectReason] = useState('');
   const [confirmCoupon, setConfirmCoupon] = useState<Coupon | null>(null);
   const [invoiceTenantId, setInvoiceTenantId] = useState('');
   const [invoiceDescription, setInvoiceDescription] = useState('');
@@ -240,7 +263,7 @@ export function BillingPage() {
     setBusy('load');
     setError(null);
     try {
-      const [nextSummary, nextProofs, nextInvoices, nextPayments, nextSubscriptions, nextCredits, nextCoupons, nextPlans, nextTenants, nextJobs, nextMethods] =
+      const [nextSummary, nextProofs, nextInvoices, nextPayments, nextSubscriptions, nextRequests, nextCredits, nextCoupons, nextPlans, nextTenants, nextJobs, nextMethods] =
         await Promise.all([
           api('/billing/summary').then((r) => readJson<BillingSummary>(r)),
           api(`/billing/proofs?status=${proofStatus}&limit=50`).then((r) =>
@@ -255,6 +278,11 @@ export function BillingPage() {
           api('/billing/subscriptions?limit=50').then((r) =>
             readJson<Page<Subscription>>(r),
           ),
+          api(
+            requestStatus
+              ? `/plan-change-requests?status=${requestStatus}`
+              : '/plan-change-requests',
+          ).then((r) => readJson<PlanChangeRequest[]>(r)),
           api('/billing/credit-notes?limit=50').then((r) =>
             readJson<Page<CreditNote>>(r),
           ),
@@ -271,6 +299,7 @@ export function BillingPage() {
       setInvoices(nextInvoices);
       setPayments(nextPayments);
       setSubscriptions(nextSubscriptions);
+      setRequests(nextRequests);
       setCreditNotes(nextCredits);
       setCoupons(nextCoupons);
       setPlans(nextPlans);
@@ -282,7 +311,7 @@ export function BillingPage() {
     } finally {
       setBusy(null);
     }
-  }, [api, invoiceStatus, invoiceKind, proofStatus]);
+  }, [api, invoiceStatus, invoiceKind, proofStatus, requestStatus]);
 
   useEffect(() => {
     void load();
@@ -324,6 +353,60 @@ export function BillingPage() {
       setNotice('Payment proof rejected.');
       setSelectedProof(null);
       setRejectReason('');
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyPlanChangeRequest(
+    request: PlanChangeRequest,
+    effectiveAt: PlanChangeEffectiveAt,
+  ) {
+    setBusy(`apply-request:${request.id}`);
+    setError(null);
+    try {
+      const response = await api(
+        `/plan-change-requests/${request.id}/apply`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ effectiveAt }),
+        },
+      );
+      await readJson<unknown>(response);
+      setNotice(
+        effectiveAt === 'next_period'
+          ? `Plan change scheduled for ${request.tenant.name} at renewal.`
+          : `${request.tenant.name} moved to ${request.targetPlanName}.`,
+      );
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function rejectPlanChangeRequest(request: PlanChangeRequest) {
+    if (!isValidRejectionReason(requestRejectReason)) {
+      setError('Enter a rejection reason (at least 3 characters).');
+      return;
+    }
+    setBusy(`reject-request:${request.id}`);
+    setError(null);
+    try {
+      const response = await api(
+        `/plan-change-requests/${request.id}/reject`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ reason: requestRejectReason.trim() }),
+        },
+      );
+      await readJson<unknown>(response);
+      setNotice('Plan change request rejected.');
+      setRequestRejectReason('');
       setRefresh((value) => value + 1);
     } catch (err) {
       setError(errorMessage(err));
@@ -672,6 +755,17 @@ export function BillingPage() {
         >
           Subscriptions
           {subscriptions ? <span>{subscriptions.meta.total}</span> : null}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'requests'}
+          className="tab"
+          data-active={tab === 'requests'}
+          onClick={() => setTab('requests')}
+        >
+          Plan requests
+          {requests ? <span>{requests.length}</span> : null}
         </button>
         <button
           type="button"
@@ -1489,6 +1583,127 @@ export function BillingPage() {
         </section>
       ) : null}
 
+      {tab === 'requests' ? (
+        <>
+          <div className="toolbar">
+            <label className="toolbar-filter">
+              <span>Status</span>
+              <select
+                value={requestStatus}
+                onChange={(event) => setRequestStatus(event.target.value)}
+              >
+                <option value="">All requests</option>
+                {PLAN_CHANGE_REQUEST_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {formatStatus(status)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <section className="card">
+            <div className="card-head">
+              <div>
+                <h2>Plan requests</h2>
+                <p>
+                  Tenants asking to move to another public plan. Applying
+                  runs the same plan change as the operator flow —
+                  proration, metered close-out and invoicing included.
+                </p>
+              </div>
+            </div>
+            {!requests && busy ? <Skeleton /> : null}
+            {requests && requests.length === 0 ? (
+              <p className="muted-note">No requests in this state.</p>
+            ) : null}
+            {requests && requests.length > 0 ? (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Requested</th>
+                      <th>Tenant</th>
+                      <th>Plan change</th>
+                      <th>Note</th>
+                      <th>Status</th>
+                      <th>Decided</th>
+                      <th aria-label="Actions" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requests.map((request) => (
+                      <tr key={request.id}>
+                        <td>{formatDate(request.createdAt)}</td>
+                        <td>
+                          <Link
+                            to="/tenants/$tenantId"
+                            params={{ tenantId: request.tenant.id }}
+                            className="table-link"
+                          >
+                            {request.tenant.name}
+                          </Link>
+                          <span className="sub">{request.tenant.slug}</span>
+                        </td>
+                        <td>{planChangeSummary(request)}</td>
+                        <td>{request.note || '—'}</td>
+                        <td>
+                          <StatusBadge status={request.status} />
+                        </td>
+                        <td>
+                          {request.status === 'PENDING'
+                            ? '—'
+                            : formatDate(request.decidedAt)}
+                          {request.rejectionReason ? (
+                            <span className="sub">
+                              {request.rejectionReason}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td>
+                          {request.status === 'PENDING' &&
+                          canDecideRequests ? (
+                            <div className="row-action">
+                              <button
+                                type="button"
+                                className="button button--accent"
+                                onClick={() => {
+                                  setApplyEffectiveAt('immediate');
+                                  setConfirmApply(request);
+                                  setNotice(null);
+                                }}
+                                disabled={!!busy}
+                              >
+                                {busy === `apply-request:${request.id}`
+                                  ? 'Applying…'
+                                  : 'Apply'}
+                              </button>
+                              <button
+                                type="button"
+                                className="button button--danger"
+                                onClick={() => {
+                                  setRequestRejectReason('');
+                                  setConfirmRejectRequest(request);
+                                  setNotice(null);
+                                }}
+                                disabled={!!busy}
+                              >
+                                {busy === `reject-request:${request.id}`
+                                  ? 'Rejecting…'
+                                  : 'Reject'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </section>
+        </>
+      ) : null}
+
       {tab === 'credits' ? (
         <section className="card">
           <div className="card-head">
@@ -1895,6 +2110,92 @@ export function BillingPage() {
             await toggleCoupon(coupon);
           }}
           onClose={() => setConfirmCoupon(null)}
+        />
+      ) : null}
+
+      {confirmApply ? (
+        <ConfirmDialog
+          open
+          title="Apply plan change"
+          body={
+            <>
+              <p>
+                Move {confirmApply.tenant.name} from{' '}
+                {confirmApply.tenant.currentPlanName ?? 'no plan'} to{' '}
+                {confirmApply.targetPlanName}? This runs the same plan
+                change as the operator flow.
+              </p>
+              <label className="inline-field">
+                <span>Effective</span>
+                <select
+                  value={applyEffectiveAt}
+                  onChange={(event) =>
+                    setApplyEffectiveAt(
+                      event.target.value as PlanChangeEffectiveAt,
+                    )
+                  }
+                  aria-label="When the plan change takes effect"
+                >
+                  {(
+                    Object.keys(EFFECTIVE_AT_LABELS) as PlanChangeEffectiveAt[]
+                  ).map((value) => (
+                    <option key={value} value={value}>
+                      {EFFECTIVE_AT_LABELS[value]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          }
+          confirmLabel="Apply plan change"
+          busy={busy === `apply-request:${confirmApply.id}`}
+          onConfirm={async () => {
+            const request = confirmApply;
+            const effectiveAt = applyEffectiveAt;
+            setConfirmApply(null);
+            await applyPlanChangeRequest(request, effectiveAt);
+          }}
+          onClose={() => setConfirmApply(null)}
+        />
+      ) : null}
+
+      {confirmRejectRequest ? (
+        <ConfirmDialog
+          open
+          title="Reject plan change"
+          body={
+            <>
+              <p>
+                Reject {confirmRejectRequest.tenant.name}&rsquo;s request to
+                move to {confirmRejectRequest.targetPlanName}? The tenant
+                will see the reason.
+              </p>
+              <label className="inline-field">
+                <span>Reason</span>
+                <input
+                  value={requestRejectReason}
+                  onChange={(event) =>
+                    setRequestRejectReason(event.target.value)
+                  }
+                  placeholder="Rejection reason"
+                  aria-label="Rejection reason"
+                />
+              </label>
+            </>
+          }
+          confirmLabel="Reject request"
+          danger
+          busy={busy === `reject-request:${confirmRejectRequest.id}`}
+          onConfirm={async () => {
+            if (!isValidRejectionReason(requestRejectReason)) {
+              setError('Enter a rejection reason (at least 3 characters).');
+              return;
+            }
+            const request = confirmRejectRequest;
+            setConfirmRejectRequest(null);
+            await rejectPlanChangeRequest(request);
+          }}
+          onClose={() => setConfirmRejectRequest(null)}
         />
       ) : null}
     </>

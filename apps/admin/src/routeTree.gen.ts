@@ -163,6 +163,7 @@ import { Route as AuthenticatedMonSettingsSmtpIndexRouteImport } from './routes/
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
 import { Route as AuthenticatedMonSettingsStoreLocationsIndexRouteImport } from './routes/_authenticated/mon/settings/store-locations/index'
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
+import { Route as AuthenticatedMonSettingsSubscriptionIndexRouteImport } from './routes/_authenticated/mon/settings/subscription/index'
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './routes/_authenticated/mon/settings/tracking/index'
 import { Route as AuthenticatedMonSettingsTrackingMonitoringRouteImport } from './routes/_authenticated/mon/settings/tracking/monitoring'
@@ -1090,6 +1091,12 @@ const AuthenticatedMonSettingsStorefrontIndexRoute =
     path: '/storefront/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsSubscriptionIndexRoute =
+  AuthenticatedMonSettingsSubscriptionIndexRouteImport.update({
+    id: '/subscription/',
+    path: '/subscription/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsSystemIndexRoute =
   AuthenticatedMonSettingsSystemIndexRouteImport.update({
     id: '/system/',
@@ -1415,6 +1422,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/store-locations/': typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
+  '/mon/settings/subscription/': typeof AuthenticatedMonSettingsSubscriptionIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
   '/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
@@ -1597,6 +1605,7 @@ export interface FileRoutesByTo {
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/mon/settings/store-locations': typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
+  '/mon/settings/subscription': typeof AuthenticatedMonSettingsSubscriptionIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking': typeof AuthenticatedMonSettingsTrackingIndexRoute
   '/op/dispatch/duplicate-review': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
@@ -1781,6 +1790,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
   '/_authenticated/mon/settings/store-locations/': typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
+  '/_authenticated/mon/settings/subscription/': typeof AuthenticatedMonSettingsSubscriptionIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/_authenticated/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
   '/_authenticated/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
@@ -1965,6 +1975,7 @@ export interface FileRouteTypes {
     | '/mon/settings/storage/'
     | '/mon/settings/store-locations/'
     | '/mon/settings/storefront/'
+    | '/mon/settings/subscription/'
     | '/mon/settings/system/'
     | '/mon/settings/tracking/'
     | '/op/dispatch/duplicate-review/'
@@ -2147,6 +2158,7 @@ export interface FileRouteTypes {
     | '/mon/settings/storage'
     | '/mon/settings/store-locations'
     | '/mon/settings/storefront'
+    | '/mon/settings/subscription'
     | '/mon/settings/system'
     | '/mon/settings/tracking'
     | '/op/dispatch/duplicate-review'
@@ -2330,6 +2342,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/storage/'
     | '/_authenticated/mon/settings/store-locations/'
     | '/_authenticated/mon/settings/storefront/'
+    | '/_authenticated/mon/settings/subscription/'
     | '/_authenticated/mon/settings/system/'
     | '/_authenticated/mon/settings/tracking/'
     | '/_authenticated/op/dispatch/duplicate-review/'
@@ -3446,6 +3459,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsStorefrontIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/subscription/': {
+      id: '/_authenticated/mon/settings/subscription/'
+      path: '/subscription'
+      fullPath: '/mon/settings/subscription/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsSubscriptionIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/system/': {
       id: '/_authenticated/mon/settings/system/'
       path: '/system'
@@ -3659,6 +3679,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
   AuthenticatedMonSettingsStoreLocationsIndexRoute: typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   AuthenticatedMonSettingsStorefrontIndexRoute: typeof AuthenticatedMonSettingsStorefrontIndexRoute
+  AuthenticatedMonSettingsSubscriptionIndexRoute: typeof AuthenticatedMonSettingsSubscriptionIndexRoute
   AuthenticatedMonSettingsSystemIndexRoute: typeof AuthenticatedMonSettingsSystemIndexRoute
   AuthenticatedMonSettingsTrackingIndexRoute: typeof AuthenticatedMonSettingsTrackingIndexRoute
 }
@@ -3705,6 +3726,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsStoreLocationsIndexRoute,
     AuthenticatedMonSettingsStorefrontIndexRoute:
       AuthenticatedMonSettingsStorefrontIndexRoute,
+    AuthenticatedMonSettingsSubscriptionIndexRoute:
+      AuthenticatedMonSettingsSubscriptionIndexRoute,
     AuthenticatedMonSettingsSystemIndexRoute:
       AuthenticatedMonSettingsSystemIndexRoute,
     AuthenticatedMonSettingsTrackingIndexRoute:

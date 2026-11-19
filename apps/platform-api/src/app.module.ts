@@ -20,6 +20,7 @@ import { LeadsModule } from './leads/leads.module';
 import { MediaModule } from './media/media.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { ObservabilityModule } from './observability/observability.module';
+import { PlanChangeRequestsModule } from './plan-change-requests/plan-change-requests.module';
 import { PlansModule } from './plans/plans.module';
 import { PricingModule } from './pricing/pricing.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -55,6 +56,7 @@ import { UsersModule } from './users/users.module';
     MediaModule,
     MetricsModule,
     ObservabilityModule,
+    PlanChangeRequestsModule,
     PlansModule,
     PricingModule,
     ProvisioningModule,
