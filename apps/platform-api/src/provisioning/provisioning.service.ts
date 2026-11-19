@@ -7,7 +7,9 @@ import {
 } from '@nestjs/common';
 import { DomainConfigService } from '../config/domain-config.service';
 import { PlatformMailService } from '../common/platform-mail.service';
+import { EmailBalanceService } from '../email-balance/email-balance.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { parsePricingDocument } from '../pricing/pricing-document';
 
 const TRIAL_DAYS_FALLBACK = 14;
 const FETCH_TIMEOUT_MS = 15_000;
@@ -45,6 +47,7 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PlatformPrismaService,
     private readonly domainConfig: DomainConfigService,
     private readonly mail: PlatformMailService,
+    private readonly emailBalance: EmailBalanceService,
   ) {}
 
   onModuleInit() {
@@ -217,6 +220,22 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
         data: { status: 'TRIAL' },
       });
 
+      // Free email starter grant (§6): once per tenant, idempotent — the
+      // admin-create path calls the same grant, so a tenant created with
+      // a password is granted at create time and this call is a no-op.
+      // Best-effort with a loud log: a grant failure must never fail a
+      // provisioning run that already seeded the workspace (the operator
+      // can grant the same count via the console balance adjustment).
+      try {
+        await this.emailBalance.grantFreeAllowance(job.tenantId);
+      } catch (err) {
+        this.logger.error(
+          `Free email grant failed for tenant ${job.tenant.slug}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+
       // The host becomes routable only after the workspace is fully seeded and
       // the welcome mail has been attempted.
       await this.prisma.tenantDomain.updateMany({
@@ -326,6 +345,7 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
       id: string;
       features: string[];
       limits: unknown;
+      pricing?: unknown;
       trialDays: number;
       plan: { name: string };
     },
@@ -377,6 +397,11 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
               currentPeriodStart: now,
               currentPeriodEnd: trialEndsAt,
               trialEndsAt,
+              // Free months (§4.6): set from the version's freeMonths
+              // at provisioning; consumed by the renewal job after the
+              // trial ends.
+              freePeriodsRemaining:
+                parsePricingDocument(planVersion.pricing).freeMonths ?? 0,
               entitlementsSnapshot: {
                 features: planVersion.features,
                 limits: planVersion.limits,

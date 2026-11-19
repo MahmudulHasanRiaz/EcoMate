@@ -133,6 +133,30 @@ enum LeadStatus {
   CLOSED
 }
 
+/// Where a grant of emails came from (EmailBalanceLot.source).
+enum EmailLotSource {
+  FREE_GRANT
+  TOPUP
+  ADJUSTMENT
+}
+
+/// Kind of an EmailBalanceLedger row (append-only audit trail).
+enum EmailLedgerKind {
+  GRANT
+  SEND
+  EXPIRE
+  ADJUSTMENT
+}
+
+/// Lifecycle of an EmailTopUp purchase. PENDING until its invoice is
+/// fully paid (approveProof credits the lot and flips it to PAID);
+/// VOID only for an unpaid top-up whose invoice was voided.
+enum EmailTopUpStatus {
+  PENDING
+  PAID
+  VOID
+}
+
 model PlatformUser {
   id           String             @id @default(uuid())
   email        String             @unique
@@ -227,10 +251,17 @@ model Tenant {
   couponRedemptions CouponRedemption[]
   usage             UsageDaily[]
   limitOverrides    TenantLimitOverride[]
+  pricingOverrides  TenantPricingOverride[]
+  purchases         TenantPurchase[]
+  blockingOverride  TenantBlockingOverride?
   auditLogs         AuditLog[]
   impersonations    ImpersonationSession[]
   provisioningJobs  ProvisioningJob[]
   convertedFromLeads Lead[] @relation("LeadConvertedTenant")
+  emailLots         EmailBalanceLot[]
+  emailLedger       EmailBalanceLedger[]
+  emailTopUps       EmailTopUp[]
+  emailAccount      TenantEmailAccount?
 
   @@index([status, createdAt])
   @@index([status, graceEndsAt])
@@ -327,6 +358,11 @@ model PlanVersion {
   trialDays     Int             @default(14)
   features      String[]        @default([])
   limits        Json            @default("{}")
+  /// Structured pricing document (pricing engine §3). Validated by DTOs;
+  /// `price` mirrors pricing.baseFee.amount (kept in sync by PlansService
+  /// on write). `{}` = legacy version, backfilled by migration
+  /// 20261118155700_pricing_engine_backfill.
+  pricing       Json            @default("{}")
   graceDays     Int             @default(7)
   effectiveFrom DateTime        @default(now())
   archivedAt    DateTime?
@@ -365,11 +401,16 @@ model Subscription {
   pendingPlanVersion   PlanVersion?       @relation("PendingPlanVersion", fields: [pendingPlanVersionId], references: [id])
   pendingPlanEffectiveAt DateTime?
   entitlementsSnapshot Json               @default("{}")
+  /// Free billing periods remaining (pricing.freeMonths, §4.6). Set from
+  /// the version's freeMonths at provisioning; consumed by the renewal
+  /// job (one free period per renewal, no invoice). Survives plan changes.
+  freePeriodsRemaining Int                @default(0)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
-  invoices Invoice[]
-  addOns   SubscriptionAddOn[]
+  invoices  Invoice[]
+  addOns    SubscriptionAddOn[]
+  purchases TenantPurchase[]
 
   @@index([status, currentPeriodEnd])
   @@index([status, trialEndsAt])
@@ -388,6 +429,13 @@ model AddOn {
   features    String[]        @default([])
   limits      Json            @default("{}")
   isActive    Boolean         @default(true)
+  /// Public add-ons are visible to tenants (future self-service); private
+  /// ones are console-only. Default true (existing add-ons stay visible).
+  isPublic    Boolean         @default(true)
+  sortOrder   Int             @default(0)
+  /// Optional metered rates for the add-on, same shape as
+  /// PlanVersion.pricing.metering (null = fixed price only).
+  metering    Json?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -425,6 +473,14 @@ model Invoice {
   periodStart    DateTime?
   periodEnd      DateTime?
   notes          String?
+  /// Invoice kind (pricing engine §5). SUBSCRIPTION = fixed renewal,
+  /// METERED = post-paid usage invoice, ONE_TIME = one-time purchase,
+  /// MANUAL = operator-created, TOPUP = SMTP email-balance top-up
+  /// (created here; used by the SMTP top-up flow).
+  kind           InvoiceKind   @default(MANUAL)
+  /// Billing computation trace (pricing engine §4): usage read, rates,
+  /// sources. Never filtered on — no index by design.
+  metadata       Json          @default("{}")
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -433,11 +489,14 @@ model Invoice {
   payments           Payment[]
   creditNotes        CreditNote[]
   couponRedemptions  CouponRedemption[]
+  purchase           TenantPurchase?
+  topUp              EmailTopUp?
 
   @@index([tenantId, status])
   @@index([status, dueAt])
   @@index([subscriptionId, status, periodStart])
   @@index([createdAt])
+  @@index([kind, status, createdAt])
 }
 
 /// One row per reminder actually sent. The unique key stops the jobs from
@@ -797,4 +856,184 @@ model MediaAsset {
   @@index([mimeType, createdAt(sort: Desc)])
   @@index([createdAt(sort: Desc)])
   @@index([uploadedByUserId])
+}
+
+/// ── Pricing engine (2026-11-18) ──────────────────────────────────────
+/// Dynamic pricing: pricing documents on PlanVersion, per-client
+/// overrides, one-time purchases, strict-blocking overrides. Migration
+/// 20261118155600_pricing_engine (+ backfill 20261118155700). The
+/// InvoiceKind enum is created here in full (incl. TOPUP, used by the
+/// SMTP top-up flow) so no later migration has to add values to it.
+
+enum InvoiceKind {
+  SUBSCRIPTION
+  ONE_TIME
+  METERED
+  MANUAL
+  TOPUP
+}
+
+enum PurchaseType {
+  SETUP_FEE
+  LIMIT_INCREASE
+  RATE_TIER
+  FEATURE_UNLOCK
+}
+
+enum PurchaseStatus {
+  PENDING
+  PAID
+  APPLIED
+  CANCELLED
+}
+
+/// Per-client pricing override (Q7). Overrides win over the plan version
+/// and over one-time purchase effects (§4.1). Keys are a closed set:
+/// 'per_order_rate' | 'minimum_monthly' (BDT; 0 minimum = no floor).
+model TenantPricingOverride {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String
+  value     Decimal  @db.Decimal(12, 4)
+  note      String?
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, key])
+  @@index([key])
+}
+
+/// A one-time purchase: setup fee, limit increase, rate tier, or feature
+/// unlock (Q3). The invoice is kind ONE_TIME; the effect is applied by
+/// approveProof when the invoice becomes PAID (§6 step 4). Status guards
+/// make application idempotent.
+model TenantPurchase {
+  id             String         @id @default(uuid())
+  tenantId       String
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  type           PurchaseType
+  feeKey         String
+  label          String
+  amount         Decimal        @db.Decimal(12, 2)
+  currency       String         @default("BDT")
+  /// Effect snapshot taken at purchase time (limits / rate / features).
+  effect         Json
+  status         PurchaseStatus @default(PENDING)
+  invoiceId      String?        @unique
+  invoice        Invoice?       @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  createdBy      String?
+  appliedAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([tenantId, status])
+  @@index([subscriptionId])
+}
+
+/// Per-client strict-blocking override (Q4). Absent = plan config wins.
+/// One row per tenant; the plan's `blocking` block is the default.
+model TenantBlockingOverride {
+  tenantId     String   @id
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mode         String
+  blockedAreas String[] @default([])
+  note         String?
+  createdBy    String?
+  updatedBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ── SMTP email balance (smtp-balance-design.md) ─────────────────────────
+// The balance is a COUNT of sendable emails, never money. Lots are the
+// truth; TenantEmailAccount.balanceCached is a read optimisation kept
+// in sync by the same transactions that write the ledger. Migration:
+// 20261118175200_smtp_email_balance (+ backfill
+// 20261118175300_smtp_email_balance_backfill).
+
+/// One grant of emails. Balance = Σ emailsRemaining over unexpired lots.
+/// Lots are never edited in place except for emailsRemaining decrements
+/// (and expiry, which zeroes it).
+model EmailBalanceLot {
+  id              String         @id @default(uuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source          EmailLotSource
+  emailsTotal     Int
+  emailsRemaining Int
+  /// null = never expires; else computed at grant time from the
+  /// saas_smtp expiry setting (grandfathered — later setting changes
+  /// never rewrite existing lots).
+  expiresAt       DateTime?
+  topUpId         String?
+  topUp           EmailTopUp?    @relation(fields: [topUpId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+
+  ledger EmailBalanceLedger[]
+
+  @@index([tenantId, expiresAt])
+  @@index([expiresAt])
+  @@index([tenantId, createdAt])
+}
+
+/// Append-only audit trail. balanceAfter is the reconciliation anchor.
+/// Rows are never updated or deleted. reference is the BullMQ job id for
+/// SENDs, the invoice number for grants, the lot id for expiries.
+/// A partial unique index (tenantId, reference) WHERE kind = 'SEND' lives
+/// in the migration SQL (Prisma has no partial-index support) — the
+/// idempotency guard for retried send jobs.
+model EmailBalanceLedger {
+  id           String           @id @default(uuid())
+  tenantId     String
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lotId        String?
+  lot          EmailBalanceLot? @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  kind         EmailLedgerKind
+  delta        Int
+  balanceAfter Int
+  reference    String?
+  note         String?
+  createdAt    DateTime         @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
+/// A top-up purchase: money in, emails out. The invoice is kind TOPUP
+/// (InvoiceKind, created by the pricing migration). The rate snapshot is
+/// stored at purchase time so a later rate change never rewrites it.
+model EmailTopUp {
+  id            String           @id @default(uuid())
+  tenantId      String
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoiceId     String           @unique
+  invoice       Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amountBDT     Decimal          @db.Decimal(12, 2)
+  emailsGranted Int
+  /// Rate snapshot at purchase time: { unit, pricePerUnit }.
+  rateSnapshot  Json
+  status        EmailTopUpStatus @default(PENDING)
+  createdAt     DateTime         @default(now())
+  paidAt        DateTime?
+
+  lots EmailBalanceLot[]
+
+  @@index([tenantId, status])
+}
+
+/// Per-tenant balance state: cached counter + one-shot flags.
+/// balanceCached is updated in the same transaction as every ledger
+/// write; the nightly email-balance-reconcile job proves it matches
+/// Σ lots and fixes any drift.
+model TenantEmailAccount {
+  tenantId             String    @id
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  balanceCached        Int       @default(0)
+  freeGrantClaimed     Boolean   @default(false)
+  lowBalanceNotifiedAt DateTime?
+  updatedAt            DateTime  @updatedAt
 }

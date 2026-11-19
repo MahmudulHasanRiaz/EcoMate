@@ -28,6 +28,13 @@ export interface PlatformRegistryResponse {
       features?: unknown;
       limits?: unknown;
     } | null;
+    blockedAreas?: unknown;
+    effectivePricing?: {
+      baseFee?: unknown;
+      ratePerUnit?: unknown;
+      minimumMonthly?: unknown;
+      currency?: unknown;
+    } | null;
   }>;
 }
 
@@ -99,6 +106,33 @@ export class TenantRegistrySyncService
             !Array.isArray(tenant.plan.limits)
               ? (tenant.plan.limits as Record<string, unknown>)
               : undefined;
+          const blockedAreas = Array.isArray(tenant.blockedAreas)
+            ? tenant.blockedAreas.filter(
+                (area): area is string => typeof area === 'string',
+              )
+            : undefined;
+          const pricing = tenant.effectivePricing;
+          const effectivePricing =
+            pricing && typeof pricing === 'object'
+              ? {
+                  baseFee:
+                    typeof pricing.baseFee === 'number'
+                      ? pricing.baseFee
+                      : null,
+                  ratePerUnit:
+                    typeof pricing.ratePerUnit === 'number'
+                      ? pricing.ratePerUnit
+                      : null,
+                  minimumMonthly:
+                    typeof pricing.minimumMonthly === 'number'
+                      ? pricing.minimumMonthly
+                      : null,
+                  currency:
+                    typeof pricing.currency === 'string'
+                      ? pricing.currency
+                      : 'BDT',
+                }
+              : undefined;
 
           return {
             id: tenant.id,
@@ -107,6 +141,8 @@ export class TenantRegistrySyncService
             hosts: Array.isArray(tenant.hosts) ? tenant.hosts : [],
             features,
             limits,
+            blockedAreas,
+            effectivePricing,
             planName: tenant.plan?.name,
             subscriptionStatus: tenant.subscription?.status ?? null,
             trialEndsAt:

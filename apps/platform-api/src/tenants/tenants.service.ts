@@ -16,11 +16,16 @@ import {
   RESERVED_SLUGS,
 } from '../config/domain-config.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { EmailBalanceService } from '../email-balance/email-balance.service';
+import { parsePricingDocument } from '../pricing/pricing-document';
+import { PricingEngine } from '../pricing/pricing-engine';
+import { PricingService } from '../pricing/pricing.service';
 import { ProvisioningService } from '../provisioning/provisioning.service';
 import {
   DEFAULT_TRIAL_DAYS,
   SettingsService,
 } from '../settings/settings.service';
+import { formatDhakaDate } from '../usage/usage.limits';
 import { CancelTenantDto } from './dto/cancel-tenant.dto';
 import { ChangePlanDto } from './dto/change-plan.dto';
 import { CreateTenantDto } from './dto/create-tenant.dto';
@@ -40,6 +45,8 @@ export class TenantsService {
     private readonly refresh: TenantRefreshService,
     // ProvisioningModule is @Global(), so no module wiring is needed.
     private readonly provisioning: ProvisioningService,
+    private readonly pricing: PricingService,
+    private readonly emailBalance: EmailBalanceService,
   ) {}
 
   async list(query: {
@@ -175,6 +182,13 @@ export class TenantsService {
                   currentPeriodStart: now,
                   currentPeriodEnd: trialEndsAt,
                   trialEndsAt,
+                  // Free months (§4.6): set from the version's freeMonths
+                  // at provisioning; consumed by the renewal job after
+                  // the trial ends. Trial expiry also honours the
+                  // version value as a fallback.
+                  freePeriodsRemaining:
+                    parsePricingDocument(planVersion.pricing).freeMonths ??
+                    0,
                   entitlementsSnapshot: {
                     features: planVersion.features,
                     limits: planVersion.limits,
@@ -200,6 +214,22 @@ export class TenantsService {
       entityId: tenant.id,
       after: { slug, name: tenant.name, status: tenant.status },
     });
+
+    // Free email starter grant (§6): once per tenant, idempotent — the
+    // provisioning run calls the same grant, so a tenant created with a
+    // password is granted here and the provisioning call is a no-op.
+    // Best-effort with a loud log: a grant failure must never fail the
+    // tenant create (the operator can grant the same count via the
+    // console balance adjustment).
+    try {
+      await this.emailBalance.grantFreeAllowance(tenant.id);
+    } catch (err) {
+      this.logger.error(
+        `Free email grant failed for tenant ${slug}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
 
     if (!shouldProvision) return tenant;
 
@@ -563,6 +593,79 @@ export class TenantsService {
     // Immediate change.
     let prorationCredit = 0;
     let invoice: { id: string; number: string } | null = null;
+    let usageInvoice: { id: string; number: string } | null = null;
+
+    // Metered close-out (§4.5): an old metered plan closes out with a
+    // metered invoice for usage-to-date (minimum pro-rata by days used).
+    // The usage read + compute happen FIRST, before any write, so a
+    // failed usage fetch aborts the change cleanly instead of leaving a
+    // half-switched subscription. The close-out bills USAGE ONLY — the
+    // base fee's unused portion is the proration credit below, and the
+    // add-ons stay attached (their base fees bill at the next renewal).
+    // freePeriodsRemaining survives the change untouched (it belongs to
+    // the subscription, not the version); the new version's freeMonths
+    // does NOT re-grant.
+    const oldPricing = subscription
+      ? parsePricingDocument(subscription.planVersion.pricing)
+      : null;
+    let closeOut: {
+      lines: Array<{ description: string; quantity: number; unitPrice: number }>;
+      total: number;
+      trace: Record<string, unknown>;
+    } | null = null;
+    if (
+      subscription &&
+      oldPricing?.metering &&
+      subscription.status !== 'TRIAL' &&
+      subscription.currentPeriodEnd > now
+    ) {
+      const resolved = await this.pricing.resolveForSubscription(
+        subscription.id,
+        subscription.planVersion,
+      );
+      const usage = await this.pricing.fetchPeriodUsage(
+        id,
+        tenant.slug,
+        subscription.currentPeriodStart,
+        now,
+      );
+      const totalDays = Math.max(
+        1,
+        wholeDaysBetween(
+          subscription.currentPeriodStart,
+          subscription.currentPeriodEnd,
+        ),
+      );
+      const usedDays = wholeDaysBetween(
+        subscription.currentPeriodStart,
+        now,
+      );
+      const computed = PricingEngine.compute({
+        pricing: {
+          ...resolved.pricing,
+          baseFee: { amount: 0, currency: 'BDT' },
+        },
+        sources: resolved.sources,
+        addOns: resolved.addOns.map((addOn) => ({
+          ...addOn,
+          baseFee: 0,
+        })),
+        usage,
+        period: { start: subscription.currentPeriodStart, end: now },
+        planName: subscription.planVersion.plan.name,
+        intervalLabel: 'metered usage',
+        periodLabel: `${formatDhakaDate(subscription.currentPeriodStart)} to ${formatDhakaDate(now)}`,
+        minimumProrationFactor: usedDays / totalDays,
+      });
+      if (computed.total > 0) {
+        closeOut = {
+          lines: computed.lines,
+          total: computed.total,
+          trace: computed.trace as unknown as Record<string, unknown>,
+        };
+      }
+    }
+
     const oldPrice =
       subscription && subscription.status !== 'TRIAL'
         ? Number(subscription.planVersion.price)
@@ -644,11 +747,31 @@ export class TenantsService {
                 unitPrice: newPrice,
               },
             ],
+            kind: 'SUBSCRIPTION',
             periodStart,
             periodEnd,
           });
         }
       }
+    }
+
+    // The usage invoice stands alone (kind METERED, NO subscriptionId):
+    // paying it must not move the subscription's new period, and it does
+    // not clear PAST_DUE. The proration credit auto-applies to the
+    // new-plan invoice as today — never to this invoice.
+    if (closeOut && subscription) {
+      usageInvoice = await this.invoices.createInvoice(
+        {
+          tenantId: id,
+          lines: closeOut.lines,
+          kind: 'METERED',
+          metadata: closeOut.trace,
+          periodStart: subscription.currentPeriodStart,
+          periodEnd: now,
+          notes: `Metered close-out — plan change from ${subscription.planVersion.plan.name} to ${planVersion.plan.name}`,
+        },
+        actorId,
+      );
     }
 
     await this.audit.record({
@@ -662,6 +785,7 @@ export class TenantsService {
         planVersionId: planVersion.id,
         prorationCredit,
         invoiceId: invoice?.id ?? null,
+        usageInvoiceId: usageInvoice?.id ?? null,
       },
     });
     const pushed = await this.refresh.pushRefresh(tenant.slug);
@@ -670,6 +794,6 @@ export class TenantsService {
         `Entitlement refresh push failed for ${tenant.slug}: ${pushed.error}`,
       );
     }
-    return { ...updated, prorationCredit, invoice };
+    return { ...updated, prorationCredit, invoice, usageInvoice };
   }
 }

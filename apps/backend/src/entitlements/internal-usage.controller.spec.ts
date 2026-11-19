@@ -64,4 +64,73 @@ describe('InternalUsageController', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(limits.getUsageSnapshot).not.toHaveBeenCalled();
   });
+
+  it('passes a complete window through and echoes it in the response', async () => {
+    const { controller, limits } = makeController();
+
+    const result = await controller.getUsage({
+      tenantId: TENANT_ID,
+      slug: 'acme',
+      from: '2026-11-01T00:00:00.000Z',
+      to: '2026-12-01T00:00:00.000Z',
+    });
+
+    expect(limits.getUsageSnapshot).toHaveBeenCalledWith({
+      from: new Date('2026-11-01T00:00:00.000Z'),
+      to: new Date('2026-12-01T00:00:00.000Z'),
+    });
+    expect(result.window).toEqual({
+      from: '2026-11-01T00:00:00.000Z',
+      to: '2026-12-01T00:00:00.000Z',
+    });
+  });
+
+  it('refuses a half-open window (from without to)', async () => {
+    const { controller, limits } = makeController();
+
+    await expect(
+      controller.getUsage({
+        tenantId: TENANT_ID,
+        slug: 'acme',
+        from: '2026-11-01T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('from and to must be provided together');
+    expect(limits.getUsageSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('refuses non-ISO window bounds', async () => {
+    const { controller, limits } = makeController();
+
+    await expect(
+      controller.getUsage({
+        tenantId: TENANT_ID,
+        slug: 'acme',
+        from: 'not-a-date',
+        to: '2026-12-01T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('from and to must be valid ISO dates');
+    expect(limits.getUsageSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('refuses an inverted or empty window', async () => {
+    const { controller, limits } = makeController();
+
+    await expect(
+      controller.getUsage({
+        tenantId: TENANT_ID,
+        slug: 'acme',
+        from: '2026-12-01T00:00:00.000Z',
+        to: '2026-11-01T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('from must be before to');
+    await expect(
+      controller.getUsage({
+        tenantId: TENANT_ID,
+        slug: 'acme',
+        from: '2026-11-01T00:00:00.000Z',
+        to: '2026-11-01T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('from must be before to');
+    expect(limits.getUsageSnapshot).not.toHaveBeenCalled();
+  });
 });

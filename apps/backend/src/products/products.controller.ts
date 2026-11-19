@@ -20,6 +20,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { RequiresLimit } from '../entitlements/requires-limit.decorator';
+import { BillingArea } from '../tenancy/billing-area.decorator';
 
 @Controller('products')
 export class ProductsController {
@@ -181,6 +182,7 @@ export class ProductsController {
   }
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
+  @BillingArea('products')
   @Post('draft')
   createDraft(@Body() dto: UpdateProductDto) {
     return this.svc.createDraft(dto);
@@ -196,6 +198,7 @@ export class ProductsController {
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @RequiresLimit('products')
+  @BillingArea('products')
   @Post('draft/:id/publish')
   publishDraft(@Param('id') id: string, @Body() dto: UpdateProductDto) {
     return this.svc.publishDraft(id, dto);
@@ -204,6 +207,7 @@ export class ProductsController {
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @RequiresLimit('products')
+  @BillingArea('products')
   @Post()
   create(@Body() dto: CreateProductDto) {
     return this.svc.create(dto);

@@ -5,6 +5,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { EncryptionService } from '../common/encryption.service';
+import {
+  DEFAULT_SAAS_SMTP,
+  SAAS_SMTP_FREE_ALLOWANCE_MAX,
+  type SaasSmtpSettings,
+} from '../email-balance/email-balance.utils';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import {
   BRANDING_IMAGE_MAX_LENGTH,
@@ -79,6 +84,7 @@ export interface AllSettings {
   branding: BrandingSettings;
   maintenance: MaintenanceSettings;
   landing: LandingSettings;
+  saasSmtp: SaasSmtpSettings;
 }
 
 export const DEFAULT_TRIAL_DAYS = 14;
@@ -174,6 +180,10 @@ export class SettingsService implements OnModuleInit {
   private branding: BrandingSettings = { ...DEFAULT_BRANDING };
   private maintenance: MaintenanceSettings = { ...DEFAULT_MAINTENANCE };
   private landing: LandingSettings = { ...DEFAULT_LANDING };
+  private saasSmtp: SaasSmtpSettings = {
+    ...DEFAULT_SAAS_SMTP,
+    expiry: { ...DEFAULT_SAAS_SMTP.expiry },
+  };
 
   constructor(
     private readonly prisma: PlatformPrismaService,
@@ -193,6 +203,7 @@ export class SettingsService implements OnModuleInit {
       branding: { ...this.branding },
       maintenance: { ...this.maintenance },
       landing: { ...this.landing },
+      saasSmtp: this.getSaasSmtp(),
     };
   }
 
@@ -237,6 +248,14 @@ export class SettingsService implements OnModuleInit {
 
   getLanding(): LandingSettings {
     return { ...this.landing };
+  }
+
+  /** SaaS SMTP rate + free allowance + expiry settings (§3). A deep copy — callers must not mutate the cached row. */
+  getSaasSmtp(): SaasSmtpSettings {
+    return {
+      ...this.saasSmtp,
+      expiry: { ...this.saasSmtp.expiry },
+    };
   }
 
   /** Effective search-indexing flag for the public landing. */
@@ -421,6 +440,86 @@ export class SettingsService implements OnModuleInit {
     return { ...this.landing };
   }
 
+  /**
+   * Update the SaaS SMTP settings (smtp-balance-design.md §3). Partial:
+   * omitted fields keep their stored value; an explicit null pricePerUnit
+   * clears the rate (top-ups disabled until a rate is set again).
+   * Changing the expiry setting never rewrites existing lots
+   * (grandfathering, §5.2) — only lots granted after the change use it.
+   */
+  async updateSaasSmtp(input: {
+    unit?: string;
+    pricePerUnit?: number | null;
+    freeAllowance?: number;
+    lowBalanceThreshold?: number;
+    expiry?: { mode?: string; days?: number; warnDays?: number };
+  }): Promise<SaasSmtpSettings> {
+    const current = this.saasSmtp;
+    const unit = input.unit ?? current.unit;
+    if (unit !== 'PER_EMAIL' && unit !== 'PER_1000') {
+      throw new BadRequestException("unit must be 'PER_EMAIL' or 'PER_1000'");
+    }
+    const pricePerUnit =
+      input.pricePerUnit !== undefined
+        ? input.pricePerUnit
+        : current.pricePerUnit;
+    if (
+      pricePerUnit !== null &&
+      (typeof pricePerUnit !== 'number' ||
+        !Number.isFinite(pricePerUnit) ||
+        pricePerUnit < 0)
+    ) {
+      throw new BadRequestException(
+        'pricePerUnit must be null or a number >= 0',
+      );
+    }
+    const freeAllowance = input.freeAllowance ?? current.freeAllowance;
+    if (
+      !Number.isInteger(freeAllowance) ||
+      freeAllowance < 0 ||
+      freeAllowance > SAAS_SMTP_FREE_ALLOWANCE_MAX
+    ) {
+      throw new BadRequestException(
+        `freeAllowance must be an integer between 0 and ${SAAS_SMTP_FREE_ALLOWANCE_MAX}`,
+      );
+    }
+    const lowBalanceThreshold =
+      input.lowBalanceThreshold ?? current.lowBalanceThreshold;
+    if (!Number.isInteger(lowBalanceThreshold) || lowBalanceThreshold < 0) {
+      throw new BadRequestException(
+        'lowBalanceThreshold must be an integer >= 0',
+      );
+    }
+    const expiryMode = input.expiry?.mode ?? current.expiry.mode;
+    if (
+      expiryMode !== 'NONE' &&
+      expiryMode !== 'FIXED_DAYS' &&
+      expiryMode !== 'END_OF_PERIOD'
+    ) {
+      throw new BadRequestException(
+        "expiry.mode must be 'NONE', 'FIXED_DAYS' or 'END_OF_PERIOD'",
+      );
+    }
+    const expiryDays = input.expiry?.days ?? current.expiry.days;
+    if (!Number.isInteger(expiryDays) || expiryDays < 1) {
+      throw new BadRequestException('expiry.days must be an integer >= 1');
+    }
+    const warnDays = input.expiry?.warnDays ?? current.expiry.warnDays;
+    if (!Number.isInteger(warnDays) || warnDays < 0) {
+      throw new BadRequestException('expiry.warnDays must be an integer >= 0');
+    }
+    const next: SaasSmtpSettings = {
+      unit,
+      pricePerUnit,
+      freeAllowance,
+      lowBalanceThreshold,
+      expiry: { mode: expiryMode, days: expiryDays, warnDays },
+    };
+    await this.store('saas_smtp', next);
+    this.saasSmtp = next;
+    return this.getSaasSmtp();
+  }
+
   /** Stored indexing value as last read from the DB (env-independent). */
   private storedIndexing = true;
 
@@ -494,6 +593,46 @@ export class SettingsService implements OnModuleInit {
       };
     }
     await this.loadLanding();
+    await this.loadSaasSmtp();
+  }
+
+  /**
+   * SaaS SMTP settings: the stored PlatformSetting, defensively parsed
+   * (a malformed row falls back to defaults field by field, never
+   * crashing the boot). A missing row means the backfill has not run —
+   * defaults apply (top-ups disabled: pricePerUnit null).
+   */
+  private async loadSaasSmtp(): Promise<void> {
+    const stored = await this.readStored('saas_smtp');
+    if (!isRecord(stored)) return;
+    const expiry = isRecord(stored.expiry) ? stored.expiry : {};
+    const mode = expiry.mode;
+    const next: SaasSmtpSettings = {
+      unit: stored.unit === 'PER_1000' ? 'PER_1000' : 'PER_EMAIL',
+      pricePerUnit:
+        typeof stored.pricePerUnit === 'number' &&
+        Number.isFinite(stored.pricePerUnit) &&
+        stored.pricePerUnit >= 0
+          ? stored.pricePerUnit
+          : null,
+      freeAllowance: Math.min(
+        Math.max(0, Math.floor(asNumber(stored.freeAllowance, 10))),
+        SAAS_SMTP_FREE_ALLOWANCE_MAX,
+      ),
+      lowBalanceThreshold: Math.max(
+        0,
+        Math.floor(asNumber(stored.lowBalanceThreshold, 10)),
+      ),
+      expiry: {
+        mode:
+          mode === 'FIXED_DAYS' || mode === 'END_OF_PERIOD'
+            ? mode
+            : 'NONE',
+        days: Math.max(1, Math.floor(asNumber(expiry.days, 90))),
+        warnDays: Math.max(0, Math.floor(asNumber(expiry.warnDays, 7))),
+      },
+    };
+    this.saasSmtp = next;
   }
 
   /**

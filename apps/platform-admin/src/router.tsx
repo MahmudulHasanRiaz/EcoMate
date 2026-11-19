@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router';
 import { AppShell } from './components/app-shell';
 import { AcceptInvitePage } from './pages/accept-invite';
+import { AddOnsPage } from './pages/add-ons';
 import { AccountPage } from './pages/account';
 import { AuditPage } from './pages/audit';
 import { BillingPage } from './pages/billing';
@@ -89,6 +90,16 @@ const plansRoute = createRoute({
   component: () => (
     <AppShell>
       <PlansPage />
+    </AppShell>
+  ),
+});
+
+const addOnsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/add-ons',
+  component: () => (
+    <AppShell>
+      <AddOnsPage />
     </AppShell>
   ),
 });
@@ -232,6 +243,7 @@ const routeTree = rootRoute.addChildren([
   usageRoute,
   metricsRoute,
   plansRoute,
+  addOnsRoute,
   landingRoute,
   mediaRoute,
   settingsRoute,

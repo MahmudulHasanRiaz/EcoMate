@@ -81,6 +81,39 @@ describe('TenantLimitsService', () => {
       });
       expect(await service.getUsage('storage_mb')).toBe(2);
     });
+
+    it('counts orders in a half-open [from, to) window when one is given', async () => {
+      const { service, prisma } = mockService({ orders_per_month: 10 });
+      const from = new Date('2026-11-01T00:00:00.000Z');
+      const to = new Date('2026-12-01T00:00:00.000Z');
+      prisma.order.count.mockResolvedValue(42);
+
+      expect(
+        await service.getUsage('orders_per_month', { from, to }),
+      ).toBe(42);
+      expect(prisma.order.count).toHaveBeenCalledWith({
+        where: {
+          trashedAt: null,
+          // Half-open: an order created exactly at `to` belongs to the
+          // next period, never to both.
+          createdAt: { gte: from, lt: to },
+        },
+      });
+    });
+
+    it('ignores the window for point-in-time counters', async () => {
+      const { service, prisma } = mockService({ products: 100 });
+      const window = {
+        from: new Date('2026-11-01T00:00:00.000Z'),
+        to: new Date('2026-12-01T00:00:00.000Z'),
+      };
+
+      await service.getUsage('products', window);
+
+      expect(prisma.product.count).toHaveBeenCalledWith({
+        where: { status: { not: 'draft' } },
+      });
+    });
   });
 
   describe('assertWithinLimit', () => {

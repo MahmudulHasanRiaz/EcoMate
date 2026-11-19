@@ -18,6 +18,32 @@ function makeGuard(state: TenantAccessState, skip = false) {
   };
   const entitlements = {
     getAccessState: jest.fn().mockReturnValue(state),
+    getBlockedAreas: jest.fn().mockReturnValue([]),
+  };
+  return {
+    guard: new TenantSubscriptionGuard(
+      reflector as any,
+      entitlements as any,
+    ),
+    reflector,
+    entitlements,
+  };
+}
+
+function makeGuardWithAreas(
+  state: TenantAccessState,
+  areas: string[],
+  blocked: string[],
+) {
+  const reflector = {
+    getAllAndOverride: jest.fn((key: string) => {
+      if (key === 'billing_area') return areas;
+      return undefined;
+    }),
+  };
+  const entitlements = {
+    getAccessState: jest.fn().mockReturnValue(state),
+    getBlockedAreas: jest.fn().mockReturnValue(blocked),
   };
   return {
     guard: new TenantSubscriptionGuard(
@@ -76,5 +102,55 @@ describe('TenantSubscriptionGuard', () => {
     const { guard, entitlements } = makeGuard('suspended', true);
     guard.canActivate(contextFor('POST'));
     expect(entitlements.getAccessState).not.toHaveBeenCalled();
+  });
+
+  describe('strict blocking (§9.2)', () => {
+    it('blocks a write when its declared area is blocked', () => {
+      const { guard } = makeGuardWithAreas('full', ['orders'], ['orders']);
+      expect(() => guard.canActivate(contextFor('POST'))).toThrow(
+        'Payment required — your subscription payment is overdue. Complete the payment to resume order creation.',
+      );
+    });
+
+    it('blocks in the grace state too (area check runs before the state check)', () => {
+      const { guard } = makeGuardWithAreas('grace', ['pos'], ['pos']);
+      expect(() => guard.canActivate(contextFor('POST'))).toThrow(
+        'Complete the payment to resume POS sales.',
+      );
+    });
+
+    it('lets the write through when no declared area is blocked', () => {
+      const { guard } = makeGuardWithAreas('full', ['orders'], ['pos']);
+      expect(guard.canActivate(contextFor('POST'))).toBe(true);
+    });
+
+    it('blocks a shared endpoint when ANY declared area is blocked', () => {
+      // POST /orders declares both areas (admin + storefront checkout).
+      const { guard } = makeGuardWithAreas(
+        'full',
+        ['orders', 'storefront_checkout'],
+        ['storefront_checkout'],
+      );
+      expect(() => guard.canActivate(contextFor('POST'))).toThrow(
+        'Complete the payment to resume storefront checkout.',
+      );
+    });
+
+    it('never blocks reads, even for a blocked area', () => {
+      const { guard } = makeGuardWithAreas(
+        'read_only',
+        ['orders'],
+        ['orders'],
+      );
+      expect(guard.canActivate(contextFor('GET'))).toBe(true);
+    });
+
+    it('does not consult blocked areas for routes without a declared area', () => {
+      const { guard, entitlements } = makeGuardWithAreas('full', [], [
+        'orders',
+      ]);
+      expect(guard.canActivate(contextFor('POST'))).toBe(true);
+      expect(entitlements.getBlockedAreas).not.toHaveBeenCalled();
+    });
   });
 });

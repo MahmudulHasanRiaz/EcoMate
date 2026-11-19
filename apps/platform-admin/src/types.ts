@@ -37,6 +37,86 @@ export interface DomainConfig {
   };
 }
 
+export type BillingCycle = 'MONTHLY' | 'YEARLY' | 'WEEKLY_7D';
+
+export type BlockingMode = 'grace_then_block' | 'block_immediately';
+
+export type BlockingArea =
+  | 'orders'
+  | 'pos'
+  | 'storefront_checkout'
+  | 'products'
+  | 'admin_writes';
+
+export type OneTimeFeeEffect =
+  | { type: 'setup' }
+  | { type: 'limit_increase'; limits: Record<string, number> }
+  | { type: 'rate_tier'; perOrderRate: number }
+  | { type: 'feature_unlock'; features: string[] };
+
+export interface OneTimeFee {
+  key: string;
+  label: string;
+  amount: number;
+  effect: OneTimeFeeEffect;
+}
+
+export interface MeteringConfig {
+  metric: string;
+  included: number;
+  ratePerUnit: number;
+  minimumMonthly: number | null;
+}
+
+/** Structured pricing document (design §3) stored on PlanVersion.pricing. */
+export interface PricingDocument {
+  pricingVersion: 1;
+  baseFee?: { amount: number; currency: string };
+  billingCycle?: BillingCycle;
+  freeMonths?: number;
+  metering?: MeteringConfig;
+  oneTimeFees?: OneTimeFee[];
+  overLimit?: Record<string, 'block' | 'charge'>;
+  blocking?: { mode: BlockingMode; blockedAreas: BlockingArea[] };
+}
+
+export type InvoiceKind =
+  | 'SUBSCRIPTION'
+  | 'ONE_TIME'
+  | 'METERED'
+  | 'MANUAL'
+  | 'TOPUP';
+
+export interface PricingTraceValue {
+  value: number | null;
+  source: string;
+}
+
+/** The engine's computation trace — stored verbatim as Invoice.metadata. */
+export interface PricingTrace {
+  planName: string;
+  period: { start: string; end: string };
+  baseFee: PricingTraceValue;
+  billingCycle?: string;
+  ratePerUnit?: PricingTraceValue;
+  minimumMonthly?: PricingTraceValue;
+  minimumApplied?: number;
+  minimumProrationFactor?: number;
+  included?: number;
+  usage?: Record<string, number>;
+  billableUnits?: number;
+  meteredCharge?: number;
+  addOns?: Array<{
+    name: string;
+    baseFee: number;
+    usage?: number;
+    ratePerUnit?: PricingTraceValue;
+    minimumMonthly?: PricingTraceValue;
+    meteredCharge?: number;
+  }>;
+  includedUnitsRollover: false;
+}
+
 export interface PlanVersion {
   id: string;
   version: number;
@@ -49,6 +129,8 @@ export interface PlanVersion {
   graceDays?: number | null;
   features: string[];
   limits: Record<string, unknown>;
+  /** Structured pricing document (§3); `{}` on legacy versions. */
+  pricing?: PricingDocument | null;
   archivedAt?: string | null;
   /** The signup default: new signups provision onto this version. */
   isDefault?: boolean;
@@ -196,6 +278,7 @@ export interface PaymentProof {
     id: string;
     number: string;
     status: string;
+    kind?: string;
     total: string | number;
     currency: string;
   };
@@ -214,6 +297,16 @@ export interface Invoice {
   id: string;
   tenantId: string;
   number: string;
+  /** SUBSCRIPTION | ONE_TIME | METERED | MANUAL | TOPUP. */
+  kind?: InvoiceKind;
+  /** Engine trace for SUBSCRIPTION/METERED invoices; purchase metadata for ONE_TIME. */
+  metadata?: PricingTrace | Record<string, unknown> | null;
+  purchase?: {
+    id: string;
+    type: string;
+    label: string;
+    status: string;
+  } | null;
   status: string;
   subtotal: string | number;
   discount: string | number;
@@ -265,6 +358,8 @@ export interface Subscription {
   status: string;
   currentPeriodStart: string;
   currentPeriodEnd: string;
+  /** Free billing periods still owed (from the plan's freeMonths). */
+  freePeriodsRemaining?: number;
   trialEndsAt?: string | null;
   cancelAtPeriodEnd: boolean;
   pendingPlanVersionId?: string | null;
@@ -511,6 +606,21 @@ export interface LandingSettings {
   seoIndexingSource: 'env' | 'setting';
 }
 
+export interface SaasSmtpSettings {
+  unit: 'PER_EMAIL' | 'PER_1000';
+  /** BDT per unit. null = SaaS SMTP not priced yet → top-ups disabled. */
+  pricePerUnit: number | null;
+  /** Free starter emails per tenant (max 20). */
+  freeAllowance: number;
+  /** Low-balance warning threshold, in emails. */
+  lowBalanceThreshold: number;
+  expiry: {
+    mode: 'NONE' | 'FIXED_DAYS' | 'END_OF_PERIOD';
+    days: number;
+    warnDays: number;
+  };
+}
+
 export interface PlatformSettings {
   smtp: SmtpSettingsPublic;
   trial: TrialSettings;
@@ -518,6 +628,73 @@ export interface PlatformSettings {
   branding: BrandingSettings;
   maintenance: MaintenanceSettings;
   landing: LandingSettings;
+  saasSmtp: SaasSmtpSettings;
+}
+
+export interface EmailBalanceLot {
+  id: string;
+  source: 'FREE_GRANT' | 'TOPUP' | 'ADJUSTMENT';
+  emailsTotal: number;
+  emailsRemaining: number;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface EmailBalanceLedgerRow {
+  id: string;
+  kind: 'GRANT' | 'SEND' | 'EXPIRE' | 'ADJUSTMENT';
+  delta: number;
+  balanceAfter: number;
+  reference: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface EmailBalanceTopUp {
+  id: string;
+  invoiceId: string;
+  emailsGranted: number;
+  status: 'PENDING' | 'PAID' | 'VOID';
+  createdAt: string;
+  paidAt: string | null;
+}
+
+export interface EmailBalance {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  tenantStatus: string;
+  balance: number;
+  threshold: number;
+  lowBalance: boolean;
+  freeGrantClaimed: boolean;
+  lots: EmailBalanceLot[];
+  expiringSoon: { lotId: string; emailsRemaining: number; expiresAt: string }[];
+  ledger: {
+    data: EmailBalanceLedgerRow[];
+    meta: { page: number; limit: number; total: number; totalPages: number };
+  };
+  topUps: EmailBalanceTopUp[];
+}
+
+export interface EmailBalanceOverview {
+  threshold: number;
+  lowBalanceTenants: {
+    tenantId: string;
+    slug: string;
+    name: string;
+    status: string;
+    balance: number;
+  }[];
+  expiringLots: {
+    tenantId: string;
+    slug: string;
+    name: string;
+    lotId: string;
+    emailsRemaining: number;
+    expiresAt: string;
+  }[];
+  topUpVolume: { count: number; emailsGranted: number; revenueBDT: number };
 }
 
 export interface JobRun {
@@ -601,4 +778,142 @@ export interface LandingContentHealth {
     missingEn: number;
     missingBn: number;
   };
+}
+
+/** Per-client pricing override (keys: per_order_rate, minimum_monthly). */
+export interface TenantPricingOverride {
+  id: string;
+  tenantId: string;
+  key: string;
+  value: string | number;
+  note?: string | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PurchaseType =
+  | 'SETUP_FEE'
+  | 'LIMIT_INCREASE'
+  | 'RATE_TIER'
+  | 'FEATURE_UNLOCK'
+  | 'CUSTOM';
+
+export type PurchaseStatus = 'PENDING' | 'PAID' | 'APPLIED' | 'CANCELLED';
+
+export interface TenantPurchase {
+  id: string;
+  tenantId: string;
+  subscriptionId?: string | null;
+  type: PurchaseType;
+  feeKey: string;
+  label: string;
+  amount: string | number;
+  currency: string;
+  effect: OneTimeFeeEffect;
+  status: PurchaseStatus;
+  invoiceId?: string | null;
+  invoice?: {
+    id: string;
+    number: string;
+    status: string;
+    total: string | number;
+  } | null;
+  createdBy?: string | null;
+  appliedAt?: string | null;
+  createdAt: string;
+}
+
+export interface TenantBlockingOverride {
+  tenantId: string;
+  mode: BlockingMode;
+  blockedAreas: BlockingArea[];
+  note?: string | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AddOn {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  price: string | number;
+  currency: string;
+  interval: string;
+  features: string[];
+  limits: Record<string, unknown>;
+  isActive: boolean;
+  isPublic: boolean;
+  sortOrder: number;
+  metering?: MeteringConfig | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubscriptionAddOn {
+  id: string;
+  subscriptionId: string;
+  addOnId: string;
+  startedAt: string;
+  endedAt?: string | null;
+  addOn?: AddOn | null;
+  invoice?: {
+    id: string;
+    number: string;
+    total: string | number;
+    status: string;
+  } | null;
+}
+
+/** Pricing preview (GET /plans/:id/versions/:versionId/pricing-preview). */
+export interface PricingPreview {
+  planId: string;
+  planName: string;
+  versionId: string;
+  version: number;
+  effectivePricing: PricingDocument;
+  sources: {
+    baseFee?: string;
+    ratePerUnit?: string;
+    minimumMonthly?: string;
+  };
+  addOns: Array<{
+    name: string;
+    baseFee: number;
+    metering?: MeteringConfig;
+  }>;
+  hypotheticalOrders: number;
+  bill: {
+    lines: Array<{ description: string; quantity: number; unitPrice: number }>;
+    total: number;
+    trace: PricingTrace;
+  };
+}
+
+/** Convert-feature-to-add-on dry-run / apply result. */
+export interface ConvertFeatureResult {
+  dryRun: boolean;
+  featureKey: string;
+  slug: string;
+  price: number;
+  affectedPlans?: Array<{
+    planId: string;
+    planName: string;
+    latestVersionId: string | null;
+  }>;
+  affectedTenants?: number;
+  tenants?: Array<{
+    tenantId: string;
+    tenantName: string;
+    tenantSlug: string;
+    planId: string;
+    subscriptionId: string;
+  }>;
+  addOnId?: string;
+  attached?: number;
+  plans?: number;
 }

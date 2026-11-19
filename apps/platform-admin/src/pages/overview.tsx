@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
-import { formatDate, planLabel } from '../lib/format';
-import type { Page, Tenant } from '../types';
+import { formatDate, formatMoney, planLabel } from '../lib/format';
+import type { EmailBalanceOverview, Page, Tenant } from '../types';
 import { EmptyState, ErrorNote, PageHeader, Skeleton, StatusBadge } from '../components/ui';
 
 export function OverviewPage() {
@@ -17,6 +17,8 @@ export function OverviewPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [emailOverview, setEmailOverview] =
+    useState<EmailBalanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -37,9 +39,15 @@ export function OverviewPage() {
           readJson<Page<Tenant>>(response),
         ),
       ),
+      api('/email-balance/overview')
+        .then((response) => readJson<EmailBalanceOverview>(response))
+        .catch(() => null),
     ])
-      .then(([recent, ...statusPages]) => {
+      .then(([recent, ...rest]) => {
         if (cancelled) return;
+        const statusPages = rest.slice(0, statuses.length) as Page<Tenant>[];
+        const email = rest[statuses.length] as EmailBalanceOverview | null;
+        setEmailOverview(email);
         setTenants(recent.data);
         setTotal(recent.meta.total);
         setCounts(
@@ -118,6 +126,86 @@ export function OverviewPage() {
               <small>Past due, suspended or mid-setup</small>
             </article>
           </section>
+
+          {emailOverview ? (
+            <section className="card">
+              <div className="card-head">
+                <div>
+                  <h2>Email balance</h2>
+                  <p>
+                    Shared SMTP usage across tenants. Low means at or below
+                    the {emailOverview.threshold}-email warning threshold.
+                  </p>
+                </div>
+              </div>
+              <div className="metric-grid">
+                <article className="metric metric--tint-2">
+                  <span>Low-balance tenants</span>
+                  <strong>{emailOverview.lowBalanceTenants.length}</strong>
+                  <small>At or below the threshold</small>
+                </article>
+                <article className="metric metric--tint-3">
+                  <span>Lots expiring in 7 days</span>
+                  <strong>{emailOverview.expiringLots.length}</strong>
+                  <small>
+                    {emailOverview.expiringLots
+                      .reduce((sum, lot) => sum + lot.emailsRemaining, 0)
+                      .toLocaleString('en-US')}{' '}
+                    emails
+                  </small>
+                </article>
+                <article className="metric metric--tint-4">
+                  <span>Top-ups sold</span>
+                  <strong>{emailOverview.topUpVolume.count}</strong>
+                  <small>
+                    {emailOverview.topUpVolume.emailsGranted.toLocaleString(
+                      'en-US',
+                    )}{' '}
+                    emails · {formatMoney(emailOverview.topUpVolume.revenueBDT)}
+                  </small>
+                </article>
+              </div>
+              {emailOverview.lowBalanceTenants.length > 0 ? (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Store</th>
+                        <th>Status</th>
+                        <th>Emails left</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {emailOverview.lowBalanceTenants
+                        .slice(0, 8)
+                        .map((row) => (
+                          <tr key={row.tenantId}>
+                            <td>
+                              <Link
+                                to="/tenants/$tenantId"
+                                params={{ tenantId: row.tenantId }}
+                                className="table-link"
+                              >
+                                {row.name}
+                              </Link>
+                              <span className="sub">{row.slug}</span>
+                            </td>
+                            <td>
+                              <StatusBadge status={row.status} />
+                            </td>
+                            <td>{row.balance.toLocaleString('en-US')}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="muted-note">
+                  No tenant is at or below the low-balance threshold.
+                </p>
+              )}
+            </section>
+          ) : null}
 
           <section className="card">
             <div className="card-head">

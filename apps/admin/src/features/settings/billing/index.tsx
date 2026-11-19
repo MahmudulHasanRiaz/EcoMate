@@ -8,6 +8,7 @@ import {
   Receipt,
 } from 'lucide-react'
 import { apiClient } from '@/lib/api-client'
+import { EmailBalanceBanner } from '@/features/settings/smtp/email-balance-banner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -216,6 +217,8 @@ export function BillingSettings() {
       </div>
 
       <Separator />
+
+      <EmailBalanceBanner />
 
       {isError ? (
         <div className='flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-900'>

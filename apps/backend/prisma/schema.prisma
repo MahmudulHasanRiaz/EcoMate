@@ -5819,3 +5819,41 @@ model TenantEntitlementCache {
   validUntil DateTime?
   updatedAt  DateTime @updatedAt
 }
+
+// ── Tenant SMTP (smtp-balance-design.md §9) ─────────────────────────────
+// One row per tenant. BYO = the tenant's own SMTP (any provider, no
+// charge); SAAS = EcoMate's shared SMTP, billed against the prepaid
+// email balance (platform relay). Default SAAS: a new tenant sends
+// immediately against the free grant; BYO is opt-in. Migration:
+// 20261118175400_tenant_smtp_config (+ backfill
+// 20261118175500_tenant_smtp_config_backfill).
+
+enum SmtpMode {
+  BYO
+  SAAS
+}
+
+enum SmtpEncryption {
+  NONE
+  STARTTLS
+  SSL
+}
+
+model SmtpConfig {
+  id                String         @id @default(uuid())
+  tenantId          String         @unique @default(dbgenerated("(NULLIF(current_setting('app.tenant_id'::text, true), ''))::uuid")) @map("tenant_id") @db.Uuid
+  mode              SmtpMode       @default(SAAS)
+  host              String?
+  port              Int?
+  username          String?
+  /// Password encrypted with APP_ENCRYPTION_KEY (same AES-256-GCM
+  /// pattern as the platform SMTP encryption). Never returned by any API.
+  passwordEncrypted String?
+  encryption        SmtpEncryption @default(STARTTLS)
+  fromEmail         String?
+  fromName          String?
+  enabled           Boolean        @default(true)
+  updatedAt         DateTime       @updatedAt
+
+  // No @@index([tenantId]): the @unique on tenantId already indexes it.
+}

@@ -31,15 +31,35 @@ export class InternalUsageController {
     if (!query?.tenantId || !query?.slug) {
       throw new BadRequestException('tenantId and slug are required');
     }
+    // A window must be complete and ordered; a half-open or inverted
+    // window is a caller bug, not a defaultable query.
+    let window: { from: Date; to: Date } | undefined;
+    if (query.from !== undefined || query.to !== undefined) {
+      if (!query.from || !query.to) {
+        throw new BadRequestException('from and to must be provided together');
+      }
+      const from = new Date(query.from);
+      const to = new Date(query.to);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        throw new BadRequestException('from and to must be valid ISO dates');
+      }
+      if (from >= to) {
+        throw new BadRequestException('from must be before to');
+      }
+      window = { from, to };
+    }
 
     const snapshot = await runWithTenant(
       { tenantId: query.tenantId, slug: query.slug, status: 'active' },
-      () => this.limits.getUsageSnapshot(),
+      () => this.limits.getUsageSnapshot(window),
     );
 
     return {
       tenantId: query.tenantId,
       capturedAt: new Date().toISOString(),
+      ...(window
+        ? { window: { from: window.from.toISOString(), to: window.to.toISOString() } }
+        : {}),
       ...snapshot,
     };
   }

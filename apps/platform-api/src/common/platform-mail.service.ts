@@ -4,7 +4,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
-import { SettingsService } from '../settings/settings.service';
+import { SettingsService, splitFrom } from '../settings/settings.service';
 import {
   escapeHtml,
   link,
@@ -167,6 +167,21 @@ export class PlatformMailService {
   }
 
   /**
+   * Bare shared sender address (no display name) for SaaS relay sends.
+   * Shared SMTP cannot send from the tenant's own domain (SPF/DKIM
+   * would fail), so SaaS mail sends from this address with the tenant's
+   * store name as the display name (§8.2).
+   */
+  private sharedFromEmail(): string {
+    const smtp = this.settings.getSmtp();
+    if (smtp?.from) return smtp.from;
+    return (
+      splitFrom(process.env.PLATFORM_MAIL_FROM ?? '').email ||
+      'no-reply@ecomate.bd'
+    );
+  }
+
+  /**
    * Branding for the email layout: platform name + support contact +
    * logo URL. The layout only ever renders the logo when it is an https
    * URL (data: URLs from console uploads are blocked by most email
@@ -233,6 +248,127 @@ export class PlatformMailService {
       }),
     });
     return { delivered: true };
+  }
+
+  /**
+   * SaaS SMTP relay send (§8.2): a tenant's order/customer email sent
+   * through the shared platform transport. From is the shared EcoMate
+   * address with the tenant's store name as the display name; Reply-To
+   * is the tenant's configured from address when one is given. The
+   * tenant's rendered HTML/text is sent as-is (no branded layout wrap —
+   * this is the tenant's own mail, not platform mail). Throws when SMTP
+   * is unconfigured; the caller checks isConfigured() before consuming
+   * balance, so this throw means the config vanished mid-flight.
+   */
+  async sendRelay(input: {
+    to: string;
+    subject: string;
+    html?: string;
+    text?: string;
+    /** Tenant store name, used as the sender display name. */
+    fromName?: string;
+    /** Tenant's configured from address, used as Reply-To. */
+    replyTo?: string;
+  }): Promise<{ delivered: boolean }> {
+    const transporter = this.getTransporter();
+    if (!transporter) {
+      throw new ServiceUnavailableException(
+        'Email delivery is not configured. Set SMTP settings first.',
+      );
+    }
+    const address = this.sharedFromEmail();
+    // The store name is tenant input: strip header-breaking characters
+    // the same way the settings layer strips fromName on write.
+    const name =
+      (input.fromName ?? '').trim().replace(/["<>]/g, '') ||
+      this.settings.getBranding().platformName;
+    await transporter.sendMail({
+      from: `"${name}" <${address}>`,
+      replyTo: input.replyTo?.trim() || this.replyTo(),
+      to: input.to,
+      subject: input.subject,
+      html: input.html || undefined,
+      text: input.text || undefined,
+    });
+    return { delivered: true };
+  }
+
+  /**
+   * Low-balance warning (§10.3): sent once per threshold crossing, to
+   * the tenant owner. Counts only — no money is ever mentioned.
+   */
+  async sendLowBalance(input: {
+    to: string;
+    tenantName: string;
+    remaining: number;
+    threshold: number;
+  }): Promise<{ delivered: boolean }> {
+    const platformName = this.settings.getBranding().platformName;
+    const remaining = escapeHtml(String(input.remaining));
+    return this.deliver(
+      input.to,
+      `You have ${input.remaining} emails left — ${platformName}`,
+      `Hi,\n\nYour workspace ${input.tenantName} has ${input.remaining} ` +
+        `emails left on its email balance. Top up from your admin SMTP ` +
+        `page to keep sending order emails and customer notifications.\n\n` +
+        `When the balance reaches zero, outgoing emails stop until you top up.`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Your email balance is running low',
+        preheader: `Your workspace ${input.tenantName} has ${input.remaining} emails left.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `Your workspace <strong>${escapeHtml(input.tenantName)}</strong> ` +
+              `has <strong>${remaining} emails</strong> left on its email balance.`,
+          ) +
+          para(
+            'Top up from your admin SMTP page to keep sending order emails ' +
+              'and customer notifications. When the balance reaches zero, ' +
+              'outgoing emails stop until you top up.',
+          ),
+      }),
+      `low email balance for ${input.tenantName} (${input.remaining} left)`,
+    );
+  }
+
+  /**
+   * Email-balance expiry warning (§5.2): sent once per lot, warnDays
+   * before it expires. Counts only — no money is ever mentioned.
+   */
+  async sendEmailExpiryWarning(input: {
+    to: string;
+    tenantName: string;
+    emails: number;
+    expiresAt: Date | string;
+  }): Promise<{ delivered: boolean }> {
+    const platformName = this.settings.getBranding().platformName;
+    const expires = formatDhakaDate(input.expiresAt);
+    return this.deliver(
+      input.to,
+      `${input.emails} emails expire on ${expires} — ${platformName}`,
+      `Hi,\n\n${input.emails} emails on your workspace ${input.tenantName} ` +
+        `expire on ${expires}. Use them before then — expired emails are ` +
+        `removed from your balance and are not refunded.\n\n` +
+        `Your other emails are not affected.`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Some of your emails expire soon',
+        preheader: `${input.emails} emails expire on ${expires}.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `<strong>${escapeHtml(String(input.emails))} emails</strong> on your workspace ` +
+              `<strong>${escapeHtml(input.tenantName)}</strong> expire on ` +
+              `<strong>${escapeHtml(expires)}</strong>.`,
+          ) +
+          para(
+            'Use them before then — expired emails are removed from your ' +
+              'balance and are not refunded. Your other emails are not affected.',
+          ),
+      }),
+      `email expiry warning for ${input.tenantName} (${input.emails} expire ${expires})`,
+    );
   }
 
   async sendVerification(input: {

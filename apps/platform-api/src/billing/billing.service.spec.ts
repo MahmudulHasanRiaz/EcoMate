@@ -73,6 +73,18 @@ function makeService() {
       update: jest.fn().mockResolvedValue({}),
       count: jest.fn().mockResolvedValue(1),
     },
+    // One-time purchase hook (approveProof): no purchase by default.
+    tenantPurchase: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    tenantLimitOverride: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockResolvedValue({}),
+    },
+    tenantPricingOverride: {
+      upsert: jest.fn().mockResolvedValue({}),
+    },
     creditNote: {
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(1),
@@ -139,12 +151,17 @@ function makeService() {
       .fn()
       .mockReturnValue({ platformName: 'EcoMate', supportEmail: 'support@test' }),
   };
+  const emailBalance = {
+    creditTopUp: jest.fn().mockResolvedValue(null),
+  };
   return {
     prisma,
+    proof,
     audit,
     invoices,
     mail,
     refresh,
+    emailBalance,
     service: new BillingService(
       prisma as any,
       audit as any,
@@ -153,6 +170,7 @@ function makeService() {
       mail as any,
       refresh as any,
       settings as any,
+      emailBalance as any,
     ),
   };
 }
@@ -221,6 +239,20 @@ describe('BillingService', () => {
       }),
     );
     expect(refresh.pushRefresh).toHaveBeenCalledWith('acme');
+  });
+
+  it('credits an email top-up through the approveProof hook', async () => {
+    const { service, emailBalance } = makeService();
+
+    await service.approveProof(PROOF_ID, 'admin-1');
+
+    // The hook runs inside the approve transaction for every proof;
+    // creditTopUp itself no-ops unless the invoice is PAID with a
+    // PENDING EmailTopUp.
+    expect(emailBalance.creditTopUp).toHaveBeenCalledWith(
+      expect.anything(),
+      { id: INVOICE_ID, status: 'PAID', number: 'INV-2611-0001' },
+    );
   });
 
   it('leaves the invoice open for a partial payment', async () => {
@@ -382,6 +414,281 @@ describe('BillingService', () => {
       ConflictException,
     );
     expect(prisma.payment.create).not.toHaveBeenCalled();
+  });
+
+  describe('approveProof one-time purchase effects', () => {
+    function proofForInvoice(
+      prisma: any,
+      proof: any,
+      invoice: Record<string, unknown>,
+      tenant: Record<string, unknown> = {},
+    ) {
+      prisma.paymentProof.findUnique.mockResolvedValue({
+        ...proof,
+        invoice: { ...proof.invoice, ...invoice },
+        tenant: { ...proof.tenant, ...tenant },
+      });
+    }
+
+    it('applies a LIMIT_INCREASE additively and never extends the subscription', async () => {
+      const { service, prisma, proof } = makeService();
+      proofForInvoice(prisma, proof, {
+        kind: 'ONE_TIME',
+        subscriptionId: 'sub-1',
+      });
+      prisma.tenantPurchase.findUnique.mockResolvedValue({
+        id: 'pur-1',
+        tenantId: TENANT_ID,
+        subscriptionId: 'sub-1',
+        feeKey: 'extra-products',
+        type: 'LIMIT_INCREASE',
+        status: 'PENDING',
+        effect: { type: 'limit_increase', limits: { products: 200 } },
+      });
+      prisma.subscription.findUnique.mockResolvedValue({
+        id: 'sub-1',
+        planVersion: { limits: { products: 100 }, features: [] },
+      });
+
+      const result = await service.approveProof(PROOF_ID, 'admin-1');
+
+      expect(prisma.tenantPurchase.updateMany).toHaveBeenCalledWith({
+        where: { id: 'pur-1', status: { in: ['PENDING', 'PAID'] } },
+        data: expect.objectContaining({ status: 'APPLIED' }),
+      });
+      // Plan limit 100 + 200 from the purchase = 300.
+      expect(prisma.tenantLimitOverride.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            tenantId_key: { tenantId: TENANT_ID, key: 'products' },
+          },
+          create: expect.objectContaining({ value: 300 }),
+        }),
+      );
+      expect(result.purchaseApplied).toEqual({
+        id: 'pur-1',
+        type: 'LIMIT_INCREASE',
+      });
+      // ONE_TIME invoices never extend the subscription, even with a
+      // subscriptionId on the invoice.
+      expect(prisma.subscription.update).not.toHaveBeenCalled();
+    });
+
+    it('skips a limit increase for a key the plan leaves unlimited', async () => {
+      const { service, prisma, proof } = makeService();
+      proofForInvoice(prisma, proof, {
+        kind: 'ONE_TIME',
+        subscriptionId: 'sub-1',
+      });
+      prisma.tenantPurchase.findUnique.mockResolvedValue({
+        id: 'pur-1',
+        tenantId: TENANT_ID,
+        subscriptionId: 'sub-1',
+        feeKey: 'extra-orders',
+        type: 'LIMIT_INCREASE',
+        status: 'PENDING',
+        effect: { type: 'limit_increase', limits: { orders: 500 } },
+      });
+      prisma.subscription.findUnique.mockResolvedValue({
+        id: 'sub-1',
+        planVersion: { limits: {}, features: [] },
+      });
+
+      const result = await service.approveProof(PROOF_ID, 'admin-1');
+
+      expect(prisma.tenantLimitOverride.upsert).not.toHaveBeenCalled();
+      expect(result.purchaseApplied).toEqual({
+        id: 'pur-1',
+        type: 'LIMIT_INCREASE',
+      });
+    });
+
+    it('applies a RATE_TIER as a per-order-rate override', async () => {
+      const { service, prisma, proof } = makeService();
+      proofForInvoice(prisma, proof, {
+        kind: 'ONE_TIME',
+        subscriptionId: 'sub-1',
+      });
+      prisma.tenantPurchase.findUnique.mockResolvedValue({
+        id: 'pur-2',
+        tenantId: TENANT_ID,
+        subscriptionId: 'sub-1',
+        feeKey: 'lifetime-pro',
+        type: 'RATE_TIER',
+        status: 'PAID',
+        effect: { type: 'rate_tier', perOrderRate: 1.5 },
+      });
+
+      const result = await service.approveProof(PROOF_ID, 'admin-1');
+
+      expect(prisma.tenantPricingOverride.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            tenantId_key: { tenantId: TENANT_ID, key: 'per_order_rate' },
+          },
+          create: expect.objectContaining({ value: 1.5 }),
+        }),
+      );
+      expect(result.purchaseApplied).toEqual({
+        id: 'pur-2',
+        type: 'RATE_TIER',
+      });
+    });
+
+    it('applies a FEATURE_UNLOCK by merging the snapshot features', async () => {
+      const { service, prisma, proof } = makeService();
+      proofForInvoice(prisma, proof, {
+        kind: 'ONE_TIME',
+        subscriptionId: 'sub-1',
+      });
+      prisma.tenantPurchase.findUnique.mockResolvedValue({
+        id: 'pur-3',
+        tenantId: TENANT_ID,
+        subscriptionId: 'sub-1',
+        feeKey: 'unlock-inbox',
+        type: 'FEATURE_UNLOCK',
+        status: 'PENDING',
+        effect: { type: 'feature_unlock', features: ['inbox'] },
+      });
+      prisma.subscription.findUnique.mockResolvedValue({
+        id: 'sub-1',
+        entitlementsSnapshot: { features: ['pos'], limits: {} },
+      });
+
+      const result = await service.approveProof(PROOF_ID, 'admin-1');
+
+      expect(prisma.subscription.update).toHaveBeenCalledWith({
+        where: { id: 'sub-1' },
+        data: expect.objectContaining({
+          entitlementsSnapshot: expect.objectContaining({
+            features: ['pos', 'inbox'],
+          }),
+        }),
+      });
+      expect(result.purchaseApplied).toEqual({
+        id: 'pur-3',
+        type: 'FEATURE_UNLOCK',
+      });
+    });
+
+    it('does not double-apply an already-APPLIED purchase', async () => {
+      const { service, prisma, proof } = makeService();
+      proofForInvoice(prisma, proof, {
+        kind: 'ONE_TIME',
+        subscriptionId: 'sub-1',
+      });
+      prisma.tenantPurchase.findUnique.mockResolvedValue({
+        id: 'pur-1',
+        tenantId: TENANT_ID,
+        subscriptionId: 'sub-1',
+        feeKey: 'lifetime-pro',
+        type: 'RATE_TIER',
+        status: 'APPLIED',
+        effect: { type: 'rate_tier', perOrderRate: 1.5 },
+      });
+
+      const result = await service.approveProof(PROOF_ID, 'admin-1');
+
+      expect(prisma.tenantPurchase.updateMany).not.toHaveBeenCalled();
+      expect(prisma.tenantPricingOverride.upsert).not.toHaveBeenCalled();
+      expect(result.purchaseApplied).toBeNull();
+    });
+
+    it('does not apply the effect when the claim is lost (concurrent approve)', async () => {
+      const { service, prisma, proof } = makeService();
+      proofForInvoice(prisma, proof, {
+        kind: 'ONE_TIME',
+        subscriptionId: 'sub-1',
+      });
+      prisma.tenantPurchase.findUnique.mockResolvedValue({
+        id: 'pur-1',
+        tenantId: TENANT_ID,
+        subscriptionId: 'sub-1',
+        feeKey: 'lifetime-pro',
+        type: 'RATE_TIER',
+        status: 'PENDING',
+        effect: { type: 'rate_tier', perOrderRate: 1.5 },
+      });
+      prisma.tenantPurchase.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await service.approveProof(PROOF_ID, 'admin-1');
+
+      expect(prisma.tenantPricingOverride.upsert).not.toHaveBeenCalled();
+      expect(result.purchaseApplied).toBeNull();
+    });
+
+    it('does not apply the effect on a partial payment', async () => {
+      const { service, prisma, proof, invoices } = makeService();
+      proofForInvoice(prisma, proof, {
+        kind: 'ONE_TIME',
+        subscriptionId: 'sub-1',
+      });
+      prisma.tenantPurchase.findUnique.mockResolvedValue({
+        id: 'pur-1',
+        tenantId: TENANT_ID,
+        subscriptionId: 'sub-1',
+        feeKey: 'lifetime-pro',
+        type: 'RATE_TIER',
+        status: 'PENDING',
+        effect: { type: 'rate_tier', perOrderRate: 1.5 },
+      });
+      invoices.settleInvoice.mockResolvedValue({
+        status: 'OPEN',
+        paidAmount: 500,
+        total: 1500,
+      });
+
+      const result = await service.approveProof(PROOF_ID, 'admin-1');
+
+      expect(prisma.tenantPurchase.findUnique).not.toHaveBeenCalled();
+      expect(result.purchaseApplied).toBeNull();
+    });
+
+    it('opens the NEXT period when a METERED invoice is paid', async () => {
+      const { service, prisma, proof } = makeService();
+      proofForInvoice(
+        prisma,
+        proof,
+        {
+          kind: 'METERED',
+          subscriptionId: 'sub-1',
+          periodStart: new Date('2026-11-01T00:00:00.000Z'),
+          periodEnd: new Date('2026-12-01T00:00:00.000Z'),
+        },
+        { status: 'PAST_DUE' },
+      );
+      prisma.subscription.findUnique.mockResolvedValue({
+        id: 'sub-1',
+        currentPeriodEnd: new Date('2026-12-01T00:00:00.000Z'),
+        planVersion: {
+          interval: 'MONTHLY',
+          intervalDays: null,
+          features: ['pos'],
+          limits: { products: 100 },
+        },
+      });
+
+      const result = await service.approveProof(PROOF_ID, 'admin-1');
+
+      // Post-paid: the next period starts at the invoice's period end.
+      expect(prisma.subscription.update).toHaveBeenCalledWith({
+        where: { id: 'sub-1' },
+        data: expect.objectContaining({
+          status: 'ACTIVE',
+          currentPeriodStart: new Date('2026-12-01T00:00:00.000Z'),
+          currentPeriodEnd: new Date('2027-01-01T00:00:00.000Z'),
+        }),
+      });
+      expect(result.reactivated).toBe(true);
+      expect(result.currentPeriodEnd).toEqual(
+        new Date('2027-01-01T00:00:00.000Z'),
+      );
+      expect(prisma.tenant.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'ACTIVE' }),
+        }),
+      );
+    });
   });
 
   it('rejects with a required reason and audits it', async () => {

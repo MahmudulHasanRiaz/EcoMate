@@ -25,6 +25,15 @@ export interface UsageSnapshot {
   limits: LimitUsageRow[];
 }
 
+/**
+ * Optional period window for the period counters (orders_per_month).
+ * Point-in-time counters (products, staff, storage) ignore it.
+ */
+export interface UsageWindow {
+  from: Date;
+  to: Date;
+}
+
 const BYTES_PER_MB = 1024 * 1024;
 
 /**
@@ -47,7 +56,7 @@ export class TenantLimitsService {
     return coerceLimit(this.entitlements.getLimits()[key]);
   }
 
-  async getUsage(key: LimitKey): Promise<number> {
+  async getUsage(key: LimitKey, window?: UsageWindow): Promise<number> {
     switch (key) {
       case 'products': {
         // Drafts do not consume the published-product quota; publishing checks
@@ -62,6 +71,17 @@ export class TenantLimitsService {
         });
       }
       case 'orders_per_month': {
+        // With a window, count orders created in [from, to) — the billing
+        // engine's subscription period. Without one, the Dhaka calendar
+        // month (the console usage view). Non-trashed only, as always.
+        if (window) {
+          return this.prisma.order.count({
+            where: {
+              trashedAt: null,
+              createdAt: { gte: window.from, lt: window.to },
+            },
+          });
+        }
         return this.prisma.order.count({
           where: {
             trashedAt: null,
@@ -95,11 +115,11 @@ export class TenantLimitsService {
     );
   }
 
-  async getUsageSnapshot(): Promise<UsageSnapshot> {
+  async getUsageSnapshot(window?: UsageWindow): Promise<UsageSnapshot> {
     const rows = await Promise.all(
       LIMIT_KEYS.map(async (key): Promise<LimitUsageRow> => {
         const limit = this.getLimit(key);
-        const used = await this.getUsage(key);
+        const used = await this.getUsage(key, window);
         const percent =
           limit === null
             ? null

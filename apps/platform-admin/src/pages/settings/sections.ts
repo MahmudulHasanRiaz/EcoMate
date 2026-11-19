@@ -7,6 +7,7 @@ import {
   Mail,
   Palette,
   Percent,
+  Send,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
@@ -16,6 +17,7 @@ import { LandingSection } from './landing';
 import { MaintenanceSection } from './maintenance';
 import { MediaSection } from './media';
 import { PaymentMethodsSection } from './payment-methods';
+import { SaasSmtpSection } from './saas-smtp';
 import { SmtpSection } from './smtp';
 import { TaxSection } from './tax';
 import { TrialSection } from './trial';
@@ -85,6 +87,13 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     icon: Mail,
     group: 'Email',
     component: SmtpSection,
+  },
+  {
+    id: 'saas-smtp',
+    label: 'SaaS SMTP',
+    icon: Send,
+    group: 'Email',
+    component: SaasSmtpSection,
   },
   {
     id: 'maintenance',

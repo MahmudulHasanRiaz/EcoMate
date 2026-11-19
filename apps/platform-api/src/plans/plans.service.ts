@@ -9,6 +9,15 @@ import { AuditService } from '../common/audit.service';
 import { TenantRefreshService } from '../common/tenant-refresh.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import {
+  BillingCycle,
+  PricingDocument,
+  billingCycleToInterval,
+  buildPricingDocument,
+  intervalToBillingCycle,
+  parsePricingDocument,
+  validatePricingDocument,
+} from '../pricing/pricing-document';
+import {
   DEFAULT_GRACE_DAYS,
   DEFAULT_TRIAL_DAYS,
   SettingsService,
@@ -42,6 +51,123 @@ export class PlansService {
         graceDays: DEFAULT_GRACE_DAYS,
       };
     }
+  }
+
+  /**
+   * Resolve the pricing document + price + interval for a plan create /
+   * add-version write (design §3).
+   *
+   * - The document is strictly validated (unknown keys rejected).
+   * - When supplied, `price` is derived from pricing.baseFee.amount and
+   *   the interval from pricing.billingCycle. An explicitly supplied
+   *   interval that disagrees with the cycle is a 400 (ambiguous write).
+   * - When omitted on add-version, the previous version's pricing is
+   *   inherited (mirroring price/interval inheritance) with baseFee
+   *   re-pointed at the new price, so price and
+   *   pricing.baseFee.amount can never drift.
+   * - When omitted on create, the document is built from price/interval
+   *   (a fixed-price plan).
+   */
+  private resolvePricingForWrite(input: {
+    dtoPricing?: PricingDocument | null;
+    dtoPrice: number;
+    dtoCurrency?: string;
+    dtoInterval?: 'MONTHLY' | 'YEARLY' | 'CUSTOM';
+    dtoIntervalDays?: number;
+    previous?: {
+      price: unknown;
+      currency: string;
+      interval: 'MONTHLY' | 'YEARLY' | 'CUSTOM';
+      intervalDays: number | null;
+      pricing: unknown;
+    } | null;
+  }): {
+    pricing: PricingDocument;
+    price: number;
+    currency: string;
+    interval: 'MONTHLY' | 'YEARLY' | 'CUSTOM';
+    intervalDays: number | null | undefined;
+  } {
+    const currency =
+      input.dtoCurrency ?? input.previous?.currency ?? 'BDT';
+    const fallbackInterval =
+      input.dtoInterval ?? input.previous?.interval ?? 'MONTHLY';
+    const fallbackIntervalDays =
+      input.dtoIntervalDays ?? input.previous?.intervalDays ?? undefined;
+
+    if (input.dtoPricing) {
+      const errors = validatePricingDocument(input.dtoPricing);
+      if (errors.length > 0) {
+        throw new BadRequestException(
+          `Invalid pricing document: ${errors.join('; ')}`,
+        );
+      }
+      const doc = input.dtoPricing as PricingDocument;
+      const cycle = doc.billingCycle as BillingCycle | undefined;
+      let interval = fallbackInterval;
+      let intervalDays: number | null | undefined = fallbackIntervalDays;
+      if (cycle) {
+        const mapped = billingCycleToInterval(cycle);
+        if (
+          input.dtoInterval !== undefined &&
+          (input.dtoInterval !== mapped.interval ||
+            (mapped.interval === 'CUSTOM' &&
+              input.dtoIntervalDays !== undefined &&
+              input.dtoIntervalDays !== mapped.intervalDays))
+        ) {
+          throw new BadRequestException(
+            `pricing.billingCycle ${cycle} conflicts with the supplied interval`,
+          );
+        }
+        interval = mapped.interval;
+        intervalDays = mapped.intervalDays;
+      }
+      const price = doc.baseFee?.amount ?? input.dtoPrice;
+      const pricing = buildPricingDocument(doc, {
+        price,
+        currency,
+        interval,
+        intervalDays,
+      });
+      return { pricing, price, currency, interval, intervalDays };
+    }
+
+    if (input.previous) {
+      const inherited = parsePricingDocument(input.previous.pricing);
+      // Re-point the inherited base fee at the new price (the new
+      // version's price is dto.price; the other components carry over).
+      inherited.baseFee = {
+        amount: input.dtoPrice,
+        currency,
+      };
+      if (!inherited.billingCycle) {
+        inherited.billingCycle = intervalToBillingCycle(
+          fallbackInterval,
+          fallbackIntervalDays,
+        );
+      }
+      return {
+        pricing: inherited,
+        price: input.dtoPrice,
+        currency,
+        interval: fallbackInterval,
+        intervalDays: fallbackIntervalDays,
+      };
+    }
+
+    const pricing = buildPricingDocument(undefined, {
+      price: input.dtoPrice,
+      currency,
+      interval: fallbackInterval,
+      intervalDays: fallbackIntervalDays,
+    });
+    return {
+      pricing,
+      price: input.dtoPrice,
+      currency,
+      interval: fallbackInterval,
+      intervalDays: fallbackIntervalDays,
+    };
   }
 
   async list() {
@@ -83,6 +209,13 @@ export class PlansService {
     if (existing) throw new ConflictException('Plan slug already exists');
 
     const defaults = this.trialDefaults();
+    const resolved = this.resolvePricingForWrite({
+      dtoPricing: dto.pricing as PricingDocument | undefined,
+      dtoPrice: dto.price,
+      dtoCurrency: dto.currency,
+      dtoInterval: dto.interval,
+      dtoIntervalDays: dto.intervalDays,
+    });
     const plan = await this.prisma.plan.create({
       data: {
         slug: dto.slug,
@@ -95,10 +228,11 @@ export class PlansService {
         versions: {
           create: {
             version: 1,
-            price: dto.price,
-            currency: dto.currency ?? 'BDT',
-            interval: dto.interval ?? 'MONTHLY',
-            intervalDays: dto.intervalDays,
+            price: resolved.price,
+            currency: resolved.currency,
+            interval: resolved.interval,
+            intervalDays: resolved.intervalDays,
+            pricing: resolved.pricing as any,
             trialDays: dto.trialDays ?? defaults.trialDays,
             features: dto.features ?? [],
             limits: (dto.limits ?? {}) as any,
@@ -134,15 +268,32 @@ export class PlansService {
     });
     const version = (latest?.version ?? 0) + 1;
     const defaults = this.trialDefaults();
+    const resolved = this.resolvePricingForWrite({
+      dtoPricing: dto.pricing as PricingDocument | undefined,
+      dtoPrice: dto.price,
+      dtoCurrency: dto.currency,
+      dtoInterval: dto.interval,
+      dtoIntervalDays: dto.intervalDays,
+      previous: latest
+        ? {
+            price: latest.price,
+            currency: latest.currency,
+            interval: latest.interval,
+            intervalDays: latest.intervalDays,
+            pricing: (latest as { pricing?: unknown }).pricing,
+          }
+        : null,
+    });
 
     const created = await this.prisma.planVersion.create({
       data: {
         planId,
         version,
-        price: dto.price,
-        currency: dto.currency ?? latest?.currency ?? 'BDT',
-        interval: dto.interval ?? latest?.interval ?? 'MONTHLY',
-        intervalDays: dto.intervalDays ?? latest?.intervalDays,
+        price: resolved.price,
+        currency: resolved.currency,
+        interval: resolved.interval,
+        intervalDays: resolved.intervalDays,
+        pricing: resolved.pricing as any,
         trialDays: dto.trialDays ?? latest?.trialDays ?? defaults.trialDays,
         features: dto.features ?? latest?.features ?? [],
         limits: (dto.limits ?? (latest?.limits as any) ?? {}) as any,

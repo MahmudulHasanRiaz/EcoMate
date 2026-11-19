@@ -51,6 +51,16 @@ export class TenantEntitlementsService {
     return this.currentRecord()?.subscriptionStatus ?? null;
   }
 
+  /** Areas blocked for this tenant right now (platform-computed, §9). */
+  getBlockedAreas(): string[] {
+    return [...(this.currentRecord()?.blockedAreas ?? [])];
+  }
+
+  /** Effective pricing for display (the backend never computes money). */
+  getEffectivePricing(): TenantRegistryRecord['effectivePricing'] {
+    return this.currentRecord()?.effectivePricing;
+  }
+
   getAccessState(now = new Date()): TenantAccessState {
     const record = this.currentRecord();
     if (!record) return this.devWildcard() ? 'full' : 'read_only';

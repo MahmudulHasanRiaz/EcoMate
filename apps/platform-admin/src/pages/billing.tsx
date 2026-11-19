@@ -9,17 +9,24 @@ import {
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDate, formatDateTime, formatMoney, formatStatus } from '../lib/format';
+import {
+  formatMoney2dp,
+  INVOICE_KIND_LABELS,
+  traceSourceLabel,
+} from '../lib/pricing';
 import type {
   BillingSummary,
   Coupon,
   CreditNote,
   Invoice,
+  InvoiceKind,
   JobsStatus,
   Page,
   Payment,
   PaymentMethod,
   PaymentProof,
   Plan,
+  PricingTrace,
   Subscription,
   Tenant,
 } from '../types';
@@ -57,6 +64,114 @@ function tabFromParam(param: unknown): Tab {
   return typeof param === 'string' && (TABS as string[]).includes(param)
     ? (param as Tab)
     : 'proofs';
+}
+
+/** The engine trace is stored verbatim as Invoice.metadata on
+ * SUBSCRIPTION/METERED invoices; ONE_TIME invoices carry purchase
+ * metadata instead, so detect a trace by its shape. */
+function invoiceTrace(
+  invoice: Invoice,
+): PricingTrace | null {
+  const metadata = invoice.metadata as PricingTrace | null | undefined;
+  if (
+    metadata &&
+    typeof metadata === 'object' &&
+    typeof metadata.planName === 'string' &&
+    metadata.baseFee &&
+    typeof metadata.baseFee === 'object'
+  ) {
+    return metadata;
+  }
+  return null;
+}
+
+function InvoiceTraceSection({ invoice }: { invoice: Invoice }) {
+  const trace = invoiceTrace(invoice);
+  if (!trace) return null;
+  const currency = invoice.currency;
+  return (
+    <>
+      <h3 className="subhead">Computation trace</h3>
+      <p className="muted-note">
+        How the engine computed this invoice — the live usage read, the
+        rate and minimum with their sources, and the minimum adjustment.
+      </p>
+      <dl className="facts">
+        <div>
+          <dt>Plan</dt>
+          <dd>{trace.planName}</dd>
+        </div>
+        <div>
+          <dt>Base fee</dt>
+          <dd>
+            {formatMoney2dp(trace.baseFee.value, currency)} (
+            {traceSourceLabel(trace.baseFee.source)})
+          </dd>
+        </div>
+        {trace.ratePerUnit ? (
+          <div>
+            <dt>Per-order rate</dt>
+            <dd>
+              {formatMoney2dp(trace.ratePerUnit.value, currency)}/order (
+              {traceSourceLabel(trace.ratePerUnit.source)})
+            </dd>
+          </div>
+        ) : null}
+        {trace.usage ? (
+          <div>
+            <dt>Usage read</dt>
+            <dd>
+              {Object.entries(trace.usage)
+                .map(([metric, count]) => `${count} ${metric}`)
+                .join(', ')}
+              {trace.included !== undefined
+                ? ` (${trace.included} included, ${trace.billableUnits ?? 0} billable)`
+                : ''}
+            </dd>
+          </div>
+        ) : null}
+        {trace.minimumMonthly ? (
+          <div>
+            <dt>Minimum monthly</dt>
+            <dd>
+              {formatMoney2dp(trace.minimumMonthly.value, currency)} (
+              {traceSourceLabel(trace.minimumMonthly.source)})
+            </dd>
+          </div>
+        ) : null}
+        {trace.minimumApplied !== undefined && trace.minimumApplied > 0 ? (
+          <div>
+            <dt>Minimum applied</dt>
+            <dd>
+              {formatMoney2dp(trace.minimumApplied, currency)}
+              {trace.minimumProrationFactor !== undefined
+                ? ` (prorated ×${trace.minimumProrationFactor})`
+                : ''}
+            </dd>
+          </div>
+        ) : null}
+        {trace.meteredCharge !== undefined ? (
+          <div>
+            <dt>Metered charge</dt>
+            <dd>{formatMoney2dp(trace.meteredCharge, currency)}</dd>
+          </div>
+        ) : null}
+        {(trace.addOns ?? []).length > 0 ? (
+          <div>
+            <dt>Add-ons</dt>
+            <dd>
+              {(trace.addOns ?? [])
+                .map(
+                  (addOn) =>
+                    `${addOn.name} ${formatMoney2dp(addOn.baseFee, currency)}`,
+                )
+                .join(', ')}
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+    </>
+  );
 }
 
 const PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
@@ -102,6 +217,7 @@ export function BillingPage() {
   const [proofStatus, setProofStatus] =
     useState<(typeof PROOF_STATUSES)[number]>('PENDING');
   const [invoiceStatus, setInvoiceStatus] = useState('');
+  const [invoiceKind, setInvoiceKind] = useState('');
   const [selectedProof, setSelectedProof] = useState<PaymentProof | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -131,7 +247,7 @@ export function BillingPage() {
             readJson<Page<PaymentProof>>(r),
           ),
           api(
-            `/billing/invoices?limit=50${invoiceStatus ? `&status=${invoiceStatus}` : ''}`,
+            `/billing/invoices?limit=50${invoiceStatus ? `&status=${invoiceStatus}` : ''}${invoiceKind ? `&kind=${invoiceKind}` : ''}`,
           ).then((r) => readJson<Page<Invoice>>(r)),
           api('/billing/payments?limit=50').then((r) =>
             readJson<Page<Payment>>(r),
@@ -166,7 +282,7 @@ export function BillingPage() {
     } finally {
       setBusy(null);
     }
-  }, [api, invoiceStatus, proofStatus]);
+  }, [api, invoiceStatus, invoiceKind, proofStatus]);
 
   useEffect(() => {
     void load();
@@ -667,7 +783,12 @@ export function BillingPage() {
                           )}
                           <span className="sub">{proof.tenant?.slug}</span>
                         </td>
-                        <td className="mono">{proof.invoice?.number ?? '—'}</td>
+                        <td className="mono">
+                          {proof.invoice?.number ?? '—'}
+                          {proof.invoice?.kind === 'TOPUP' ? (
+                            <span className="sub">Email top-up</span>
+                          ) : null}
+                        </td>
                         <td>{proof.method?.name ?? '—'}</td>
                         <td>
                           {formatMoney(
@@ -816,6 +937,22 @@ export function BillingPage() {
                 ))}
               </select>
             </label>
+            <label className="toolbar-filter">
+              <span>Kind</span>
+              <select
+                value={invoiceKind}
+                onChange={(event) => setInvoiceKind(event.target.value)}
+              >
+                <option value="">All kinds</option>
+                {(Object.keys(INVOICE_KIND_LABELS) as InvoiceKind[]).map(
+                  (kind) => (
+                    <option key={kind} value={kind}>
+                      {INVOICE_KIND_LABELS[kind]}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
           </div>
           <section className="card">
             <div className="card-head">
@@ -908,6 +1045,7 @@ export function BillingPage() {
                     <tr>
                       <th>Number</th>
                       <th>Tenant</th>
+                      <th>Kind</th>
                       <th>Status</th>
                       <th>Total</th>
                       <th>Paid</th>
@@ -932,6 +1070,11 @@ export function BillingPage() {
                             '—'
                           )}
                           <span className="sub">{invoice.tenant?.slug}</span>
+                        </td>
+                        <td>
+                          {invoice.kind
+                            ? INVOICE_KIND_LABELS[invoice.kind]
+                            : '—'}
                         </td>
                         <td>
                           <StatusBadge status={invoice.status} />
@@ -990,6 +1133,17 @@ export function BillingPage() {
             </div>
           </div>
           <dl className="facts">
+            <div>
+              <dt>Kind</dt>
+              <dd>
+                {selectedInvoice.kind
+                  ? INVOICE_KIND_LABELS[selectedInvoice.kind]
+                  : '—'}
+                {selectedInvoice.purchase
+                  ? ` — ${selectedInvoice.purchase.label}`
+                  : ''}
+              </dd>
+            </div>
             <div>
               <dt>Total</dt>
               <dd>{formatMoney(selectedInvoice.total, selectedInvoice.currency)}</dd>
@@ -1063,6 +1217,8 @@ export function BillingPage() {
               </table>
             </div>
           )}
+
+          <InvoiceTraceSection invoice={selectedInvoice} />
 
           <h3 className="subhead">Payments</h3>
           {(selectedInvoice.payments ?? []).length === 0 ? (

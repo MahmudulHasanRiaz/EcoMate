@@ -28,6 +28,16 @@ export interface CreateInvoiceInput {
   notes?: string;
   /** Apply the tenant's open credit notes to the new invoice. Default true. */
   applyCredit?: boolean;
+  /**
+   * Invoice kind (pricing engine §5). Defaults to MANUAL (operator-created).
+   * Renewal jobs pass SUBSCRIPTION / METERED; one-time purchases pass
+   * ONE_TIME. The kind drives the approveProof extension gate — only
+   * subscription-linked SUBSCRIPTION / METERED / MANUAL invoices extend
+   * the subscription; ONE_TIME and TOPUP never do.
+   */
+  kind?: 'SUBSCRIPTION' | 'ONE_TIME' | 'METERED' | 'MANUAL' | 'TOPUP';
+  /** Billing computation trace (§4), stored on the invoice for audit. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface InvoiceBalance {
@@ -258,6 +268,8 @@ export class InvoiceService {
           subscriptionId: input.subscriptionId ?? null,
           number,
           status: 'OPEN',
+          kind: input.kind ?? 'MANUAL',
+          metadata: (input.metadata ?? {}) as any,
           subtotal,
           discount,
           tax,
@@ -288,6 +300,7 @@ export class InvoiceService {
         number: invoice.number,
         total: invoice.total,
         status: invoice.status,
+        kind: invoice.kind,
       },
     });
     return invoice;

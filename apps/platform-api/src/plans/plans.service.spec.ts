@@ -216,6 +216,212 @@ describe('PlansService', () => {
     expect(result.version).toBe(3);
   });
 
+  describe('pricing', () => {
+    const METERED_PRICING = {
+      pricingVersion: 1,
+      baseFee: { amount: 0, currency: 'BDT' },
+      billingCycle: 'MONTHLY',
+      metering: {
+        metric: 'orders_per_month',
+        included: 50,
+        ratePerUnit: 10,
+        minimumMonthly: 500,
+      },
+      freeMonths: 1,
+    };
+
+    it('derives price and interval from a supplied pricing document', async () => {
+      prisma.plan.findUnique.mockResolvedValue(null);
+      prisma.plan.create.mockResolvedValue({
+        id: 'plan-1',
+        slug: 'starter',
+        versions: [{ id: 'v1', version: 1 }],
+      });
+
+      await service.create(
+        {
+          ...basePlanDto,
+          price: 999,
+          pricing: {
+            ...METERED_PRICING,
+            baseFee: { amount: 1200, currency: 'BDT' },
+            billingCycle: 'YEARLY',
+          },
+        } as any,
+        'platform-user-1',
+      );
+
+      const version = prisma.plan.create.mock.calls[0][0].data.versions.create;
+      // The document wins over the legacy price/interval fields.
+      expect(version.price).toBe(1200);
+      expect(version.interval).toBe('YEARLY');
+      expect(version.pricing).toMatchObject({
+        pricingVersion: 1,
+        baseFee: { amount: 1200, currency: 'BDT' },
+        billingCycle: 'YEARLY',
+        metering: expect.objectContaining({ ratePerUnit: 10 }),
+        freeMonths: 1,
+      });
+    });
+
+    it('builds a fixed-price document when no pricing is supplied', async () => {
+      prisma.plan.findUnique.mockResolvedValue(null);
+      prisma.plan.create.mockResolvedValue({
+        id: 'plan-1',
+        slug: 'starter',
+        versions: [{ id: 'v1', version: 1 }],
+      });
+
+      await service.create(basePlanDto as any, 'platform-user-1');
+
+      const version = prisma.plan.create.mock.calls[0][0].data.versions.create;
+      expect(version.price).toBe(999);
+      expect(version.pricing).toEqual({
+        pricingVersion: 1,
+        baseFee: { amount: 999, currency: 'BDT' },
+        billingCycle: 'MONTHLY',
+      });
+    });
+
+    it('rejects an invalid pricing document', async () => {
+      prisma.plan.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.create(
+          {
+            ...basePlanDto,
+            pricing: {
+              pricingVersion: 1,
+              baseFee: { amount: 0, currency: 'BDT' },
+              billingCycle: 'MONTHLY',
+              metering: {
+                metric: 'teleportations',
+                included: 0,
+                ratePerUnit: 10,
+              },
+            },
+          } as any,
+          'platform-user-1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.plan.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a billingCycle that conflicts with the explicit interval', async () => {
+      prisma.plan.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.create(
+          {
+            ...basePlanDto,
+            interval: 'MONTHLY',
+            pricing: { ...METERED_PRICING, billingCycle: 'YEARLY' },
+          } as any,
+          'platform-user-1',
+        ),
+      ).rejects.toThrow('conflicts with the supplied interval');
+    });
+
+    it('maps WEEKLY_7D to a 7-day custom interval', async () => {
+      prisma.plan.findUnique.mockResolvedValue(null);
+      prisma.plan.create.mockResolvedValue({
+        id: 'plan-1',
+        slug: 'starter',
+        versions: [{ id: 'v1', version: 1 }],
+      });
+
+      await service.create(
+        {
+          ...basePlanDto,
+          pricing: { ...METERED_PRICING, billingCycle: 'WEEKLY_7D' },
+        } as any,
+        'platform-user-1',
+      );
+
+      const version = prisma.plan.create.mock.calls[0][0].data.versions.create;
+      expect(version.interval).toBe('CUSTOM');
+      expect(version.intervalDays).toBe(7);
+    });
+
+    it('inherits the previous pricing on add-version, re-pointing the base fee', async () => {
+      prisma.plan.findUnique.mockResolvedValue({
+        id: 'plan-1',
+        slug: 'starter',
+      });
+      prisma.planVersion.findFirst.mockResolvedValue({
+        version: 1,
+        price: 1000,
+        currency: 'BDT',
+        interval: 'MONTHLY',
+        intervalDays: null,
+        trialDays: 14,
+        graceDays: 7,
+        features: ['admin_products'],
+        limits: { products: 100 },
+        pricing: METERED_PRICING,
+      });
+      prisma.planVersion.create.mockResolvedValue({
+        id: 'v2',
+        version: 2,
+        planId: 'plan-1',
+      });
+
+      await service.addVersion('plan-1', { price: 1500 } as any, 'u1');
+
+      const data = prisma.planVersion.create.mock.calls[0][0].data;
+      expect(data.price).toBe(1500);
+      // Metering + free months carry over; the base fee follows the price.
+      expect(data.pricing.metering).toEqual(METERED_PRICING.metering);
+      expect(data.pricing.freeMonths).toBe(1);
+      expect(data.pricing.baseFee).toEqual({
+        amount: 1500,
+        currency: 'BDT',
+      });
+    });
+
+    it('replaces inherited pricing when a new document is supplied', async () => {
+      prisma.plan.findUnique.mockResolvedValue({
+        id: 'plan-1',
+        slug: 'starter',
+      });
+      prisma.planVersion.findFirst.mockResolvedValue({
+        version: 1,
+        price: 0,
+        currency: 'BDT',
+        interval: 'MONTHLY',
+        intervalDays: null,
+        trialDays: 14,
+        graceDays: 7,
+        features: [],
+        limits: {},
+        pricing: METERED_PRICING,
+      });
+      prisma.planVersion.create.mockResolvedValue({
+        id: 'v2',
+        version: 2,
+        planId: 'plan-1',
+      });
+
+      await service.addVersion(
+        'plan-1',
+        {
+          price: 2000,
+          pricing: {
+            pricingVersion: 1,
+            baseFee: { amount: 2000, currency: 'BDT' },
+            billingCycle: 'MONTHLY',
+          },
+        } as any,
+        'u1',
+      );
+
+      const data = prisma.planVersion.create.mock.calls[0][0].data;
+      expect(data.price).toBe(2000);
+      expect(data.pricing.metering).toBeUndefined();
+      expect(data.pricing.freeMonths).toBeUndefined();
+    });
+  });
+
   describe('applyVersion', () => {
     const version = {
       id: 'v2',

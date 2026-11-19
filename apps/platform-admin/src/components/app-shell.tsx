@@ -10,6 +10,7 @@ import {
   Layers,
   LayoutDashboard,
   LayoutTemplate,
+  Puzzle,
   ScrollText,
   Search as SearchIcon,
   Settings as SettingsIcon,
@@ -55,6 +56,7 @@ const NAV_GROUPS: {
       { to: '/domains', label: 'Domains', icon: Globe },
       { to: '/usage', label: 'Usage', icon: Gauge },
       { to: '/metrics', label: 'Metrics', icon: ChartColumn },
+      { to: '/add-ons', label: 'Add-ons', icon: Puzzle },
     ],
   },
   {

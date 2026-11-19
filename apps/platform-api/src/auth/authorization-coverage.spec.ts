@@ -42,6 +42,8 @@ const PUBLIC_CONTROLLERS: Record<string, string> = {
   PrometheusMetricsController:
     'Prometheus scrape endpoint (Phase 8 Stage 2) — operational metrics only, no tenant data; restricted to the private network in production',
   InternalController: 'service-token guard (InternalServiceGuard)',
+  InternalDomainsController:
+    'service-token guard (InternalServiceGuard) — tenant self-service domains (custom-domains subagent)',
   TlsAskController: 'Caddy-only ask endpoint, token query param',
 };
 
@@ -186,12 +188,16 @@ describe('authorization coverage', () => {
     // automatically; update this count only when a controller is added or
     // removed on purpose.
     expect(controllers).toEqual([
+      'AddOnsController',
       'AuditController',
       'AuthController',
       'BillingController',
       'DomainsAdminController',
+      'EmailBalanceController',
+      'EmailBalanceOverviewController',
       'HealthController',
       'InternalController',
+      'InternalDomainsController',
       'JobsController',
       'LandingCacheController',
       'LandingContentController',
@@ -200,6 +206,7 @@ describe('authorization coverage', () => {
       'MetricsController',
       'MfaController',
       'PlansController',
+      'PricingController',
       'PrometheusMetricsController',
       'PublicBrandingController',
       'PublicLandingContentController',

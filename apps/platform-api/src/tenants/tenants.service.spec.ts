@@ -52,6 +52,31 @@ const provisioning = {
   startForSignup: jest.fn(),
   retry: jest.fn(),
 };
+// Pricing resolution mirrors the real service's price-column fallback.
+const pricing = {
+  resolveForSubscription: jest.fn(
+    async (_subscriptionId: string, version: any) => {
+      const doc = version?.pricing ?? {};
+      return {
+        pricing: {
+          ...doc,
+          baseFee: doc.baseFee ?? {
+            amount: Number(version?.price ?? 0),
+            currency: version?.currency ?? 'BDT',
+          },
+          billingCycle: doc.billingCycle ?? 'MONTHLY',
+        },
+        addOns: [],
+        sources: {},
+      };
+    },
+  ),
+  fetchPeriodUsage: jest.fn().mockResolvedValue({}),
+};
+// SMTP worker's service; create() grants the free email allowance.
+const emailBalance = {
+  grantFreeAllowance: jest.fn().mockResolvedValue(undefined),
+};
 
 const service = new TenantsService(
   prisma,
@@ -62,6 +87,8 @@ const service = new TenantsService(
   mail as any,
   refresh as any,
   provisioning as any,
+  pricing as any,
+  emailBalance as any,
 );
 
 const baseTenantDto = {
@@ -74,6 +101,9 @@ const baseTenantDto = {
 describe('TenantsService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // clearAllMocks keeps implementations, but a per-test override of the
+    // usage read would leak into later tests — reset it explicitly.
+    pricing.fetchPeriodUsage.mockResolvedValue({});
     audit.record.mockResolvedValue(undefined);
     prisma.subscription.updateMany.mockResolvedValue({ count: 1 });
     prisma.tenant.update.mockImplementation(async ({ data }: any) => ({
@@ -358,7 +388,7 @@ describe('TenantsService', () => {
         pendingPlanEffectiveAt: periodEnd,
       },
     });
-    expect(result.pendingPlanVersionId).toBe('new-version');
+    expect((result as any).pendingPlanVersionId).toBe('new-version');
     expect(invoices.createInvoice).not.toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'tenant.plan.change.scheduled' }),
@@ -404,6 +434,148 @@ describe('TenantsService', () => {
     const data = prisma.subscription.update.mock.calls[0][0].data;
     expect(data.currentPeriodStart).toBeUndefined();
     expect(data.currentPeriodEnd).toBeUndefined();
+  });
+
+  it('closes out a metered plan on change: prorated minimum, standalone invoice', async () => {
+    // Freeze "now" mid-period: 15 of 30 days used, so the ৳500 minimum
+    // prorates to ৳250.
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-11-16T00:00:00.000Z'));
+    try {
+      prisma.tenant.findUnique.mockResolvedValue({
+        id: 'tenant-1',
+        slug: 'acme',
+        planVersionId: 'old',
+      });
+      prisma.planVersion.findUnique.mockResolvedValue({
+        id: 'new-version',
+        features: ['admin_products'],
+        limits: { products: 500 },
+        price: 2000,
+        currency: 'BDT',
+        interval: 'MONTHLY',
+        intervalDays: null,
+        plan: { name: 'Growth' },
+      });
+      prisma.subscription.findUnique.mockResolvedValue({
+        id: 'sub-1',
+        status: 'ACTIVE',
+        currentPeriodStart: new Date('2026-11-01T00:00:00.000Z'),
+        currentPeriodEnd: new Date('2026-12-01T00:00:00.000Z'),
+        freePeriodsRemaining: 2,
+        planVersion: {
+          price: 0,
+          currency: 'BDT',
+          plan: { name: 'Metered' },
+          pricing: {
+            pricingVersion: 1,
+            baseFee: { amount: 0, currency: 'BDT' },
+            billingCycle: 'MONTHLY',
+            metering: {
+              metric: 'orders_per_month',
+              included: 0,
+              ratePerUnit: 10,
+              minimumMonthly: 500,
+            },
+          },
+        },
+      });
+      pricing.fetchPeriodUsage.mockResolvedValue({ orders_per_month: 20 });
+
+      const result = await service.changePlan(
+        'tenant-1',
+        { planVersionId: 'new-version' } as any,
+        'u1',
+      );
+
+      expect(pricing.fetchPeriodUsage).toHaveBeenCalledWith(
+        'tenant-1',
+        'acme',
+        new Date('2026-11-01T00:00:00.000Z'),
+        new Date('2026-11-16T00:00:00.000Z'),
+      );
+      // Two invoices: the new plan (SUBSCRIPTION) + the close-out (METERED).
+      expect(invoices.createInvoice).toHaveBeenCalledTimes(2);
+      const newPlan = invoices.createInvoice.mock.calls[0][0];
+      expect(newPlan).toMatchObject({
+        kind: 'SUBSCRIPTION',
+        subscriptionId: 'sub-1',
+      });
+      const closeOut = invoices.createInvoice.mock.calls[1][0];
+      expect(closeOut.kind).toBe('METERED');
+      // Standalone: paying it must not move the new subscription period.
+      expect(closeOut).not.toHaveProperty('subscriptionId');
+      expect(closeOut.periodStart).toEqual(
+        new Date('2026-11-01T00:00:00.000Z'),
+      );
+      expect(closeOut.periodEnd).toEqual(
+        new Date('2026-11-16T00:00:00.000Z'),
+      );
+      // 20 orders × ৳10 = ৳200, floored at the prorated ৳250 minimum.
+      const total = closeOut.lines.reduce(
+        (sum: number, line: any) => sum + line.unitPrice * line.quantity,
+        0,
+      );
+      expect(total).toBe(250);
+      expect((result as any).usageInvoice).toBeDefined();
+      // Free months belong to the subscription, not the version: untouched.
+      for (const call of prisma.subscription.update.mock.calls) {
+        expect(call[0].data).not.toHaveProperty('freePeriodsRemaining');
+      }
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('aborts a metered plan change when the usage fetch fails', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      planVersionId: 'old',
+    });
+    prisma.planVersion.findUnique.mockResolvedValue({
+      id: 'new-version',
+      features: [],
+      limits: {},
+      price: 2000,
+      currency: 'BDT',
+      interval: 'MONTHLY',
+      intervalDays: null,
+      plan: { name: 'Growth' },
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'ACTIVE',
+      currentPeriodStart: new Date(Date.now() - 10 * 86_400_000),
+      currentPeriodEnd: new Date(Date.now() + 20 * 86_400_000),
+      planVersion: {
+        price: 0,
+        currency: 'BDT',
+        plan: { name: 'Metered' },
+        pricing: {
+          pricingVersion: 1,
+          baseFee: { amount: 0, currency: 'BDT' },
+          billingCycle: 'MONTHLY',
+          metering: {
+            metric: 'orders_per_month',
+            included: 0,
+            ratePerUnit: 10,
+            minimumMonthly: 500,
+          },
+        },
+      },
+    });
+    pricing.fetchPeriodUsage.mockRejectedValue(new Error('backend down'));
+
+    await expect(
+      service.changePlan('tenant-1', { planVersionId: 'new-version' } as any, 'u1'),
+    ).rejects.toThrow('backend down');
+
+    // The close-out read happens BEFORE any write — nothing moved.
+    expect(prisma.tenant.update).not.toHaveBeenCalled();
+    expect(prisma.subscription.update).not.toHaveBeenCalled();
+    expect(invoices.createInvoice).not.toHaveBeenCalled();
+    expect(prisma.creditNote.create).not.toHaveBeenCalled();
   });
 
   it('cancels at period end by default and immediately when asked', async () => {
@@ -568,7 +740,7 @@ describe('TenantsService', () => {
         tenantId: 'tenant-1',
       }),
     );
-    expect(result.status).toBe('SUCCEEDED');
+    expect(result?.status).toBe('SUCCEEDED');
   });
 
   it('retry returns a succeeded job without re-running it', async () => {
@@ -581,7 +753,7 @@ describe('TenantsService', () => {
     const result = await service.retryProvisioning('tenant-1', 'u1');
 
     expect(provisioning.retry).not.toHaveBeenCalled();
-    expect(result.status).toBe('SUCCEEDED');
+    expect(result?.status).toBe('SUCCEEDED');
   });
 
   it('retry with no job fails with a clear error', async () => {

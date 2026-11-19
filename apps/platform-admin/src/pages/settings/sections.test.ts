@@ -18,17 +18,19 @@ describe('settings sections registry', () => {
     }
   });
 
-  it('covers every section the old single-page settings had, plus Landing and Media storage', () => {
+  it('covers every section the old single-page settings had, plus Landing, Media storage and SaaS SMTP', () => {
     // The old page had 6 real sections + a Domains link card. Domains is
     // a top-level nav item, not a setting — it is intentionally absent.
     // Landing (Batch 1) is the 7th section; Media storage (media
-    // library) is the 8th.
+    // library) is the 8th; SaaS SMTP (email-balance rate + expiry) is
+    // the 9th.
     expect(SETTINGS_SECTIONS.map((s) => s.id).sort()).toEqual([
       'branding',
       'landing',
       'maintenance',
       'media',
       'payment-methods',
+      'saas-smtp',
       'smtp',
       'tax',
       'trial',

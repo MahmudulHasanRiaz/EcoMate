@@ -21,6 +21,7 @@ import { TestSmtpDto } from './dto/test-smtp.dto';
 import { UpdateBrandingSettingsDto } from './dto/update-branding-settings.dto';
 import { UpdateLandingSettingsDto } from './dto/update-landing-settings.dto';
 import { UpdateMaintenanceSettingsDto } from './dto/update-maintenance-settings.dto';
+import { UpdateSaasSmtpSettingsDto } from './dto/update-saas-smtp-settings.dto';
 import { UpdateSmtpSettingsDto } from './dto/update-smtp-settings.dto';
 import { UpdateTaxSettingsDto } from './dto/update-tax-settings.dto';
 import { UpdateTrialSettingsDto } from './dto/update-trial-settings.dto';
@@ -183,6 +184,31 @@ export class SettingsController {
       action: 'settings.landing.update',
       entity: 'PlatformSetting',
       entityId: 'landing',
+      before,
+      after: next,
+    });
+    return next;
+  }
+
+  @Get('saas-smtp')
+  @Roles(...READ_ROLES)
+  getSaasSmtp() {
+    return this.settings.getSaasSmtp();
+  }
+
+  @Patch('saas-smtp')
+  @Roles('SUPERADMIN')
+  async updateSaasSmtp(
+    @Body() dto: UpdateSaasSmtpSettingsDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    const before = this.settings.getSaasSmtp();
+    const next = await this.settings.updateSaasSmtp(dto);
+    await this.audit.record({
+      actorId: user?.id,
+      action: 'settings.saas-smtp.update',
+      entity: 'PlatformSetting',
+      entityId: 'saas_smtp',
       before,
       after: next,
     });

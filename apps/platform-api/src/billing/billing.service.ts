@@ -1,12 +1,16 @@
 import {
   BadRequestException,
   ConflictException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
+import { EmailBalanceService } from '../email-balance/email-balance.service';
+import { Prisma } from '../generated/prisma/client';
 import { TenantRefreshService } from '../common/tenant-refresh.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
@@ -23,6 +27,7 @@ import { InvoiceService } from './invoice.service';
 
 const PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'];
 const INVOICE_STATUSES = ['DRAFT', 'OPEN', 'PAID', 'VOID', 'UNCOLLECTIBLE'];
+const INVOICE_KINDS = ['SUBSCRIPTION', 'ONE_TIME', 'METERED', 'MANUAL', 'TOPUP'];
 const SUBSCRIPTION_STATUSES = [
   'TRIAL',
   'ACTIVE',
@@ -50,6 +55,13 @@ export class BillingService {
     private readonly mail: PlatformMailService,
     private readonly refresh: TenantRefreshService,
     private readonly settings: SettingsService,
+    // Circular by design: EmailBalanceService needs InvoiceService
+    // (top-up invoice creation) and approveProof needs creditTopUp
+    // in-transaction. Resolved with forwardRef on both modules; the
+    // provider graph itself is acyclic (BillingService ->
+    // EmailBalanceService -> InvoiceService -> globals).
+    @Inject(forwardRef(() => EmailBalanceService))
+    private readonly emailBalance: EmailBalanceService,
   ) {}
 
   async proofQueue(query: {
@@ -79,6 +91,7 @@ export class BillingService {
               id: true,
               number: true,
               status: true,
+              kind: true,
               total: true,
               currency: true,
             },
@@ -139,6 +152,7 @@ export class BillingService {
             number: true,
             total: true,
             currency: true,
+            kind: true,
             subscriptionId: true,
             periodStart: true,
             periodEnd: true,
@@ -207,6 +221,29 @@ export class BillingService {
 
       const settled = await this.invoiceService.settleInvoice(tx, proof.invoiceId, now);
 
+      // One-time purchase effect (pricing engine §6 step 4): when the
+      // invoice is now PAID and it backs a PENDING/PAID purchase, apply
+      // the effect (limit increase / rate tier / feature unlock) inside
+      // this same transaction. A partial payment settles nothing and the
+      // purchase stays PENDING until a later proof completes payment.
+      let purchaseApplied: { id: string; type: string } | null = null;
+      if (settled.status === 'PAID') {
+        purchaseApplied = await this.applyOneTimePurchaseEffect(
+          tx,
+          proof.invoiceId,
+          now,
+        );
+      }
+      // SMTP-TOPUP-HOOK: credit a paid email top-up (no-op unless the
+      // invoice is PAID and has a PENDING EmailTopUp; partial payments
+      // credit nothing). Runs inside this same transaction so a paid
+      // top-up invoice and its email lot are atomic.
+      await this.emailBalance.creditTopUp(tx, {
+        id: proof.invoiceId,
+        status: settled.status,
+        number: proof.invoice.number,
+      });
+
       // Overpayment: the excess is not refunded automatically — it becomes
       // open credit for the tenant's next invoice.
       let overpaymentCredit = 0;
@@ -226,28 +263,57 @@ export class BillingService {
       }
 
       // Full payment: extend the subscription and reactivate the tenant.
+      // The extension gate is "subscription-linked renewal invoice":
+      // ONE_TIME (one-time purchase) and TOPUP (SMTP email top-up)
+      // invoices never extend, even though they carry a subscriptionId
+      // (pricing §6 step 5). MANUAL invoices keep the Phase 7 behaviour.
+      const extendsSubscription =
+        settled.status === 'PAID' &&
+        proof.invoice.subscriptionId &&
+        proof.invoice.kind !== 'ONE_TIME' &&
+        proof.invoice.kind !== 'TOPUP';
       let extended: {
         currentPeriodStart: Date;
         currentPeriodEnd: Date;
       } | null = null;
-      if (settled.status === 'PAID' && proof.invoice.subscriptionId) {
+      if (extendsSubscription && proof.invoice.subscriptionId) {
         const subscription = await tx.subscription.findUnique({
           where: { id: proof.invoice.subscriptionId },
           include: { planVersion: true },
         });
         if (subscription) {
-          const periodStart =
-            proof.invoice.periodStart ??
-            (subscription.currentPeriodEnd > now
-              ? subscription.currentPeriodEnd
-              : now);
-          const periodEnd =
-            proof.invoice.periodEnd ??
-            addInterval(
+          // METERED invoices are post-paid: the invoice covers the period
+          // just ended, so payment opens the NEXT period (from the
+          // invoice's period end, never backwards). Fixed invoices carry
+          // the next period already.
+          let periodStart: Date;
+          let periodEnd: Date;
+          if (proof.invoice.kind === 'METERED') {
+            const anchor =
+              proof.invoice.periodEnd ?? subscription.currentPeriodEnd;
+            periodStart =
+              anchor > subscription.currentPeriodEnd
+                ? anchor
+                : subscription.currentPeriodEnd;
+            periodEnd = addInterval(
               periodStart,
               subscription.planVersion.interval,
               subscription.planVersion.intervalDays,
             );
+          } else {
+            periodStart =
+              proof.invoice.periodStart ??
+              (subscription.currentPeriodEnd > now
+                ? subscription.currentPeriodEnd
+                : now);
+            periodEnd =
+              proof.invoice.periodEnd ??
+              addInterval(
+                periodStart,
+                subscription.planVersion.interval,
+                subscription.planVersion.intervalDays,
+              );
+          }
           await tx.subscription.update({
             where: { id: subscription.id },
             data: {
@@ -289,7 +355,14 @@ export class BillingService {
         });
         reactivated = true;
       }
-      return { payment, settled, overpaymentCredit, extended, reactivated };
+      return {
+        payment,
+        settled,
+        overpaymentCredit,
+        extended,
+        reactivated,
+        purchaseApplied,
+      };
     });
 
     await this.audit.record({
@@ -305,6 +378,7 @@ export class BillingService {
         invoiceStatus: result.settled.status,
         overpaymentCredit: result.overpaymentCredit,
         reactivated: result.reactivated,
+        purchaseApplied: result.purchaseApplied,
       },
     });
 
@@ -341,7 +415,165 @@ export class BillingService {
       overpaymentCredit: result.overpaymentCredit,
       reactivated: result.reactivated,
       currentPeriodEnd: result.extended?.currentPeriodEnd ?? null,
+      purchaseApplied: result.purchaseApplied,
     };
+  }
+
+  /**
+   * One-time purchase effect (pricing engine §6 step 4). Runs inside the
+   * approveProof transaction, after settleInvoice, only when the invoice
+   * is now PAID. The claim is a single updateMany status guard (same
+   * pattern as the proof claim) — a double approve cannot double-apply.
+   *
+   * - SETUP_FEE: money only, no entitlement effect.
+   * - LIMIT_INCREASE: upsert TenantLimitOverride rows, additive on the
+   *   current effective limit (plan limit merged with any existing
+   *   override), noted as `one-time purchase <feeKey>`. A key the plan
+   *   leaves unlimited is skipped (adding to unlimited is meaningless).
+   * - RATE_TIER: upsert a TenantPricingOverride (per_order_rate) — the
+   *   Q3 "highest plan bought one-time → near-zero per-order rate"
+   *   mechanism. The rate value is configured in the fee; the engine
+   *   never invents it.
+   * - FEATURE_UNLOCK: add the features to the subscription's
+   *   entitlementsSnapshot AND leave the durable record on the purchase
+   *   row itself — the registry unions APPLIED feature-unlock purchases,
+   *   so the unlock survives plan changes (which rewrite the snapshot
+   *   from the plan version).
+   *
+   * The caller pushes a registry refresh after a PAID approval (the
+   * existing pushRefresh below), so the effect reaches the tenant
+   * runtime within the refresh window.
+   */
+  private async applyOneTimePurchaseEffect(
+    tx: Prisma.TransactionClient,
+    invoiceId: string,
+    now: Date,
+  ): Promise<{ id: string; type: string } | null> {
+    const purchase = await tx.tenantPurchase.findUnique({
+      where: { invoiceId },
+    });
+    if (!purchase) return null;
+    if (purchase.status !== 'PENDING' && purchase.status !== 'PAID') {
+      return null;
+    }
+    const claimed = await tx.tenantPurchase.updateMany({
+      where: { id: purchase.id, status: { in: ['PENDING', 'PAID'] } },
+      data: { status: 'APPLIED', appliedAt: now },
+    });
+    if (claimed.count === 0) return null;
+
+    const effect = (purchase.effect ?? {}) as {
+      limits?: Record<string, unknown>;
+      perOrderRate?: unknown;
+      features?: unknown;
+    };
+    const note = `one-time purchase ${purchase.feeKey}`;
+
+    if (purchase.type === 'LIMIT_INCREASE' && purchase.subscriptionId) {
+      const subscription = await tx.subscription.findUnique({
+        where: { id: purchase.subscriptionId },
+        include: { planVersion: true },
+      });
+      const planLimits = (subscription?.planVersion?.limits ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const limits = effect.limits ?? {};
+      for (const [key, deltaRaw] of Object.entries(limits)) {
+        const delta =
+          typeof deltaRaw === 'number' && Number.isInteger(deltaRaw)
+            ? deltaRaw
+            : 0;
+        if (delta <= 0) continue;
+        const existing = await tx.tenantLimitOverride.findUnique({
+          where: {
+            tenantId_key: { tenantId: purchase.tenantId, key },
+          },
+        });
+        const planValue = planLimits[key];
+        const effective =
+          existing !== null
+            ? existing.value
+            : typeof planValue === 'number' && Number.isFinite(planValue)
+              ? Math.floor(planValue)
+              : null;
+        if (effective === null) {
+          this.logger.warn(
+            `Purchase ${purchase.id}: limit "${key}" is unlimited on the plan; skipping the +${delta} increase`,
+          );
+          continue;
+        }
+        await tx.tenantLimitOverride.upsert({
+          where: { tenantId_key: { tenantId: purchase.tenantId, key } },
+          create: {
+            tenantId: purchase.tenantId,
+            key,
+            value: effective + delta,
+            note,
+          },
+          update: { value: effective + delta, note },
+        });
+      }
+    }
+
+    if (purchase.type === 'RATE_TIER') {
+      const rate =
+        typeof effect.perOrderRate === 'number' ? effect.perOrderRate : null;
+      if (rate !== null && rate >= 0) {
+        await tx.tenantPricingOverride.upsert({
+          where: {
+            tenantId_key: {
+              tenantId: purchase.tenantId,
+              key: 'per_order_rate',
+            },
+          },
+          create: {
+            tenantId: purchase.tenantId,
+            key: 'per_order_rate',
+            value: rate,
+            note,
+          },
+          update: { value: rate, note },
+        });
+      }
+    }
+
+    if (purchase.type === 'FEATURE_UNLOCK' && purchase.subscriptionId) {
+      const features = Array.isArray(effect.features)
+        ? effect.features.filter(
+            (feature): feature is string => typeof feature === 'string',
+          )
+        : [];
+      if (features.length > 0) {
+        const subscription = await tx.subscription.findUnique({
+          where: { id: purchase.subscriptionId },
+        });
+        const snapshot = (subscription?.entitlementsSnapshot ?? {}) as {
+          features?: unknown;
+        };
+        const current = Array.isArray(snapshot.features)
+          ? snapshot.features.filter(
+              (feature): feature is string => typeof feature === 'string',
+            )
+          : [];
+        const merged = [...new Set([...current, ...features])];
+        await tx.subscription.update({
+          where: { id: purchase.subscriptionId },
+          data: {
+            entitlementsSnapshot: {
+              ...(subscription?.entitlementsSnapshot as Record<
+                string,
+                unknown
+              >),
+              features: merged,
+              changedAt: now.toISOString(),
+            } as any,
+          },
+        });
+      }
+    }
+
+    return { id: purchase.id, type: purchase.type };
   }
 
   async rejectProof(id: string, reason: string, actorId?: string) {
@@ -397,6 +629,7 @@ export class BillingService {
 
   async invoices(query: {
     status?: string;
+    kind?: string;
     tenantId?: string;
     search?: string;
     page?: string;
@@ -410,6 +643,13 @@ export class BillingService {
         throw new BadRequestException('Unknown invoice status');
       }
       where.status = status;
+    }
+    if (query.kind) {
+      const kind = query.kind.toUpperCase();
+      if (!INVOICE_KINDS.includes(kind)) {
+        throw new BadRequestException('Unknown invoice kind');
+      }
+      where.kind = kind;
     }
     if (query.tenantId) where.tenantId = query.tenantId;
     if (query.search?.trim()) {
@@ -460,6 +700,16 @@ export class BillingService {
         payments: { include: { method: true }, orderBy: { receivedAt: 'desc' } },
         proofs: { include: { method: true }, orderBy: { createdAt: 'desc' } },
         creditNotes: { orderBy: { createdAt: 'desc' } },
+        purchase: {
+          select: {
+            id: true,
+            feeKey: true,
+            label: true,
+            type: true,
+            status: true,
+            appliedAt: true,
+          },
+        },
       },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');

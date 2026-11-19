@@ -110,12 +110,13 @@ export class BillingController {
   @Roles(...READ_ROLES)
   invoices(
     @Query('status') status?: string,
+    @Query('kind') kind?: string,
     @Query('tenantId') tenantId?: string,
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.billing.invoices({ status, tenantId, search, page, limit });
+    return this.billing.invoices({ status, kind, tenantId, search, page, limit });
   }
 
   @Post('invoices')

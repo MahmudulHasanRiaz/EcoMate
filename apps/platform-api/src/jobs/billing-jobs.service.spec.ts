@@ -59,12 +59,46 @@ function makeService() {
       .fn()
       .mockReturnValue({ trialDays: 14, graceDays: 7 }),
   };
+  // Pricing resolution mirrors the real service's price-column fallback:
+  // a version with no pricing doc bills its price as a fixed base fee.
+  const pricing = {
+    resolveForSubscription: jest.fn(
+      async (_subscriptionId: string, version: any) => {
+        const doc = version?.pricing ?? {};
+        return {
+          pricing: {
+            ...doc,
+            baseFee: doc.baseFee ?? {
+              amount: version?.price ?? 0,
+              currency: version?.currency ?? 'BDT',
+            },
+            billingCycle: doc.billingCycle ?? 'MONTHLY',
+          },
+          addOns: [],
+          sources: {},
+        };
+      },
+    ),
+    fetchPeriodUsage: jest.fn().mockResolvedValue({}),
+  };
+  // SMTP worker's param (email-balance jobs). runAll runs those jobs too,
+  // so the mock stubs their entry points with zero-count results.
+  const emailBalance = {
+    expireLots: jest.fn().mockResolvedValue({
+      lotsExpired: 0,
+      emailsExpired: 0,
+      tenantsAffected: 0,
+    }),
+    warnExpiringLots: jest.fn().mockResolvedValue({ warningsSent: 0 }),
+    reconcile: jest.fn().mockResolvedValue({ checked: 0, drifted: 0 }),
+  };
   return {
     prisma,
     audit,
     invoices,
     tenants,
     mail,
+    pricing,
     service: new BillingJobsService(
       prisma as any,
       audit as any,
@@ -72,6 +106,8 @@ function makeService() {
       tenants as any,
       mail as any,
       settings as any,
+      pricing as any,
+      emailBalance as any,
     ),
   };
 }
@@ -117,6 +153,7 @@ describe('BillingJobsService', () => {
         trialsExpired: 1,
         invoicesCreated: 1,
         trialEndingReminders: 1,
+        freePeriodsStarted: 0,
       });
       expect(mail.sendTrialEnding).toHaveBeenCalledWith(
         expect.objectContaining({ to: 'owner@acme.test' }),
@@ -194,9 +231,62 @@ describe('BillingJobsService', () => {
         trialsExpired: 1,
         invoicesCreated: 0,
         trialEndingReminders: 0,
+        freePeriodsStarted: 0,
       });
       expect(invoices.createInvoice).not.toHaveBeenCalled();
       expect(prisma.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'ACTIVE' }),
+        }),
+      );
+    });
+
+    it('starts free months on trial expiry: ACTIVE, counter set, no invoice', async () => {
+      const { service, prisma, invoices } = makeService();
+      prisma.subscription.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: 'sub-freemonths',
+            tenantId: 'tenant-4',
+            status: 'TRIAL',
+            trialEndsAt: new Date(Date.now() - DAY_MS),
+            freePeriodsRemaining: 0,
+            tenant: {
+              id: 'tenant-4',
+              name: 'FreeMonths',
+              ownerEmail: 'owner@fm.test',
+              status: 'TRIAL',
+            },
+            planVersion: planVersion({
+              pricing: {
+                pricingVersion: 1,
+                baseFee: { amount: 1000, currency: 'BDT' },
+                billingCycle: 'MONTHLY',
+                freeMonths: 2,
+              },
+            }),
+          },
+        ]);
+
+      const result = await service.runJob('trial-expiry');
+
+      expect(result.counts).toMatchObject({
+        trialsExpired: 1,
+        invoicesCreated: 0,
+        freePeriodsStarted: 1,
+      });
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+      // The period starting now IS the first free period — no decrement.
+      expect(prisma.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'ACTIVE',
+            freePeriodsRemaining: 2,
+          }),
+        }),
+      );
+      expect(prisma.tenant.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: 'ACTIVE' }),
         }),
@@ -211,13 +301,16 @@ describe('BillingJobsService', () => {
         tenantId: 'tenant-1',
         status: 'ACTIVE',
         planVersionId: 'pv-1',
+        currentPeriodStart: new Date(Date.now() - 28 * DAY_MS),
         currentPeriodEnd: new Date(Date.now() + 2 * DAY_MS),
+        freePeriodsRemaining: 0,
         pendingPlanVersionId: null,
         pendingPlanVersion: null,
         pendingPlanEffectiveAt: null,
         tenant: {
           id: 'tenant-1',
           name: 'Acme',
+          slug: 'acme',
           ownerEmail: 'owner@acme.test',
           status: 'ACTIVE',
         },
@@ -225,6 +318,21 @@ describe('BillingJobsService', () => {
         ...overrides,
       };
     }
+
+    const METERED_VERSION = planVersion({
+      price: 0,
+      pricing: {
+        pricingVersion: 1,
+        baseFee: { amount: 0, currency: 'BDT' },
+        billingCycle: 'MONTHLY',
+        metering: {
+          metric: 'orders_per_month',
+          included: 0,
+          ratePerUnit: 10,
+          minimumMonthly: 500,
+        },
+      },
+    });
 
     it('invoices a period ending soon and leaves the tenant ACTIVE', async () => {
       const { service, prisma, invoices } = makeService();
@@ -303,6 +411,194 @@ describe('BillingJobsService', () => {
       );
       const lines = invoices.createInvoice.mock.calls[0][0].lines;
       expect(lines[0].unitPrice).toBe(2500);
+    });
+
+    it('does not bill a metered plan before the period ends', async () => {
+      const { service, prisma, invoices, pricing } = makeService();
+      prisma.subscription.findMany.mockResolvedValue([
+        activeSub({ planVersion: METERED_VERSION }),
+      ]);
+
+      const result = await service.runJob('renewal-invoices');
+
+      expect(result.counts.invoicesCreated).toBe(0);
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+      expect(pricing.fetchPeriodUsage).not.toHaveBeenCalled();
+    });
+
+    it('bills a metered period at period end: max(minimum, usage)', async () => {
+      const { service, prisma, invoices, pricing } = makeService();
+      const ended = activeSub({
+        planVersion: METERED_VERSION,
+        currentPeriodEnd: new Date(Date.now() - DAY_MS),
+      });
+      prisma.subscription.findMany.mockResolvedValue([ended]);
+      pricing.fetchPeriodUsage.mockResolvedValue({ orders_per_month: 30 });
+
+      const result = await service.runJob('renewal-invoices');
+
+      expect(result.counts.invoicesCreated).toBe(1);
+      expect(result.counts.expiredToPastDue).toBe(1);
+      expect(pricing.fetchPeriodUsage).toHaveBeenCalledWith(
+        'tenant-1',
+        'acme',
+        ended.currentPeriodStart,
+        ended.currentPeriodEnd,
+      );
+      const input = invoices.createInvoice.mock.calls[0][0];
+      expect(input.kind).toBe('METERED');
+      expect(input.periodStart).toEqual(ended.currentPeriodStart);
+      expect(input.periodEnd).toEqual(ended.currentPeriodEnd);
+      // 30 orders × ৳10 = ৳300, floored at the ৳500 minimum.
+      const total = input.lines.reduce(
+        (sum: number, line: any) => sum + line.unitPrice * line.quantity,
+        0,
+      );
+      expect(total).toBe(500);
+      // The trace records the minimum that was applied (৳500), not a flag.
+      expect(input.metadata).toEqual(
+        expect.objectContaining({ minimumApplied: 500 }),
+      );
+    });
+
+    it('records an error and retries later when the usage fetch fails', async () => {
+      const { service, prisma, invoices, pricing } = makeService();
+      prisma.subscription.findMany.mockResolvedValue([
+        activeSub({
+          planVersion: METERED_VERSION,
+          currentPeriodEnd: new Date(Date.now() - DAY_MS),
+        }),
+      ]);
+      pricing.fetchPeriodUsage.mockRejectedValue(
+        new Error('backend unreachable'),
+      );
+
+      const result = await service.runJob('renewal-invoices');
+
+      expect(result.counts.invoicesCreated).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('usage unavailable');
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+      // Never billed from a guessed number — and not moved to PAST_DUE.
+      expect(prisma.tenant.update).not.toHaveBeenCalled();
+    });
+
+    it('does not create a second METERED invoice for the same period', async () => {
+      const { service, prisma, invoices, pricing } = makeService();
+      prisma.subscription.findMany.mockResolvedValue([
+        activeSub({
+          planVersion: METERED_VERSION,
+          currentPeriodEnd: new Date(Date.now() - DAY_MS),
+        }),
+      ]);
+      pricing.fetchPeriodUsage.mockResolvedValue({ orders_per_month: 120 });
+      prisma.invoice.findFirst.mockResolvedValue({ id: 'inv-open-metered' });
+
+      const result = await service.runJob('renewal-invoices');
+
+      expect(result.counts.invoicesCreated).toBe(0);
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+    });
+
+    it('rolls a zero-bill metered period with no invoice', async () => {
+      const { service, prisma, invoices, pricing } = makeService();
+      prisma.subscription.findMany.mockResolvedValue([
+        activeSub({
+          planVersion: planVersion({
+            price: 0,
+            pricing: {
+              pricingVersion: 1,
+              baseFee: { amount: 0, currency: 'BDT' },
+              billingCycle: 'MONTHLY',
+              metering: {
+                metric: 'orders_per_month',
+                included: 0,
+                ratePerUnit: 10,
+                minimumMonthly: null,
+              },
+            },
+          }),
+          currentPeriodEnd: new Date(Date.now() - DAY_MS),
+        }),
+      ]);
+      pricing.fetchPeriodUsage.mockResolvedValue({ orders_per_month: 0 });
+
+      const result = await service.runJob('renewal-invoices');
+
+      expect(result.counts.zeroBillRolls).toBe(1);
+      expect(result.counts.invoicesCreated).toBe(0);
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+      expect(prisma.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            currentPeriodStart: expect.any(Date),
+            currentPeriodEnd: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('consumes a free month on renewal with no invoice (fixed plan)', async () => {
+      const { service, prisma, invoices } = makeService();
+      prisma.subscription.findMany.mockResolvedValue([
+        activeSub({ freePeriodsRemaining: 2 }),
+      ]);
+
+      const result = await service.runJob('renewal-invoices');
+
+      expect(result.counts.freePeriodsConsumed).toBe(1);
+      expect(result.counts.invoicesCreated).toBe(0);
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+      expect(prisma.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            freePeriodsRemaining: { decrement: 1 },
+          }),
+        }),
+      );
+    });
+
+    it('consumes a free month for a metered plan without reading usage', async () => {
+      const { service, prisma, invoices, pricing } = makeService();
+      prisma.subscription.findMany.mockResolvedValue([
+        activeSub({
+          planVersion: METERED_VERSION,
+          currentPeriodEnd: new Date(Date.now() - DAY_MS),
+          freePeriodsRemaining: 1,
+        }),
+      ]);
+
+      const result = await service.runJob('renewal-invoices');
+
+      expect(result.counts.freePeriodsConsumed).toBe(1);
+      expect(pricing.fetchPeriodUsage).not.toHaveBeenCalled();
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+    });
+
+    it('uses a 1-day lead for a 7-day cycle', async () => {
+      const { service, prisma, invoices } = makeService();
+      const weekly = planVersion({
+        interval: 'CUSTOM',
+        intervalDays: 7,
+      });
+      // Period ends in 2 days: outside the 1-day lead, no invoice yet.
+      prisma.subscription.findMany.mockResolvedValue([
+        activeSub({ planVersion: weekly }),
+      ]);
+
+      const skipped = await service.runJob('renewal-invoices');
+      expect(skipped.counts.invoicesCreated).toBe(0);
+
+      // Period ends in 12 hours: inside the lead, invoice now.
+      prisma.subscription.findMany.mockResolvedValue([
+        activeSub({
+          planVersion: weekly,
+          currentPeriodEnd: new Date(Date.now() + 12 * 3_600_000),
+        }),
+      ]);
+      const invoiced = await service.runJob('renewal-invoices');
+      expect(invoiced.counts.invoicesCreated).toBe(1);
+      expect(invoices.createInvoice).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -442,16 +738,18 @@ describe('BillingJobsService', () => {
       const { service } = makeService();
       const results = await service.runAll();
 
-      expect(results).toHaveLength(5);
+      expect(results).toHaveLength(7);
       expect(results.map((r) => r.job)).toEqual([
         'trial-expiry',
         'renewal-invoices',
         'reminders',
         'grace-suspend',
         'cancel-at-period-end',
+        'email-balance-expiry',
+        'email-balance-reconcile',
       ]);
       const status = service.status();
-      expect(status.jobs).toHaveLength(5);
+      expect(status.jobs).toHaveLength(7);
       expect(status.jobs.every((j) => j.lastRunAt !== null)).toBe(true);
     });
   });

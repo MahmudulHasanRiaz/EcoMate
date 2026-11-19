@@ -70,6 +70,128 @@ describe('PublicPlansController', () => {
     expect(result[0].price).toBeNull();
   });
 
+  it('exposes the pricing summary for a metered plan', async () => {
+    const { controller } = makeController([
+      {
+        id: 'plan-1',
+        slug: 'growth',
+        name: 'Growth',
+        description: 'Pay per order',
+        isFree: false,
+        badge: null,
+        sortOrder: 1,
+        versions: [
+          {
+            price: new Prisma.Decimal('0'),
+            currency: 'BDT',
+            interval: 'MONTHLY',
+            trialDays: 14,
+            features: ['admin_products'],
+            limits: { products: 100 },
+            pricing: {
+              pricingVersion: 1,
+              baseFee: { amount: 0, currency: 'BDT' },
+              billingCycle: 'MONTHLY',
+              metering: {
+                metric: 'orders_per_month',
+                included: 50,
+                ratePerUnit: 10,
+                minimumMonthly: 500,
+              },
+              freeMonths: 2,
+              oneTimeFees: [
+                {
+                  key: 'setup',
+                  label: 'Onboarding',
+                  amount: 3000,
+                  effect: { type: 'setup' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    const result = await controller.list();
+
+    expect(result[0]).toMatchObject({
+      baseFee: 0,
+      billingCycle: 'MONTHLY',
+      perOrderRate: 10,
+      minimumMonthly: 500,
+      includedOrders: 50,
+      freeMonths: 2,
+    });
+    // One-time fees expose label + amount only — no fee keys or effects.
+    expect(result[0].oneTimeFees).toEqual([
+      { label: 'Onboarding', amount: 3000 },
+    ]);
+  });
+
+  it('falls back to the price column for a version with no pricing document', async () => {
+    const { controller } = makeController([
+      {
+        id: 'plan-1',
+        slug: 'growth',
+        name: 'Growth',
+        description: null,
+        isFree: false,
+        badge: null,
+        sortOrder: 1,
+        versions: [
+          {
+            price: new Prisma.Decimal('1500'),
+            currency: 'BDT',
+            interval: 'MONTHLY',
+            trialDays: 14,
+            features: [],
+            limits: {},
+            pricing: {},
+          },
+        ],
+      },
+    ]);
+
+    const result = await controller.list();
+
+    expect(result[0]).toMatchObject({
+      baseFee: 1500,
+      billingCycle: null,
+      perOrderRate: null,
+      minimumMonthly: null,
+      includedOrders: null,
+      freeMonths: 0,
+      oneTimeFees: [],
+    });
+  });
+
+  it('returns nulls for the pricing summary when a plan has no version', async () => {
+    const { controller } = makeController([
+      {
+        id: 'plan-1',
+        slug: 'empty',
+        name: 'Empty',
+        description: null,
+        isFree: true,
+        badge: null,
+        sortOrder: 0,
+        versions: [],
+      },
+    ]);
+
+    const result = await controller.list();
+
+    expect(result[0]).toMatchObject({
+      price: null,
+      baseFee: null,
+      billingCycle: null,
+      perOrderRate: null,
+      freeMonths: 0,
+      oneTimeFees: [],
+    });
+  });
+
   it('returns null price for a non-finite Decimal', async () => {
     const { controller } = makeController([
       {

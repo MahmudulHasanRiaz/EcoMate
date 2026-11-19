@@ -10,6 +10,7 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TenantRefreshModule } from './common/tenant-refresh.module';
 import { DomainConfigModule } from './config/domain-config.module';
 import { DomainsModule } from './domains/domains.module';
+import { EmailBalanceModule } from './email-balance/email-balance.module';
 import { HealthModule } from './health/health.module';
 import { InternalModule } from './internal/internal.module';
 import { JobsModule } from './jobs/jobs.module';
@@ -19,6 +20,7 @@ import { MediaModule } from './media/media.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { PlansModule } from './plans/plans.module';
+import { PricingModule } from './pricing/pricing.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProvisioningModule } from './provisioning/provisioning.module';
 import { SearchModule } from './search/search.module';
@@ -42,6 +44,7 @@ import { UsersModule } from './users/users.module';
     BillingModule,
     DomainConfigModule,
     DomainsModule,
+    EmailBalanceModule,
     HealthModule,
     InternalModule,
     JobsModule,
@@ -51,6 +54,7 @@ import { UsersModule } from './users/users.module';
     MetricsModule,
     ObservabilityModule,
     PlansModule,
+    PricingModule,
     ProvisioningModule,
     SearchModule,
     SettingsModule,

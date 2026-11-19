@@ -14,6 +14,23 @@ export interface TenantRegistryRecord {
   currentPeriodEnd?: string | null;
   graceEndsAt?: string | null;
   validUntil?: string | null;
+  /**
+   * Areas blocked for this tenant RIGHT NOW, computed by the platform
+   * (§9): the backend enforces what the registry says and never computes
+   * billing state itself. Empty = nothing area-blocked.
+   */
+  blockedAreas?: string[];
+  /**
+   * Effective pricing for display on the tenant plan page (base fee,
+   * per-order rate, minimum). Display only — the backend never computes
+   * money.
+   */
+  effectivePricing?: {
+    baseFee: number | null;
+    ratePerUnit: number | null;
+    minimumMonthly: number | null;
+    currency: string;
+  };
 }
 
 /**

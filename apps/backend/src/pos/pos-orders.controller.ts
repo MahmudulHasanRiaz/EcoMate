@@ -16,6 +16,7 @@ import { ValidateStockDto } from './dto/validate-stock.dto';
 import { CreatePosTransferRequestDto } from './dto/create-transfer-request.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { BillingArea } from '../tenancy/billing-area.decorator';
 
 @Controller('pos')
 export class PosOrdersController {
@@ -23,6 +24,7 @@ export class PosOrdersController {
 
   @Post('orders')
   @Roles('cashier', 'admin')
+  @BillingArea('pos')
   create(
     @Body() dto: CreatePosOrderDto,
     @CurrentUser() user: { userId: string },

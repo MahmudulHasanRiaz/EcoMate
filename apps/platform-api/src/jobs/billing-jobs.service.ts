@@ -3,7 +3,14 @@ import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
 import { addInterval } from '../billing/billing-dates';
 import { InvoiceService } from '../billing/invoice.service';
+import { EmailBalanceService } from '../email-balance/email-balance.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import {
+  parsePricingDocument,
+  renewalLeadDays,
+} from '../pricing/pricing-document';
+import { PricingEngine } from '../pricing/pricing-engine';
+import { PricingService } from '../pricing/pricing.service';
 import { SettingsService } from '../settings/settings.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { formatDhakaDate } from '../usage/usage.limits';
@@ -14,6 +21,8 @@ export const JOB_NAMES = [
   'reminders',
   'grace-suspend',
   'cancel-at-period-end',
+  'email-balance-expiry',
+  'email-balance-reconcile',
 ] as const;
 
 export type JobName = (typeof JOB_NAMES)[number];
@@ -74,6 +83,8 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
     private readonly tenants: TenantsService,
     private readonly mail: PlatformMailService,
     private readonly settings: SettingsService,
+    private readonly pricing: PricingService,
+    private readonly emailBalance: EmailBalanceService,
   ) {}
 
   onModuleInit() {
@@ -127,6 +138,12 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
           break;
         case 'cancel-at-period-end':
           await this.cancelAtPeriodEnd(result);
+          break;
+        case 'email-balance-expiry':
+          await this.emailBalanceExpiry(result);
+          break;
+        case 'email-balance-reconcile':
+          await this.emailBalanceReconcile(result);
           break;
       }
     } catch (error) {
@@ -201,26 +218,19 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
   private async createRenewalInvoice(input: {
     tenant: { id: string; name: string; ownerEmail: string };
     subscriptionId: string;
-    planName: string;
-    price: number;
-    currency: string;
-    interval: 'MONTHLY' | 'YEARLY' | 'CUSTOM';
-    intervalDays?: number | null;
+    lines: Array<{ description: string; quantity: number; unitPrice: number }>;
+    kind: 'SUBSCRIPTION' | 'METERED';
+    metadata?: Record<string, unknown>;
     periodStart: Date;
     periodEnd: Date;
     dueAt: Date;
   }) {
-    const label = this.intervalLabel(input.interval, input.intervalDays);
     const invoice = await this.invoices.createInvoice({
       tenantId: input.tenant.id,
       subscriptionId: input.subscriptionId,
-      lines: [
-        {
-          description: `${input.planName} subscription — ${label} (${formatDhakaDate(input.periodStart)} to ${formatDhakaDate(input.periodEnd)})`,
-          quantity: 1,
-          unitPrice: input.price,
-        },
-      ],
+      lines: input.lines,
+      kind: input.kind,
+      metadata: input.metadata,
       dueAt: input.dueAt,
       periodStart: input.periodStart,
       periodEnd: input.periodEnd,
@@ -254,7 +264,12 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
 
   private async trialExpiry(result: JobResult): Promise<void> {
     const now = new Date();
-    const counts = { trialsExpired: 0, invoicesCreated: 0, trialEndingReminders: 0 };
+    const counts = {
+      trialsExpired: 0,
+      invoicesCreated: 0,
+      trialEndingReminders: 0,
+      freePeriodsStarted: 0,
+    };
 
     // Trial-ending reminders (3 days before expiry, once per subscription).
     const endingSoon = await this.prisma.subscription.findMany({
@@ -321,17 +336,39 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
     this.warnIfCapped('trial-expiry', 'expired trials', expired);
     for (const subscription of expired) {
       if (subscription.tenant.status === 'DELETED') continue;
-      const price = Number(subscription.planVersion.price);
       const graceDays = this.graceDaysFor(subscription.planVersion.graceDays);
       const graceEndsAt = new Date(now.getTime() + graceDays * DAY_MS);
       try {
-        if (price <= 0) {
+        // First invoice covers the UPCOMING period: the pre-paid part
+        // only (base fee + add-ons). Metering is post-paid and bills at
+        // the end of that period, so it is stripped here — the trial
+        // period itself is free and has no usage to bill.
+        const resolved = await this.pricing.resolveForSubscription(
+          subscription.id,
+          subscription.planVersion,
+        );
+        const periodStart = now;
+        const periodEnd = addInterval(
+          periodStart,
+          subscription.planVersion.interval,
+          subscription.planVersion.intervalDays,
+        );
+        const label = this.intervalLabel(
+          subscription.planVersion.interval,
+          subscription.planVersion.intervalDays,
+        );
+        const computed = PricingEngine.compute({
+          pricing: { ...resolved.pricing, metering: undefined },
+          sources: resolved.sources,
+          addOns: resolved.addOns,
+          usage: {},
+          period: { start: periodStart, end: periodEnd },
+          planName: subscription.planVersion.plan.name,
+          intervalLabel: label,
+          periodLabel: `${formatDhakaDate(periodStart)} to ${formatDhakaDate(periodEnd)}`,
+        });
+        if (computed.total <= 0) {
           // Free plan: no invoice, the tenant just keeps going.
-          const periodEnd = addInterval(
-            now,
-            subscription.planVersion.interval,
-            subscription.planVersion.intervalDays,
-          );
           await this.prisma.$transaction([
             this.prisma.subscription.update({
               where: { id: subscription.id },
@@ -350,20 +387,43 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
           counts.trialsExpired += 1;
           continue;
         }
-        const periodStart = now;
-        const periodEnd = addInterval(
-          periodStart,
-          subscription.planVersion.interval,
-          subscription.planVersion.intervalDays,
-        );
+        // Free months (§4.6): a trial ending on a version with freeMonths
+        // rolls to ACTIVE with the counter set and no invoice. The
+        // counter is normally set at provisioning; the version value is
+        // the fallback (e.g. a version applied mid-trial). The roll does
+        // NOT decrement — the period starting now IS the first free
+        // period; the renewal job decrements at each period roll.
+        const freeMonths =
+          parsePricingDocument(subscription.planVersion.pricing).freeMonths ??
+          0;
+        const remaining = subscription.freePeriodsRemaining ?? 0;
+        if (remaining > 0 || freeMonths > 0) {
+          await this.prisma.$transaction([
+            this.prisma.subscription.update({
+              where: { id: subscription.id },
+              data: {
+                status: 'ACTIVE',
+                trialEndsAt: null,
+                currentPeriodStart: now,
+                currentPeriodEnd: periodEnd,
+                freePeriodsRemaining: Math.max(remaining, freeMonths),
+              },
+            }),
+            this.prisma.tenant.update({
+              where: { id: subscription.tenantId },
+              data: { status: 'ACTIVE', trialEndsAt: null },
+            }),
+          ]);
+          counts.trialsExpired += 1;
+          counts.freePeriodsStarted += 1;
+          continue;
+        }
         await this.createRenewalInvoice({
           tenant: subscription.tenant,
           subscriptionId: subscription.id,
-          planName: subscription.planVersion.plan.name,
-          price,
-          currency: subscription.planVersion.currency,
-          interval: subscription.planVersion.interval,
-          intervalDays: subscription.planVersion.intervalDays,
+          lines: computed.lines,
+          kind: 'SUBSCRIPTION',
+          metadata: computed.trace as unknown as Record<string, unknown>,
           periodStart,
           periodEnd,
           dueAt: graceEndsAt,
@@ -398,7 +458,13 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
 
   private async renewalInvoices(result: JobResult): Promise<void> {
     const now = new Date();
-    const counts = { invoicesCreated: 0, expiredToPastDue: 0, pendingApplied: 0 };
+    const counts = {
+      invoicesCreated: 0,
+      expiredToPastDue: 0,
+      pendingApplied: 0,
+      freePeriodsConsumed: 0,
+      zeroBillRolls: 0,
+    };
     const dueSoon = await this.prisma.subscription.findMany({
       where: {
         status: 'ACTIVE',
@@ -409,7 +475,15 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
       orderBy: { currentPeriodEnd: 'asc' },
       take: BILLING_JOB_BATCH_SIZE,
       include: {
-        tenant: { select: { id: true, name: true, ownerEmail: true, status: true } },
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            ownerEmail: true,
+            status: true,
+          },
+        },
         planVersion: { include: { plan: { select: { name: true } } } },
         pendingPlanVersion: { include: { plan: { select: { name: true } } } },
       },
@@ -460,52 +534,213 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
           counts.pendingApplied += 1;
         }
 
-        const price = Number(planVersion.price);
-        if (price <= 0) {
-          // Free plan: roll the period forward, no invoice.
+        // Timing (§4.3): fixed billing is pre-paid (invoice within the
+        // lead window), metered billing is post-paid (invoice only when
+        // the period has ended and usage is final). The lead is 3 days
+        // for month-or-longer cycles, 1 day for short cycles (7-day).
+        const pricing = parsePricingDocument(planVersion.pricing);
+        const metered = !!pricing.metering;
+        const leadDays = renewalLeadDays(
+          planVersion.interval,
+          planVersion.intervalDays,
+        );
+        if (
+          !metered &&
+          !periodEnded &&
+          subscription.currentPeriodEnd.getTime() >
+            now.getTime() + leadDays * DAY_MS
+        ) {
+          continue;
+        }
+        if (metered && !periodEnded) continue;
+
+        // Free months (§4.6): roll the period forward with no invoice
+        // and decrement the counter. Checked BEFORE the usage fetch for
+        // metered plans (a free period needs no usage read).
+        const freeRemaining = subscription.freePeriodsRemaining ?? 0;
+        if (metered && freeRemaining > 0) {
           const periodEnd = addInterval(
-            subscription.currentPeriodEnd > now ? subscription.currentPeriodEnd : now,
+            subscription.currentPeriodEnd,
             planVersion.interval,
             planVersion.intervalDays,
           );
           await this.prisma.subscription.update({
             where: { id: subscription.id },
-            data: { currentPeriodStart: now, currentPeriodEnd: periodEnd },
+            data: {
+              currentPeriodStart: subscription.currentPeriodEnd,
+              currentPeriodEnd: periodEnd,
+              freePeriodsRemaining: { decrement: 1 },
+            },
           });
+          counts.freePeriodsConsumed += 1;
           continue;
         }
 
-        const periodStart = subscription.currentPeriodEnd;
-        const periodEnd = addInterval(
-          periodStart,
+        const resolved = await this.pricing.resolveForSubscription(
+          subscription.id,
+          planVersion,
+        );
+        const label = this.intervalLabel(
           planVersion.interval,
           planVersion.intervalDays,
         );
-        const existing = await this.prisma.invoice.findFirst({
-          where: {
-            subscriptionId: subscription.id,
-            status: 'OPEN',
-            periodStart: { gte: periodStart },
-          },
-          select: { id: true },
-        });
         const graceDays = this.graceDaysFor(planVersion.graceDays);
-        if (!existing) {
-          await this.createRenewalInvoice({
-            tenant: subscription.tenant,
-            subscriptionId: subscription.id,
+
+        if (metered) {
+          // Post-paid: bill the period just ended, from the LIVE usage
+          // count (§4.4). A failed usage fetch records an error and the
+          // tenant is retried on the next tick — a metered invoice is
+          // never created from a guessed number.
+          let usage: Record<string, number>;
+          try {
+            usage = await this.pricing.fetchPeriodUsage(
+              subscription.tenantId,
+              subscription.tenant.slug,
+              subscription.currentPeriodStart,
+              subscription.currentPeriodEnd,
+            );
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            result.errors.push(
+              `renewal ${subscription.tenantId}: usage unavailable — ${message}`,
+            );
+            this.logger.error(
+              `Metered renewal skipped for ${subscription.tenantId} (usage fetch failed): ${message}`,
+            );
+            continue;
+          }
+          const computed = PricingEngine.compute({
+            pricing: resolved.pricing,
+            sources: resolved.sources,
+            addOns: resolved.addOns,
+            usage,
+            period: {
+              start: subscription.currentPeriodStart,
+              end: subscription.currentPeriodEnd,
+            },
             planName: planVersion.plan.name,
-            price,
-            currency: planVersion.currency,
-            interval: planVersion.interval,
-            intervalDays: planVersion.intervalDays,
-            periodStart,
-            periodEnd,
-            dueAt: periodEnded
-              ? new Date(now.getTime() + graceDays * DAY_MS)
-              : periodStart,
+            intervalLabel: label,
+            periodLabel: `${formatDhakaDate(subscription.currentPeriodStart)} to ${formatDhakaDate(subscription.currentPeriodEnd)}`,
           });
-          counts.invoicesCreated += 1;
+          if (computed.total <= 0) {
+            // Zero bill (no usage, no minimum, no base fee): roll the
+            // period forward, no invoice. Continuous periods keep the
+            // next usage window exact.
+            const periodEnd = addInterval(
+              subscription.currentPeriodEnd,
+              planVersion.interval,
+              planVersion.intervalDays,
+            );
+            await this.prisma.subscription.update({
+              where: { id: subscription.id },
+              data: {
+                currentPeriodStart: subscription.currentPeriodEnd,
+                currentPeriodEnd: periodEnd,
+              },
+            });
+            counts.zeroBillRolls += 1;
+            continue;
+          }
+          // Metered idempotency guard: an OPEN metered invoice already
+          // covering this exact period (the fixed guard below keys on
+          // the NEW period start and cannot see it).
+          const existingMetered = await this.prisma.invoice.findFirst({
+            where: {
+              subscriptionId: subscription.id,
+              status: 'OPEN',
+              kind: 'METERED',
+              periodStart: subscription.currentPeriodStart,
+            },
+            select: { id: true },
+          });
+          if (!existingMetered) {
+            await this.createRenewalInvoice({
+              tenant: subscription.tenant,
+              subscriptionId: subscription.id,
+              lines: computed.lines,
+              kind: 'METERED',
+              metadata: computed.trace as unknown as Record<string, unknown>,
+              periodStart: subscription.currentPeriodStart,
+              periodEnd: subscription.currentPeriodEnd,
+              dueAt: new Date(now.getTime() + graceDays * DAY_MS),
+            });
+            counts.invoicesCreated += 1;
+          }
+        } else {
+          const periodStart = subscription.currentPeriodEnd;
+          const periodEnd = addInterval(
+            periodStart,
+            planVersion.interval,
+            planVersion.intervalDays,
+          );
+          const computed = PricingEngine.compute({
+            pricing: resolved.pricing,
+            sources: resolved.sources,
+            addOns: resolved.addOns,
+            usage: {},
+            period: { start: periodStart, end: periodEnd },
+            planName: planVersion.plan.name,
+            intervalLabel: label,
+            periodLabel: `${formatDhakaDate(periodStart)} to ${formatDhakaDate(periodEnd)}`,
+          });
+          if (computed.total <= 0) {
+            // Free plan: roll the period forward, no invoice.
+            const rollEnd = addInterval(
+              subscription.currentPeriodEnd > now
+                ? subscription.currentPeriodEnd
+                : now,
+              planVersion.interval,
+              planVersion.intervalDays,
+            );
+            await this.prisma.subscription.update({
+              where: { id: subscription.id },
+              data: { currentPeriodStart: now, currentPeriodEnd: rollEnd },
+            });
+            continue;
+          }
+          if (freeRemaining > 0) {
+            const rollEnd = addInterval(
+              subscription.currentPeriodEnd > now
+                ? subscription.currentPeriodEnd
+                : now,
+              planVersion.interval,
+              planVersion.intervalDays,
+            );
+            await this.prisma.subscription.update({
+              where: { id: subscription.id },
+              data: {
+                currentPeriodStart: now,
+                currentPeriodEnd: rollEnd,
+                freePeriodsRemaining: { decrement: 1 },
+              },
+            });
+            counts.freePeriodsConsumed += 1;
+            continue;
+          }
+          const existing = await this.prisma.invoice.findFirst({
+            where: {
+              subscriptionId: subscription.id,
+              status: 'OPEN',
+              periodStart: { gte: periodStart },
+            },
+            select: { id: true },
+          });
+          if (!existing) {
+            await this.createRenewalInvoice({
+              tenant: subscription.tenant,
+              subscriptionId: subscription.id,
+              lines: computed.lines,
+              kind: 'SUBSCRIPTION',
+              metadata: computed.trace as unknown as Record<string, unknown>,
+              periodStart,
+              periodEnd,
+              dueAt: periodEnded
+                ? new Date(now.getTime() + graceDays * DAY_MS)
+                : periodStart,
+            });
+            counts.invoicesCreated += 1;
+          }
         }
         if (periodEnded) {
           const graceEndsAt = new Date(now.getTime() + graceDays * DAY_MS);
@@ -694,5 +929,48 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
       });
     }
     result.counts = { ...result.counts, ...counts };
+  }
+
+  /**
+   * Email-balance expiry (§14): expire lots past expiresAt (zero the
+   * remaining, EXPIRE ledger rows, cache update, audit) and send the
+   * once-per-lot expiry warning for lots inside the warn window. The
+   * low-balance mail is NOT here — it is consume-time (§10.3). Both
+   * halves are idempotent, so a double run is a no-op.
+   */
+  private async emailBalanceExpiry(result: JobResult): Promise<void> {
+    const now = new Date();
+    const expired = await this.emailBalance.expireLots(
+      now,
+      BILLING_JOB_BATCH_SIZE,
+    );
+    const warned = await this.emailBalance.warnExpiringLots(
+      now,
+      BILLING_JOB_BATCH_SIZE,
+    );
+    result.counts = {
+      ...result.counts,
+      lotsExpired: expired.lotsExpired,
+      emailsExpired: expired.emailsExpired,
+      tenantsAffected: expired.tenantsAffected,
+      expiryWarningsSent: warned.warningsSent,
+    };
+  }
+
+  /**
+   * Email-balance reconcile (§14): recompute Σ lots vs balanceCached
+   * for each tenant; on drift the service fixes the cache, writes an
+   * ADJUSTMENT ledger row and logs an error (drift indicates a bug —
+   * this job is the safety net, not the mechanism).
+   */
+  private async emailBalanceReconcile(result: JobResult): Promise<void> {
+    const reconciled = await this.emailBalance.reconcile(
+      BILLING_JOB_BATCH_SIZE,
+    );
+    result.counts = {
+      ...result.counts,
+      accountsChecked: reconciled.checked,
+      accountsDrifted: reconciled.drifted,
+    };
   }
 }

@@ -30,6 +30,8 @@ import {
   Skeleton,
   StatusBadge,
 } from '../components/ui';
+import { TenantEmailBalanceCard } from './tenant-email-balance';
+import { TenantPricingCard } from './tenant-pricing';
 
 type ConfirmKind =
   | 'impersonate'
@@ -1035,6 +1037,10 @@ export function TenantDetailPage() {
           plan value; a missing plan limit means unlimited.
         </p>
       </section>
+
+      <TenantEmailBalanceCard tenantId={tenantId} />
+
+      <TenantPricingCard tenant={tenant} />
 
       <section className="card">
         <div className="card-head">

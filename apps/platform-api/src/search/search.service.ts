@@ -122,13 +122,15 @@ const TYPE_DEF_BY_ID: Record<string, TypeDef> = Object.fromEntries(
   TYPE_DEFS.map((def) => [def.type, def]),
 );
 
-/** Human labels for the five fixed billing jobs (the jobs tab shows raw names). */
+/** Human labels for the fixed billing jobs (the jobs tab shows raw names). */
 const JOB_LABELS: Record<JobName, string> = {
   'trial-expiry': 'Trial expiry',
   'renewal-invoices': 'Renewal invoices',
   reminders: 'Payment reminders',
   'grace-suspend': 'Grace suspend',
   'cancel-at-period-end': 'Cancel at period end',
+  'email-balance-expiry': 'Email balance expiry',
+  'email-balance-reconcile': 'Email balance reconcile',
 };
 
 function day(value: Date | string): string {

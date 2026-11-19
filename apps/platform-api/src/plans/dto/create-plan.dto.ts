@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -10,7 +11,9 @@ import {
   Matches,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { PricingDocumentDto } from '../../pricing/dto/pricing-document.dto';
 
 export class CreatePlanDto {
   @IsString()
@@ -80,4 +83,16 @@ export class CreatePlanDto {
   @IsInt()
   @Min(0)
   graceDays?: number;
+
+  /**
+   * Structured pricing document (§3). When supplied, price is derived
+   * from pricing.baseFee.amount and the billing cycle from
+   * pricing.billingCycle (an explicitly supplied interval that disagrees
+   * with the cycle is a 400). When omitted, the document is built from
+   * price/interval (fixed-price plan).
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PricingDocumentDto)
+  pricing?: PricingDocumentDto;
 }

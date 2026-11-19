@@ -2,8 +2,16 @@ import { useEffect, useState } from 'react';
 import { Layers } from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
-import { formatDate, formatMoney, planLabel } from '../lib/format';
+import { formatDate, planLabel } from '../lib/format';
+import { parsePricingDocument, pricingSummary } from '../lib/pricing';
 import type { Plan, PlanVersion } from '../types';
+import {
+  buildPricingBody,
+  EMPTY_PRICING_FORM,
+  PricingFields,
+  pricingFormFrom,
+  type PricingForm,
+} from './plans-pricing';
 import {
   ConfirmDialog,
   EmptyState,
@@ -17,8 +25,6 @@ import {
 interface VersionForm {
   price: string;
   currency: string;
-  interval: 'MONTHLY' | 'YEARLY' | 'CUSTOM';
-  intervalDays: string;
   trialDays: string;
   graceDays: string;
   features: string;
@@ -28,8 +34,6 @@ interface VersionForm {
 const EMPTY_VERSION: VersionForm = {
   price: '0',
   currency: 'BDT',
-  interval: 'MONTHLY',
-  intervalDays: '',
   trialDays: '',
   graceDays: '',
   features: '',
@@ -40,8 +44,6 @@ function versionFormFrom(version: PlanVersion): VersionForm {
   return {
     price: String(version.price),
     currency: version.currency,
-    interval: (version.interval as VersionForm['interval']) ?? 'MONTHLY',
-    intervalDays: version.intervalDays ? String(version.intervalDays) : '',
     trialDays: String(version.trialDays ?? ''),
     graceDays:
       version.graceDays === null || version.graceDays === undefined
@@ -55,23 +57,23 @@ function versionFormFrom(version: PlanVersion): VersionForm {
 /** Parses the version form into an API body; returns a message on bad input. */
 function parseVersionForm(
   form: VersionForm,
+  pricing: PricingForm,
 ): { body: Record<string, unknown> } | { error: string } {
   const price = Number(form.price);
   if (!Number.isFinite(price) || price < 0) {
     return { error: 'Price must be a number of 0 or more.' };
   }
+  const currency = form.currency.trim() || 'BDT';
+  // The pricing document drives price (baseFee) and interval
+  // (billingCycle) on the server — the interval fields here are derived
+  // from the cycle, never typed separately, so they cannot disagree.
+  const priced = buildPricingBody(pricing, price, currency);
+  if ('error' in priced) return priced;
   const body: Record<string, unknown> = {
     price,
-    currency: form.currency.trim() || 'BDT',
-    interval: form.interval,
+    currency,
+    ...priced.body,
   };
-  if (form.interval === 'CUSTOM') {
-    const days = Number(form.intervalDays);
-    if (!Number.isInteger(days) || days < 1) {
-      return { error: 'A custom interval needs an interval length in days (1 or more).' };
-    }
-    body.intervalDays = days;
-  }
   if (form.trialDays.trim() !== '') {
     const days = Number(form.trialDays);
     if (!Number.isInteger(days) || days < 0) {
@@ -119,98 +121,83 @@ function parseVersionForm(
 function VersionFields({
   form,
   onChange,
+  pricing,
+  onPricingChange,
 }: {
   form: VersionForm;
   onChange: (next: VersionForm) => void;
+  pricing: PricingForm;
+  onPricingChange: (next: PricingForm) => void;
 }) {
   const set = (patch: Partial<VersionForm>) => onChange({ ...form, ...patch });
   return (
-    <div className="inline-form">
-      <label>
-        Price
-        <input
-          type="number"
-          min={0}
-          step="0.01"
-          value={form.price}
-          onChange={(event) => set({ price: event.target.value })}
-          required
-        />
-      </label>
-      <label>
-        Currency
-        <input
-          value={form.currency}
-          onChange={(event) => set({ currency: event.target.value })}
-          placeholder="BDT"
-        />
-      </label>
-      <label>
-        Billing interval
-        <select
-          value={form.interval}
-          onChange={(event) =>
-            set({ interval: event.target.value as VersionForm['interval'] })
-          }
-        >
-          <option value="MONTHLY">Monthly</option>
-          <option value="YEARLY">Yearly</option>
-          <option value="CUSTOM">Custom (days)</option>
-        </select>
-      </label>
-      {form.interval === 'CUSTOM' ? (
+    <>
+      <div className="inline-form">
         <label>
-          Interval days
+          Base fee
           <input
             type="number"
-            min={1}
-            step={1}
-            value={form.intervalDays}
-            onChange={(event) => set({ intervalDays: event.target.value })}
+            min={0}
+            step="0.01"
+            value={form.price}
+            onChange={(event) => set({ price: event.target.value })}
             required
           />
         </label>
-      ) : null}
-      <label>
-        Trial days
-        <input
-          type="number"
-          min={0}
-          step={1}
-          value={form.trialDays}
-          onChange={(event) => set({ trialDays: event.target.value })}
-          placeholder="Platform default"
-        />
-      </label>
-      <label>
-        Grace days
-        <input
-          type="number"
-          min={0}
-          step={1}
-          value={form.graceDays}
-          onChange={(event) => set({ graceDays: event.target.value })}
-          placeholder="Platform default"
-        />
-      </label>
-      <label>
-        Features (comma-separated keys)
-        <input
-          value={form.features}
-          onChange={(event) => set({ features: event.target.value })}
-          placeholder="admin_products, admin_orders"
-        />
-      </label>
-      <label>
-        Limits (JSON object of numbers)
-        <textarea
-          value={form.limits}
-          onChange={(event) => set({ limits: event.target.value })}
-          placeholder={'{"products": 100}'}
-          rows={3}
-        />
-      </label>
-    </div>
+        <label>
+          Currency
+          <input
+            value={form.currency}
+            onChange={(event) => set({ currency: event.target.value })}
+            placeholder="BDT"
+          />
+        </label>
+        <label>
+          Trial days
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={form.trialDays}
+            onChange={(event) => set({ trialDays: event.target.value })}
+            placeholder="Platform default"
+          />
+        </label>
+        <label>
+          Grace days
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={form.graceDays}
+            onChange={(event) => set({ graceDays: event.target.value })}
+            placeholder="Platform default"
+          />
+        </label>
+        <label>
+          Features (comma-separated keys)
+          <input
+            value={form.features}
+            onChange={(event) => set({ features: event.target.value })}
+            placeholder="admin_products, admin_orders"
+          />
+        </label>
+        <label>
+          Limits (JSON object of numbers)
+          <textarea
+            value={form.limits}
+            onChange={(event) => set({ limits: event.target.value })}
+            placeholder={'{"products": 100}'}
+            rows={3}
+          />
+        </label>
+      </div>
+      <PricingFields
+        form={pricing}
+        onChange={onPricingChange}
+        currency={form.currency.trim() || 'BDT'}
+      />
+    </>
   );
 }
 
@@ -231,6 +218,10 @@ export function PlansPage() {
   const [editing, setEditing] = useState<Plan | null>(null);
   const [newVersionFor, setNewVersionFor] = useState<Plan | null>(null);
   const [archiving, setArchiving] = useState<Plan | null>(null);
+  const [defaultWarning, setDefaultWarning] = useState<{
+    plan: Plan;
+    version: PlanVersion;
+  } | null>(null);
 
   // Create-plan form state.
   const [createSlug, setCreateSlug] = useState('');
@@ -241,6 +232,8 @@ export function PlansPage() {
   const [createBadge, setCreateBadge] = useState('');
   const [createSortOrder, setCreateSortOrder] = useState('');
   const [createVersion, setCreateVersion] = useState<VersionForm>(EMPTY_VERSION);
+  const [createPricing, setCreatePricing] =
+    useState<PricingForm>(EMPTY_PRICING_FORM);
 
   // Edit-plan form state.
   const [editName, setEditName] = useState('');
@@ -253,6 +246,8 @@ export function PlansPage() {
 
   // New-version form state.
   const [versionForm, setVersionForm] = useState<VersionForm>(EMPTY_VERSION);
+  const [versionPricing, setVersionPricing] =
+    useState<PricingForm>(EMPTY_PRICING_FORM);
 
   const load = () => {
     setLoading(true);
@@ -321,12 +316,23 @@ export function PlansPage() {
         body: JSON.stringify({}),
       }).then((r) => readJson(r));
       setNotice('Signup default updated. New signups provision onto this version.');
+      setDefaultWarning(null);
       load();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setBusy(null);
     }
+  }
+
+  function requestDefaultVersion(plan: Plan, version: PlanVersion) {
+    // A private plan as the signup default is allowed but usually a
+    // mistake (new signups land on a plan nobody can see) — warn first.
+    if (!plan.isPublic) {
+      setDefaultWarning({ plan, version });
+      return;
+    }
+    void setDefaultVersion(plan.id, version.id);
   }
 
   function openCreate() {
@@ -338,13 +344,14 @@ export function PlansPage() {
     setCreateBadge('');
     setCreateSortOrder('');
     setCreateVersion(EMPTY_VERSION);
+    setCreatePricing(EMPTY_PRICING_FORM);
     setError(null);
     setCreating(true);
   }
 
   async function submitCreate(event: React.FormEvent) {
     event.preventDefault();
-    const parsed = parseVersionForm(createVersion);
+    const parsed = parseVersionForm(createVersion, createPricing);
     if ('error' in parsed) {
       setError(parsed.error);
       return;
@@ -421,6 +428,15 @@ export function PlansPage() {
   function openNewVersion(plan: Plan) {
     const current = plan.currentVersion ?? plan.versions[0] ?? null;
     setVersionForm(current ? versionFormFrom(current) : EMPTY_VERSION);
+    setVersionPricing(
+      current
+        ? pricingFormFrom(
+            parsePricingDocument(current.pricing),
+            current.interval,
+            current.intervalDays,
+          )
+        : EMPTY_PRICING_FORM,
+    );
     setError(null);
     setNewVersionFor(plan);
   }
@@ -428,7 +444,7 @@ export function PlansPage() {
   async function submitNewVersion(event: React.FormEvent) {
     event.preventDefault();
     if (!newVersionFor) return;
-    const parsed = parseVersionForm(versionForm);
+    const parsed = parseVersionForm(versionForm, versionPricing);
     if ('error' in parsed) {
       setError(parsed.error);
       return;
@@ -582,8 +598,17 @@ export function PlansPage() {
                   <dd>{planLabel(version)}</dd>
                 </div>
                 <div>
-                  <dt>Price</dt>
-                  <dd>{formatMoney(version?.price, version?.currency)}</dd>
+                  <dt>Pricing</dt>
+                  <dd>
+                    {version
+                      ? pricingSummary(parsePricingDocument(version.pricing), {
+                          price: version.price,
+                          currency: version.currency,
+                          interval: version.interval,
+                          intervalDays: version.intervalDays,
+                        })
+                      : '—'}
+                  </dd>
                 </div>
                 <div>
                   <dt>Trial</dt>
@@ -620,7 +645,13 @@ export function PlansPage() {
               <ul className="muted-note">
                 {plan.versions.map((v) => (
                   <li key={v.id}>
-                    v{v.version} — {formatMoney(v.price, v.currency)}
+                    v{v.version} —{' '}
+                    {pricingSummary(parsePricingDocument(v.pricing), {
+                      price: v.price,
+                      currency: v.currency,
+                      interval: v.interval,
+                      intervalDays: v.intervalDays,
+                    })}
                     {v.archivedAt ? ' (archived)' : ''}
                     {v.isDefault ? (
                       <span className="badge badge--accent">Signup default</span>
@@ -628,7 +659,7 @@ export function PlansPage() {
                       <button
                         type="button"
                         className="button button--ghost button--sm"
-                        onClick={() => void setDefaultVersion(plan.id, v.id)}
+                        onClick={() => requestDefaultVersion(plan, v)}
                         disabled={!!busy}
                       >
                         {busy === `default:${v.id}`
@@ -761,7 +792,12 @@ export function PlansPage() {
             </label>
           </div>
           <h3 className="subhead">First version</h3>
-          <VersionFields form={createVersion} onChange={setCreateVersion} />
+          <VersionFields
+            form={createVersion}
+            onChange={setCreateVersion}
+            pricing={createPricing}
+            onPricingChange={setCreatePricing}
+          />
           <div className="form-actions">
             <button
               type="submit"
@@ -887,7 +923,12 @@ export function PlansPage() {
               Prefilled from the current version. Existing subscriptions stay
               on their version until you apply the new one.
             </p>
-            <VersionFields form={versionForm} onChange={setVersionForm} />
+            <VersionFields
+              form={versionForm}
+              onChange={setVersionForm}
+              pricing={versionPricing}
+              onPricingChange={setVersionPricing}
+            />
             <div className="form-actions">
               <button
                 type="submit"
@@ -918,6 +959,23 @@ export function PlansPage() {
           busy={busy === `archive:${archiving.id}`}
           onConfirm={() => void archivePlan()}
           onClose={() => setArchiving(null)}
+        />
+      ) : null}
+
+      {defaultWarning ? (
+        <ConfirmDialog
+          open
+          title="Private plan as signup default?"
+          body={`"${defaultWarning.plan.name}" is private — it is not shown on signup. Making v${defaultWarning.version.version} the signup default means new signups provision onto a plan nobody can see. That is allowed, but usually a mistake.`}
+          confirmLabel="Set as signup default anyway"
+          busy={busy === `default:${defaultWarning.version.id}`}
+          onConfirm={() =>
+            void setDefaultVersion(
+              defaultWarning.plan.id,
+              defaultWarning.version.id,
+            )
+          }
+          onClose={() => setDefaultWarning(null)}
         />
       ) : null}
     </>

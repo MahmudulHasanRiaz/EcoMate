@@ -1,3 +1,5 @@
+import { parsePricingDocument } from '../pricing/pricing-document';
+
 /**
  * Prisma Decimal columns serialize to JSON STRINGS ("1500") — but the
  * API contract (landing PublicPlan + console PlanVersion) says number.
@@ -12,11 +14,23 @@ export function decimalToNumber(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
-/** A plan version row with its Decimal price converted to a JSON number. */
-export function normalizeVersionPrice<T extends { price?: unknown }>(
+/**
+ * A plan version row with its Decimal price converted to a JSON number
+ * and its pricing document parsed/normalised. The pricing doc is JSON,
+ * so its numbers are already JSON numbers (no Decimal conversion
+ * needed) — the parse only guarantees a clean, known shape (a legacy
+ * `{}` becomes `{ pricingVersion: 1 }`).
+ */
+export function normalizeVersionPrice<
+  T extends { price?: unknown; pricing?: unknown },
+>(
   version: T,
-): T & { price: number | null } {
-  return { ...version, price: decimalToNumber(version.price) };
+): T & { price: number | null; pricing: ReturnType<typeof parsePricingDocument> } {
+  return {
+    ...version,
+    price: decimalToNumber(version.price),
+    pricing: parsePricingDocument(version.pricing),
+  };
 }
 
 /**
