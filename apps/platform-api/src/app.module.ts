@@ -13,6 +13,7 @@ import { DomainsModule } from './domains/domains.module';
 import { EmailBalanceModule } from './email-balance/email-balance.module';
 import { HealthModule } from './health/health.module';
 import { InternalModule } from './internal/internal.module';
+import { InternalDomainsModule } from './domains/internal-domains.module';
 import { JobsModule } from './jobs/jobs.module';
 import { LandingContentModule } from './landing-content/landing-content.module';
 import { LeadsModule } from './leads/leads.module';
@@ -47,6 +48,7 @@ import { UsersModule } from './users/users.module';
     EmailBalanceModule,
     HealthModule,
     InternalModule,
+    InternalDomainsModule,
     JobsModule,
     LandingContentModule,
     LeadsModule,

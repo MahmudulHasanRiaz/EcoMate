@@ -26,6 +26,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { UploadModule } from './upload/upload.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { SmtpSettingsModule } from './smtp-settings/smtp-settings.module';
+import { TenantDomainsModule } from './tenant-domains/tenant-domains.module';
 import { MobileDownloadModule } from './mobile-download/mobile-download.module';
 import { MobileBuilderModule } from './mobile-builder/mobile-builder.module';
 import { MediaModule } from './media/media.module';
@@ -152,6 +153,7 @@ import { TenantLimitGuard } from './entitlements/tenant-limit.guard';
     UploadModule,
     SystemSettingsModule,
     SmtpSettingsModule,
+    TenantDomainsModule,
     MobileDownloadModule,
     MobileBuilderModule,
     MediaModule,

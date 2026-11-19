@@ -148,6 +148,7 @@ import { Route as AuthenticatedMonSettingsAuthIndexRouteImport } from './routes/
 import { Route as AuthenticatedMonSettingsBillingIndexRouteImport } from './routes/_authenticated/mon/settings/billing/index'
 import { Route as AuthenticatedMonSettingsBrandingIndexRouteImport } from './routes/_authenticated/mon/settings/branding/index'
 import { Route as AuthenticatedMonSettingsCourierIndexRouteImport } from './routes/_authenticated/mon/settings/courier/index'
+import { Route as AuthenticatedMonSettingsDomainsIndexRouteImport } from './routes/_authenticated/mon/settings/domains/index'
 import { Route as AuthenticatedMonSettingsGatewaysIndexRouteImport } from './routes/_authenticated/mon/settings/gateways/index'
 import { Route as AuthenticatedMonSettingsGeneralIndexRouteImport } from './routes/_authenticated/mon/settings/general/index'
 import { Route as AuthenticatedMonSettingsHomepageIndexRouteImport } from './routes/_authenticated/mon/settings/homepage/index'
@@ -999,6 +1000,12 @@ const AuthenticatedMonSettingsCourierIndexRoute =
     path: '/courier/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsDomainsIndexRoute =
+  AuthenticatedMonSettingsDomainsIndexRouteImport.update({
+    id: '/domains/',
+    path: '/domains/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsGatewaysIndexRoute =
   AuthenticatedMonSettingsGatewaysIndexRouteImport.update({
     id: '/gateways/',
@@ -1393,6 +1400,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/billing/': typeof AuthenticatedMonSettingsBillingIndexRoute
   '/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
+  '/mon/settings/domains/': typeof AuthenticatedMonSettingsDomainsIndexRoute
   '/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/homepage/': typeof AuthenticatedMonSettingsHomepageIndexRoute
@@ -1574,6 +1582,7 @@ export interface FileRoutesByTo {
   '/mon/settings/billing': typeof AuthenticatedMonSettingsBillingIndexRoute
   '/mon/settings/branding': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/mon/settings/courier': typeof AuthenticatedMonSettingsCourierIndexRoute
+  '/mon/settings/domains': typeof AuthenticatedMonSettingsDomainsIndexRoute
   '/mon/settings/gateways': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/mon/settings/general': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/mon/settings/homepage': typeof AuthenticatedMonSettingsHomepageIndexRoute
@@ -1757,6 +1766,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/billing/': typeof AuthenticatedMonSettingsBillingIndexRoute
   '/_authenticated/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
   '/_authenticated/mon/settings/courier/': typeof AuthenticatedMonSettingsCourierIndexRoute
+  '/_authenticated/mon/settings/domains/': typeof AuthenticatedMonSettingsDomainsIndexRoute
   '/_authenticated/mon/settings/gateways/': typeof AuthenticatedMonSettingsGatewaysIndexRoute
   '/_authenticated/mon/settings/general/': typeof AuthenticatedMonSettingsGeneralIndexRoute
   '/_authenticated/mon/settings/homepage/': typeof AuthenticatedMonSettingsHomepageIndexRoute
@@ -1940,6 +1950,7 @@ export interface FileRouteTypes {
     | '/mon/settings/billing/'
     | '/mon/settings/branding/'
     | '/mon/settings/courier/'
+    | '/mon/settings/domains/'
     | '/mon/settings/gateways/'
     | '/mon/settings/general/'
     | '/mon/settings/homepage/'
@@ -2121,6 +2132,7 @@ export interface FileRouteTypes {
     | '/mon/settings/billing'
     | '/mon/settings/branding'
     | '/mon/settings/courier'
+    | '/mon/settings/domains'
     | '/mon/settings/gateways'
     | '/mon/settings/general'
     | '/mon/settings/homepage'
@@ -2303,6 +2315,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/billing/'
     | '/_authenticated/mon/settings/branding/'
     | '/_authenticated/mon/settings/courier/'
+    | '/_authenticated/mon/settings/domains/'
     | '/_authenticated/mon/settings/gateways/'
     | '/_authenticated/mon/settings/general/'
     | '/_authenticated/mon/settings/homepage/'
@@ -3328,6 +3341,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsCourierIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/domains/': {
+      id: '/_authenticated/mon/settings/domains/'
+      path: '/domains'
+      fullPath: '/mon/settings/domains/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsDomainsIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/gateways/': {
       id: '/_authenticated/mon/settings/gateways/'
       path: '/gateways'
@@ -3624,6 +3644,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsBillingIndexRoute: typeof AuthenticatedMonSettingsBillingIndexRoute
   AuthenticatedMonSettingsBrandingIndexRoute: typeof AuthenticatedMonSettingsBrandingIndexRoute
   AuthenticatedMonSettingsCourierIndexRoute: typeof AuthenticatedMonSettingsCourierIndexRoute
+  AuthenticatedMonSettingsDomainsIndexRoute: typeof AuthenticatedMonSettingsDomainsIndexRoute
   AuthenticatedMonSettingsGatewaysIndexRoute: typeof AuthenticatedMonSettingsGatewaysIndexRoute
   AuthenticatedMonSettingsGeneralIndexRoute: typeof AuthenticatedMonSettingsGeneralIndexRoute
   AuthenticatedMonSettingsHomepageIndexRoute: typeof AuthenticatedMonSettingsHomepageIndexRoute
@@ -3654,6 +3675,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsBrandingIndexRoute,
     AuthenticatedMonSettingsCourierIndexRoute:
       AuthenticatedMonSettingsCourierIndexRoute,
+    AuthenticatedMonSettingsDomainsIndexRoute:
+      AuthenticatedMonSettingsDomainsIndexRoute,
     AuthenticatedMonSettingsGatewaysIndexRoute:
       AuthenticatedMonSettingsGatewaysIndexRoute,
     AuthenticatedMonSettingsGeneralIndexRoute:

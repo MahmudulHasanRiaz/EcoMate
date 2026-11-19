@@ -143,7 +143,12 @@ async function seedTrialPlan(): Promise<void> {
         currency: 'BDT',
         interval: 'MONTHLY',
         trialDays: 14,
-        features: ['*'],
+        // Trial includes every catalog feature EXCEPT custom_domain (Boss
+        // decision 2026-11-19: trial tenants don't get custom domains; an
+        // operator can grant it later from the console plan editor).
+        features: Object.values(FEATURES)
+          .map((f) => f.key)
+          .filter((k) => k !== 'custom_domain'),
         limits: {},
         graceDays: 7,
         isDefault: !currentDefault,

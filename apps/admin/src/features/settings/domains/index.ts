@@ -1,0 +1,1 @@
+export { DomainsSettings } from './domains'
