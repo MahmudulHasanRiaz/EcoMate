@@ -1,0 +1,67 @@
+name: Deploy SaaS
+
+# Manual SaaS deployment only.
+#
+# This repository is the SaaS product. It must never deploy the archived
+# per-client stacks from EcoMate-Web. The job is skipped unless:
+#   - the repository is MahmudulHasanRiaz/EcoMate;
+#   - the repository variable SAAS_DEPLOY_ENABLED=true;
+#   - the operator ticks the confirm checkbox.
+#
+# The actual redeploy target is a Portainer webhook stored in the
+# SAAS_PORTAINER_WEBHOOK secret. No images are built here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Deploy the SaaS stack?'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy SaaS stack
+    if: >-
+      github.repository == 'MahmudulHasanRiaz/EcoMate' &&
+      vars.SAAS_DEPLOY_ENABLED == 'true' &&
+      github.event.inputs.confirm == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Trigger Portainer redeploy
+        env:
+          WEBHOOK_URL: ${{ secrets.SAAS_PORTAINER_WEBHOOK }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "SAAS_PORTAINER_WEBHOOK is not configured. Refusing to deploy."
+            exit 1
+          fi
+          echo "::add-mask::$WEBHOOK_URL"
+
+          RESPONSE_FILE="/tmp/saas-deploy-response.txt"
+          MAX_TRIES=3
+          TRY=1
+          HTTP_CODE=0
+          while [ "$TRY" -le "$MAX_TRIES" ]; do
+            echo "Attempt $TRY of $MAX_TRIES..."
+            HTTP_CODE=$(curl -w "%{http_code}" -s -S -o "$RESPONSE_FILE" \
+              -X POST -k --max-time 30 "$WEBHOOK_URL") || HTTP_CODE=0
+            echo "HTTP status: $HTTP_CODE"
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              break
+            fi
+            if [ "$TRY" -lt "$MAX_TRIES" ]; then sleep $((2 ** (TRY - 1))); fi
+            TRY=$((TRY + 1))
+          done
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "SaaS redeploy failed after $MAX_TRIES attempts (HTTP $HTTP_CODE)."
+            exit 1
+          fi
+          echo "SaaS redeploy accepted (HTTP $HTTP_CODE). Confirm the stack is healthy in Portainer."
