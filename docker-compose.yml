@@ -6,6 +6,11 @@
 #   images on redeploy instead; see the deploy-saas workflow).
 # - Networks MUST use `driver: overlay` (bridge is node-local and breaks
 #   multi-node scaling).
+# - NO NESTED ${...:-...${...}...} expressions: Portainer's git-stack
+#   substitution mangles them (proven live 2026-11-20: the backend got
+#   the literal username "${POSTGRES_USER" and crash-looped). Build values
+#   directly from simple ${VAR:-default} parts; wholesale URL overrides
+#   are gone — override the parts (POSTGRES_*, CLIENT_DOMAIN) instead.
 # Swarm ignores depends_on ordering entirely, so every service must
 # tolerate briefly-unavailable dependencies (retries + restarts).
 # (All proven live against the KVM4 Swarm endpoint, 2026-11-20.)
@@ -128,7 +133,7 @@ services:
       SAAS_PRIMARY_UNHEALTHY: ${SAAS_PRIMARY_UNHEALTHY:-false}
       SAAS_CUSTOM_DOMAIN_CNAME: ${SAAS_CUSTOM_DOMAIN_CNAME:-}
       SAAS_ALLOW_EXTERNAL_FALLBACK: ${SAAS_ALLOW_EXTERNAL_FALLBACK:-false}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecomate}}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecomate}
       # Preferred tenant DSN (the tenancy layer reads this first, falling
       # back to DATABASE_URL). Set explicitly so the tenant database name
       # is one value everywhere (D9), not an accident of the fallback.
@@ -141,7 +146,7 @@ services:
       # grants it DML. Migrations keep running as the owner via
       # DATABASE_URL. The password must be URL-safe (letters, digits,
       # hyphen, underscore) — it is embedded in this DSN.
-      TENANT_DATABASE_URL: ${TENANT_DATABASE_URL:-postgresql://ecomate_app:${TENANT_APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-ecomate}}
+      TENANT_DATABASE_URL: postgresql://ecomate_app:${TENANT_APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-ecomate}
       TENANT_APP_DB_PASSWORD: ${TENANT_APP_DB_PASSWORD:-}
       REDIS_URL: redis://redis:6379
       # Platform control-plane link (registry sync, billing proxy,
@@ -190,11 +195,11 @@ services:
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
+      BETTER_AUTH_URL: https://${CLIENT_DOMAIN:-mac.riaz.com.bd}
       PORT: 4000
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
-      APP_URL: ${APP_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
-      STOREFRONT_URL: ${STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
+      CORS_ORIGIN: http://localhost:3000,https://${CLIENT_DOMAIN:-mac.riaz.com.bd}
+      APP_URL: https://${CLIENT_DOMAIN:-mac.riaz.com.bd}
+      STOREFRONT_URL: https://${CLIENT_DOMAIN:-mac.riaz.com.bd}
       BACKUP_MAX_UPLOAD_BYTES: ${BACKUP_MAX_UPLOAD_BYTES:-107374182400}
       BACKUP_MAX_RESTORE_BYTES: ${BACKUP_MAX_RESTORE_BYTES:-107374182400}
       BACKUP_STORAGE_DIR: ${BACKUP_STORAGE_DIR:-/app/backup-storage}
@@ -272,7 +277,7 @@ services:
       BULL_BOARD_ENABLED: ${BULL_BOARD_ENABLED:-true}
       # Platform database URL (Phase 8): db_files backups dump it into
       # platform.sql. Same value as the platform-api service.
-      PLATFORM_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ecomate_platform}
+      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ecomate_platform
     depends_on:
       - postgres
       - redis
@@ -328,13 +333,13 @@ services:
       # Guards POST /api/revalidate (on-demand cache invalidation, P4).
       # Leave empty to keep the endpoint disabled (401 for every call).
       REVALIDATION_SECRET: ${REVALIDATION_SECRET:-}
-      NEXT_PUBLIC_API_URL: ${STORE_NEXT_PUBLIC_API_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}/api}
-      NEXT_PUBLIC_STOREFRONT_URL: ${STORE_NEXT_PUBLIC_STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
+      NEXT_PUBLIC_API_URL: https://${CLIENT_DOMAIN:-mac.riaz.com.bd}/api
+      NEXT_PUBLIC_STOREFRONT_URL: https://${CLIENT_DOMAIN:-mac.riaz.com.bd}
       # Same value as a plain runtime env (no NEXT_PUBLIC_ prefix, so
       # Next.js does NOT inline it at build time): the storefront reads
       # it at runtime as the env fallback for canonicals (lib/site-url.ts
       # envSiteUrl — the Settings domain wins over it when set).
-      STORE_NEXT_PUBLIC_STOREFRONT_URL: ${STORE_NEXT_PUBLIC_STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
+      STORE_NEXT_PUBLIC_STOREFRONT_URL: https://${CLIENT_DOMAIN:-mac.riaz.com.bd}
       NEXT_PUBLIC_GA_MEASUREMENT_ID: ${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}
       NEXT_PUBLIC_GA_ADS_CONVERSION_ID: ${NEXT_PUBLIC_GA_ADS_CONVERSION_ID:-}
       POS_URL: ${POS_URL:-http://pos:80}
@@ -436,7 +441,7 @@ services:
     environment:
       NODE_ENV: production
       PLATFORM_PORT: ${PLATFORM_PORT:-4100}
-      PLATFORM_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ecomate_platform}
+      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ecomate_platform
       PLATFORM_JWT_SECRET: ${PLATFORM_JWT_SECRET}
       PLATFORM_JWT_REFRESH_SECRET: ${PLATFORM_JWT_REFRESH_SECRET}
       # Real defaults (not empty): the auth service reads these with ??
@@ -470,7 +475,7 @@ services:
       # SMTP_FROM falls back to PLATFORM_MAIL_FROM in code (?? chain) —
       # an empty value here would BREAK that fallback, so the default
       # chains through PLATFORM_MAIL_FROM explicitly.
-      SMTP_FROM: ${SMTP_FROM:-${PLATFORM_MAIL_FROM:-EcoMate <no-reply@ecomate.bd>}}
+      SMTP_FROM: ${PLATFORM_MAIL_FROM:-EcoMate <no-reply@ecomate.bd>}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       TURNSTILE_VERIFY_URL: ${TURNSTILE_VERIFY_URL:-}
       # No nested defaults here (git deploys): each origin is set explicitly
@@ -640,7 +645,7 @@ services:
       # Ask token for on-demand TLS. Falls back to the internal service
       # secret (same fallback the platform API uses) — the value must
       # never be empty, or every ask 401s and no tenant cert issues.
-      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-${INTERNAL_SERVICE_SECRET:-}}
+      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
       # Let's Encrypt account email (expiry notices). Caddy rejects an empty
       # email at config load, so the default is baked in here and in the
       # Caddyfile placeholder itself.
