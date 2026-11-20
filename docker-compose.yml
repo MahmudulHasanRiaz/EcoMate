@@ -1,3 +1,9 @@
+# NOTE (Swarm): this stack deploys with `docker stack deploy` via Portainer
+# on a Swarm endpoint. `depends_on` MUST stay in LIST form — the long
+# (mapping) form with `condition:` fails the stack deploy parse
+# ("services.<name>.depends_on must be a list", proven live 2026-11-20).
+# Swarm ignores depends_on ordering entirely, so every service must
+# tolerate briefly-unavailable dependencies (retries + restarts).
 networks:
   ecomate-network:
     driver: bridge
@@ -263,17 +269,14 @@ services:
       # platform.sql. Same value as the platform-api service.
       PLATFORM_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ecomate_platform}
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - postgres
+      - redis
       # Ordering only (service_started, NOT service_healthy): the backend
       # must keep serving tenants if the platform API is briefly down
       # (registry sync keeps last-known-good). Hard-gating tenant boot on
       # the control plane would couple tenant availability to platform
       # availability.
-      platform-api:
-        condition: service_started
+      - platform-api
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/health"]
       interval: 30s
@@ -338,12 +341,10 @@ services:
       # to restore the previous behaviour (backend serves the bytes).
       UPLOADS_URL: ${UPLOADS_URL:-http://media-static:80}
     depends_on:
-      backend:
-        # Wait until the backend has finished its boot migrations and
-        # /api/health passes — starting earlier leaves the storefront
-        # serving pages whose API is still down (post-redeploy PDP
-        # errors, 2026-11-03).
-        condition: service_healthy
+      - backend
+        # NOTE: no health gating — Swarm ignores depends_on entirely.
+        # This only orders startup under plain compose; dependants must
+        # tolerate a briefly-unavailable backend (retries + restarts).
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 30s
@@ -374,12 +375,10 @@ services:
       # auto-detect (admin.* host -> pos.* host, localhost -> :5174).
       VITE_POS_URL: ${ADMIN_VITE_POS_URL:-}
     depends_on:
-      backend:
-        # Wait until the backend has finished its boot migrations and
-        # /api/health passes — starting earlier leaves the storefront
-        # serving pages whose API is still down (post-redeploy PDP
-        # errors, 2026-11-03).
-        condition: service_healthy
+      - backend
+        # NOTE: no health gating — Swarm ignores depends_on entirely.
+        # This only orders startup under plain compose; dependants must
+        # tolerate a briefly-unavailable backend (retries + restarts).
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80${ADMIN_VITE_BASE:-/admin/}"]
       interval: 30s
@@ -404,12 +403,10 @@ services:
     ports:
       - "${POS_PORT:-8081}:80"
     depends_on:
-      backend:
-        # Wait until the backend has finished its boot migrations and
-        # /api/health passes — starting earlier leaves the storefront
-        # serving pages whose API is still down (post-redeploy PDP
-        # errors, 2026-11-03).
-        condition: service_healthy
+      - backend
+        # NOTE: no health gating — Swarm ignores depends_on entirely.
+        # This only orders startup under plain compose; dependants must
+        # tolerate a briefly-unavailable backend (retries + restarts).
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/pos/"]
       interval: 30s
@@ -555,10 +552,8 @@ services:
       TLS_PROBE_TIMEOUT_MS: ${TLS_PROBE_TIMEOUT_MS:-10000}
       TLS_PRIMARY_PROBE_ENABLED: ${TLS_PRIMARY_PROBE_ENABLED:-}
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - postgres
+      - redis
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4100/api/health"]
       interval: 30s
@@ -584,8 +579,7 @@ services:
     networks:
       - ecomate-network
     depends_on:
-      platform-api:
-        condition: service_healthy
+      - platform-api
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
       interval: 30s
@@ -619,8 +613,7 @@ services:
       # NEXT_PUBLIC_TURNSTILE_SITE_KEY is build-time (baked into the JS
       # bundle by CI) — NOT a runtime var, do not put it here.
     depends_on:
-      platform-api:
-        condition: service_healthy
+      - platform-api
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3002/api/health"]
       interval: 30s
@@ -669,12 +662,9 @@ services:
       PLATFORM_ADMIN_HOST: ${PLATFORM_ADMIN_HOST:-saas.ecomate.bd}
       PLATFORM_API_HOST: ${PLATFORM_API_HOST:-api.ecomate.bd}
     depends_on:
-      backend:
-        condition: service_healthy
-      storefront:
-        condition: service_healthy
-      platform-api:
-        condition: service_healthy
+      - backend
+      - storefront
+      - platform-api
     healthcheck:
       # Admin API on localhost only — port 2019 is NOT published.
       # Probe /config/, NOT /: the admin API root is a 404 in Caddy 2
