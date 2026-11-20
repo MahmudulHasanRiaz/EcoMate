@@ -1,12 +1,19 @@
 # NOTE (Swarm): this stack deploys with `docker stack deploy` via Portainer
-# on a Swarm endpoint. `depends_on` MUST stay in LIST form — the long
-# (mapping) form with `condition:` fails the stack deploy parse
-# ("services.<name>.depends_on must be a list", proven live 2026-11-20).
+# on a Swarm endpoint, which validates against the Compose v3 schema:
+# - `depends_on` MUST stay in LIST form (long form fails: "must be a list").
+# - NO `platform:` (rejected: "Additional property platform is not allowed").
+# - NO `pull_policy:` (not in the v3 schema either — Portainer re-pulls
+#   images on redeploy instead; see the deploy-saas workflow).
+# - Networks MUST use `driver: overlay` (bridge is node-local and breaks
+#   multi-node scaling).
 # Swarm ignores depends_on ordering entirely, so every service must
 # tolerate briefly-unavailable dependencies (retries + restarts).
+# (All proven live against the KVM4 Swarm endpoint, 2026-11-20.)
 networks:
   ecomate-network:
-    driver: bridge
+    # Overlay (not bridge): Swarm stacks need overlay networking, and
+    # bridge is node-local — it would break multi-node scaling.
+    driver: overlay
 
 volumes:
   postgres-data:
@@ -99,8 +106,6 @@ services:
 
   backend:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-backend:latest
-    pull_policy: always
-    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -307,8 +312,6 @@ services:
 
   storefront:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-storefront:latest
-    pull_policy: always
-    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -361,8 +364,6 @@ services:
 
   admin:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-admin:latest
-    pull_policy: always
-    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -395,8 +396,6 @@ services:
 
   pos:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-pos:latest
-    pull_policy: always
-    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -428,8 +427,6 @@ services:
   # "${PLATFORM_PORT:-4100}:4100" mapping can be enabled.
   platform-api:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-platform-api:latest
-    pull_policy: always
-    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -573,8 +570,6 @@ services:
   # VITE_* vars are build-time, baked in by CI).
   platform-admin:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-platform-admin:latest
-    pull_policy: always
-    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -598,8 +593,6 @@ services:
   # Browser /api/* calls are rewritten server-side to the platform API.
   landing:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-landing:latest
-    pull_policy: always
-    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -634,8 +627,6 @@ services:
   # fails to start (confirm before staging deploy).
   caddy:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-caddy:latest
-    pull_policy: always
-    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
@@ -705,7 +696,6 @@ services:
   # In the config below, $$ is compose escaping for a literal $.
   media-static:
     image: nginx:stable-alpine
-    platform: linux/amd64
     restart: unless-stopped
     networks:
       - ecomate-network
