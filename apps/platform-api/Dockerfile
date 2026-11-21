@@ -65,6 +65,10 @@ COPY --from=builder /app/apps/platform-api/src/generated ./src/generated
 # seed-image-coverage.spec.ts fails the build if seed.ts ever imports a
 # src/ module that is not copied here.
 COPY --from=builder /app/apps/platform-api/src/landing-content/landing-content-seed.ts ./src/landing-content/landing-content-seed.ts
+# prisma/seed.ts also imports the feature content defaults from src/
+# (../src/features/feature-content). That module is dependency-free (no
+# imports), so copying this one file is enough.
+COPY --from=builder /app/apps/platform-api/src/features/feature-content.ts ./src/features/feature-content.ts
 COPY --from=builder /app/apps/platform-api/prisma.config.ts ./
 COPY --from=builder /app/apps/platform-api/package.json ./
 COPY apps/platform-api/startup.sh ./startup.sh

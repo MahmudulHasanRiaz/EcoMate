@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangle } from 'lucide-react'
 import { apiClient } from '@/lib/api-client'
+import { useFeatures } from '@/context/features-provider'
 import type { SmtpSettingsResponse } from './lib'
 
 /**
@@ -11,16 +12,23 @@ import type { SmtpSettingsResponse } from './lib'
  * balance is unknown (platform unreachable) or the tenant is on BYO.
  * Shares the SMTP settings query key with the SMTP page, so the two
  * pages never double-fetch.
+ *
+ * SMTP is a separate add-on (Boss point 1): a tenant without the
+ * smtp_server feature sees no balance anywhere, so the banner neither
+ * fetches nor renders for them.
  */
 export function EmailBalanceBanner() {
+  const { hasFeature, loading: featuresLoading } = useFeatures()
+  const hasSmtp = hasFeature('smtp_server')
   const { data } = useQuery({
     queryKey: ['smtp-settings-v2'],
     queryFn: () =>
       apiClient.get<SmtpSettingsResponse>('/settings/smtp').then((r) => r.data),
     staleTime: 30_000,
+    enabled: !featuresLoading && hasSmtp,
   })
 
-  if (!data || data.mode !== 'SAAS') return null
+  if (!hasSmtp || !data || data.mode !== 'SAAS') return null
   const balance = data.balance?.balance
   if (typeof balance !== 'number' || balance > 0) return null
 

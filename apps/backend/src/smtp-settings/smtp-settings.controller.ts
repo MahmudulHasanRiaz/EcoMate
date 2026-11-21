@@ -22,6 +22,11 @@ import { SmtpSettingsService } from './smtp-settings.service';
  * context, never from the request. The whole controller skips the
  * subscription guard like billing: a suspended tenant must still reach
  * its SMTP settings (and top up) — email is the way back to full access.
+ *
+ * Every route requires the `smtp_server` feature (Boss point 1: SMTP is
+ * a separate add-on gating ALL SMTP UI — balance, settings, top-up).
+ * Without it the guard 403s before any balance or setting is read, so a
+ * tenant without the add-on cannot reach these endpoints even directly.
  */
 @SkipSubscription()
 @Controller('settings/smtp')
@@ -30,21 +35,21 @@ export class SmtpSettingsController {
 
   @Get()
   @Permissions('view_system_settings')
-  @RequiresFeature('admin_settings')
+  @RequiresFeature('smtp_server')
   getSettings() {
     return this.smtpSettings.getSettings(requireTenantId());
   }
 
   @Put()
   @Permissions('edit_system_settings')
-  @RequiresFeature('admin_settings')
+  @RequiresFeature('smtp_server')
   updateSettings(@Body() dto: UpdateSmtpSettingsDto) {
     return this.smtpSettings.updateSettings(requireTenantId(), dto);
   }
 
   @Post('test')
   @Permissions('edit_system_settings')
-  @RequiresFeature('admin_settings')
+  @RequiresFeature('smtp_server')
   testEmail(
     @Body() dto: TestSmtpDto,
     @CurrentUser() user?: { email?: string },
@@ -60,7 +65,7 @@ export class SmtpSettingsController {
 
   @Post('topup')
   @Permissions('edit_system_settings')
-  @RequiresFeature('admin_settings')
+  @RequiresFeature('smtp_server')
   createTopUp(@Body() dto: CreateTenantTopUpDto) {
     return this.smtpSettings.createTopUp(requireTenantId(), dto.amountBDT);
   }

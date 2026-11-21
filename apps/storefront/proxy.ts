@@ -15,6 +15,13 @@ const ALIAS_EXEMPT_PREFIXES = ["/api", "/_next", "/uploads", "/assets"];
 // How long a host→tenant verdict is cached at the edge. Custom-domain changes
 // (verify/remove) are rare; the platform registry itself refreshes at 60s.
 const HOST_CACHE_TTL_MS = 60_000;
+// A "storefront disabled" verdict is cached much shorter: the tenant may
+// have just paid for the storefront add-on, and a paid storefront must not
+// stay hidden behind a stale cache entry. 15s bounds the wait while still
+// absorbing burst traffic to a disabled host. (The backend registry itself
+// refreshes within 60s of the change, pushed immediately on plan/add-on
+// changes — the edge cache is the only remaining lag.)
+const DISABLED_HOST_CACHE_TTL_MS = 15_000;
 const HOST_CACHE_MAX = 1_000;
 
 interface TenantResolvePayload {
@@ -22,6 +29,12 @@ interface TenantResolvePayload {
   slug: string;
   canonicalHost?: string;
   isAlias?: boolean;
+  /**
+   * False when the tenant's plan/add-ons do not include the `storefront`
+   * feature. Undefined = the backend predates the field (rollout window)
+   * — treated as enabled (fail open).
+   */
+  storefrontEnabled?: boolean;
 }
 
 interface HostCacheEntry {
@@ -49,6 +62,7 @@ export function clearHostResolutionCache(): void {
 function cacheHostResolution(
   host: string,
   result: TenantResolvePayload | null,
+  ttlMs: number = HOST_CACHE_TTL_MS,
 ): void {
   if (!hostCache.has(host) && hostCache.size >= HOST_CACHE_MAX) {
     const now = Date.now();
@@ -61,7 +75,7 @@ function cacheHostResolution(
     }
   }
   hostCache.set(host, {
-    expiresAt: Date.now() + HOST_CACHE_TTL_MS,
+    expiresAt: Date.now() + ttlMs,
     result,
   });
 }
@@ -79,6 +93,51 @@ function notFoundHost(): NextResponse {
       "content-type": "text/plain; charset=utf-8",
       "X-Robots-Tag": "noindex",
       "Cache-Control": "public, s-maxage=60",
+    },
+  });
+}
+
+/**
+ * Clean "storefront not enabled" state for a tenant whose plan/add-ons do
+ * not include the `storefront` feature (Boss point 1: the storefront
+ * itself is an add-on). This is a deliberate product state, not an
+ * error — so it answers 200 with a plain self-contained page (no
+ * storefront assets, so it renders even if the app shell is down).
+ * noindex + no-store: the page must never be indexed, and must never be
+ * cached anywhere — the moment the tenant enables the storefront, the
+ * next request must see the real shop.
+ */
+function storefrontDisabledResponse(slug: string): NextResponse {
+  const safeSlug = slug.replace(/[<>&"]/g, "");
+  const body = [
+    "<!DOCTYPE html>",
+    '<html lang="en">',
+    "<head>",
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<meta name="robots" content="noindex">',
+    "<title>Store not enabled</title>",
+    "<style>",
+    "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fafafa;color:#171717;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}",
+    "main{text-align:center;padding:24px;max-width:420px}",
+    "h1{font-size:20px;margin:0 0 8px}",
+    "p{margin:0;color:#525252;font-size:14px;line-height:1.6}",
+    "</style>",
+    "</head>",
+    "<body><main>",
+    "<h1>This online shop is not enabled.</h1>",
+    safeSlug
+      ? `<p>The store “${safeSlug}” has not enabled its public storefront yet. Please check back later.</p>`
+      : "<p>This store has not enabled its public storefront yet. Please check back later.</p>",
+    "</main></body>",
+    "</html>",
+  ].join("\n");
+  return new NextResponse(body, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "X-Robots-Tag": "noindex",
+      "Cache-Control": "no-store",
     },
   });
 }
@@ -142,8 +201,20 @@ async function lookupTenantHost(
       slug: typeof body.slug === "string" ? body.slug : "",
       canonicalHost: body.canonicalHost,
       isAlias: body.isAlias,
+      storefrontEnabled:
+        typeof body.storefrontEnabled === "boolean"
+          ? body.storefrontEnabled
+          : undefined,
     };
-    cacheHostResolution(host, result);
+    // A disabled verdict expires fast (DISABLED_HOST_CACHE_TTL_MS) so a
+    // freshly paid storefront appears within seconds, not a minute.
+    cacheHostResolution(
+      host,
+      result,
+      result.storefrontEnabled === false
+        ? DISABLED_HOST_CACHE_TTL_MS
+        : HOST_CACHE_TTL_MS,
+    );
     return { answered: true, result };
   } catch {
     return { answered: false, result: null };
@@ -194,6 +265,19 @@ export async function proxy(request: NextRequest) {
       // base host, so a 404 here is ignored.
       resolved = (await lookupTenantHost(normalisedHost)).result;
     }
+  }
+
+  // Storefront add-on gate (Boss point 1): a tenant without the
+  // `storefront` feature gets the clean disabled state on every page
+  // request. Only an explicit `false` gates — undefined (a backend
+  // predating the field, rollout window) and an unreachable registry
+  // (resolved null) both fail open, so tenants WITH the feature see
+  // zero change. Admin and POS never pass through this proxy, so they
+  // are unaffected; /api + asset paths are exempt above.
+  if (resolved?.storefrontEnabled === false) {
+    return storefrontDisabledResponse(
+      resolved.slug || baseResolution?.slug || "",
+    );
   }
 
   const aliasNoindex = baseResolution?.isAlias === true;

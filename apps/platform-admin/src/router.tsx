@@ -21,6 +21,7 @@ import { MediaPage } from './pages/media';
 import { MetricsPage } from './pages/metrics';
 import { OverviewPage } from './pages/overview';
 import { PlansPage } from './pages/plans';
+import { FeaturesPage } from './pages/features';
 import { SettingsPage } from './pages/settings';
 import { DEFAULT_SETTINGS_SECTION } from './pages/settings/sections';
 import { TenantCreatePage } from './pages/tenant-create';
@@ -92,6 +93,16 @@ const plansRoute = createRoute({
   component: () => (
     <AppShell>
       <PlansPage />
+    </AppShell>
+  ),
+});
+
+const featuresRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/features',
+  component: () => (
+    <AppShell>
+      <FeaturesPage />
     </AppShell>
   ),
 });
@@ -266,6 +277,7 @@ const routeTree = rootRoute.addChildren([
   usageRoute,
   metricsRoute,
   plansRoute,
+  featuresRoute,
   addOnsRoute,
   landingRoute,
   mediaRoute,

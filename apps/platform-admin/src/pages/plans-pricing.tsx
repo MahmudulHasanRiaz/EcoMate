@@ -9,6 +9,7 @@ import {
   BLOCKING_AREA_LABELS,
   meteringExampleLine,
 } from '../lib/pricing';
+import { FeaturePicker } from '../components/feature-picker';
 
 export const LIMIT_KEYS = [
   'products',
@@ -34,7 +35,7 @@ export interface OneTimeFeeForm {
   limitKey: string;
   limitDelta: string;
   perOrderRate: string;
-  features: string;
+  features: string[];
 }
 
 export interface PricingForm {
@@ -59,7 +60,7 @@ export const EMPTY_ONE_TIME_FEE: OneTimeFeeForm = {
   limitKey: 'products',
   limitDelta: '',
   perOrderRate: '',
-  features: '',
+  features: [],
 };
 
 export const EMPTY_PRICING_FORM: PricingForm = {
@@ -130,7 +131,7 @@ export function pricingFormFrom(
       } else if (fee.effect.type === 'rate_tier') {
         base.perOrderRate = String(fee.effect.perOrderRate);
       } else if (fee.effect.type === 'feature_unlock') {
-        base.features = fee.effect.features.join(', ');
+        base.features = [...fee.effect.features];
       }
       return base;
     }),
@@ -253,10 +254,7 @@ export function buildPricingBody(
         }
         effect = { type: 'rate_tier', perOrderRate: rate };
       } else {
-        const features = fee.features
-          .split(',')
-          .map((feature) => feature.trim())
-          .filter(Boolean);
+        const features = [...fee.features];
         if (features.length === 0) {
           return { error: `${at}: list at least one feature key to unlock.` };
         }
@@ -540,17 +538,13 @@ export function PricingFields({
             </label>
           ) : null}
           {fee.effectType === 'feature_unlock' ? (
-            <label>
-              Features to unlock (comma-separated keys)
-              <input
+            <div className="feature-picker-field">
+              <span className="field-label">Features to unlock</span>
+              <FeaturePicker
                 value={fee.features}
-                onChange={(event) =>
-                  setFee(index, { features: event.target.value })
-                }
-                placeholder="admin_reports"
-                required
+                onChange={(features) => setFee(index, { features })}
               />
-            </label>
+            </div>
           ) : null}
           <div className="button-row">
             <button

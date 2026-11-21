@@ -1024,5 +1024,59 @@ export interface ConvertFeatureResult {
   }>;
   addOnId?: string;
   attached?: number;
-  plans?: number;
+  /** Versions created by the execute step (array, not a count). */
+  plans?: Array<{ planId: string; versionId: string; version: number }>;
+}
+
+/** Feature classification (Boss's words). */
+export type FeatureKind = 'initial' | 'add-on';
+
+export interface FeatureAddOnRef {
+  id: string;
+  slug: string;
+  name: string;
+  price: number;
+  currency: string;
+  isActive: boolean;
+}
+
+/** One catalogue feature (GET /features). */
+export interface FeatureSummary {
+  key: string;
+  name: string;
+  description?: string | null;
+  category: string;
+  dependencies: string[];
+  unit?: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  kind: FeatureKind;
+  scope?: string | null;
+  withoutAccess?: string | null;
+  addOnId?: string | null;
+  addOn?: FeatureAddOnRef | null;
+}
+
+export interface FeaturePlanRef {
+  planId: string;
+  planName: string;
+  planSlug: string;
+  planActive: boolean;
+  versionId: string;
+  version: number;
+  price: number;
+  currency: string;
+  isLatest: boolean;
+}
+
+/** Feature detail (GET /features/:key): summary + plans including it. */
+export interface FeatureDetail extends FeatureSummary {
+  plans: FeaturePlanRef[];
+}
+
+export interface BulkKindResult {
+  kind: FeatureKind;
+  requested: number;
+  updated: number;
+  keys: string[];
 }

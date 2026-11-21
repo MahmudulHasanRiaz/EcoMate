@@ -12,6 +12,7 @@ import {
   pricingFormFrom,
   type PricingForm,
 } from './plans-pricing';
+import { FeaturePicker } from '../components/feature-picker';
 import {
   ConfirmDialog,
   EmptyState,
@@ -27,7 +28,7 @@ interface VersionForm {
   currency: string;
   trialDays: string;
   graceDays: string;
-  features: string;
+  features: string[];
   limits: string;
 }
 
@@ -36,7 +37,7 @@ const EMPTY_VERSION: VersionForm = {
   currency: 'BDT',
   trialDays: '',
   graceDays: '',
-  features: '',
+  features: [],
   limits: '',
 };
 
@@ -49,7 +50,7 @@ function versionFormFrom(version: PlanVersion): VersionForm {
       version.graceDays === null || version.graceDays === undefined
         ? ''
         : String(version.graceDays),
-    features: (version.features ?? []).join(', '),
+    features: [...(version.features ?? [])],
     limits: JSON.stringify(version.limits ?? {}, null, 2),
   };
 }
@@ -88,11 +89,7 @@ function parseVersionForm(
     }
     body.graceDays = days;
   }
-  const features = form.features
-    .split(',')
-    .map((feature) => feature.trim())
-    .filter(Boolean);
-  body.features = features;
+  body.features = [...form.features];
   const limitsRaw = form.limits.trim();
   if (limitsRaw !== '') {
     let parsed: unknown;
@@ -174,14 +171,13 @@ function VersionFields({
             placeholder="Platform default"
           />
         </label>
-        <label>
-          Features (comma-separated keys)
-          <input
+        <div className="feature-picker-field">
+          <span className="field-label">Features</span>
+          <FeaturePicker
             value={form.features}
-            onChange={(event) => set({ features: event.target.value })}
-            placeholder="admin_products, admin_orders"
+            onChange={(features) => set({ features })}
           />
-        </label>
+        </div>
         <label>
           Limits (JSON object of numbers)
           <textarea

@@ -196,7 +196,7 @@ describe('validateOneTimeFeeEffect', () => {
     expect(
       validateOneTimeFeeEffect({
         type: 'feature_unlock',
-        features: ['admin_reports'],
+        features: ['admin_analytics'],
       }),
     ).toEqual([]);
   });
@@ -214,6 +214,26 @@ describe('validateOneTimeFeeEffect', () => {
         limits: { staff_users: 0 },
       }),
     ).toContain('effect.limits.staff_users must be a positive integer');
+  });
+
+  it('rejects a feature unlock naming keys outside the catalogue', () => {
+    expect(
+      validateOneTimeFeeEffect({
+        type: 'feature_unlock',
+        features: ['admin_analytics', 'typo_key'],
+      }),
+    ).toContain(
+      'effect.features contains unknown feature key(s): typo_key',
+    );
+  });
+
+  it('accepts the * wildcard in a feature unlock', () => {
+    expect(
+      validateOneTimeFeeEffect({
+        type: 'feature_unlock',
+        features: ['*'],
+      }),
+    ).toEqual([]);
   });
 });
 

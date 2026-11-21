@@ -14,6 +14,7 @@ import {
   Skeleton,
   StatusBadge,
 } from '../components/ui';
+import { FeaturePicker } from '../components/feature-picker';
 
 interface AddOnForm {
   slug: string;
@@ -22,7 +23,7 @@ interface AddOnForm {
   price: string;
   currency: string;
   interval: 'MONTHLY' | 'YEARLY';
-  features: string;
+  features: string[];
   limits: string;
   isPublic: boolean;
   sortOrder: string;
@@ -39,7 +40,7 @@ const EMPTY_FORM: AddOnForm = {
   price: '',
   currency: 'BDT',
   interval: 'MONTHLY',
-  features: '',
+  features: [],
   limits: '',
   isPublic: true,
   sortOrder: '',
@@ -57,7 +58,7 @@ function formFrom(addOn: AddOn): AddOnForm {
     price: String(addOn.price),
     currency: addOn.currency,
     interval: addOn.interval === 'YEARLY' ? 'YEARLY' : 'MONTHLY',
-    features: (addOn.features ?? []).join(', '),
+    features: [...(addOn.features ?? [])],
     limits: JSON.stringify(addOn.limits ?? {}, null, 2),
     isPublic: addOn.isPublic,
     sortOrder: String(addOn.sortOrder ?? 0),
@@ -101,10 +102,7 @@ function parseForm(
   body.price = price;
   body.currency = form.currency.trim() || 'BDT';
   body.interval = form.interval;
-  body.features = form.features
-    .split(',')
-    .map((feature) => feature.trim())
-    .filter(Boolean);
+  body.features = [...form.features];
   const limitsRaw = form.limits.trim();
   if (limitsRaw !== '') {
     let parsed: unknown;
@@ -360,7 +358,7 @@ export function AddOnsPage() {
         }),
       }).then((r) => readJson<ConvertFeatureResult>(r));
       setNotice(
-        `Feature "${result.featureKey}" converted to add-on "${result.slug}" — attached to ${result.attached ?? 0} tenant${result.attached === 1 ? '' : 's'}, ${result.plans ?? 0} plan version${result.plans === 1 ? '' : 's'} re-versioned.`,
+        `Feature "${result.featureKey}" converted to add-on "${result.slug}" — attached to ${result.attached ?? 0} tenant${result.attached === 1 ? '' : 's'}, ${(result.plans ?? []).length} plan version${(result.plans ?? []).length === 1 ? '' : 's'} re-versioned.`,
       );
       setConverting(false);
       setConvertPreview(null);
@@ -454,16 +452,15 @@ export function AddOnsPage() {
             <option value="YEARLY">Yearly</option>
           </select>
         </label>
-        <label>
-          Features (comma-separated keys)
-          <input
+        <div className="feature-picker-field">
+          <span className="field-label">Features</span>
+          <FeaturePicker
             value={form.features}
-            onChange={(event) =>
-              setForm({ ...form, features: event.target.value })
+            onChange={(features) =>
+              setForm({ ...form, features })
             }
-            placeholder="inbox"
           />
-        </label>
+        </div>
         <label>
           Limits (JSON object of numbers)
           <textarea
@@ -790,7 +787,7 @@ export function AddOnsPage() {
                 onChange={(event) =>
                   setConvertFeatureKey(event.target.value)
                 }
-                placeholder="admin_reports"
+                placeholder="admin_analytics"
                 required
               />
             </label>

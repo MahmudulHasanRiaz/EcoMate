@@ -11,6 +11,7 @@ import {
   Layers,
   LayoutDashboard,
   LayoutTemplate,
+  ListChecks,
   Newspaper,
   Puzzle,
   ScrollText,
@@ -51,6 +52,7 @@ const NAV_GROUPS: {
     items: [
       { to: '/billing', label: 'Billing', icon: CreditCard },
       { to: '/plans', label: 'Plans', icon: Layers },
+      { to: '/features', label: 'Features', icon: ListChecks },
     ],
   },
   {

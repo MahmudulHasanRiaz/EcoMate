@@ -9,6 +9,7 @@ import { AuditService } from '../common/audit.service';
 import { TenantRefreshService } from '../common/tenant-refresh.service';
 import { wholeDaysBetween } from '../billing/billing-dates';
 import { InvoiceService } from '../billing/invoice.service';
+import { assertKnownFeatureKeys } from '../features/feature-keys';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { PlansService } from '../plans/plans.service';
 import { parsePricingDocument } from './pricing-document';
@@ -65,6 +66,10 @@ export class AddOnsService {
     });
     if (existing) throw new ConflictException('Add-on slug already exists');
 
+    // Gap 11 (same as plans): add-on features must be catalogue keys
+    // (or the '*' wildcard), never arbitrary strings.
+    assertKnownFeatureKeys(dto.features);
+
     const metering = dto.metering
       ? parsePricingDocument({ metering: dto.metering }).metering
       : undefined;
@@ -96,6 +101,7 @@ export class AddOnsService {
   async update(id: string, dto: UpdateAddOnDto, actorId?: string) {
     const before = await this.prisma.addOn.findUnique({ where: { id } });
     if (!before) throw new NotFoundException('Add-on not found');
+    assertKnownFeatureKeys(dto.features);
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.description !== undefined) data.description = dto.description;
@@ -487,6 +493,19 @@ export class AddOnsService {
       };
     }
 
+    // Pre-validate the re-versioned plan features BEFORE creating the
+    // add-on: addVersion rejects unknown (legacy) keys, and a 400
+    // mid-convert would strand an orphan add-on + grandfathered
+    // attachments — and a retry would then 409 on the slug. Fail fast
+    // with no side effects instead.
+    for (const plan of affectedPlans) {
+      const latest = plan.versions[0];
+      if (!latest) continue;
+      assertKnownFeatureKeys(
+        (latest.features ?? []).filter((key) => key !== dto.featureKey),
+      );
+    }
+
     const existingAddOn = await this.prisma.addOn.findUnique({
       where: { slug },
     });
@@ -583,6 +602,13 @@ export class AddOnsService {
         attached,
         plans: versionsCreated.length,
       },
+    });
+    // The Features page reads kind/addOnId from the Feature row: the
+    // conversion is not complete until the row says so. (The row was
+    // verified to exist at the top of this method.)
+    await this.prisma.feature.update({
+      where: { key: dto.featureKey },
+      data: { kind: 'ADD_ON', addOnId: addOn.id },
     });
     const pushed = await this.refresh.pushRefresh('*');
     if (!pushed.ok) {

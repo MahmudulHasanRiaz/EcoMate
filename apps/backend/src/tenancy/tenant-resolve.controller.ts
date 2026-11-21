@@ -18,10 +18,24 @@ import { SkipTenant } from './skip-tenant.decorator';
  * rendering: a 404 means "unknown host" and the storefront returns 404 instead
  * of rendering an empty shell. The endpoint is tenant-independent by design
  * (@SkipTenant) and only exposes the registry lookup.
+ *
+ * `storefrontEnabled` tells the edge whether the tenant's plan/add-ons
+ * include the `storefront` feature (Boss point 1: the storefront itself
+ * is an add-on). The edge shows a clean "storefront not enabled" page
+ * when it is false. A tenant with no plan (features undefined) has no
+ * storefront — fail closed, like every other entitlement check.
  */
 @Controller('tenants')
 export class TenantResolveController {
   constructor(private readonly registry: TenantRegistryService) {}
+
+  private storefrontEnabled(tenant: {
+    features?: string[];
+  }): boolean {
+    const features = tenant.features;
+    if (!features) return false;
+    return features.includes('*') || features.includes('storefront');
+  }
 
   @Public()
   @SkipTenant()
@@ -41,6 +55,7 @@ export class TenantResolveController {
         slug: tenant.slug,
         canonicalHost: resolution.canonicalHost,
         isAlias: resolution.isAlias,
+        storefrontEnabled: this.storefrontEnabled(tenant),
       };
     }
 
@@ -53,6 +68,7 @@ export class TenantResolveController {
         slug: tenant.slug,
         canonicalHost: host.trim().toLowerCase(),
         isAlias: false,
+        storefrontEnabled: this.storefrontEnabled(tenant),
       };
     }
 

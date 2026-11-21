@@ -4,8 +4,41 @@ import { ClientConfig } from '../client-config';
 
 describe('shared-types', () => {
   describe('FEATURES', () => {
-    it('has 82 features', () => {
-      expect(Object.keys(FEATURES).length).toBe(82);
+    it('has 88 features', () => {
+      expect(Object.keys(FEATURES).length).toBe(88);
+    });
+
+    it('registers the six backend-gated admin keys (fix #3)', () => {
+      for (const key of [
+        'admin_cms',
+        'admin_checkout_leads',
+        'admin_courier',
+        'admin_shipments',
+        'admin_campaigns',
+        'admin_import',
+      ]) {
+        expect(FEATURES).toHaveProperty(key);
+        expect(FEATURES[key].enabled).toBe(true);
+      }
+      // Dependencies derived from the gating code, not invented:
+      // checkout leads convert to orders; shipments are per-order;
+      // courier management is order-driven; the import engine injects
+      // both the product and the order import service. Campaigns and
+      // CMS have no dependency (the campaigns service never reads the
+      // customers module; CMS pages + store locations stand alone).
+      expect(FEATURES['admin_checkout_leads'].dependencies).toEqual([
+        'admin_orders',
+      ]);
+      expect(FEATURES['admin_shipments'].dependencies).toEqual([
+        'admin_orders',
+      ]);
+      expect(FEATURES['admin_courier'].dependencies).toEqual(['admin_orders']);
+      expect(FEATURES['admin_import'].dependencies).toEqual([
+        'admin_products',
+        'admin_orders',
+      ]);
+      expect(FEATURES['admin_campaigns'].dependencies).toBeUndefined();
+      expect(FEATURES['admin_cms'].dependencies).toBeUndefined();
     });
 
     it('has storefront and admin features', () => {

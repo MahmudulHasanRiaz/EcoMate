@@ -620,3 +620,51 @@ describe('PlansService', () => {
     });
   });
 });
+
+describe('PlansService feature-key validation (gap 11)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    audit.record.mockResolvedValue(undefined);
+  });
+
+  it('rejects unknown feature keys on plan create', async () => {
+    prisma.plan.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.create(
+        { ...basePlanDto, features: ['admin_products', 'typo_key'] } as any,
+        'u1',
+      ),
+    ).rejects.toThrow('Unknown feature key(s): typo_key');
+    expect(prisma.plan.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown feature keys on add-version', async () => {
+    prisma.plan.findUnique.mockResolvedValue({ id: 'plan-1', slug: 'starter' });
+
+    await expect(
+      service.addVersion(
+        'plan-1',
+        { price: 1499, features: ['nope'] } as any,
+        'u1',
+      ),
+    ).rejects.toThrow('Unknown feature key(s): nope');
+    expect(prisma.planVersion.create).not.toHaveBeenCalled();
+  });
+
+  it('allows catalogue keys and the * wildcard', async () => {
+    prisma.plan.findUnique.mockResolvedValue(null);
+    prisma.plan.create.mockResolvedValue({
+      id: 'plan-1',
+      slug: 'starter',
+      versions: [],
+    });
+
+    await service.create(
+      { ...basePlanDto, features: ['admin_products', '*'] } as any,
+      'u1',
+    );
+
+    expect(prisma.plan.create).toHaveBeenCalled();
+  });
+});

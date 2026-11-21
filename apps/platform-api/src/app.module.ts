@@ -14,6 +14,7 @@ import { TenantRefreshModule } from './common/tenant-refresh.module';
 import { DomainConfigModule } from './config/domain-config.module';
 import { DomainsModule } from './domains/domains.module';
 import { EmailBalanceModule } from './email-balance/email-balance.module';
+import { FeaturesModule } from './features/features.module';
 import { HealthModule } from './health/health.module';
 import { InternalModule } from './internal/internal.module';
 import { InternalDomainsModule } from './domains/internal-domains.module';
@@ -53,6 +54,7 @@ import { UsersModule } from './users/users.module';
     DomainConfigModule,
     DomainsModule,
     EmailBalanceModule,
+    FeaturesModule,
     HealthModule,
     InternalModule,
     InternalDomainsModule,

@@ -4053,3 +4053,84 @@ tr[data-deleted] {
   pointer-events: none;
   color: var(--em-text-muted);
 }
+
+/* ---------- features page + feature picker ---------- */
+
+/* Label typography for a field that is not a <label> element (the
+ * feature picker is a composite control). Matches .inline-form > label. */
+.field-label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--em-text);
+}
+
+/* The picker spans the full form grid row in the plan/add-on editors. */
+.inline-form > .feature-picker-field {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--em-space-1);
+  min-width: 0;
+}
+
+.feature-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--em-space-2);
+}
+
+.feature-picker-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  flex-wrap: wrap;
+}
+
+.feature-picker-tools input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.feature-picker-list {
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  background: var(--em-surface);
+  max-height: 360px;
+  overflow-y: auto;
+  padding: var(--em-space-2);
+}
+
+.feature-picker-group + .feature-picker-group {
+  margin-top: var(--em-space-3);
+}
+
+.feature-picker-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  padding: var(--em-space-1) 0;
+  border-bottom: 1px solid var(--em-border);
+  margin-bottom: var(--em-space-1);
+}
+
+.feature-picker-group-head .muted-note {
+  margin-left: auto;
+}
+
+.feature-picker-row {
+  display: flex;
+  align-items: center;
+  gap: var(--em-space-2);
+  font-size: 14px;
+  line-height: 20px;
+  padding: var(--em-space-1) 0;
+  cursor: pointer;
+}
+
+.feature-picker-row .sub {
+  margin-left: auto;
+}

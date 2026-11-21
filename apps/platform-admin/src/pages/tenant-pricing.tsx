@@ -7,6 +7,7 @@ import {
   Skeleton,
   StatusBadge,
 } from '../components/ui';
+import { FeaturePicker } from '../components/feature-picker';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDate, formatMoney } from '../lib/format';
 import {
@@ -98,7 +99,7 @@ export function TenantPricingCard({ tenant }: { tenant: Tenant }) {
   const [customLimitKey, setCustomLimitKey] = useState('products');
   const [customLimitDelta, setCustomLimitDelta] = useState('');
   const [customRate, setCustomRate] = useState('');
-  const [customFeatures, setCustomFeatures] = useState('');
+  const [customFeatures, setCustomFeatures] = useState<string[]>([]);
   const [cancelling, setCancelling] = useState<TenantPurchase | null>(null);
   // Add-on attach state.
   const [attachAddOnId, setAttachAddOnId] = useState('');
@@ -278,10 +279,7 @@ export function TenantPricingCard({ tenant }: { tenant: Tenant }) {
           }
           effect = { type: 'rate_tier', perOrderRate: rate };
         } else {
-          const features = customFeatures
-            .split(',')
-            .map((feature) => feature.trim())
-            .filter(Boolean);
+          const features = [...customFeatures];
           if (features.length === 0) {
             setError('List at least one feature key to unlock.');
             setBusy(null);
@@ -1014,17 +1012,13 @@ export function TenantPricingCard({ tenant }: { tenant: Tenant }) {
                 </label>
               ) : null}
               {customType === 'feature_unlock' ? (
-                <label>
-                  Features to unlock (comma-separated keys)
-                  <input
+                <div className="feature-picker-field">
+                  <span className="field-label">Features to unlock</span>
+                  <FeaturePicker
                     value={customFeatures}
-                    onChange={(event) =>
-                      setCustomFeatures(event.target.value)
-                    }
-                    placeholder="admin_reports"
-                    required
+                    onChange={setCustomFeatures}
                   />
-                </label>
+                </div>
               ) : null}
             </>
           )}

@@ -33,6 +33,7 @@ function makeService() {
     },
     feature: {
       findUnique: jest.fn(),
+      update: jest.fn(),
     },
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
@@ -289,7 +290,10 @@ describe('AddOnsService.detach', () => {
 });
 
 describe('AddOnsService.convertFromFeature', () => {
-  const FEATURE = { key: 'inbox', name: 'Unified Inbox' };
+  // Fixtures use REAL catalogue keys: convert pre-validates the
+  // re-versioned plan features against the catalogue, so a fake key
+  // would (correctly) fail the conversion.
+  const FEATURE = { key: 'seo_suite', name: 'SEO Suite' };
   const PLANS = [
     {
       id: 'plan-1',
@@ -305,7 +309,7 @@ describe('AddOnsService.convertFromFeature', () => {
           intervalDays: null,
           trialDays: 14,
           graceDays: 3,
-          features: ['inbox', 'pos'],
+          features: ['seo_suite', 'admin_products'],
           limits: {},
         },
       ],
@@ -318,7 +322,7 @@ describe('AddOnsService.convertFromFeature', () => {
           id: 'v9',
           planId: 'plan-2',
           version: 1,
-          features: ['pos'],
+          features: ['admin_products'],
         },
       ],
     },
@@ -343,9 +347,9 @@ describe('AddOnsService.convertFromFeature', () => {
     mockScope(prisma);
 
     const result = await service.convertFromFeature({
-      featureKey: 'inbox',
+      featureKey: 'seo_suite',
       price: 1000,
-      name: 'Unified Inbox',
+      name: 'SEO Suite',
       dryRun: true,
     });
 
@@ -386,9 +390,9 @@ describe('AddOnsService.convertFromFeature', () => {
     });
 
     const result = await service.convertFromFeature({
-      featureKey: 'inbox',
+      featureKey: 'seo_suite',
       price: 1000,
-      name: 'Unified Inbox',
+      name: 'SEO Suite',
       dryRun: false,
     });
 
@@ -405,7 +409,7 @@ describe('AddOnsService.convertFromFeature', () => {
     expect(plansService.addVersion).toHaveBeenCalledWith(
       'plan-1',
       expect.objectContaining({
-        features: ['pos'],
+        features: ['admin_products'],
         price: 1000,
         trialDays: 14,
         graceDays: 3,
@@ -415,11 +419,52 @@ describe('AddOnsService.convertFromFeature', () => {
     // Grandfathered attach is free — no invoice is created.
     expect(prisma.addOn.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        slug: 'inbox',
-        features: ['inbox'],
+        slug: 'seo-suite',
+        features: ['seo_suite'],
         price: 1000,
       }),
     });
+    // The Feature row records the conversion for the Features page.
+    expect(prisma.feature.update).toHaveBeenCalledWith({
+      where: { key: 'seo_suite' },
+      data: { kind: 'ADD_ON', addOnId: 'addon-new' },
+    });
+  });
+
+  it('pre-validates plan features: a legacy key fails fast with NO orphan add-on', async () => {
+    const { service, prisma, plansService } = makeService();
+    prisma.feature.findUnique.mockResolvedValue(FEATURE);
+    prisma.plan.findMany.mockResolvedValue([
+      {
+        ...PLANS[0],
+        versions: [
+          {
+            ...PLANS[0].versions[0],
+            // Legacy key the API would never accept today — only a
+            // direct-DB row (or a pre-validation plan version) has it.
+            features: ['seo_suite', 'legacy_key_xyz'],
+          },
+        ],
+      },
+    ]);
+    prisma.subscription.findMany.mockResolvedValue(SUBSCRIPTIONS);
+    prisma.addOn.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.convertFromFeature({
+        featureKey: 'seo_suite',
+        price: 1000,
+        dryRun: false,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // Fail fast: nothing was created, attached, or re-versioned, so a
+    // retry after cleaning the legacy key will not 409 on the slug.
+    expect(prisma.addOn.create).not.toHaveBeenCalled();
+    expect(prisma.subscriptionAddOn.upsert).not.toHaveBeenCalled();
+    expect(plansService.addVersion).not.toHaveBeenCalled();
+    expect(plansService.applyVersion).not.toHaveBeenCalled();
+    expect(prisma.feature.update).not.toHaveBeenCalled();
   });
 
   it('refuses to convert a feature that does not exist', async () => {
@@ -438,10 +483,56 @@ describe('AddOnsService.convertFromFeature', () => {
 
     await expect(
       service.convertFromFeature({
-        featureKey: 'inbox',
+        featureKey: 'seo_suite',
         price: 1000,
         dryRun: false,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe('AddOnsService feature-key validation (gap 11)', () => {
+  it('rejects unknown feature keys on create', async () => {
+    const { service, prisma } = makeService();
+    prisma.addOn.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.create({
+        slug: 'bad-addon',
+        name: 'Bad',
+        price: 100,
+        features: ['typo_key'],
+      } as any),
+    ).rejects.toThrow('Unknown feature key(s): typo_key');
+    expect(prisma.addOn.create).not.toHaveBeenCalled();
+  });
+
+  it('allows catalogue keys and the * wildcard on create', async () => {
+    const { service, prisma } = makeService();
+    prisma.addOn.findUnique.mockResolvedValue(null);
+    prisma.addOn.create.mockResolvedValue({ ...ADD_ON, price: 100 });
+
+    await service.create({
+      slug: 'ok-addon',
+      name: 'Ok',
+      price: 100,
+      features: ['admin_products', '*'],
+    } as any);
+
+    expect(prisma.addOn.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ features: ['admin_products', '*'] }),
+      }),
+    );
+  });
+
+  it('rejects unknown feature keys on update', async () => {
+    const { service, prisma } = makeService();
+    prisma.addOn.findUnique.mockResolvedValue(ADD_ON);
+
+    await expect(
+      service.update('addon-1', { features: ['nope'] } as any),
+    ).rejects.toThrow('Unknown feature key(s): nope');
+    expect(prisma.addOn.update).not.toHaveBeenCalled();
   });
 });

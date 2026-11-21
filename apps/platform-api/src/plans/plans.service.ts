@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
 import { TenantRefreshService } from '../common/tenant-refresh.service';
+import { assertKnownFeatureKeys } from '../features/feature-keys';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import {
   BillingCycle,
@@ -208,6 +209,10 @@ export class PlansService {
     });
     if (existing) throw new ConflictException('Plan slug already exists');
 
+    // Gap 11: plan features must be catalogue keys (or the '*' wildcard),
+    // never arbitrary strings.
+    assertKnownFeatureKeys(dto.features);
+
     const defaults = this.trialDefaults();
     const resolved = this.resolvePricingForWrite({
       dtoPricing: dto.pricing as PricingDocument | undefined,
@@ -261,6 +266,9 @@ export class PlansService {
   ) {
     const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException('Plan not found');
+
+    // Gap 11: same catalogue validation as create.
+    assertKnownFeatureKeys(dto.features);
 
     const latest = await this.prisma.planVersion.findFirst({
       where: { planId },

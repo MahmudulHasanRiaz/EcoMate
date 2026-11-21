@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { apiClient } from '@/lib/api-client'
+import { useFeatures } from '@/context/features-provider'
 import { SectionShell } from '@/features/settings/storefront/components/section-shell'
 import { Field } from '@/features/settings/storefront/components/field'
 import { toast } from 'sonner'
@@ -57,12 +58,20 @@ function errorMessage(err: unknown, fallback: string): string {
 }
 
 export function SmtpSettings() {
+  // SMTP is a separate add-on (Boss point 1): the route already
+  // redirects without smtp_server, but the entitlements store hydrates
+  // from a localStorage cache — this component-level check is the
+  // belt-and-braces layer for a stale cache, and it keeps the query
+  // from firing (the API 403s without the feature).
+  const { hasFeature, loading: featuresLoading } = useFeatures()
+  const hasSmtp = hasFeature('smtp_server')
   const queryClient = useQueryClient()
   const { data: settingsData, isLoading } = useQuery({
     queryKey: ['smtp-settings-v2'],
     queryFn: () =>
       apiClient.get<SmtpSettingsResponse>('/settings/smtp').then((r) => r.data),
     staleTime: 30_000,
+    enabled: !featuresLoading && hasSmtp,
   })
 
   const [values, setValues] = useState<SmtpValues>(DEFAULT_VALUES)
@@ -193,10 +202,34 @@ export function SmtpSettings() {
     }
   }
 
-  if (isLoading) {
+  if (featuresLoading || isLoading) {
     return (
       <div className='flex items-center justify-center min-h-[200px]'>
         <Loader2 className='animate-spin h-6 w-6 text-primary' />
+      </div>
+    )
+  }
+
+  if (!hasSmtp) {
+    return (
+      <div className='flex flex-col items-center gap-4 py-16 text-center'>
+        <div className='rounded-full bg-amber-100 dark:bg-amber-900/30 p-4'>
+          <Mail className='h-10 w-10 text-amber-600 dark:text-amber-400' />
+        </div>
+        <h1 className='text-2xl font-bold'>Email Sending Not Available</h1>
+        <p className='text-muted-foreground max-w-md'>
+          Custom SMTP configuration requires a plan upgrade. Your store has
+          no email balance, SMTP settings, or top-up until the SMTP add-on
+          is enabled.
+        </p>
+        <div className='flex gap-4 mt-2'>
+          <Button variant='outline' asChild>
+            <Link to='/'>Go to Dashboard</Link>
+          </Button>
+          <Button asChild>
+            <Link to='/mon/settings/plan'>View Plan &amp; Usage</Link>
+          </Button>
+        </div>
       </div>
     )
   }

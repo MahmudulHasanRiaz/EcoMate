@@ -11,6 +11,16 @@ import { EmailBalanceService } from '../email-balance/email-balance.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { parsePricingDocument } from '../pricing/pricing-document';
 
+/** Slug of the seeded trial plan (prisma/seed.ts) — the only plan whose
+ * trial period gets the full-product add-on attach (Boss 2026-11-21). */
+const TRIAL_PLAN_SLUG = 'trial';
+
+/** Slug of the custom-domain add-on — never attached to a trial
+ * (Boss 2026-11-19: trial tenants don't get custom domains; the
+ * 2026-11-21 "trial = full product" decision covered storefront +
+ * POS only and did not reverse this exclusion). */
+const CUSTOM_DOMAIN_ADD_ON_SLUG = 'custom-domain';
+
 const TRIAL_DAYS_FALLBACK = 14;
 const FETCH_TIMEOUT_MS = 15_000;
 const STALE_JOB_MS = 10 * 60_000;
@@ -360,6 +370,9 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
           'This store address was provisioned for another owner',
         );
       }
+      // Retry path: the subscription exists already; make sure the
+      // trial add-ons are attached (idempotent — skipDuplicates).
+      await this.attachTrialAddOns(existing.id);
       return existing;
     }
 
@@ -370,7 +383,7 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
     const host = `${signup.slug}.${primaryDomain}`;
 
     try {
-      return await this.prisma.tenant.create({
+      const created = await this.prisma.tenant.create({
         data: {
           slug: signup.slug,
           name: signup.tenantName,
@@ -413,14 +426,77 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
         },
         include: { domains: true, subscription: true },
       });
+      // Trial = the full product (Boss 2026-11-21): on the trial plan,
+      // every active add-on except custom-domain (storefront, POS,
+      // SMTP, …) attaches free for the trial. The attach itself creates
+      // no invoice (attach is invoice-free while the subscription is
+      // TRIAL); the renewal job bills attached add-ons once the trial
+      // ends. attachTrialAddOns enforces the trial-plan-only +
+      // no-custom-domain rules.
+      await this.attachTrialAddOns(created.id);
+      return created;
     } catch (err: any) {
       if (err?.code === 'P2002') {
         const raced = await this.prisma.tenant.findUnique({
           where: { slug: signup.slug },
         });
-        if (raced) return raced;
+        if (raced) {
+          await this.attachTrialAddOns(raced.id);
+          return raced;
+        }
       }
       throw err;
+    }
+  }
+
+  /**
+   * Attach every active add-on to a TRIAL subscription on the TRIAL
+   * PLAN, free for the trial period. Best-effort with a loud log (like
+   * the free-email grant): a failed attach must never fail
+   * provisioning — the trial plan version itself already includes
+   * every catalogue feature, so entitlements stay complete and the
+   * operator can attach from the console. Idempotent
+   * (skipDuplicates) for the retry path.
+   *
+   * Trial-plan only: a paid plan's trial period trials THAT plan — a
+   * Base-plan trial must not silently collect every add-on (the
+   * renewal job would bill them all at trial end). The custom-domain
+   * add-on is excluded even on the trial plan (Boss 2026-11-19).
+   */
+  private async attachTrialAddOns(tenantId: string): Promise<void> {
+    try {
+      const subscription = await this.prisma.subscription.findUnique({
+        where: { tenantId },
+        select: {
+          id: true,
+          status: true,
+          planVersion: { select: { plan: { select: { slug: true } } } },
+        },
+      });
+      if (!subscription || subscription.status !== 'TRIAL') return;
+      if (subscription.planVersion?.plan?.slug !== TRIAL_PLAN_SLUG) return;
+      const addOns = await this.prisma.addOn.findMany({
+        where: {
+          isActive: true,
+          slug: { not: CUSTOM_DOMAIN_ADD_ON_SLUG },
+        },
+        select: { id: true },
+      });
+      if (addOns.length === 0) return;
+      await this.prisma.subscriptionAddOn.createMany({
+        data: addOns.map((addOn) => ({
+          subscriptionId: subscription.id,
+          addOnId: addOn.id,
+          startedAt: new Date(),
+        })),
+        skipDuplicates: true,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Trial add-on attach failed for tenant ${tenantId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
   }
 

@@ -4,7 +4,7 @@ import { TenantResolveController } from './tenant-resolve.controller';
 
 const ORIGINAL_ENV = { ...process.env };
 
-function makeController() {
+function makeController(features?: string[]) {
   const registry = new TenantRegistryService();
   registry.replace([
     {
@@ -12,6 +12,7 @@ function makeController() {
       slug: 'acme',
       status: 'ACTIVE',
       hosts: ['acme.ecomate.bd', 'shop.example.com'],
+      features,
     },
   ]);
   return new TenantResolveController(registry);
@@ -31,12 +32,13 @@ describe('TenantResolveController', () => {
   });
 
   it('resolves a canonical tenant host', () => {
-    expect(makeController().resolve('acme.ecomate.bd')).toEqual({
+    expect(makeController(['storefront']).resolve('acme.ecomate.bd')).toEqual({
       kind: 'tenant',
       tenantId: 'tenant-acme',
       slug: 'acme',
       canonicalHost: 'acme.ecomate.bd',
       isAlias: false,
+      storefrontEnabled: true,
     });
   });
 
@@ -51,12 +53,36 @@ describe('TenantResolveController', () => {
   });
 
   it('resolves a registered custom domain', () => {
-    expect(makeController().resolve('Shop.Example.com')).toEqual({
+    expect(makeController(['storefront']).resolve('Shop.Example.com')).toEqual({
       kind: 'custom',
       tenantId: 'tenant-acme',
       slug: 'acme',
       canonicalHost: 'shop.example.com',
       isAlias: false,
+      storefrontEnabled: true,
+    });
+  });
+
+  it('reports storefrontEnabled false when the tenant lacks the storefront feature', () => {
+    expect(
+      makeController(['admin_products']).resolve('acme.ecomate.bd'),
+    ).toMatchObject({ storefrontEnabled: false });
+    expect(
+      makeController(['admin_products']).resolve('shop.example.com'),
+    ).toMatchObject({ storefrontEnabled: false });
+  });
+
+  it('reports storefrontEnabled true for the * wildcard', () => {
+    expect(makeController(['*']).resolve('acme.ecomate.bd')).toMatchObject({
+      storefrontEnabled: true,
+    });
+  });
+
+  it('reports storefrontEnabled false when the tenant has no plan features', () => {
+    // features undefined = no plan assigned — fail closed, like every
+    // other entitlement check.
+    expect(makeController().resolve('acme.ecomate.bd')).toMatchObject({
+      storefrontEnabled: false,
     });
   });
 

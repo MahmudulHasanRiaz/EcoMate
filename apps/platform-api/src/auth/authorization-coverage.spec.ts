@@ -204,6 +204,7 @@ describe('authorization coverage', () => {
       'DomainsAdminController',
       'EmailBalanceController',
       'EmailBalanceOverviewController',
+      'FeaturesController',
       'HealthController',
       'InternalController',
       'InternalDomainsController',

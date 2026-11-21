@@ -12,6 +12,7 @@
  * document both are plain numbers.
  */
 import { LIMIT_KEYS, isLimitKey } from '@ecomate/shared-types';
+import { findUnknownFeatureKeys } from '../features/feature-keys';
 
 /** Billing cycles. WEEKLY_7D maps to BillingInterval.CUSTOM + intervalDays 7. */
 export const BILLING_CYCLES = ['MONTHLY', 'YEARLY', 'WEEKLY_7D'] as const;
@@ -383,6 +384,16 @@ export function validateOneTimeFeeEffect(
         )
       ) {
         errors.push(`${at}.features must be a non-empty array of strings`);
+      } else {
+        // Gap 11: a typo'd unlock key would bill the tenant for a feature
+        // that gates nothing. Keys must exist in the catalogue ('*' is the
+        // documented platform wildcard — see feature-keys.ts).
+        const unknown = findUnknownFeatureKeys(effect.features);
+        if (unknown.length > 0) {
+          errors.push(
+            `${at}.features contains unknown feature key(s): ${unknown.join(', ')}`,
+          );
+        }
       }
       break;
     }

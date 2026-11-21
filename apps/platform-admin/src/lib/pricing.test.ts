@@ -98,8 +98,8 @@ describe('effectSummary', () => {
       '1.50',
     );
     expect(
-      effectSummary({ type: 'feature_unlock', features: ['admin_reports'] }),
-    ).toContain('admin_reports');
+      effectSummary({ type: 'feature_unlock', features: ['admin_analytics'] }),
+    ).toContain('admin_analytics');
   });
 });
 

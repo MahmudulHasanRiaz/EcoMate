@@ -61,6 +61,15 @@ enum BillingInterval {
   CUSTOM
 }
 
+/// Feature classification (Boss's words, Features page 2026-11-21):
+/// INITIAL = included in the base plan, ADD_ON = sold as a separate
+/// add-on. Prisma enum values cannot contain hyphens, so the API maps
+/// these to 'initial' / 'add-on' at the boundary.
+enum FeatureKind {
+  INITIAL
+  ADD_ON
+}
+
 enum SubscriptionStatus {
   TRIAL
   ACTIVE
@@ -335,18 +344,32 @@ model SignupRequest {
 }
 
 model Feature {
-  key          String   @id
+  key          String      @id
   name         String
   description  String?
   category     String
-  dependencies String[] @default([])
+  dependencies String[]    @default([])
   unit         String?
-  isActive     Boolean  @default(true)
-  sortOrder    Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  isActive     Boolean     @default(true)
+  sortOrder    Int         @default(0)
+  /// Classification for the console Features page (Boss's words):
+  /// INITIAL = in the base plan, ADD_ON = sold separately. The API
+  /// exposes 'initial' / 'add-on'.
+  kind         FeatureKind @default(INITIAL)
+  /// EN-only scope text for the i-button: what the feature covers.
+  scope        String?
+  /// EN-only text for the i-button: what a tenant WITHOUT the feature
+  /// cannot see or do.
+  withoutAccess String?
+  /// The AddOn row selling this feature when kind = ADD_ON (null for
+  /// initial features and for add-on features not yet converted).
+  addOnId      String?
+  addOn        AddOn?      @relation(fields: [addOnId], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   @@index([category, sortOrder])
+  @@index([kind])
 }
 
 model Plan {
@@ -405,6 +428,10 @@ model PlanVersion {
 
   @@unique([planId, version])
   @@index([planId, effectiveFrom])
+  /// GIN on the features array: the Features page detail view asks
+  /// "which plan versions include key X" (array-contains). A b-tree
+  /// cannot serve that; GIN can.
+  @@index([features], type: Gin)
 }
 
 /// A tenant's request to move to another (public) plan, decided by an
@@ -502,6 +529,10 @@ model AddOn {
   updatedAt   DateTime        @updatedAt
 
   subscriptions SubscriptionAddOn[]
+  /// Features sold through this add-on (Feature.addOnId). Named
+  /// `linkedFeatures` because `features` is already the String[] of
+  /// feature keys this add-on grants.
+  linkedFeatures Feature[]
 }
 
 model SubscriptionAddOn {

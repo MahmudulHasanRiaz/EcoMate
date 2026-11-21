@@ -8,12 +8,18 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useFeatures } from '@/context/features-provider'
 import { SidebarNav } from './components/sidebar-nav'
 
 export function Settings() {
   const { pathname } = useLocation()
   const isMon = pathname.includes('/mon/')
   const [isLoading] = useState(false)
+  // SMTP is a separate add-on (Boss point 1): hide the nav entry for
+  // tenants without the smtp_server feature. While entitlements are
+  // still loading, keep the entry (fail open) to avoid nav flicker.
+  const { hasFeature, loading: featuresLoading } = useFeatures()
+  const showSmtp = featuresLoading || hasFeature('smtp_server')
 
   const opNavGroups = [
     {
@@ -48,7 +54,9 @@ export function Settings() {
         { title: 'Courier', href: '/mon/settings/courier', icon: <Truck size={18} /> },
         { title: 'Shipping', href: '/mon/settings/shipping', icon: <Package size={18} /> },
         { title: 'Tracking & Analytics', href: '/mon/settings/tracking', icon: <Radio size={18} /> },
-        { title: 'SMTP / Email', href: '/mon/settings/smtp', icon: <Mail size={18} /> },
+        ...(showSmtp
+          ? [{ title: 'SMTP / Email', href: '/mon/settings/smtp', icon: <Mail size={18} /> }]
+          : []),
         { title: 'Auth & Integrations', href: '/mon/settings/auth', icon: <Shield size={18} /> },
       ],
     },

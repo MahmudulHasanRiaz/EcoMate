@@ -7,6 +7,11 @@ import * as bcrypt from 'bcryptjs';
 import { FEATURES } from '@ecomate/shared-types';
 import { PrismaClient } from '../src/generated/prisma';
 import {
+  ADD_ON_SEED_ROWS,
+  FEATURE_CONTENT,
+  type FeatureKindLabel,
+} from '../src/features/feature-content';
+import {
   seedLandingContent,
   type LandingContentSeedRow,
 } from '../src/landing-content/landing-content-seed';
@@ -92,6 +97,12 @@ async function seedFeatureCatalog(): Promise<void> {
   const entries = Object.values(FEATURES);
   for (let index = 0; index < entries.length; index += 1) {
     const feature = entries[index];
+    // Kind/scope/withoutAccess/category come from the content defaults
+    // on CREATE only — the operator may change kind and text from the
+    // console afterwards, and a re-seed must never overwrite those
+    // edits. Dependencies stay code-owned (synced every run).
+    const content = FEATURE_CONTENT[feature.key];
+    const kind: FeatureKindLabel = content?.kind ?? 'initial';
     await prisma.feature.upsert({
       where: { key: feature.key },
       update: {
@@ -100,14 +111,54 @@ async function seedFeatureCatalog(): Promise<void> {
       create: {
         key: feature.key,
         name: humanize(feature.key),
-        category: categoryFor(feature.key),
+        category: content?.category ?? categoryFor(feature.key),
         dependencies: feature.dependencies ?? [],
         isActive: true,
         sortOrder: index,
+        kind: kind === 'add-on' ? 'ADD_ON' : 'INITIAL',
+        scope: content?.scope ?? null,
+        withoutAccess: content?.withoutAccess ?? null,
       },
     });
   }
   console.log(`[seed] feature catalog synced: ${entries.length}`);
+}
+
+/**
+ * Placeholder add-on rows for the add-on batch (Boss §0: prices are
+ * Muse's choice for now, all configurable from the console). Create-only
+ * — an operator-edited price is never reset by a re-seed. Each row is
+ * linked back to its feature(s) (Feature.addOnId) when the feature is
+ * classified as an add-on, so the Features page shows the linked
+ * add-on + price from day one.
+ */
+async function seedAddOns(): Promise<void> {
+  for (const row of ADD_ON_SEED_ROWS) {
+    const addOn = await prisma.addOn.upsert({
+      where: { slug: row.slug },
+      update: {},
+      create: {
+        slug: row.slug,
+        name: row.name,
+        description: row.description,
+        price: row.price,
+        currency: 'BDT',
+        interval: 'MONTHLY',
+        features: row.features,
+        limits: {},
+        // Four infra rows ship private (isPublic: false) — their
+        // features have no code gate yet, so they must not be sold
+        // until enforcement is wired (see ADD_ON_SEED_ROWS).
+        isPublic: row.isPublic ?? true,
+        sortOrder: row.sortOrder,
+      },
+    });
+    await prisma.feature.updateMany({
+      where: { key: { in: row.features }, kind: 'ADD_ON' },
+      data: { addOnId: addOn.id },
+    });
+  }
+  console.log(`[seed] add-ons ready: ${ADD_ON_SEED_ROWS.length} rows`);
 }
 
 async function seedTrialPlan(): Promise<void> {
@@ -190,6 +241,7 @@ async function seedLandingContentFromJson(): Promise<void> {
 async function main(): Promise<void> {
   await seedPlatformAdmin();
   await seedFeatureCatalog();
+  await seedAddOns();
   await seedTrialPlan();
   await seedLandingContentFromJson();
 }

@@ -55,6 +55,15 @@ function makeService() {
     tenantDomain: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    subscription: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    addOn: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    subscriptionAddOn: {
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     planVersion: {
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(planVersion),
@@ -422,5 +431,86 @@ describe('ProvisioningService', () => {
     });
     await expect(service.startForSignup('signup-1')).resolves.toBeNull();
     expect(prisma.tenant.create).not.toHaveBeenCalled();
+  });
+
+  it('attaches every active add-on to the trial-plan trial subscription (trial = full product)', async () => {
+    const { service, prisma } = makeService();
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'TRIAL',
+      planVersion: { plan: { slug: 'trial' } },
+    });
+    prisma.addOn.findMany.mockResolvedValue([{ id: 'a1' }, { id: 'a2' }]);
+
+    await service.startForSignup('signup-1');
+
+    expect(prisma.subscriptionAddOn.createMany).toHaveBeenCalledWith({
+      data: [
+        { subscriptionId: 'sub-1', addOnId: 'a1', startedAt: expect.any(Date) },
+        { subscriptionId: 'sub-1', addOnId: 'a2', startedAt: expect.any(Date) },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it('excludes the custom-domain add-on from trial attach (Boss 2026-11-19)', async () => {
+    const { service, prisma } = makeService();
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'TRIAL',
+      planVersion: { plan: { slug: 'trial' } },
+    });
+    prisma.addOn.findMany.mockResolvedValue([]);
+
+    await service.startForSignup('signup-1');
+
+    expect(prisma.addOn.findMany).toHaveBeenCalledWith({
+      where: { isActive: true, slug: { not: 'custom-domain' } },
+      select: { id: true },
+    });
+  });
+
+  it('does not attach add-ons when the subscription is not a trial', async () => {
+    const { service, prisma } = makeService();
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'ACTIVE',
+      planVersion: { plan: { slug: 'trial' } },
+    });
+    prisma.addOn.findMany.mockResolvedValue([{ id: 'a1' }]);
+
+    await service.startForSignup('signup-1');
+
+    expect(prisma.subscriptionAddOn.createMany).not.toHaveBeenCalled();
+  });
+
+  it('does not attach add-ons to a TRIAL subscription on a non-trial plan', async () => {
+    const { service, prisma } = makeService();
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'TRIAL',
+      planVersion: { plan: { slug: 'base' } },
+    });
+    prisma.addOn.findMany.mockResolvedValue([{ id: 'a1' }]);
+
+    await service.startForSignup('signup-1');
+
+    expect(prisma.addOn.findMany).not.toHaveBeenCalled();
+    expect(prisma.subscriptionAddOn.createMany).not.toHaveBeenCalled();
+  });
+
+  it('still provisions when the trial add-on attach fails (best-effort)', async () => {
+    const { service, prisma } = makeService();
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'TRIAL',
+      planVersion: { plan: { slug: 'trial' } },
+    });
+    prisma.addOn.findMany.mockRejectedValue(new Error('db down'));
+
+    const job = await service.startForSignup('signup-1');
+
+    expect(job).toMatchObject({ status: 'SUCCEEDED' });
+    expect(prisma.subscriptionAddOn.createMany).not.toHaveBeenCalled();
   });
 });
