@@ -56,15 +56,47 @@ const PUBLISHED_ROW = {
   isPublished: true,
 };
 
+/** The wire shape of a row with no media: resolved defaults added. */
+const PUBLISHED_WIRE = {
+  ...PUBLISHED_ROW,
+  thumbnailType: 'image',
+  thumbnailUrl: null,
+  thumbnailVideoUrl: null,
+  thumbnailAutoplay: false,
+  videos: [],
+  galleryImages: [],
+};
+
 describe('CaseStudiesService.publicList', () => {
   it('returns published studies only, newest first', async () => {
     const { service, prisma } = makeService();
     prisma.caseStudy.findMany.mockResolvedValue([PUBLISHED_ROW]);
-    await expect(service.publicList()).resolves.toEqual([PUBLISHED_ROW]);
+    await expect(service.publicList()).resolves.toEqual([PUBLISHED_WIRE]);
     expect(prisma.caseStudy.findMany).toHaveBeenCalledWith({
       where: { isPublished: true },
       orderBy: [{ createdAt: 'desc' }, { slug: 'asc' }],
     });
+  });
+
+  it('resolves media with legacy fallback on a pre-backfill row', async () => {
+    const { service, prisma } = makeService();
+    prisma.caseStudy.findMany.mockResolvedValue([
+      {
+        ...PUBLISHED_ROW,
+        featuredImageUrl: 'https://cdn.example.com/hero.jpg',
+        videoUrl: 'https://www.youtube.com/watch?v=x',
+      },
+    ]);
+    const rows = await service.publicList();
+    expect(rows[0].thumbnailUrl).toBe('https://cdn.example.com/hero.jpg');
+    expect(rows[0].videos).toEqual([
+      { url: 'https://www.youtube.com/watch?v=x' },
+    ]);
+    // Legacy fields stay in the payload (additive).
+    expect(rows[0].featuredImageUrl).toBe(
+      'https://cdn.example.com/hero.jpg',
+    );
+    expect(rows[0].videoUrl).toBe('https://www.youtube.com/watch?v=x');
   });
 
   it('returns an empty list when nothing is published', async () => {
@@ -79,7 +111,7 @@ describe('CaseStudiesService.publicBySlug', () => {
     prisma.caseStudy.findUnique.mockResolvedValue(PUBLISHED_ROW);
     await expect(
       service.publicBySlug('dhaka-fashion-house'),
-    ).resolves.toEqual(PUBLISHED_ROW);
+    ).resolves.toEqual(PUBLISHED_WIRE);
     expect(prisma.caseStudy.findUnique).toHaveBeenCalledWith({
       where: { slug: 'dhaka-fashion-house' },
     });
@@ -150,7 +182,7 @@ describe('CaseStudiesService.getById', () => {
   it('returns the study', async () => {
     const { service, prisma } = makeService();
     prisma.caseStudy.findUnique.mockResolvedValue(PUBLISHED_ROW);
-    await expect(service.getById('study-1')).resolves.toEqual(PUBLISHED_ROW);
+    await expect(service.getById('study-1')).resolves.toEqual(PUBLISHED_WIRE);
   });
 
   it('404s on a missing id', async () => {
@@ -206,6 +238,45 @@ describe('CaseStudiesService.create', () => {
       'db down',
     );
   });
+
+  it('dual-writes the legacy columns from the new media fields', async () => {
+    const { service, prisma } = makeService();
+    const dto = validCreateDto();
+    dto.thumbnailUrl = 'https://cdn.example.com/hero.jpg';
+    dto.videos = [{ url: 'https://cdn.example.com/first.mp4' }];
+    dto.galleryImages = [{ url: 'https://cdn.example.com/g1.jpg' }];
+    await service.create(dto, 'actor-1');
+    expect(prisma.caseStudy.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          thumbnailType: 'image',
+          thumbnailUrl: 'https://cdn.example.com/hero.jpg',
+          videos: [{ url: 'https://cdn.example.com/first.mp4' }],
+          galleryImages: [{ url: 'https://cdn.example.com/g1.jpg' }],
+          featuredImageUrl: 'https://cdn.example.com/hero.jpg',
+          videoUrl: 'https://cdn.example.com/first.mp4',
+        }),
+      }),
+    );
+  });
+
+  it('derives the new media from legacy fields for an old client', async () => {
+    const { service, prisma } = makeService();
+    const dto = validCreateDto();
+    dto.featuredImageUrl = 'https://cdn.example.com/legacy.jpg';
+    dto.videoUrl = 'https://www.youtube.com/watch?v=x';
+    await service.create(dto, 'actor-1');
+    expect(prisma.caseStudy.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          thumbnailUrl: 'https://cdn.example.com/legacy.jpg',
+          videos: [{ url: 'https://www.youtube.com/watch?v=x' }],
+          featuredImageUrl: 'https://cdn.example.com/legacy.jpg',
+          videoUrl: 'https://www.youtube.com/watch?v=x',
+        }),
+      }),
+    );
+  });
 });
 
 describe('CaseStudiesService.update', () => {
@@ -256,6 +327,36 @@ describe('CaseStudiesService.update', () => {
     await expect(
       service.update('study-1', { slug: 'taken-slug' }, 'actor-1'),
     ).rejects.toThrow('A case study with the slug "taken-slug" already exists');
+  });
+
+  it('does not touch media columns on an unrelated edit', async () => {
+    const { service, prisma } = makeService();
+    prisma.caseStudy.findUnique.mockResolvedValue(PUBLISHED_ROW);
+    await service.update('study-1', { title: 'Renamed' }, 'actor-1');
+    expect(prisma.caseStudy.update).toHaveBeenCalledWith({
+      where: { id: 'study-1' },
+      data: { title: 'Renamed' },
+    });
+  });
+
+  it('dual-writes on a media update (new fields win over legacy)', async () => {
+    const { service, prisma } = makeService();
+    prisma.caseStudy.findUnique.mockResolvedValue(PUBLISHED_ROW);
+    await service.update(
+      'study-1',
+      {
+        thumbnailUrl: 'https://cdn.example.com/new.jpg',
+        featuredImageUrl: 'https://cdn.example.com/stale.jpg',
+      },
+      'actor-1',
+    );
+    expect(prisma.caseStudy.update).toHaveBeenCalledWith({
+      where: { id: 'study-1' },
+      data: expect.objectContaining({
+        thumbnailUrl: 'https://cdn.example.com/new.jpg',
+        featuredImageUrl: 'https://cdn.example.com/new.jpg',
+      }),
+    });
   });
 });
 

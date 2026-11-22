@@ -41,8 +41,10 @@ function row(
 }
 
 describe('landing sections', () => {
-  it('has 23 sections, every one labelled, every one classified', () => {
-    expect(LANDING_SECTIONS).toHaveLength(23);
+  it('has 22 sections, every one labelled, every one classified', () => {
+    expect(LANDING_SECTIONS).toHaveLength(22);
+    // videoSection retired with Trust.tsx (§5.3) — no tab, no fields.
+    expect(LANDING_SECTIONS).not.toContain('videoSection');
     for (const section of LANDING_SECTIONS) {
       expect(LANDING_SECTION_LABELS[section].length).toBeGreaterThan(0);
       const kinds = [
@@ -229,9 +231,8 @@ describe('landingFieldDefs', () => {
       'bullets',
       'trustNote',
     ]);
-    expect(
-      landingFieldDefs('videoSection', 'main').map((f) => f.name),
-    ).toEqual(['youtubeUrl']);
+    // videoSection retired with Trust.tsx (§5.3): no field defs left.
+    expect(landingFieldDefs('videoSection', 'main')).toEqual([]);
     expect(landingFieldDefs('heroTabs', 'main').map((f) => f.name)).toEqual([
       'tabLabelAdmin',
       'tabLabelOperations',
@@ -295,13 +296,17 @@ describe('section visibility (item 11)', () => {
     ]);
     expect([...SECTION_VISIBILITY_IDS.slice(10)]).toEqual([
       'gettingStarted',
-      'proof',
+      'videoReviews',
+      'textReviews',
       'pricing',
       'faq',
       'leadForm',
       'walkthrough',
-      'videoSection',
     ]);
+    // The retired proof ids are no longer toggleable.
+    for (const id of ['proof', 'videoSection']) {
+      expect(SECTION_VISIBILITY_IDS).not.toContain(id);
+    }
     for (const id of SECTION_VISIBILITY_IDS) {
       expect(SECTION_VISIBILITY_LABELS[id].length).toBeGreaterThan(0);
     }

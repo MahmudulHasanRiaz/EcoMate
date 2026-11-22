@@ -51,10 +51,10 @@ export interface ManagedTestimonial {
   metrics: { stat: string; label: string }[];
   /**
    * Optional slug of a published case study (/case-studies/<slug>)
-   * this testimonial links to from its Trust card. Follow-up: the
-   * console has no field for it yet (the testimonial field defs in
-   * platform-admin belong to the item-14 group) — until then it can
-   * only be set via the landing-content API directly.
+   * this testimonial links to from its text-review card. Follow-up:
+   * the console has no field for it yet (the testimonial field defs
+   * in platform-admin belong to the item-14 group) — until then it
+   * can only be set via the landing-content API directly.
    */
   caseStudySlug?: string;
   /**
@@ -635,6 +635,12 @@ export function mergeLandingContent(
   // CMS Batch 2, item 14: category/challenge/solution pass through
   // when the row carries them (they used to be forced to ''), plus
   // the extended fields (format/videoUrl/imageUrl/logoUrl/rating).
+  //
+  // The managed list is now legacy input for the text-review
+  // FALLBACK only (MkTextReviews renders it when no published
+  // ClientReview exists). New reviews come from GET
+  // /public/client-reviews (lib/client-reviews.ts), managed in the
+  // console at Website → Client Reviews.
   if (
     Array.isArray(managed.testimonials) &&
     managed.testimonials.length > 0
@@ -658,7 +664,7 @@ export function mergeLandingContent(
           typeof t.solution === 'string' ? t.solution : '',
         videoDuration: t.videoDuration,
         videoTitle: t.videoTitle,
-        // Only a well-formed slug becomes a Trust-card link; anything
+        // Only a well-formed slug becomes a review-card link; anything
         // else is dropped (a managed value must never build a bad URL).
         caseStudySlug: isCaseStudySlug(t.caseStudySlug)
           ? t.caseStudySlug

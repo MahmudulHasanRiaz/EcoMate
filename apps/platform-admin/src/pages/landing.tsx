@@ -1336,6 +1336,13 @@ export function LandingPage() {
         />
       ) : (
         <>
+          {section === 'testimonials' ? (
+            <div className="notice" role="status">
+              Testimonials have moved to Client Reviews (Website →
+              Client Reviews). Edits here only affect the fallback
+              stories shown when no published reviews exist.
+            </div>
+          ) : null}
           {/* The add-form card renders inside AddRowForm: when a section has
           nothing left to add it returns null, so no empty card shows. */}
           <AddRowForm

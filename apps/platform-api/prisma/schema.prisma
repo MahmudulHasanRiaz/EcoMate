@@ -1037,7 +1037,12 @@ model CaseStudy {
   solution         String   @db.Text
   outcome          String   @db.Text
   metrics          Json     @default("[]")
+  /// @deprecated Use thumbnailUrl (shared media model, §2) — dual-written
+  /// by the service layer; dropped only by a later migration gated on
+  /// Boss's confirmation (landing-cms-media-design.md §4.3).
   featuredImageUrl String?
+  /// @deprecated Use videos (shared media model, §2) — dual-written by
+  /// the service layer; dropped only by the later cleanup migration.
   videoUrl         String?
   websiteUrl       String?
   seoTitle         String?
@@ -1046,7 +1051,102 @@ model CaseStudy {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  reviews ClientReview[]
+
+  // Shared media model (Portfolio-V3 migration 0010, ported 2026-11-22).
+  // The thumbnail is an image OR a video; the galleries are shown
+  // BESIDES the thumbnail (the thumbnail is not a member of either
+  // gallery). `thumbnailType` is a String validated at the API layer
+  // ('image' | 'video') — intentionally NOT a Prisma enum, same rule
+  // as BlogPost.status: no migration is ever needed to add a type.
+  thumbnailType     String   @default("image")
+  thumbnailUrl      String?
+  thumbnailVideoUrl String?
+  thumbnailAutoplay Boolean  @default(false)
+  /// Video gallery: [{ url, title?, duration? }].
+  videos            Json     @default("[]")
+  /// Image gallery: [{ url, alt?, caption? }] — shown besides the thumbnail.
+  galleryImages     Json     @default("[]")
+
   @@index([isPublished, createdAt])
+}
+
+/// A published client review for the public landing home page
+/// (video slider + text-review sections; console /client-reviews).
+/// A dedicated model, not a LandingContent section: reviews need
+/// first-class media (§2), sort order, ratings, and a case-study link,
+/// and the public list is read as one query, not a JSON merge.
+/// Migrated from LandingContent testimonials (§5) — `sourceKey` is the
+/// idempotency key of that one-time migration and the audit trail.
+/// No slug/detail page, no soft delete, no scheduling (v1 decisions).
+model ClientReview {
+  id           String   @id @default(uuid())
+  /// Reviewer full name (EcoMate-Landing: clientName).
+  reviewerName String
+  /// Reviewer role/title, e.g. "Founder" (may be "").
+  role         String   @default("")
+  /// Company / store name (EcoMate-Landing: companyName).
+  companyName  String
+  /// Business category, e.g. "Fashion" (may be "").
+  category     String   @default("")
+  /// City/area, e.g. "Dhaka" (may be "").
+  location     String   @default("")
+  /// The quote, English — required. Bangla twin optional: the landing
+  /// falls back to English when quoteBn is empty (same rule as
+  /// BlogPost.contentBn — never required, never seeded).
+  quoteEn      String   @db.Text
+  quoteBn      String   @db.Text @default("")
+  websiteUrl   String?
+  /// Company logo (media library or https URL). Distinct from the
+  /// reviewer photo, which is the media-model thumbnail (§2.1).
+  logoUrl      String?
+  /// 1–5 stars; NULL = not given (never 0 — 0 would read as a score).
+  rating       Int?
+  /// [{ stat, label }] lines, max 6 — same shape + cap as
+  /// CaseStudy.metrics and testimonial metrics.
+  metrics      Json     @default("[]")
+  /// Operator's intended display format, API-validated:
+  /// 'video_short' | 'video_standard' | 'image' | 'text'.
+  /// The PUBLIC read re-derives the effective format from the media
+  /// actually present (§3.1) — a stored video format with no video
+  /// degrades to image/text, never to a broken embed.
+  format       String   @default("text")
+  /// 'youtube' | 'upload' — which player renders the review's videos.
+  /// Default 'youtube' (EcoMate-Landing default). Only meaningful when
+  /// the review has videos.
+  videoProvider String  @default("youtube")
+  /// Display duration of the primary video, "M:SS" (may be "").
+  videoDuration String  @default("")
+  /// Optional link to a full case study (replaces the old testimonial
+  /// `caseStudySlug` string — a typed FK survives slug edits).
+  caseStudyId  String?
+  caseStudy    CaseStudy? @relation(fields: [caseStudyId], references: [id], onDelete: SetNull)
+  sortOrder    Int      @default(0)
+  isFeatured   Boolean  @default(false)
+  /// 'draft' | 'published' — API-validated String, NOT a Prisma enum
+  /// (same rule as BlogPost.status). Public reads serve published only.
+  status       String   @default("draft")
+  /// One-time-migration idempotency key: 'testimonials:<key>' for rows
+  /// migrated from LandingContent (§5), NULL for console-created rows.
+  sourceKey    String?  @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Shared media model (§2.1): thumbnail = reviewer photo.
+  thumbnailType      String   @default("image")
+  thumbnailUrl       String?
+  thumbnailVideoUrl  String?
+  thumbnailAutoplay  Boolean  @default(false)
+  videos             Json     @default("[]")
+  galleryImages      Json     @default("[]")
+
+  @@index([status, sortOrder])
+  @@index([status, isFeatured, sortOrder])
+  @@index([caseStudyId])
+  @@index([createdAt(sort: Desc)])
+  // Partial index for the public list (published rows only) lives in
+  // raw migration SQL — Prisma has no partial-index support
+  // (BlogPost_slug_live_key precedent).
 }
 
 /// One file in the platform media library (console /media; StackMate
@@ -1310,9 +1410,26 @@ model BlogPost {
   author           String        @default("")
   categoryId       String?
   category         BlogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// @deprecated Use thumbnailUrl (shared media model, §2) — dual-written
+  /// by the service layer; dropped only by a later migration gated on
+  /// Boss's confirmation (landing-cms-media-design.md §4.3).
   featuredImageUrl String?
+  /// @deprecated Use videos (shared media model, §2) — dual-written by
+  /// the service layer; dropped only by the later cleanup migration.
   videoUrl         String?
+  /// @deprecated Use galleryImages (shared media model, §2) — dual-written
+  /// by the service layer; dropped only by the later cleanup migration.
   galleryUrls      String[]      @default([])
+  // Shared media model (Portfolio-V3 migration 0010, ported 2026-11-22).
+  // See CaseStudy for the full comment — same six fields, same rules.
+  thumbnailType     String        @default("image")
+  thumbnailUrl      String?
+  thumbnailVideoUrl String?
+  thumbnailAutoplay Boolean       @default(false)
+  /// Video gallery: [{ url, title?, duration? }].
+  videos            Json          @default("[]")
+  /// Image gallery: [{ url, alt?, caption? }] — shown besides the thumbnail.
+  galleryImages     Json          @default("[]")
   /// Minutes. Auto-computed from contentEn on save when omitted.
   readTime         Int?
   /// draft | scheduled | published | archived (API-validated).

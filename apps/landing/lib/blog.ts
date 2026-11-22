@@ -12,6 +12,10 @@
  * from a client component (jsdom must not reach the browser bundle).
  */
 import DOMPurify from 'isomorphic-dompurify';
+import {
+  normalizeMedia,
+  type ContentMedia,
+} from './content-media';
 
 export interface PublicBlogCategory {
   id: string;
@@ -30,7 +34,7 @@ export interface PublicBlogTag {
   slug: string;
 }
 
-export interface PublicBlogPost {
+export interface PublicBlogPost extends ContentMedia {
   id: string;
   titleEn: string;
   titleBn: string;
@@ -48,8 +52,11 @@ export interface PublicBlogPost {
     nameBn: string;
     slug: string;
   } | null;
+  /** @deprecated — legacy media columns; readers use resolveMedia(). */
   featuredImageUrl: string | null;
+  /** @deprecated — legacy media columns; readers use resolveMedia(). */
   videoUrl: string | null;
+  /** @deprecated — legacy media columns; readers use resolveMedia(). */
   galleryUrls: string[];
   readTime: number | null;
   status: string;
@@ -136,6 +143,10 @@ function normalizePost(raw: unknown): PublicBlogPost | null {
         }))
         .filter((tag) => tag.slug.length > 0)
     : [];
+  // The six media fields normalize leniently: a row from an older
+  // API (no new fields) degrades to empty media and still renders
+  // from its legacy columns via resolveMedia() (§4.5).
+  const media = normalizeMedia(raw);
   return {
     id: asString(raw.id) ?? '',
     titleEn,
@@ -150,6 +161,7 @@ function normalizePost(raw: unknown): PublicBlogPost | null {
     featuredImageUrl: asString(raw.featuredImageUrl),
     videoUrl: asString(raw.videoUrl),
     galleryUrls: asStringArray(raw.galleryUrls),
+    ...media,
     readTime:
       typeof raw.readTime === 'number' && Number.isFinite(raw.readTime)
         ? raw.readTime

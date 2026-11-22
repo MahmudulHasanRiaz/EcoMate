@@ -19,8 +19,16 @@ const platformApi = configured.endsWith('/api')
  *   the landing renders no user-controlled HTML anywhere).
  * - Turnstile (signup bot check) needs its script, frame, and connect
  *   origins on challenges.cloudflare.com.
+ * - Video embeds (client-review slider click-to-play, blog and
+ *   case-study detail pages) frame YouTube's privacy-enhanced
+ *   player and Vimeo's player — both are allowlisted in `frame-src`
+ *   only; nothing else about the policy is loosened for them.
  * - `img-src https:` allows a remotely hosted brand logo (NEXT_PUBLIC_LOGO_URL);
  *   the logo URL itself is allowlisted in lib/branding.ts.
+ * - `media-src 'self' https:` lets <video> load from the API origin (the
+ *   console picker stores absolute media-library URLs) and from direct
+ *   .mp4/.webm links — same breadth as `img-src`. Without it, cross-origin
+ *   video falls back to `default-src 'self'` and is blocked.
  * - No other third party is loaded: system fonts only, no analytics.
  */
 export const LANDING_CSP = [
@@ -28,9 +36,10 @@ export const LANDING_CSP = [
   "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
+  "media-src 'self' https:",
   "font-src 'self'",
   "connect-src 'self' https://challenges.cloudflare.com",
-  "frame-src https://challenges.cloudflare.com",
+  "frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com https://player.vimeo.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

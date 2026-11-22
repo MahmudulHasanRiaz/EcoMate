@@ -7,6 +7,7 @@ import {
   blogPostDate,
   type PublicBlogPost,
 } from '@/lib/blog';
+import { resolveMedia, resolveThumbnail } from '@/lib/content-media';
 
 const CHROME: Record<
   Locale,
@@ -96,17 +97,18 @@ export function BlogArchiveView({
                   : post.category.nameEn) || post.category.nameEn
               : null;
             const date = formatDate(blogPostDate(post), locale);
+            const thumbnail = resolveThumbnail(resolveMedia(post));
             return (
               <Link
                 key={post.id}
                 className="mk-blog-card"
                 href={`/blog/${post.slug}`}
               >
-                {post.featuredImageUrl ? (
+                {thumbnail ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     className="mk-blog-card-image"
-                    src={post.featuredImageUrl}
+                    src={thumbnail}
                     alt=""
                     loading="lazy"
                   />

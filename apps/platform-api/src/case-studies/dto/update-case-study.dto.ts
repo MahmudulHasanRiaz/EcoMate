@@ -6,6 +6,7 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
+import { MediaFieldsDto } from '../../common/media/media.dto';
 import {
   CASE_STUDY_MAX_SEO_DESCRIPTION_LENGTH,
   CASE_STUDY_MAX_SEO_TITLE_LENGTH,
@@ -24,9 +25,10 @@ import {
  * a case study is renamed by slug, and the old URL simply 404s after
  * the rename); a slug that collides with another study is a 409.
  * Empty-string URL/SEO fields clear the value (the console sends ''
- * for a cleared field); undefined leaves it alone.
+ * for a cleared field); undefined leaves it alone. Media fields come
+ * from MediaFieldsDto (an omitted field keeps the stored value).
  */
-export class UpdateCaseStudyDto {
+export class UpdateCaseStudyDto extends MediaFieldsDto {
   @IsOptional()
   @IsString()
   @MaxLength(CASE_STUDY_MAX_TITLE_LENGTH)

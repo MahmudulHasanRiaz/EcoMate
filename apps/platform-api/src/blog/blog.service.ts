@@ -5,6 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
+import {
+  deriveLegacyMedia,
+  hasMediaInput,
+  previousMediaOf,
+  resolveMediaWithLegacyFallback,
+  resolveMediaWrite,
+} from '../common/media/media.service-helpers';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import {
   BLOG_POST_STATUSES,
@@ -58,11 +65,17 @@ export class BlogService {
     } as const;
   }
 
-  /** Wire shape: flattened tags + computed effectiveStatus. */
+  /**
+   * Wire shape: flattened tags + computed effectiveStatus + resolved
+   * media (new fields win, legacy fallback — §4.3). The legacy fields
+   * stay in the payload (additive — the old landing ignores the new
+   * keys); nothing is removed from a public payload in this build.
+   */
   private toPostWire(post: any) {
     const { tags, ...rest } = post;
     return {
       ...rest,
+      ...resolveMediaWithLegacyFallback(post),
       tags: (tags ?? []).map((link: any) => link.tag),
       effectiveStatus: effectiveStatus(post),
     };
@@ -355,6 +368,10 @@ export class BlogService {
         : (dto.publishedAt ?? null);
     const readTime =
       dto.readTime ?? readTimeFromContent(dto.contentEn);
+    // Media: new fields win; a legacy-only DTO derives them; the
+    // legacy columns are dual-written from the resolved media (§4.3).
+    const media = resolveMediaWrite(dto);
+    const legacy = deriveLegacyMedia(media);
     try {
       const post = await this.prisma.$transaction(async (tx: any) => {
         const created = await tx.blogPost.create({
@@ -368,9 +385,10 @@ export class BlogService {
             contentBn: dto.contentBn ?? '',
             author: dto.author ?? '',
             categoryId: dto.categoryId ?? null,
-            featuredImageUrl: dto.featuredImageUrl ?? null,
-            videoUrl: dto.videoUrl ?? null,
-            galleryUrls: dto.galleryUrls ?? [],
+            ...media,
+            featuredImageUrl: legacy.featuredImageUrl,
+            videoUrl: legacy.videoUrl,
+            galleryUrls: legacy.galleryUrls,
             readTime,
             status,
             publishedAt,
@@ -444,11 +462,17 @@ export class BlogService {
     if (dto.contentBn !== undefined) data.contentBn = dto.contentBn;
     if (dto.author !== undefined) data.author = dto.author;
     if (dto.categoryId !== undefined) data.categoryId = dto.categoryId;
-    if (dto.featuredImageUrl !== undefined) {
-      data.featuredImageUrl = dto.featuredImageUrl;
+    if (hasMediaInput(dto)) {
+      // Media + legacy columns move together, normalized against the
+      // stored row (video→image rescue, grandfathering — §6.3).
+      const media = resolveMediaWrite(dto, previousMediaOf(existing));
+      const legacy = deriveLegacyMedia(media);
+      Object.assign(data, media, {
+        featuredImageUrl: legacy.featuredImageUrl,
+        videoUrl: legacy.videoUrl,
+        galleryUrls: legacy.galleryUrls,
+      });
     }
-    if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
-    if (dto.galleryUrls !== undefined) data.galleryUrls = dto.galleryUrls;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.publishedAt !== undefined) data.publishedAt = dto.publishedAt;
     if (dto.seoTitleEn !== undefined) data.seoTitleEn = dto.seoTitleEn;

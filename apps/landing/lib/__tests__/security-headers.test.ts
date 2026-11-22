@@ -19,11 +19,30 @@ describe('landing security headers', () => {
     ).toBe(false);
   });
 
-  it('allows Turnstile and nothing else third-party', () => {
+  it('allows Turnstile + the video embed origins and nothing else third-party', () => {
     expect(LANDING_CSP).toContain('https://challenges.cloudflare.com');
-    // No other https: origin is allowlisted anywhere in the policy.
+    // No other https: origin is allowlisted anywhere in the policy
+    // besides Turnstile and the two video players.
     const origins = LANDING_CSP.match(/https:\/\/[a-z0-9.-]+/g) ?? [];
-    expect([...new Set(origins)]).toEqual(['https://challenges.cloudflare.com']);
+    expect([...new Set(origins)]).toEqual([
+      'https://challenges.cloudflare.com',
+      'https://www.youtube-nocookie.com',
+      'https://player.vimeo.com',
+    ]);
+  });
+
+  it('allows the video players to frame (slider + detail embeds)', () => {
+    expect(LANDING_CSP).toContain(
+      'frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com https://player.vimeo.com',
+    );
+  });
+
+  it('allows cross-origin video bytes (media library + direct mp4/webm)', () => {
+    // Same breadth as img-src: the console picker stores absolute
+    // media-library URLs (API origin), and video galleries allow direct
+    // .mp4/.webm links. Without media-src, cross-origin <video> falls
+    // back to default-src 'self' and is blocked.
+    expect(LANDING_CSP).toContain("media-src 'self' https:");
   });
 
   it('blocks framing, sniffing, plugins and object embeds', () => {

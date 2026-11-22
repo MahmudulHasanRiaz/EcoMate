@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
 import { BlogModule } from './blog/blog.module';
 import { CaseStudiesModule } from './case-studies/case-studies.module';
+import { ClientReviewsModule } from './client-reviews/client-reviews.module';
 import { AuditModule } from './common/audit.module';
 import { EncryptionModule } from './common/encryption.module';
 import { PlatformMailModule } from './common/platform-mail.module';
@@ -51,6 +52,7 @@ import { UsersModule } from './users/users.module';
     BillingModule,
     BlogModule,
     CaseStudiesModule,
+    ClientReviewsModule,
     DomainConfigModule,
     DomainsModule,
     EmailBalanceModule,

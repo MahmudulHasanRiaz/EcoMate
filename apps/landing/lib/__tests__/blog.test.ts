@@ -163,4 +163,65 @@ describe('blog fetches fail soft', () => {
       { id: 't1', nameEn: 'POS', nameBn: 'পস', slug: 'pos' },
     ]);
   });
+
+  it('normalizes the new media fields, and defaults them when absent (§4.5)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            {
+              id: 'post-new',
+              titleEn: 'New media',
+              slug: 'new-media',
+              contentEn: '<p>Hi</p>',
+              thumbnailType: 'video',
+              thumbnailUrl: 'https://cdn.example.com/poster.jpg',
+              thumbnailVideoUrl: 'https://youtu.be/dQw4w9WgXcQ',
+              thumbnailAutoplay: true,
+              videos: [
+                'https://youtu.be/dQw4w9WgXcQ',
+                { url: 'https://cdn.example.com/v.mp4', title: 'Demo' },
+                { url: '' },
+              ],
+              galleryImages: [
+                { url: 'https://cdn.example.com/g.jpg', alt: 'Packing' },
+              ],
+            },
+            {
+              id: 'post-old',
+              titleEn: 'Old row, no media fields',
+              slug: 'old-row',
+              contentEn: '<p>Hi</p>',
+              featuredImageUrl: 'https://cdn.example.com/legacy.jpg',
+              videoUrl: 'https://youtu.be/legacy',
+              galleryUrls: ['https://cdn.example.com/legacy-g.jpg'],
+            },
+          ],
+          meta: { page: 1, limit: 20, total: 2, totalPages: 1 },
+        }),
+      }),
+    );
+    const page = await fetchBlogPosts();
+    expect(page.data).toHaveLength(2);
+    const [fresh, legacy] = page.data;
+    expect(fresh.thumbnailType).toBe('video');
+    expect(fresh.thumbnailUrl).toBe('https://cdn.example.com/poster.jpg');
+    expect(fresh.thumbnailAutoplay).toBe(true);
+    expect(fresh.videos).toEqual([
+      { url: 'https://youtu.be/dQw4w9WgXcQ' },
+      { url: 'https://cdn.example.com/v.mp4', title: 'Demo' },
+    ]);
+    expect(fresh.galleryImages).toEqual([
+      { url: 'https://cdn.example.com/g.jpg', alt: 'Packing' },
+    ]);
+    // The older-API row degrades to empty media (legacy columns intact,
+    // resolved at render time via resolveMedia).
+    expect(legacy.thumbnailType).toBe('image');
+    expect(legacy.thumbnailUrl).toBeNull();
+    expect(legacy.videos).toEqual([]);
+    expect(legacy.galleryImages).toEqual([]);
+    expect(legacy.featuredImageUrl).toBe('https://cdn.example.com/legacy.jpg');
+  });
 });

@@ -40,6 +40,8 @@ const PUBLIC_CONTROLLERS: Record<string, string> = {
     'public blog for the landing (published posts only, cacheable)',
   PublicCaseStudiesController:
     'public case studies for the landing (published studies only, cacheable)',
+  PublicClientReviewsController:
+    'public client reviews for the landing home page (published reviews only, cacheable)',
   PublicMediaController:
     'public media bytes for the landing (logos/landing images rendered for anonymous visitors; SVG sanitized at upload + sandbox CSP; the library itself is authenticated)',
   HealthController: 'liveness probe, no data',
@@ -203,6 +205,7 @@ describe('authorization coverage', () => {
       'BillingController',
       'BlogController',
       'CaseStudiesController',
+      'ClientReviewsController',
       'DomainsAdminController',
       'EmailBalanceController',
       'EmailBalanceOverviewController',
@@ -226,6 +229,7 @@ describe('authorization coverage', () => {
       'PublicBlogController',
       'PublicBrandingController',
       'PublicCaseStudiesController',
+      'PublicClientReviewsController',
       'PublicLandingContentController',
       'PublicLeadsController',
       'PublicMediaController',

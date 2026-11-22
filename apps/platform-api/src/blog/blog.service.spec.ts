@@ -375,6 +375,86 @@ describe('BlogService.create (posts)', () => {
   });
 });
 
+describe('BlogService media (shared model + dual-write)', () => {
+  it('dual-writes the legacy columns from the new media fields on create', async () => {
+    const { service, prisma } = makeService();
+    prisma.blogPost.findUnique.mockResolvedValue(makePost());
+    await service.create(
+      validCreateDto({
+        thumbnailUrl: 'https://cdn.example.com/hero.jpg',
+        videos: [{ url: 'https://cdn.example.com/first.mp4' }],
+        galleryImages: [
+          { url: 'https://cdn.example.com/g1.jpg', alt: 'One' },
+          { url: 'https://cdn.example.com/g2.jpg' },
+        ],
+      }),
+    );
+    const data = prisma.blogPost.create.mock.calls[0][0].data;
+    expect(data.thumbnailUrl).toBe('https://cdn.example.com/hero.jpg');
+    expect(data.videos).toEqual([
+      { url: 'https://cdn.example.com/first.mp4' },
+    ]);
+    expect(data.featuredImageUrl).toBe('https://cdn.example.com/hero.jpg');
+    expect(data.videoUrl).toBe('https://cdn.example.com/first.mp4');
+    expect(data.galleryUrls).toEqual([
+      'https://cdn.example.com/g1.jpg',
+      'https://cdn.example.com/g2.jpg',
+    ]);
+  });
+
+  it('derives the new media from legacy fields for an old client', async () => {
+    const { service, prisma } = makeService();
+    prisma.blogPost.findUnique.mockResolvedValue(makePost());
+    await service.create(
+      validCreateDto({
+        featuredImageUrl: 'https://cdn.example.com/legacy.jpg',
+        videoUrl: 'https://www.youtube.com/watch?v=x',
+        galleryUrls: ['https://cdn.example.com/g1.jpg'],
+      }),
+    );
+    const data = prisma.blogPost.create.mock.calls[0][0].data;
+    expect(data.thumbnailUrl).toBe('https://cdn.example.com/legacy.jpg');
+    expect(data.videos).toEqual([
+      { url: 'https://www.youtube.com/watch?v=x' },
+    ]);
+    expect(data.galleryImages).toEqual([
+      { url: 'https://cdn.example.com/g1.jpg' },
+    ]);
+  });
+
+  it('public list resolves media with legacy fallback on a pre-backfill row', async () => {
+    const { service, prisma } = makeService();
+    prisma.blogPost.findMany.mockResolvedValue([
+      makePost({
+        featuredImageUrl: '/api/public/media/aaa',
+        videoUrl: 'https://youtube.com/watch?v=x',
+        galleryUrls: ['/api/public/media/bbb'],
+      }),
+    ]);
+    prisma.blogPost.count.mockResolvedValue(1);
+    const result = await service.publicList({});
+    expect(result.data[0].thumbnailUrl).toBe('/api/public/media/aaa');
+    expect(result.data[0].videos).toEqual([
+      { url: 'https://youtube.com/watch?v=x' },
+    ]);
+    expect(result.data[0].galleryImages).toEqual([
+      { url: '/api/public/media/bbb' },
+    ]);
+    // Legacy fields stay in the payload (additive).
+    expect(result.data[0].featuredImageUrl).toBe('/api/public/media/aaa');
+  });
+
+  it('does not touch media columns on an unrelated update', async () => {
+    const { service, prisma } = makeService();
+    prisma.blogPost.findUnique.mockResolvedValue(makePost());
+    await service.update('post-1', { titleEn: 'Renamed' });
+    const data = prisma.blogPost.update.mock.calls[0][0].data;
+    expect(data.thumbnailUrl).toBeUndefined();
+    expect(data.videos).toBeUndefined();
+    expect(data.featuredImageUrl).toBeUndefined();
+  });
+});
+
 describe('BlogService.update / remove (posts)', () => {
   it('404s on a missing or soft-deleted post', async () => {
     const { service, prisma } = makeService();

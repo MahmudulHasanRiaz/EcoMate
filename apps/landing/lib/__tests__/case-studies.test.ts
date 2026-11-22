@@ -80,6 +80,41 @@ describe('isPublicCaseStudy', () => {
     expect(isPublicCaseStudy('study')).toBe(false);
     expect(isPublicCaseStudy([])).toBe(false);
   });
+
+  it('accepts a study with the new media fields (§4.5)', () => {
+    expect(
+      isPublicCaseStudy(
+        study({
+          thumbnailType: 'video',
+          thumbnailUrl: 'https://cdn.example.com/poster.jpg',
+          thumbnailVideoUrl: 'https://youtu.be/dQw4w9WgXcQ',
+          thumbnailAutoplay: true,
+          videos: [{ url: 'https://youtu.be/dQw4w9WgXcQ', title: 'Demo' }],
+          galleryImages: [
+            { url: 'https://cdn.example.com/g.jpg', alt: 'Packing' },
+            'https://cdn.example.com/plain.jpg',
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('accepts a study WITHOUT the new media fields (older API, §4.5)', () => {
+    // The factory builds a row with no media fields at all.
+    expect(isPublicCaseStudy(study())).toBe(true);
+  });
+
+  it('rejects a study with malformed media fields', () => {
+    expect(
+      isPublicCaseStudy(study({ thumbnailType: 'sideways' as any })),
+    ).toBe(false);
+    expect(
+      isPublicCaseStudy(study({ videos: [{ url: '' }] })),
+    ).toBe(false);
+    expect(
+      isPublicCaseStudy(study({ galleryImages: 'nope' as any })),
+    ).toBe(false);
+  });
 });
 
 describe('fetchPublicCaseStudies', () => {

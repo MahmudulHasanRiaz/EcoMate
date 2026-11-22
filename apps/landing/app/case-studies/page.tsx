@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { SiteHeader } from '@/components/site-header';
 import { fetchPublicCaseStudies } from '@/lib/case-studies';
+import { resolveMedia, resolveThumbnail } from '@/lib/content-media';
 
 export const metadata: Metadata = {
   title: 'Case studies — EcoMate',
@@ -33,12 +34,23 @@ export default async function CaseStudiesPage() {
           </p>
         ) : (
           <div className="mk-cs-grid">
-            {studies.map((study) => (
+            {studies.map((study) => {
+              const thumbnail = resolveThumbnail(resolveMedia(study));
+              return (
               <Link
                 key={study.id}
                 className="mk-cs-card"
                 href={`/case-studies/${study.slug}`}
               >
+                {thumbnail ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className="mk-cs-card-image"
+                    src={thumbnail}
+                    alt=""
+                    loading="lazy"
+                  />
+                ) : null}
                 <span className="mk-cs-card-type">{study.businessType}</span>
                 <h2>{study.title}</h2>
                 <p className="mk-cs-card-client">{study.client}</p>
@@ -54,7 +66,8 @@ export default async function CaseStudiesPage() {
                 )}
                 <span className="mk-cs-card-more">Read the story →</span>
               </Link>
-            ))}
+              );
+            })}
           </div>
         )}
         <p className="mk-cs-cta">

@@ -14,6 +14,7 @@ import {
   ListChecks,
   Newspaper,
   Puzzle,
+  Quote,
   ScrollText,
   Search as SearchIcon,
   Settings as SettingsIcon,
@@ -70,6 +71,7 @@ const NAV_GROUPS: {
       { to: '/media', label: 'Media', icon: Images },
       { to: '/case-studies', label: 'Case studies', icon: BookOpen },
       { to: '/blog', label: 'Blog', icon: Newspaper },
+      { to: '/client-reviews', label: 'Client Reviews', icon: Quote },
     ],
   },
   {

@@ -13,6 +13,7 @@ import { AuditPage } from './pages/audit';
 import { BillingPage } from './pages/billing';
 import { BlogPage } from './pages/blog';
 import { CaseStudiesPage } from './pages/case-studies';
+import { ClientReviewsPage } from './pages/client-reviews';
 import { DomainsPage } from './pages/domains';
 import { LandingPage } from './pages/landing';
 import { LeadsPage } from './pages/leads';
@@ -167,6 +168,16 @@ const caseStudiesRoute = createRoute({
   ),
 });
 
+const clientReviewsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/client-reviews',
+  component: () => (
+    <AppShell>
+      <ClientReviewsPage />
+    </AppShell>
+  ),
+});
+
 const billingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/billing',
@@ -282,6 +293,7 @@ const routeTree = rootRoute.addChildren([
   landingRoute,
   mediaRoute,
   caseStudiesRoute,
+  clientReviewsRoute,
   settingsRoute,
   settingsSectionRoute,
   usersRoute,

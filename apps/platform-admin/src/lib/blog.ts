@@ -1,5 +1,6 @@
 import { readJson } from './api';
 import type { Page } from '../types';
+import type { ContentMediaInput, ContentMediaWire } from './content-media';
 
 /**
  * Blog client helpers (console /blog).
@@ -53,7 +54,7 @@ export interface BlogCategory {
   children?: BlogCategory[];
 }
 
-export interface BlogPost {
+export interface BlogPost extends ContentMediaWire {
   id: string;
   titleEn: string;
   titleBn: string;
@@ -68,8 +69,11 @@ export interface BlogPost {
     BlogCategory,
     'id' | 'nameEn' | 'nameBn' | 'slug'
   > | null;
+  /** @deprecated — legacy media columns, derived from the new fields. */
   featuredImageUrl: string | null;
+  /** @deprecated — legacy media columns, derived from the new fields. */
   videoUrl: string | null;
+  /** @deprecated — legacy media columns, derived from the new fields. */
   galleryUrls: string[];
   readTime: number | null;
   status: string;
@@ -96,8 +100,11 @@ export type BlogPostInput = {
   contentBn?: string;
   author?: string;
   categoryId?: string | null;
+  /** @deprecated — send the new media fields instead; the API derives these. */
   featuredImageUrl?: string | null;
+  /** @deprecated — send the new media fields instead; the API derives these. */
   videoUrl?: string | null;
+  /** @deprecated — send the new media fields instead; the API derives these. */
   galleryUrls?: string[];
   readTime?: number | null;
   status?: string;
@@ -108,7 +115,7 @@ export type BlogPostInput = {
   seoDescBn?: string | null;
   canonicalUrl?: string | null;
   tagIds?: string[];
-};
+} & ContentMediaInput;
 
 export type BlogCategoryInput = {
   nameEn: string;

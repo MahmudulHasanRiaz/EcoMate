@@ -1,13 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { MediaGallery } from '@/components/media-gallery';
 import type { Locale } from '@/lib/landingTypes';
+import { blogPostDate, type PublicBlogPost } from '@/lib/blog';
 import {
-  blogPostDate,
-  youtubeEmbedUrl,
-  type PublicBlogPost,
-} from '@/lib/blog';
+  isDirectVideoFile,
+  resolveMedia,
+  resolveThumbnail,
+  videoEmbedUrl,
+} from '@/lib/content-media';
 
 const CHROME: Record<
   Locale,
@@ -50,12 +53,15 @@ function formatDate(iso: string | null, locale: Locale): string {
 }
 
 /**
- * Blog detail: hero (title, meta, featured image), video embed below
- * the hero, sanitized body, gallery grid after the body (click to
- * enlarge in a lightbox), tags. EN/BN toggle switches title/body —
- * missing Bangla falls back to English, never to a blank page.
- * The HTML rendered here was sanitized server-side at fetch time
- * (lib/blog.ts) — this component never sanitizes or trusts raw input.
+ * Blog detail: hero (title, meta, resolved thumbnail), all videos
+ * stacked below the hero (YouTube/Vimeo embed, <video> for uploads,
+ * plain link otherwise), sanitized body, image gallery after the body
+ * (shared MediaGallery: grid + lightbox), tags. EN/BN toggle switches
+ * title/body — missing Bangla falls back to English, never to a blank
+ * page. The HTML rendered here was sanitized server-side at fetch
+ * time (lib/blog.ts) — this component never sanitizes or trusts raw
+ * input. Media resolves new-first with legacy fallback
+ * (resolveMedia), so pre-backfill posts render identically.
  */
 export function BlogDetailView({
   post,
@@ -65,17 +71,7 @@ export function BlogDetailView({
   defaultLocale: Locale;
 }) {
   const [locale, setLocale] = useState<Locale>(defaultLocale);
-  const [lightbox, setLightbox] = useState<string | null>(null);
   const chrome = CHROME[locale];
-
-  useEffect(() => {
-    if (!lightbox) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setLightbox(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [lightbox]);
 
   const title =
     (locale === 'bn' ? post.titleBn : post.titleEn) || post.titleEn;
@@ -87,7 +83,19 @@ export function BlogDetailView({
       post.category.nameEn
     : null;
   const date = formatDate(blogPostDate(post), locale);
-  const embedUrl = youtubeEmbedUrl(post.videoUrl);
+  const media = resolveMedia(post);
+  const thumbnail = resolveThumbnail(media);
+  // The thumbnail video plays first, then the gallery — deduped, so
+  // a video that is both thumbnail and gallery entry plays once.
+  const playList = [
+    ...(media.thumbnailType === 'video' && media.thumbnailVideoUrl
+      ? [{ url: media.thumbnailVideoUrl }]
+      : []),
+    ...media.videos,
+  ].filter(
+    (video, index, all) =>
+      all.findIndex((other) => other.url === video.url) === index,
+  );
 
   return (
     <article>
@@ -128,57 +136,65 @@ export function BlogDetailView({
         {post.readTime ? ` · ${post.readTime} ${chrome.minRead}` : ''}
       </p>
 
-      {post.featuredImageUrl && (
+      {thumbnail && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           className="mk-blog-hero-image"
-          src={post.featuredImageUrl}
+          src={thumbnail}
           alt=""
         />
       )}
 
-      {post.videoUrl &&
-        (embedUrl ? (
-          <div className="mk-vid-frame mk-blog-video">
-            <iframe
-              src={embedUrl}
-              title={title}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
+      {playList.map((video, index) => {
+        const embedUrl = videoEmbedUrl(video.url);
+        const videoTitle = video.title || title;
+        if (embedUrl) {
+          return (
+            <div
+              key={`${video.url}-${index}`}
+              className="mk-vid-frame mk-blog-video"
+            >
+              <iframe
+                src={embedUrl}
+                title={videoTitle}
+                loading="lazy"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          );
+        }
+        if (isDirectVideoFile(video.url)) {
+          return (
+            <video
+              key={`${video.url}-${index}`}
+              className="mk-blog-hero-image"
+              src={video.url}
+              poster={thumbnail ?? undefined}
+              controls
+              preload="metadata"
             />
-          </div>
-        ) : (
-          <p className="mk-blog-video-link">
-            <a href={post.videoUrl} target="_blank" rel="noreferrer">
+          );
+        }
+        return (
+          <p key={`${video.url}-${index}`} className="mk-blog-video-link">
+            <a href={video.url} target="_blank" rel="noreferrer">
               {chrome.watchVideo}
             </a>
           </p>
-        ))}
+        );
+      })}
 
       <div
         className="mk-prose"
         dangerouslySetInnerHTML={{ __html: content }}
       />
 
-      {post.galleryUrls.length > 0 && (
-        <section aria-label={chrome.gallery}>
-          <h2 className="mk-blog-gallery-heading">{chrome.gallery}</h2>
-          <div className="mk-blog-gallery">
-            {post.galleryUrls.map((url, index) => (
-              <button
-                key={`${url}-${index}`}
-                type="button"
-                className="mk-blog-gallery-item"
-                onClick={() => setLightbox(url)}
-                aria-label={`Open image ${index + 1} full size`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" loading="lazy" />
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
+      <MediaGallery
+        images={media.galleryImages}
+        heading={chrome.gallery}
+        closeLabel={chrome.close}
+      />
 
       {post.tags.length > 0 && (
         <p className="mk-blog-tags">
@@ -192,30 +208,6 @@ export function BlogDetailView({
             </span>
           ))}
         </p>
-      )}
-
-      {lightbox && (
-        <div
-          className="mk-blog-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={chrome.gallery}
-          onClick={() => setLightbox(null)}
-        >
-          <button
-            type="button"
-            className="mk-blog-lightbox-close"
-            onClick={() => setLightbox(null)}
-          >
-            {chrome.close} ×
-          </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightbox}
-            alt=""
-            onClick={(event) => event.stopPropagation()}
-          />
-        </div>
       )}
     </article>
   );

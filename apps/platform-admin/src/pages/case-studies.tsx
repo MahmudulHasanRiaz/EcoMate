@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BookOpen, Images, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '../auth';
-import { MediaPicker } from '../components/media-picker';
+import { ContentMediaFields } from '../components/media-fields';
 import {
   ConfirmDialog,
   EmptyState,
@@ -25,8 +25,12 @@ import {
   type CaseStudy,
   type CaseStudyInput,
 } from '../lib/case-studies';
+import {
+  emptyMediaValue,
+  mediaValueFromRow,
+  type ContentMediaValue,
+} from '../lib/content-media';
 import { formatDateTime } from '../lib/format';
-import { resolveAbsoluteMediaUrl } from '../lib/media';
 
 /**
  * Case studies (Landing CMS item 19): the dedicated console page for
@@ -46,8 +50,7 @@ interface FormState {
   solution: string;
   outcome: string;
   metricsText: string;
-  featuredImageUrl: string;
-  videoUrl: string;
+  media: ContentMediaValue;
   websiteUrl: string;
   seoTitle: string;
   seoDescription: string;
@@ -64,8 +67,7 @@ function emptyForm(): FormState {
     solution: '',
     outcome: '',
     metricsText: '',
-    featuredImageUrl: '',
-    videoUrl: '',
+    media: emptyMediaValue(),
     websiteUrl: '',
     seoTitle: '',
     seoDescription: '',
@@ -83,8 +85,7 @@ function formFromStudy(study: CaseStudy): FormState {
     solution: study.solution,
     outcome: study.outcome,
     metricsText: formatMetricLines(study.metrics),
-    featuredImageUrl: study.featuredImageUrl ?? '',
-    videoUrl: study.videoUrl ?? '',
+    media: mediaValueFromRow(study),
     websiteUrl: study.websiteUrl ?? '',
     seoTitle: study.seoTitle ?? '',
     seoDescription: study.seoDescription ?? '',
@@ -113,7 +114,6 @@ export function CaseStudiesPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   const [deleting, setDeleting] = useState<CaseStudy | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -163,7 +163,6 @@ export function CaseStudiesPage() {
 
   function closeEditor() {
     setEditing(null);
-    setPickerOpen(false);
   }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -204,8 +203,12 @@ export function CaseStudiesPage() {
       solution,
       outcome,
       metrics: lines,
-      featuredImageUrl: form.featuredImageUrl.trim() || undefined,
-      videoUrl: form.videoUrl.trim() || undefined,
+      thumbnailType: form.media.thumbnailType,
+      thumbnailUrl: form.media.thumbnailUrl.trim() || undefined,
+      thumbnailVideoUrl: form.media.thumbnailVideoUrl.trim() || undefined,
+      thumbnailAutoplay: form.media.thumbnailAutoplay,
+      videos: form.media.videos,
+      galleryImages: form.media.galleryImages,
       websiteUrl: form.websiteUrl.trim() || undefined,
       seoTitle: form.seoTitle.trim() || undefined,
       seoDescription: form.seoDescription.trim() || undefined,
@@ -517,43 +520,20 @@ export function CaseStudiesPage() {
                 Format: stat | label — at most 6 lines.
               </small>
             </label>
-            <label className="field">
-              Featured image URL
-              <input
-                value={form.featuredImageUrl}
-                onChange={(event) =>
-                  setField('featuredImageUrl', event.target.value)
-                }
-                disabled={saving || !canManage}
-                maxLength={2048}
-                placeholder="https://…"
-              />
-              {canManage ? (
-                <small className="muted-note">
-                  <button
-                    type="button"
-                    className="table-link"
-                    onClick={() => setPickerOpen(true)}
-                  >
-                    <Images size={14} aria-hidden="true" /> Choose from media
-                  </button>
-                </small>
-              ) : null}
-            </label>
-            <label className="field">
-              Video URL
-              <input
-                value={form.videoUrl}
-                onChange={(event) => setField('videoUrl', event.target.value)}
-                disabled={saving || !canManage}
-                maxLength={2048}
-                placeholder="https://www.youtube.com/watch?v=…"
-              />
-              <small className="muted-note">
-                YouTube links embed on the detail page; other links render
-                as a plain link.
-              </small>
-            </label>
+            <ContentMediaFields
+              value={form.media}
+              onChange={(media) => setField('media', media)}
+              disabled={saving || !canManage}
+              folder="case-studies"
+              legacy={
+                editing !== 'new' && editing
+                  ? {
+                      featuredImageUrl: editing.featuredImageUrl,
+                      videoUrl: editing.videoUrl,
+                    }
+                  : undefined
+              }
+            />
             <label className="field">
               Website URL
               <input
@@ -630,18 +610,6 @@ export function CaseStudiesPage() {
           </div>
         )}
       </Modal>
-
-      <MediaPicker
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={(asset) => {
-          setField('featuredImageUrl', resolveAbsoluteMediaUrl(asset.contentUrl));
-          setPickerOpen(false);
-        }}
-        kinds={['image']}
-        title="Choose a featured image"
-        folder="case-studies"
-      />
 
       {deleting ? (
         <ConfirmDialog

@@ -1,4 +1,5 @@
 import { readJson } from './api';
+import type { ContentMediaInput, ContentMediaWire } from './content-media';
 
 /**
  * Case-study client helpers (console /case-studies).
@@ -19,7 +20,7 @@ export interface CaseStudyMetricLine {
   label: string;
 }
 
-export interface CaseStudy {
+export interface CaseStudy extends ContentMediaWire {
   id: string;
   title: string;
   slug: string;
@@ -29,7 +30,9 @@ export interface CaseStudy {
   solution: string;
   outcome: string;
   metrics: CaseStudyMetricLine[];
+  /** @deprecated — legacy media columns, derived from the new fields. */
   featuredImageUrl: string | null;
+  /** @deprecated — legacy media columns, derived from the new fields. */
   videoUrl: string | null;
   websiteUrl: string | null;
   seoTitle: string | null;
@@ -49,7 +52,7 @@ export interface CaseStudyListResponse {
   };
 }
 
-export interface CaseStudyInput {
+export interface CaseStudyInput extends ContentMediaInput {
   title: string;
   slug: string;
   client: string;
@@ -58,7 +61,9 @@ export interface CaseStudyInput {
   solution: string;
   outcome: string;
   metrics: CaseStudyMetricLine[];
+  /** @deprecated — send the new media fields instead; the API derives these. */
   featuredImageUrl?: string;
+  /** @deprecated — send the new media fields instead; the API derives these. */
   videoUrl?: string;
   websiteUrl?: string;
   seoTitle?: string;

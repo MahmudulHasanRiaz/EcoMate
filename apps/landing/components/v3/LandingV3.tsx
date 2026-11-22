@@ -15,6 +15,7 @@
 import React, { useState } from 'react';
 import { useLanding } from '@/components/shell/useLanding';
 import { Reveal } from '@/components/motion/Reveal';
+import type { PublicClientReview } from '@/lib/client-reviews';
 import { staggerDelayMs } from '@/lib/motion';
 import type { PublicPlan } from '@/lib/plans';
 import { MkDock, MkFooter, MkHeader } from './Chrome';
@@ -34,22 +35,46 @@ import {
   MkOmnichannel,
   MkTeam,
 } from './Growth';
-import { MkTrust } from './Trust';
 import { MkPricing } from './Pricing';
 import { MkFaq, MkLeadForm } from './Closing';
+import { MkTextReviews } from './TextReviews';
+import { MkVideoReviews } from './VideoReviews';
 
-export function LandingV3({ plans }: { plans: PublicPlan[] }) {
+export function LandingV3({
+  plans,
+  reviews,
+  caseStudySlugs,
+}: {
+  plans: PublicPlan[];
+  reviews: PublicClientReview[];
+  /** caseStudyId → slug, for the text-review case-study links. */
+  caseStudySlugs: Record<string, string>;
+}) {
   const { locale, content } = useLanding();
   // Mobile nav drawer state lives here so the dock can hide while it is open.
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Section visibility (CMS Batch 2, item 11): a missing id — or no
-  // managed map at all — means VISIBLE. Walkthrough and videoSection
-  // are not top-level sections: they hide inside MkLeadForm (Closing)
-  // and MkTrust respectively, from the same map.
+  // managed map at all — means VISIBLE. Walkthrough is not a
+  // top-level section: it hides inside MkLeadForm (Closing), from
+  // the same map. The retired proof/videoSection ids are ignored —
+  // the proof section now splits into videoReviews + textReviews.
   const isVisible = (id: string) => content.visibility?.[id] !== false;
   // R-PRICING-NAV, extended: the #pricing nav/footer link drops when
   // there are no public plans OR when pricing is hidden in the CMS.
   const hasPricing = plans.length > 0 && isVisible('pricing');
+  // Reviews split by effective format: video_* in the slider, the
+  // rest (text + image) in the static grid.
+  const videoReviews = reviews.filter((review) =>
+    review.effectiveFormat.startsWith('video_'),
+  );
+  const textReviews = reviews.filter(
+    (review) => !review.effectiveFormat.startsWith('video_'),
+  );
+  // The video section renders only when visible AND non-empty; the
+  // text section carries the proof heading only when the video
+  // section is not showing above it (no duplicated h2).
+  const videoSectionShows =
+    isVisible('videoReviews') && videoReviews.length > 0;
 
   return (
     // D3 locale transition: key remounts on locale switch so the page-enter fade +
@@ -120,9 +145,18 @@ export function LandingV3({ plans }: { plans: PublicPlan[] }) {
             <MkGettingStarted />
           </Reveal>
         )}
-        {isVisible('proof') && (
+        {videoSectionShows && (
           <Reveal delay={staggerDelayMs(1)}>
-            <MkTrust />
+            <MkVideoReviews reviews={videoReviews} />
+          </Reveal>
+        )}
+        {isVisible('textReviews') && (
+          <Reveal delay={staggerDelayMs(1)}>
+            <MkTextReviews
+              reviews={textReviews}
+              caseStudySlugs={caseStudySlugs}
+              standalone={!videoSectionShows}
+            />
           </Reveal>
         )}
         {isVisible('pricing') && (

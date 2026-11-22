@@ -13,6 +13,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { MediaFieldsDto } from '../../common/media/media.dto';
 import {
   BLOG_MAX_GALLERY_URLS,
   BLOG_POST_STATUSES,
@@ -23,8 +24,11 @@ import {
  * Partial update. Every field is optional; `tagIds` (when present)
  * REPLACES the post's tags wholesale. `categoryId: null` unassigns
  * the category. Slug changes re-check live-slug uniqueness (409).
+ * Media fields come from MediaFieldsDto (an omitted field keeps the
+ * stored value); the legacy media fields stay accepted for old
+ * clients (see CreateBlogPostDto).
  */
-export class UpdateBlogPostDto {
+export class UpdateBlogPostDto extends MediaFieldsDto {
   @IsOptional()
   @IsString()
   @MinLength(1)

@@ -25,6 +25,9 @@ const PURGEABLE_TAGS = [
   // (lib/blog.ts) — without this, a purge leaves published posts
   // stale for the full 5-minute TTL.
   'blog',
+  // Client reviews (shared media model): public review reads are
+  // tagged 'client-reviews' (lib/client-reviews.ts).
+  'client-reviews',
 ] as const;
 
 function secretMatches(provided: string | null, expected: string): boolean {

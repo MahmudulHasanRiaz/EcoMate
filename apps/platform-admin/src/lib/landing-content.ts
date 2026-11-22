@@ -1,8 +1,10 @@
 import type { LandingContentRow } from '../types';
 
 /**
- * The 23 landing sections, in console tab order (mirrors
- * LANDING_SECTIONS in the platform API's landing-content.constants.ts).
+ * The 22 landing sections, in console tab order (mirrors
+ * LANDING_SECTIONS in the platform API's landing-content.constants.ts,
+ * minus `videoSection` — retired with Trust.tsx, §5.3; rows stored
+ * under it are ignored by the landing and no longer editable here).
  * Scalar sections hold one string per row; object sections hold one
  * flat object per locale (fixed key 'main'); list sections hold one
  * object row per item; map sections hold one object row per key.
@@ -23,7 +25,6 @@ export const LANDING_SECTIONS = [
   'pricingCopy',
   'gettingStarted',
   'walkthrough',
-  'videoSection',
   'heroTabs',
   'dock',
   'header',
@@ -51,7 +52,6 @@ export const LANDING_SECTION_LABELS: Record<LandingSection, string> = {
   pricingCopy: 'Pricing copy',
   gettingStarted: 'Getting started',
   walkthrough: 'Walkthrough',
-  videoSection: 'Video',
   heroTabs: 'Hero tabs',
   dock: 'Dock',
   header: 'Header',
@@ -91,7 +91,6 @@ export const LANDING_OBJECT_SECTIONS: ReadonlySet<string> = new Set([
   'pricingCopy',
   'gettingStarted',
   'walkthrough',
-  'videoSection',
   'heroTabs',
   'dock',
   'header',
@@ -152,10 +151,14 @@ export const CAPABILITY_LABELS: Record<string, string> = {
 /**
  * The 17 toggleable page sections (CMS Batch 2, item 11), in page
  * order: the 10 capability sections, then the standalone sections.
- * Walkthrough and videoSection are not top-level sections — they hide
- * inside the lead form and the proof section respectively. Hero,
- * header, footer and dock are never hideable. Visibility is
- * locale-independent: one 'en' row per id.
+ * Walkthrough is not a top-level section — it hides inside the lead
+ * form. Hero, header, footer and dock are never hideable. Visibility
+ * is locale-independent: one 'en' row per id.
+ *
+ * The proof section retired with the ClientReview model: its
+ * visibility now splits into videoReviews (the video slider) and
+ * textReviews (the text grid). Rows stored under the old ids
+ * ('proof', 'videoSection') are ignored by the landing.
  */
 export const SECTION_VISIBILITY_IDS = [
   'fragmented',
@@ -169,23 +172,23 @@ export const SECTION_VISIBILITY_IDS = [
   'team',
   'infra',
   'gettingStarted',
-  'proof',
+  'videoReviews',
+  'textReviews',
   'pricing',
   'faq',
   'leadForm',
   'walkthrough',
-  'videoSection',
 ] as const;
 
 export const SECTION_VISIBILITY_LABELS: Record<string, string> = {
   ...CAPABILITY_LABELS,
   gettingStarted: 'Getting started',
-  proof: 'Proof (customer stories)',
+  videoReviews: 'Video reviews (slider)',
+  textReviews: 'Text reviews (grid)',
   pricing: 'Pricing',
   faq: 'FAQ',
   leadForm: 'Lead form',
   walkthrough: 'Walkthrough pitch (beside the lead form)',
-  videoSection: 'Video (in the proof section)',
 };
 
 export type LandingFieldKind =
@@ -436,7 +439,6 @@ const OBJECT_FIELDS: Record<string, LandingFieldDef[]> = {
     lines('bullets', 'Bullets'),
     area('trustNote', 'Trust note'),
   ],
-  videoSection: [text('youtubeUrl', 'YouTube URL')],
   heroTabs: [
     text('tabLabelAdmin', 'Tab label — Admin'),
     text('tabLabelOperations', 'Tab label — Operations'),

@@ -13,13 +13,21 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { MediaFieldsDto } from '../../common/media/media.dto';
 import {
   BLOG_MAX_GALLERY_URLS,
   BLOG_POST_STATUSES,
   BLOG_SLUG_PATTERN,
 } from '../blog.constants';
 
-export class CreateBlogPostDto {
+/**
+ * Media: the six shared fields come from MediaFieldsDto. The legacy
+ * featuredImageUrl / videoUrl / galleryUrls stay accepted (an old
+ * client may still send them) — the service derives the new media
+ * from them, and dual-writes them from the new media when new fields
+ * are present. They are outputs now, not the source of truth.
+ */
+export class CreateBlogPostDto extends MediaFieldsDto {
   @IsString()
   @MinLength(1)
   @MaxLength(200)

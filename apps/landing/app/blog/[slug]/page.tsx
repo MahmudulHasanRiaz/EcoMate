@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { SiteHeader } from '@/components/site-header';
 import { fetchBlogPost } from '@/lib/blog';
+import { resolveMedia, resolveThumbnail } from '@/lib/content-media';
 import { fetchLandingSettings } from '@/lib/landing-settings';
 import { BlogDetailView } from './blog-detail-view';
 
@@ -35,6 +36,7 @@ export async function generateMetadata({
     (locale === 'bn' ? post.excerptBn : post.excerptEn) ||
     post.excerptEn ||
     undefined;
+  const thumbnail = resolveThumbnail(resolveMedia(post));
   return {
     title: `${title} — EcoMate`,
     description,
@@ -47,9 +49,7 @@ export async function generateMetadata({
       type: 'article',
       publishedTime: post.publishedAt ?? undefined,
       authors: post.author ? [post.author] : undefined,
-      images: post.featuredImageUrl
-        ? [{ url: post.featuredImageUrl }]
-        : undefined,
+      images: thumbnail ? [{ url: thumbnail }] : undefined,
     },
   };
 }

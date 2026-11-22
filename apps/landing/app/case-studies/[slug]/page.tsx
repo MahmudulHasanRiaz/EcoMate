@@ -1,12 +1,18 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { MediaGallery } from '@/components/media-gallery';
 import { SiteHeader } from '@/components/site-header';
 import {
   fetchPublicCaseStudies,
   fetchPublicCaseStudy,
 } from '@/lib/case-studies';
-import { youtubeEmbedUrl } from '@/lib/contact';
+import {
+  isDirectVideoFile,
+  resolveMedia,
+  resolveThumbnail,
+  videoEmbedUrl,
+} from '@/lib/content-media';
 
 /**
  * Public case-study detail (/case-studies/[slug]). The fetch never
@@ -36,15 +42,14 @@ export async function generateMetadata({
   const description = study.seoDescription?.trim()
     ? study.seoDescription.trim()
     : study.outcome;
+  const thumbnail = resolveThumbnail(resolveMedia(study));
   return {
     title,
     description,
     openGraph: {
       title,
       description,
-      ...(isHttpsUrl(study.featuredImageUrl)
-        ? { images: [{ url: study.featuredImageUrl }] }
-        : {}),
+      ...(isHttpsUrl(thumbnail) ? { images: [{ url: thumbnail }] } : {}),
     },
   };
 }
@@ -63,9 +68,19 @@ export default async function CaseStudyPage({
   const { slug } = await params;
   const study = await fetchPublicCaseStudy(slug);
   if (!study) notFound();
-  const embedUrl = study.videoUrl
-    ? youtubeEmbedUrl(study.videoUrl)
-    : null;
+  const media = resolveMedia(study);
+  const thumbnail = resolveThumbnail(media);
+  // The thumbnail video plays first, then the gallery — deduped, so
+  // a video that is both thumbnail and gallery entry plays once.
+  const playList = [
+    ...(media.thumbnailType === 'video' && media.thumbnailVideoUrl
+      ? [{ url: media.thumbnailVideoUrl }]
+      : []),
+    ...media.videos,
+  ].filter(
+    (video, index, all) =>
+      all.findIndex((other) => other.url === video.url) === index,
+  );
 
   return (
     <>
@@ -81,10 +96,10 @@ export default async function CaseStudyPage({
         </p>
         <h1>{study.title}</h1>
 
-        {isHttpsUrl(study.featuredImageUrl) && (
+        {isHttpsUrl(thumbnail) && (
           <img
             className="mk-cs-hero-img"
-            src={study.featuredImageUrl}
+            src={thumbnail}
             alt={`${study.client} — featured image`}
           />
         )}
@@ -109,24 +124,50 @@ export default async function CaseStudyPage({
           <p>{study.outcome}</p>
         </div>
 
-        {embedUrl && (
-          <div className="mk-cs-video">
-            <iframe
-              src={embedUrl}
-              title={`${study.title} — video`}
-              loading="lazy"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          </div>
-        )}
-        {!embedUrl && isHttpsUrl(study.videoUrl) && (
-          <p className="mk-cs-link">
-            <a href={study.videoUrl} target="_blank" rel="noreferrer">
-              Watch the video ↗
-            </a>
-          </p>
-        )}
+        {playList.map((video, index) => {
+          const embedUrl = videoEmbedUrl(video.url);
+          const videoTitle = video.title || `${study.title} — video`;
+          if (embedUrl) {
+            return (
+              <div key={`${video.url}-${index}`} className="mk-cs-video">
+                <iframe
+                  src={embedUrl}
+                  title={videoTitle}
+                  loading="lazy"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            );
+          }
+          if (isDirectVideoFile(video.url)) {
+            return (
+              <div key={`${video.url}-${index}`} className="mk-cs-video">
+                <video
+                  src={video.url}
+                  poster={thumbnail ?? undefined}
+                  controls
+                  preload="metadata"
+                />
+              </div>
+            );
+          }
+          if (!isHttpsUrl(video.url)) return null;
+          return (
+            <p key={`${video.url}-${index}`} className="mk-cs-link">
+              <a href={video.url} target="_blank" rel="noreferrer">
+                Watch the video ↗
+              </a>
+            </p>
+          );
+        })}
+
+        <MediaGallery
+          images={media.galleryImages}
+          heading="Gallery"
+          closeLabel="Close"
+        />
+
         {isHttpsUrl(study.websiteUrl) && (
           <p className="mk-cs-link">
             <a href={study.websiteUrl} target="_blank" rel="noreferrer">

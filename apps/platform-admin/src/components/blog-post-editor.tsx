@@ -8,7 +8,13 @@ import {
   type BlogPostInput,
   type BlogTag,
 } from '../lib/blog';
+import {
+  emptyMediaValue,
+  mediaValueFromRow,
+  type ContentMediaValue,
+} from '../lib/content-media';
 import { resolveAbsoluteMediaUrl, type MediaAsset } from '../lib/media';
+import { ContentMediaFields } from './media-fields';
 import { ErrorNote } from './ui';
 import { MediaPicker } from './media-picker';
 import { RichTextEditor } from './rich-text-editor';
@@ -18,8 +24,10 @@ import { RichTextEditor } from './rich-text-editor';
  *
  * Full-page form (not a modal — the form is too large): bilingual
  * titles/excerpts, two Tiptap editors (EN + BN content), category,
- * tags, featured image (media library), video URL, gallery (one URL
- * per line + library picks), status/scheduling, read time, SEO.
+ * tags, the shared ContentMediaFields media editor, status/scheduling,
+ * read time, SEO. Only the six new media fields are sent on save —
+ * the API derives the legacy featuredImageUrl/videoUrl/galleryUrls
+ * from them.
  *
  * Conventions: blank slug = auto from the English title (create) or
  * unchanged (edit); blank read time = auto from the English content;
@@ -69,12 +77,8 @@ export function BlogPostEditor({
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
     post?.tags.map((tag) => tag.id) ?? [],
   );
-  const [featuredImageUrl, setFeaturedImageUrl] = useState(
-    post?.featuredImageUrl ?? '',
-  );
-  const [videoUrl, setVideoUrl] = useState(post?.videoUrl ?? '');
-  const [galleryText, setGalleryText] = useState(
-    (post?.galleryUrls ?? []).join('\n'),
+  const [media, setMedia] = useState<ContentMediaValue>(
+    post ? mediaValueFromRow(post) : emptyMediaValue(),
   );
   const [readTime, setReadTime] = useState(
     post?.readTime ? String(post.readTime) : '',
@@ -91,9 +95,9 @@ export function BlogPostEditor({
     post?.canonicalUrl ?? '',
   );
   const [error, setError] = useState<string | null>(null);
-  const [pickerFor, setPickerFor] = useState<
-    'featured' | 'gallery' | 'editor' | null
-  >(null);
+  // Only the Tiptap editors use this page's picker now — the media
+  // section has its own picker inside ContentMediaFields.
+  const [pickerFor, setPickerFor] = useState<'editor' | null>(null);
   // The Tiptap insert callback for the editor that requested an image.
   const editorInsertRef = useRef<((url: string) => void) | null>(null);
 
@@ -120,13 +124,7 @@ export function BlogPostEditor({
     // origin, where a relative /api path would not resolve (same rule
     // as branding logo/favicon).
     const url = resolveAbsoluteMediaUrl(asset.contentUrl);
-    if (pickerFor === 'featured') {
-      setFeaturedImageUrl(url);
-    } else if (pickerFor === 'gallery') {
-      setGalleryText((current) =>
-        current.trim() ? `${current.trim()}\n${url}` : url,
-      );
-    } else if (pickerFor === 'editor') {
+    if (pickerFor === 'editor') {
       editorInsertRef.current?.(url);
       editorInsertRef.current = null;
     }
@@ -147,10 +145,6 @@ export function BlogPostEditor({
       setError('A scheduled post needs a publish date and time.');
       return;
     }
-    const galleryUrls = galleryText
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
     const input: BlogPostInput = {
       titleEn: titleEn.trim(),
       titleBn: titleBn.trim(),
@@ -160,9 +154,12 @@ export function BlogPostEditor({
       contentBn,
       author: author.trim(),
       categoryId: categoryId || null,
-      featuredImageUrl: featuredImageUrl.trim() || null,
-      videoUrl: videoUrl.trim() || null,
-      galleryUrls,
+      thumbnailType: media.thumbnailType,
+      thumbnailUrl: media.thumbnailUrl.trim() || null,
+      thumbnailVideoUrl: media.thumbnailVideoUrl.trim() || null,
+      thumbnailAutoplay: media.thumbnailAutoplay,
+      videos: media.videos,
+      galleryImages: media.galleryImages,
       readTime: readTime.trim() ? Number(readTime) : null,
       status,
       publishedAt: fromLocalInput(publishedAt),
@@ -326,71 +323,16 @@ export function BlogPostEditor({
       )}
 
       <h3 className="blog-editor-section">Media</h3>
-      <div className="inline-form">
-        <label>
-          Featured image URL
-          <input
-            type="text"
-            value={featuredImageUrl}
-            onChange={(event) => setFeaturedImageUrl(event.target.value)}
-            maxLength={2048}
-            placeholder="https://… or pick from the library"
-          />
-        </label>
-        <label>
-          Video URL (YouTube)
-          <input
-            type="text"
-            value={videoUrl}
-            onChange={(event) => setVideoUrl(event.target.value)}
-            maxLength={2048}
-            placeholder="https://www.youtube.com/watch?v=…"
-          />
-        </label>
-      </div>
-      <div className="form-actions">
-        <button
-          type="button"
-          className="button"
-          onClick={() => setPickerFor('featured')}
-        >
-          Choose featured image from library
-        </button>
-        {featuredImageUrl && (
-          <button
-            type="button"
-            className="button button--ghost"
-            onClick={() => setFeaturedImageUrl('')}
-          >
-            Remove featured image
-          </button>
-        )}
-      </div>
-      {featuredImageUrl && (
-        <img
-          className="blog-featured-preview"
-          src={featuredImageUrl}
-          alt="Featured preview"
-        />
-      )}
-      <label className="field">
-        Gallery image URLs (one per line, max 20)
-        <textarea
-          value={galleryText}
-          onChange={(event) => setGalleryText(event.target.value)}
-          rows={4}
-          placeholder={'https://…/photo-1.png\nhttps://…/photo-2.png'}
-        />
-      </label>
-      <div className="form-actions">
-        <button
-          type="button"
-          className="button"
-          onClick={() => setPickerFor('gallery')}
-        >
-          Add gallery image from library
-        </button>
-      </div>
+      <ContentMediaFields
+        value={media}
+        onChange={setMedia}
+        folder="blog"
+        legacy={{
+          featuredImageUrl: post?.featuredImageUrl ?? null,
+          videoUrl: post?.videoUrl ?? null,
+          galleryUrls: post?.galleryUrls ?? [],
+        }}
+      />
 
       <h3 className="blog-editor-section">Publishing</h3>
       <div className="inline-form">
@@ -505,13 +447,7 @@ export function BlogPostEditor({
         }}
         onSelect={onPickAsset}
         kinds={['image']}
-        title={
-          pickerFor === 'gallery'
-            ? 'Add a gallery image'
-            : pickerFor === 'editor'
-              ? 'Insert an image'
-              : 'Choose a featured image'
-        }
+        title="Insert an image"
         folder="blog"
       />
     </div>

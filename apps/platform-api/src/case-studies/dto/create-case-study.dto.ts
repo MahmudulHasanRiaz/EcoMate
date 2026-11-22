@@ -10,6 +10,7 @@ import {
   ValidationArguments,
   ValidationOptions,
 } from 'class-validator';
+import { MediaFieldsDto } from '../../common/media/media.dto';
 import {
   CASE_STUDY_MAX_METRICS,
   CASE_STUDY_MAX_SEO_DESCRIPTION_LENGTH,
@@ -60,7 +61,13 @@ export function IsMetricLines(validationOptions?: ValidationOptions) {
   };
 }
 
-export class CreateCaseStudyDto {
+/**
+ * Media: the six shared fields come from MediaFieldsDto. The legacy
+ * featuredImageUrl / videoUrl stay accepted (an old client may still
+ * send them) — the service derives the new media from them, and
+ * dual-writes them from the new media when new fields are present.
+ */
+export class CreateCaseStudyDto extends MediaFieldsDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(CASE_STUDY_MAX_TITLE_LENGTH)

@@ -35,13 +35,26 @@ export interface PublicCaseStudy {
   isPublished: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The six shared media fields — OPTIONAL (deploy-order safety,
+   * §4.5): a row served by an older API omits them and still
+   * validates; readers resolve media via resolveMedia() (new-first,
+   * legacy fallback) in lib/content-media.ts.
+   */
+  thumbnailType?: 'image' | 'video';
+  thumbnailUrl?: string | null;
+  thumbnailVideoUrl?: string | null;
+  thumbnailAutoplay?: boolean;
+  videos?: Array<{ url: string; title?: string; duration?: string } | string>;
+  galleryImages?: Array<{ url: string; alt?: string; caption?: string } | string>;
 }
 
 /**
  * The slug pattern the API enforces (see
  * platform-api/src/case-studies/case-studies.constants.ts). The
- * landing uses it to guard outbound links (Trust cards) — a managed
- * testimonial's caseStudySlug only becomes a link when it matches.
+ * landing uses it to guard outbound links (text-review cards) — a
+ * managed testimonial's caseStudySlug only becomes a link when it
+ * matches.
  */
 export const CASE_STUDY_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -78,9 +91,36 @@ function isMetricLine(value: unknown): value is PublicCaseStudyMetric {
   );
 }
 
+/**
+ * A gallery entry is an object with a string url, or a plain string
+ * (defensive, §2.2). Absent is fine (older API); anything else makes
+ * the row malformed.
+ */
+function isMediaGallery(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (entry) =>
+      typeof entry === 'string' ||
+      (isRecord(entry) && isNonEmptyString(entry.url)),
+  );
+}
+
 /** Strict row validation — a malformed row is dropped, never rendered. */
 export function isPublicCaseStudy(value: unknown): value is PublicCaseStudy {
   if (!isRecord(value)) return false;
+  const mediaOk =
+    (value.thumbnailType === undefined ||
+      value.thumbnailType === 'image' ||
+      value.thumbnailType === 'video') &&
+    (value.thumbnailUrl === undefined ||
+      isNullableString(value.thumbnailUrl)) &&
+    (value.thumbnailVideoUrl === undefined ||
+      isNullableString(value.thumbnailVideoUrl)) &&
+    (value.thumbnailAutoplay === undefined ||
+      typeof value.thumbnailAutoplay === 'boolean') &&
+    isMediaGallery(value.videos) &&
+    isMediaGallery(value.galleryImages);
   return (
     isNonEmptyString(value.id) &&
     isNonEmptyString(value.title) &&
@@ -99,7 +139,8 @@ export function isPublicCaseStudy(value: unknown): value is PublicCaseStudy {
     isNullableString(value.seoDescription) &&
     typeof value.isPublished === 'boolean' &&
     isNonEmptyString(value.createdAt) &&
-    isNonEmptyString(value.updatedAt)
+    isNonEmptyString(value.updatedAt) &&
+    mediaOk
   );
 }
 

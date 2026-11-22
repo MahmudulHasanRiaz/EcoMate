@@ -25,8 +25,14 @@ export const BLOG_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Words-per-minute used to auto-compute readTime when omitted. */
 export const BLOG_READ_WORDS_PER_MINUTE = 200;
 
-/** Max gallery images per post (keeps the landing gallery grid sane). */
-export const BLOG_MAX_GALLERY_URLS = 20;
+import { MEDIA_MAX_GALLERY_IMAGES } from '../common/media/media.constants';
+
+/**
+ * Max gallery images per post (keeps the landing gallery grid sane).
+ * @deprecated Alias of MEDIA_MAX_GALLERY_IMAGES — kept so no existing
+ * import breaks; new code imports the shared constant directly.
+ */
+export const BLOG_MAX_GALLERY_URLS = MEDIA_MAX_GALLERY_IMAGES;
 
 /**
  * Effective status of a post at a moment in time: a scheduled post

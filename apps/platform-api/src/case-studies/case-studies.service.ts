@@ -4,6 +4,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
+import {
+  deriveLegacyMedia,
+  hasMediaInput,
+  previousMediaOf,
+  resolveMediaWithLegacyFallback,
+  resolveMediaWrite,
+} from '../common/media/media.service-helpers';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { CreateCaseStudyDto } from './dto/create-case-study.dto';
 import { UpdateCaseStudyDto } from './dto/update-case-study.dto';
@@ -23,12 +30,25 @@ export class CaseStudiesService {
     private readonly audit: AuditService,
   ) {}
 
+  /**
+   * Wire shape: resolved media (new fields win, legacy fallback —
+   * §4.3), in the style of BlogService.toPostWire. The legacy fields
+   * stay in the payload (additive); nothing is removed.
+   */
+  private toStudyWire(row: any) {
+    return {
+      ...row,
+      ...resolveMediaWithLegacyFallback(row),
+    };
+  }
+
   /** Public list for the landing: published only, newest first. */
   async publicList() {
-    return this.prisma.caseStudy.findMany({
+    const rows = await this.prisma.caseStudy.findMany({
       where: { isPublished: true },
       orderBy: [{ createdAt: 'desc' }, { slug: 'asc' }],
     });
+    return rows.map((row: any) => this.toStudyWire(row));
   }
 
   /** Public detail: published only; unpublished or missing → 404. */
@@ -39,7 +59,7 @@ export class CaseStudiesService {
     if (!row || !row.isPublished) {
       throw new NotFoundException('Case study not found');
     }
-    return row;
+    return this.toStudyWire(row);
   }
 
   async list(query: { page?: string; limit?: string; q?: string }) {
@@ -66,7 +86,7 @@ export class CaseStudiesService {
     ]);
 
     return {
-      data,
+      data: data.map((row: any) => this.toStudyWire(row)),
       meta: {
         page,
         limit,
@@ -79,10 +99,14 @@ export class CaseStudiesService {
   async getById(id: string) {
     const row = await this.prisma.caseStudy.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Case study not found');
-    return row;
+    return this.toStudyWire(row);
   }
 
   async create(dto: CreateCaseStudyDto, actorId?: string) {
+    // Media: new fields win; a legacy-only DTO derives them; the
+    // legacy columns are dual-written from the resolved media (§4.3).
+    const media = resolveMediaWrite(dto);
+    const legacy = deriveLegacyMedia(media);
     try {
       const row = await this.prisma.caseStudy.create({
         data: {
@@ -94,8 +118,14 @@ export class CaseStudiesService {
           solution: dto.solution,
           outcome: dto.outcome,
           metrics: (dto.metrics ?? []) as any,
-          featuredImageUrl: dto.featuredImageUrl || null,
-          videoUrl: dto.videoUrl || null,
+          ...media,
+          // Json columns: the gallery objects carry optional props,
+          // which Prisma's InputJsonValue rejects — same `as any`
+          // cast as metrics above (the values are already validated).
+          videos: media.videos as any,
+          galleryImages: media.galleryImages as any,
+          featuredImageUrl: legacy.featuredImageUrl,
+          videoUrl: legacy.videoUrl,
           websiteUrl: dto.websiteUrl || null,
           seoTitle: dto.seoTitle || null,
           seoDescription: dto.seoDescription || null,
@@ -109,7 +139,7 @@ export class CaseStudiesService {
         entityId: row.id,
         after: { slug: row.slug, title: row.title, isPublished: row.isPublished },
       });
-      return row;
+      return this.toStudyWire(row);
     } catch (err: any) {
       if (err?.code === 'P2002') {
         throw new ConflictException(
@@ -133,9 +163,16 @@ export class CaseStudiesService {
     if (dto.solution !== undefined) data.solution = dto.solution;
     if (dto.outcome !== undefined) data.outcome = dto.outcome;
     if (dto.metrics !== undefined) data.metrics = dto.metrics;
-    if (dto.featuredImageUrl !== undefined)
-      data.featuredImageUrl = dto.featuredImageUrl || null;
-    if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl || null;
+    if (hasMediaInput(dto)) {
+      // Media + legacy columns move together, normalized against the
+      // stored row (video→image rescue, grandfathering — §6.3).
+      const media = resolveMediaWrite(dto, previousMediaOf(row));
+      const legacy = deriveLegacyMedia(media);
+      Object.assign(data, media, {
+        featuredImageUrl: legacy.featuredImageUrl,
+        videoUrl: legacy.videoUrl,
+      });
+    }
     if (dto.websiteUrl !== undefined)
       data.websiteUrl = dto.websiteUrl || null;
     if (dto.seoTitle !== undefined) data.seoTitle = dto.seoTitle || null;
@@ -163,7 +200,7 @@ export class CaseStudiesService {
           isPublished: updated.isPublished,
         },
       });
-      return updated;
+      return this.toStudyWire(updated);
     } catch (err: any) {
       if (err?.code === 'P2002') {
         throw new ConflictException(
