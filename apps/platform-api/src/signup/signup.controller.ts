@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   Post,
   Query,
@@ -34,6 +35,20 @@ export class SignupController {
   @Get('verify')
   verify(@Query('token') token?: string) {
     return this.signup.verify(token ?? '');
+  }
+
+  /**
+   * Public subdomain-availability lookup for the signup wizard. Always
+   * 200 — taken/invalid/reserved are answers, not errors; only the rate
+   * limit (429) throws. Availability changes, so nothing may cache it.
+   */
+  @Get('subdomain-availability')
+  @Header('Cache-Control', 'no-store')
+  checkSubdomainAvailability(@Query('slug') slug?: string, @Req() req?: any) {
+    return this.signup.checkSubdomainAvailability(
+      slug ?? '',
+      requestMeta(req).ip,
+    );
   }
 
   @Get('status')

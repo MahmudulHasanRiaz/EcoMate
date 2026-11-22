@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   GoneException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -18,7 +20,7 @@ import { PlatformMailService } from '../common/platform-mail.service';
 import { SignupRateLimitService } from './signup-rate-limit.service';
 import { isDisposableEmail } from './signup-disposable';
 import { normalizePhone, phoneVariants } from './signup-phone';
-import { validateSlug } from './signup-slug';
+import { normaliseSlug, validateSlug } from './signup-slug';
 
 const IP_WINDOW_MS = 10 * 60_000;
 const EMAIL_WINDOW_MS = 60 * 60_000;
@@ -27,6 +29,26 @@ const IP_LIMIT = 5;
 const EMAIL_LIMIT = 3;
 const RESEND_LIMIT = 3;
 const TOKEN_TTL_MS = 24 * 60 * 60_000;
+// Public subdomain-availability check: the wizard debounces at 500 ms, so
+// 30/min never trips a real user trying names, and caps bulk enumeration
+// at 1,800/hour/IP.
+const CHECK_LIMIT = 30;
+const CHECK_WINDOW_MS = 60_000;
+// Defensive cap: an over-long query string never reaches the DB.
+const MAX_CHECK_SLUG_LENGTH = 100;
+
+export type SubdomainAvailabilityReason =
+  | 'available'
+  | 'taken'
+  | 'invalid-format'
+  | 'reserved';
+
+export interface SubdomainAvailabilityResult {
+  /** The normalised slug that was judged (trimmed, lower-cased). */
+  slug: string;
+  available: boolean;
+  reason: SubdomainAvailabilityReason;
+}
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -74,20 +96,32 @@ export class SignupService {
     const token = randomBytes(32).toString('hex');
     const now = new Date();
 
-    const signup = await this.prisma.signupRequest.create({
-      data: {
-        tenantName: dto.tenantName.trim(),
-        slug,
-        ownerEmail,
-        ownerPhone,
-        passwordHash,
-        status: 'PENDING_EMAIL',
-        verificationTokenHash: sha256(token),
-        verificationExpiresAt: new Date(now.getTime() + TOKEN_TTL_MS),
-        ipAddress: meta.ip || null,
-        userAgent: meta.userAgent || null,
-      },
-    });
+    let signup;
+    try {
+      signup = await this.prisma.signupRequest.create({
+        data: {
+          tenantName: dto.tenantName.trim(),
+          slug,
+          ownerEmail,
+          ownerPhone,
+          passwordHash,
+          status: 'PENDING_EMAIL',
+          verificationTokenHash: sha256(token),
+          verificationExpiresAt: new Date(now.getTime() + TOKEN_TTL_MS),
+          ipAddress: meta.ip || null,
+          userAgent: meta.userAgent || null,
+        },
+      });
+    } catch (err: any) {
+      // Concurrent-submit race: two signups for the same slug both passed
+      // assertAvailable, and the partial unique index
+      // (SignupRequest_slug_active_key) rejected the loser. Same 409 as
+      // the assertAvailable path — never a 500.
+      if (err?.code === 'P2002') {
+        throw new ConflictException('This store address is already taken');
+      }
+      throw err;
+    }
 
     try {
       await this.mail.sendVerification({
@@ -111,6 +145,71 @@ export class SignupService {
       message:
         'Check your email for the verification link. It expires in 24 hours.',
     };
+  }
+
+  /**
+   * Public subdomain-availability lookup. Answers only whether a slug is
+   * claimable — never who owns a taken slug, never whether the blocker is
+   * a live tenant or a pending signup.
+   *
+   * MUST agree with create() exactly, or tenants see "available" and then
+   * fail at submit. It reuses validateSlug (never re-implements the
+   * pattern/reserved rules) and mirrors assertAvailable's slug rule, with
+   * one difference: create() calls expireStale() first, so an expired
+   * PENDING_EMAIL row does not block submit. The check is read-only, so
+   * the `verificationExpiresAt > now` filter below makes it exactly
+   * equivalent to "expire-then-check" without a write per check.
+   */
+  async checkSubdomainAvailability(
+    rawSlug: string,
+    ip?: string,
+  ): Promise<SubdomainAvailabilityResult> {
+    // Consumed on EVERY call, before validation: cheap local answers
+    // (invalid/reserved) must not be a free endpoint to hammer.
+    const allowed = await this.rateLimit.consume(
+      `subdomain-check:ip:${ip || 'unknown'}`,
+      CHECK_LIMIT,
+      CHECK_WINDOW_MS,
+    );
+    if (!allowed) {
+      // No TooManyRequestsException exists in @nestjs/common; the 429
+      // idiom here is HttpException + HttpStatus (see
+      // RedisRateLimitService.assert and RateLimitGuard).
+      throw new HttpException(
+        'Too many availability checks. Please try again in a moment.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const slug = normaliseSlug(rawSlug);
+    if (String(rawSlug || '').length > MAX_CHECK_SLUG_LENGTH) {
+      return { slug, available: false, reason: 'invalid-format' };
+    }
+    const slugCheck = validateSlug(slug);
+    if (!slugCheck.ok) {
+      return { slug, available: false, reason: slugCheck.reason };
+    }
+
+    const now = new Date();
+    const [tenant, pending] = await Promise.all([
+      this.prisma.tenant.findUnique({ where: { slug } }),
+      this.prisma.signupRequest.findFirst({
+        where: {
+          slug,
+          OR: [
+            { status: 'VERIFIED' },
+            {
+              status: 'PENDING_EMAIL',
+              verificationExpiresAt: { gt: now },
+            },
+          ],
+        },
+      }),
+    ]);
+    if (tenant || pending) {
+      return { slug, available: false, reason: 'taken' };
+    }
+    return { slug, available: true, reason: 'available' };
   }
 
   async verify(rawToken: string) {

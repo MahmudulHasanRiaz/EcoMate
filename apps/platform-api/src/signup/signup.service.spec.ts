@@ -36,7 +36,10 @@ function makeService() {
     },
   };
   const captcha = { verify: jest.fn().mockResolvedValue({ ok: true }) };
-  const rateLimit = { assert: jest.fn() };
+  const rateLimit = {
+    assert: jest.fn(),
+    consume: jest.fn().mockResolvedValue(true),
+  };
   const mail = {
     sendVerification: jest.fn().mockResolvedValue({ delivered: true }),
     sendWelcome: jest.fn().mockResolvedValue({ delivered: true }),
@@ -246,6 +249,202 @@ describe('SignupService — create', () => {
     expect(prisma.signupRequest.delete).toHaveBeenCalledWith({
       where: { id: 'signup-1' },
     });
+  });
+
+  it('maps a concurrent-submit P2002 to the same 409 as assertAvailable', async () => {
+    const { service, prisma } = makeService();
+    const error: any = new Error('Unique constraint failed');
+    error.code = 'P2002';
+    prisma.signupRequest.create.mockRejectedValue(error);
+    const caught = await service
+      .create(dto as any, { ip: '1.2.3.4' })
+      .catch((err) => err);
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect(caught.getStatus()).toBe(409);
+    expect(caught.message).toBe('This store address is already taken');
+  });
+
+  it('propagates non-P2002 insert errors unchanged', async () => {
+    const { service, prisma } = makeService();
+    prisma.signupRequest.create.mockRejectedValue(new Error('db down'));
+    await expect(service.create(dto as any, { ip: '1.2.3.4' })).rejects.toThrow(
+      'db down',
+    );
+  });
+});
+
+describe('SignupService — checkSubdomainAvailability', () => {
+  it('returns available when no tenant or signup holds the slug', async () => {
+    const { service, prisma } = makeService();
+    const result = await service.checkSubdomainAvailability('acme', '1.2.3.4');
+    expect(result).toEqual({
+      slug: 'acme',
+      available: true,
+      reason: 'available',
+    });
+    expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
+      where: { slug: 'acme' },
+    });
+    const pendingCall = prisma.signupRequest.findFirst.mock.calls[0][0];
+    expect(pendingCall.where.slug).toBe('acme');
+    expect(pendingCall.where.OR).toEqual(
+      expect.arrayContaining([
+        { status: 'VERIFIED' },
+        {
+          status: 'PENDING_EMAIL',
+          verificationExpiresAt: { gt: expect.any(Date) },
+        },
+      ]),
+    );
+  });
+
+  it('returns taken when a tenant holds the slug', async () => {
+    const { service, prisma } = makeService();
+    prisma.tenant.findUnique.mockResolvedValue({ id: 'tenant-1' });
+    const result = await service.checkSubdomainAvailability('acme', '1.2.3.4');
+    expect(result).toEqual({
+      slug: 'acme',
+      available: false,
+      reason: 'taken',
+    });
+  });
+
+  it('returns taken when an unexpired pending signup holds the slug', async () => {
+    const { service, prisma } = makeService();
+    prisma.signupRequest.findFirst.mockResolvedValue({ id: 'signup-1' });
+    const result = await service.checkSubdomainAvailability('acme', '1.2.3.4');
+    expect(result).toEqual({
+      slug: 'acme',
+      available: false,
+      reason: 'taken',
+    });
+  });
+
+  it('queries only VERIFIED or unexpired PENDING_EMAIL rows (the §3.3 agreement case)', async () => {
+    // An expired PENDING_EMAIL row must NOT block: create() calls
+    // expireStale() before assertAvailable, so submit would succeed.
+    // The check proves agreement by filtering on verificationExpiresAt
+    // instead of calling expireStale() (the check is read-only). The
+    // live probe proves the end-to-end behaviour against real rows.
+    const { service, prisma } = makeService();
+    const before = Date.now();
+    await service.checkSubdomainAvailability('acme', '1.2.3.4');
+    const pendingCall = prisma.signupRequest.findFirst.mock.calls[0][0];
+    const pendingBranch = pendingCall.where.OR.find(
+      (branch: any) => branch.status === 'PENDING_EMAIL',
+    );
+    expect(pendingBranch).toBeDefined();
+    expect(
+      pendingBranch.verificationExpiresAt.gt.getTime(),
+    ).toBeGreaterThanOrEqual(before);
+    expect(prisma.signupRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid-format without touching the DB', async () => {
+    const { service, prisma } = makeService();
+    for (const slug of ['ab', 'a'.repeat(31), '-acme', 'acme-', 'acme_store']) {
+      const result = await service.checkSubdomainAvailability(slug, '1.2.3.4');
+      expect(result).toEqual({
+        slug: slug.trim().toLowerCase(),
+        available: false,
+        reason: 'invalid-format',
+      });
+    }
+    expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+    expect(prisma.signupRequest.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns reserved without touching the DB', async () => {
+    const { service, prisma } = makeService();
+    const result = await service.checkSubdomainAvailability('www', '1.2.3.4');
+    expect(result).toEqual({
+      slug: 'www',
+      available: false,
+      reason: 'reserved',
+    });
+    expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+    expect(prisma.signupRequest.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid-format for a missing or empty slug', async () => {
+    const { service, prisma } = makeService();
+    for (const slug of ['', '   ', undefined as any]) {
+      const result = await service.checkSubdomainAvailability(slug, '1.2.3.4');
+      expect(result).toEqual({
+        slug: '',
+        available: false,
+        reason: 'invalid-format',
+      });
+    }
+    expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+    expect(prisma.signupRequest.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid-format for over-long input without touching the DB', async () => {
+    const { service, prisma } = makeService();
+    const result = await service.checkSubdomainAvailability(
+      'a'.repeat(101),
+      '1.2.3.4',
+    );
+    expect(result).toEqual({
+      slug: 'a'.repeat(101),
+      available: false,
+      reason: 'invalid-format',
+    });
+    expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+    expect(prisma.signupRequest.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('normalises case and whitespace before judging', async () => {
+    const { service, prisma } = makeService();
+    const result = await service.checkSubdomainAvailability(
+      '  Acme-Store  ',
+      '1.2.3.4',
+    );
+    expect(result).toEqual({
+      slug: 'acme-store',
+      available: true,
+      reason: 'available',
+    });
+    expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
+      where: { slug: 'acme-store' },
+    });
+  });
+
+  it('rate-limits at 30/min/IP with a check-specific 429 message', async () => {
+    const { service, rateLimit, prisma } = makeService();
+    rateLimit.consume.mockResolvedValue(false);
+    const error = await service
+      .checkSubdomainAvailability('acme', '1.2.3.4')
+      .catch((err) => err);
+    expect(error.getStatus()).toBe(429);
+    expect(error.message).toBe(
+      'Too many availability checks. Please try again in a moment.',
+    );
+    expect(error.message).not.toContain('signup attempts');
+    expect(rateLimit.consume).toHaveBeenCalledWith(
+      'subdomain-check:ip:1.2.3.4',
+      30,
+      60_000,
+    );
+    // No work happens once the limit trips.
+    expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('consumes the limit even for cheap local answers, keyed per IP', async () => {
+    const { service, rateLimit } = makeService();
+    await service.checkSubdomainAvailability('ab', '1.2.3.4');
+    await service.checkSubdomainAvailability('www', '5.6.7.8');
+    expect(rateLimit.consume).toHaveBeenCalledWith(
+      'subdomain-check:ip:1.2.3.4',
+      30,
+      60_000,
+    );
+    expect(rateLimit.consume).toHaveBeenCalledWith(
+      'subdomain-check:ip:5.6.7.8',
+      30,
+      60_000,
+    );
   });
 });
 

@@ -1,14 +1,22 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
+  RESERVED_SLUGS,
+  SLUG_PATTERN,
   slugify,
   validateAccountStep,
   validateSignup,
   validateStoreStep,
   type FieldErrors,
 } from '@/lib/signup-validation';
+import {
+  SUBDOMAIN_CHECK_FAILED_MESSAGE,
+  SUBDOMAIN_TAKEN_MESSAGE,
+  SubdomainAvailabilityWatcher,
+  type AvailabilityStatus,
+} from '@/lib/subdomain-availability';
 import { Turnstile } from './turnstile';
 import {
   RESEND_UNAVAILABLE_MESSAGE,
@@ -75,7 +83,7 @@ function SignupUnavailable() {
   );
 }
 
-export function SignupWizard() {
+export function SignupWizard({ tenantDomain }: { tenantDomain: string }) {
   // Mirrors the platform's fail-closed rule: in production without a
   // Turnstile site key no challenge can render, so the wizard never
   // opens (see lib/verification.ts). Direct member accesses — only
@@ -99,6 +107,48 @@ export function SignupWizard() {
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState('');
   const [resendError, setResendError] = useState('');
+
+  // Live subdomain availability (debounced 500 ms, sequenced — see
+  // lib/subdomain-availability.ts). The watcher is created once and
+  // disposed on unmount.
+  const [availability, setAvailability] = useState<AvailabilityStatus>({
+    state: 'idle',
+  });
+  const [watcher] = useState(
+    () => new SubdomainAvailabilityWatcher(setAvailability),
+  );
+  useEffect(() => () => watcher.dispose(), [watcher]);
+
+  // The slug the server judges: the same normalisation submit uses.
+  const normalisedSlug = form.slug.trim().toLowerCase();
+  // Locally valid = passes the client-side format + reserved checks, the
+  // same rules validateStoreStep applies. Only such slugs are checked
+  // against the API; anything else is answered locally, instantly.
+  const slugLocallyValid =
+    SLUG_PATTERN.test(normalisedSlug) && !RESERVED_SLUGS.has(normalisedSlug);
+  // The auto-slugify from the store name (update() above) changes
+  // normalisedSlug too, so typing a store name checks the derived slug
+  // without the user touching the field.
+  useEffect(() => {
+    watcher.observe(slugLocallyValid ? normalisedSlug : null);
+  }, [watcher, normalisedSlug, slugLocallyValid]);
+
+  // Only a positive "taken" answer for the CURRENT slug blocks. Checking,
+  // error and rate-limited never block — submit is the authority when
+  // the check cannot run.
+  const isTakenForCurrentSlug =
+    availability.state === 'taken' &&
+    availability.slug === normalisedSlug;
+  const isAvailableForCurrentSlug =
+    availability.state === 'available' &&
+    availability.slug === normalisedSlug;
+  const isCheckingForCurrentSlug =
+    availability.state === 'checking' &&
+    availability.slug === normalisedSlug;
+  const isCheckFailedForCurrentSlug =
+    (availability.state === 'error' ||
+      availability.state === 'rate-limited') &&
+    availability.slug === normalisedSlug;
 
   const onToken = useCallback((token: string) => setCaptchaToken(token), []);
   const onResendToken = useCallback(
@@ -127,6 +177,11 @@ export function SignupWizard() {
       step === 1
         ? validateStoreStep(form)
         : validateAccountStep(form);
+    // A taken slug blocks exactly like a reserved one, through the same
+    // errors.slug mechanism — so step-1 and submit validation both see it.
+    if (step === 1 && isTakenForCurrentSlug) {
+      nextErrors.slug = SUBDOMAIN_TAKEN_MESSAGE;
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
     setServerError('');
@@ -142,6 +197,14 @@ export function SignupWizard() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const nextErrors = validateSignup(form);
+    if (isTakenForCurrentSlug) {
+      nextErrors.slug = SUBDOMAIN_TAKEN_MESSAGE;
+      setErrors(nextErrors);
+      // The slug field lives on step 1 — take the user back there so the
+      // block is visible instead of a silent no-op on step 3.
+      setStep(1);
+      return;
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -335,11 +398,26 @@ export function SignupWizard() {
               3–30 lowercase letters, numbers or hyphens. This becomes your
               subdomain; you can connect a custom domain later.
             </p>
-            {errors.slug && (
+            {slugLocallyValid && (
+              <p className="hint">
+                {normalisedSlug}.{tenantDomain}
+              </p>
+            )}
+            {isTakenForCurrentSlug ? (
+              <p className="error" role="alert">
+                {SUBDOMAIN_TAKEN_MESSAGE}
+              </p>
+            ) : errors.slug ? (
               <p className="error" role="alert">
                 {errors.slug}
               </p>
-            )}
+            ) : isCheckingForCurrentSlug ? (
+              <p className="hint">Checking availability…</p>
+            ) : isAvailableForCurrentSlug ? (
+              <p className="hint">Available</p>
+            ) : isCheckFailedForCurrentSlug ? (
+              <p className="hint">{SUBDOMAIN_CHECK_FAILED_MESSAGE}</p>
+            ) : null}
           </div>
         </>
       )}
@@ -435,7 +513,9 @@ export function SignupWizard() {
               <dt>Store</dt>
               <dd>{form.tenantName}</dd>
               <dt>Store address</dt>
-              <dd>{form.slug}</dd>
+              <dd>
+                {normalisedSlug}.{tenantDomain}
+              </dd>
               <dt>Owner email</dt>
               <dd>{form.ownerEmail}</dd>
               {form.ownerPhone && (

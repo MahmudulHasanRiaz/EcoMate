@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { SignupWizard } from '@/components/signup-wizard';
 import { SiteHeader } from '@/components/site-header';
+import { fetchLandingSettings } from '@/lib/landing-settings';
 import {
   fetchPublicPlans,
   trialCtaCopy,
@@ -19,7 +20,11 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function SignupPage() {
+export default async function SignupPage() {
+  // Server-side: the wizard needs the tenant base domain for the host
+  // preview ({slug}.{tenantDomain}). Fail-soft defaults come from
+  // fetchLandingSettings when the API is unreachable.
+  const { tenantDomain } = await fetchLandingSettings();
   return (
     <>
       <SiteHeader action="home" />
@@ -33,7 +38,7 @@ export default function SignupPage() {
             nobody can claim an address that is not theirs.
           </p>
         </div>
-        <SignupWizard />
+        <SignupWizard tenantDomain={tenantDomain} />
         <p className="center-note">
           Already started? Open the verification link from your inbox.
         </p>
