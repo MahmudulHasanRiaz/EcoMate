@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { apiClient } from '@/lib/api-client'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface EntitlementsResponse {
   planName: string | null
@@ -34,8 +35,25 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
   const [accessState, setAccessState] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // This provider wraps the whole app (main.tsx), so it mounts on public
+  // auth pages too. Entitlements are meaningless without a session — and
+  // firing the call logged-out 401s, which used to drive the 401
+  // interceptor's 30s refresh loop and bounce the user to sign-in with
+  // "session expired" (reported live 2026-11-22 on the OTP page). Gate on
+  // the access token, like the authenticated layout already does: the
+  // effect re-runs when the token appears at login, and clears stale
+  // entitlements at logout.
+  const accessToken = useAuthStore((s) => s.auth.accessToken)
 
   useEffect(() => {
+    if (!accessToken) {
+      setFeatures([])
+      setPlanName(null)
+      setAccessState(null)
+      setError(null)
+      setLoading(false)
+      return
+    }
     let cancelled = false
     apiClient
       .get<EntitlementsResponse>('/entitlements/me')
@@ -53,7 +71,7 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
       })
     return () => { cancelled = true }
-  }, [])
+  }, [accessToken])
 
   const hasFeature = useCallback(
     (key: string) => features.includes('*') || features.includes(key),

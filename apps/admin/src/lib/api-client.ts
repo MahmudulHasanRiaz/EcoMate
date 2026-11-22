@@ -36,11 +36,38 @@ export function buildSessionExpiredRedirect(pathname: string, search: string): s
 }
 
 /**
+ * Public auth pages: unauthenticated by design. A 401 here (e.g. a
+ * background entitlements fetch while logged out) is NOT a session
+ * expiring — there is no session. The interceptor must never bounce the
+ * user off these pages to sign-in: a user copying their reset code from
+ * email would come back ~30s later to a "session expired" redirect
+ * (reported live 2026-11-22 on the OTP page). Includes the reset flow's
+ * new /reset-password page.
+ */
+const PUBLIC_AUTH_PATHS = new Set([
+  '/sign-in',
+  '/sign-in-2',
+  '/sign-up',
+  '/forgot-password',
+  '/otp',
+  '/reset-password',
+])
+
+export function isPublicAuthPath(pathname: string): boolean {
+  let path = pathname.replace(/\/+$/, '') || '/'
+  if (path === '/admin') path = '/'
+  else if (path.startsWith('/admin/')) path = path.slice('/admin'.length)
+  return PUBLIC_AUTH_PATHS.has(path)
+}
+
+/**
  * Only redirect on an expired session when there WAS an authenticated session.
  * A bare 401 with no token while already on the sign-in page is just a failed
- * anonymous call — bouncing there again would loop forever.
+ * anonymous call — bouncing there again would loop forever. And a 401 on any
+ * public auth page is never a session expiring (see isPublicAuthPath).
  */
 export function shouldRedirectOnSessionExpiry(hadToken: boolean, pathname: string): boolean {
+  if (isPublicAuthPath(pathname)) return false
   return hadToken || pathname !== '/admin/sign-in'
 }
 

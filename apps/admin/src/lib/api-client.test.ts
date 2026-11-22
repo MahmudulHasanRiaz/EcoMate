@@ -3,6 +3,7 @@ import axios, { AxiosError } from 'axios'
 import {
   apiClient,
   buildSessionExpiredRedirect,
+  isPublicAuthPath,
   shouldRedirectOnSessionExpiry,
   sessionRedirect,
 } from './api-client'
@@ -112,6 +113,90 @@ describe('apiClient session expiry (G-21)', () => {
     expect(shouldRedirectOnSessionExpiry(false, '/admin/sign-in')).toBe(false)
   })
 
+  it('never redirects from a public auth page, with or without a token', () => {
+    // A 401 on a public auth page is not a session expiring — there is no
+    // session. The reset flow (otp/forgot-password/reset-password) must
+    // survive the user leaving the tab to copy their code (2026-11-22).
+    for (const path of [
+      '/admin/sign-in',
+      '/admin/sign-in-2',
+      '/admin/sign-up',
+      '/admin/forgot-password',
+      '/admin/otp',
+      '/admin/reset-password',
+    ]) {
+      expect(shouldRedirectOnSessionExpiry(false, path)).toBe(false)
+      expect(shouldRedirectOnSessionExpiry(true, path)).toBe(false)
+    }
+  })
+
+  it('still redirects from authenticated pages, with or without a token', () => {
+    expect(shouldRedirectOnSessionExpiry(true, '/admin/op/orders')).toBe(true)
+    expect(shouldRedirectOnSessionExpiry(false, '/admin/op/orders')).toBe(true)
+    expect(shouldRedirectOnSessionExpiry(true, '/admin/')).toBe(true)
+    expect(shouldRedirectOnSessionExpiry(false, '/admin/')).toBe(true)
+  })
+
+  it('isPublicAuthPath normalises the /admin basepath and trailing slashes', () => {
+    expect(isPublicAuthPath('/admin/otp')).toBe(true)
+    expect(isPublicAuthPath('/otp')).toBe(true)
+    expect(isPublicAuthPath('/admin/otp/')).toBe(true)
+    expect(isPublicAuthPath('/reset-password')).toBe(true)
+    expect(isPublicAuthPath('/admin/op/orders')).toBe(false)
+    expect(isPublicAuthPath('/admin/')).toBe(false)
+    expect(isPublicAuthPath('/')).toBe(false)
+  })
+
+  it('does NOT redirect when refresh retries exhaust on a public auth page', async () => {
+    const assignSpy = vi
+      .spyOn(sessionRedirect, 'assign')
+      .mockImplementation(() => {})
+    apiClient.defaults.adapter = async (config) => unauthorized(config) as never
+    const resetSpy = vi.spyOn(useAuthStore.getState().auth, 'reset')
+    const originalUrl = window.location.pathname + window.location.search
+    window.history.pushState({}, '', '/admin/otp?email=a@b.com')
+
+    try {
+      const request = apiClient.get('/entitlements/me')
+      // Attach the rejection assertion BEFORE advancing timers: the
+      // request rejects while the backoff runs, and a rejection with no
+      // handler attached at that point is reported as an unhandled error
+      // even if it is awaited later.
+      const assertion = expect(request).rejects.toBeTruthy()
+      await vi.advanceTimersByTimeAsync(31000)
+
+      await assertion
+      // Auth is still cleared — only the bounce is suppressed.
+      expect(resetSpy).toHaveBeenCalled()
+      expect(assignSpy).not.toHaveBeenCalled()
+    } finally {
+      window.history.pushState({}, '', originalUrl)
+    }
+  })
+
+  it('still redirects when refresh retries exhaust on an authenticated page', async () => {
+    const assignSpy = vi
+      .spyOn(sessionRedirect, 'assign')
+      .mockImplementation(() => {})
+    apiClient.defaults.adapter = async (config) => unauthorized(config) as never
+    const originalUrl = window.location.pathname + window.location.search
+    window.history.pushState({}, '', '/admin/op/orders')
+
+    try {
+      const request = apiClient.get('/entitlements/me')
+      // Attach before advancing timers (see the test above).
+      const assertion = expect(request).rejects.toBeTruthy()
+      await vi.advanceTimersByTimeAsync(31000)
+
+      await assertion
+      expect(assignSpy).toHaveBeenCalledWith(
+        expect.stringContaining('expired=1'),
+      )
+    } finally {
+      window.history.pushState({}, '', originalUrl)
+    }
+  })
+
   it('logs out and redirects with expired=1 when refresh retries exhaust on a 401', async () => {
     const assignSpy = vi
       .spyOn(sessionRedirect, 'assign')
@@ -120,9 +205,11 @@ describe('apiClient session expiry (G-21)', () => {
     const resetSpy = vi.spyOn(useAuthStore.getState().auth, 'reset')
 
     const request = apiClient.get('/hr/anything')
+    // Attach before advancing timers (see above).
+    const assertion = expect(request).rejects.toBeTruthy()
     await vi.advanceTimersByTimeAsync(31000)
 
-    await expect(request).rejects.toBeTruthy()
+    await assertion
     expect(resetSpy).toHaveBeenCalled()
     expect(assignSpy).toHaveBeenCalledWith(
       expect.stringMatching(/^\/admin\/sign-in\?/),

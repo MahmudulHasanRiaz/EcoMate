@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from '@tanstack/react-router'
-import { showSubmittedData } from '@/lib/show-submitted-data'
+import { toast } from 'sonner'
+import { apiClient } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -28,9 +29,12 @@ const formSchema = z.object({
     .max(6, 'Please enter the 6-digit code.'),
 })
 
-type OtpFormProps = React.HTMLAttributes<HTMLFormElement>
+type OtpFormProps = React.HTMLAttributes<HTMLFormElement> & {
+  /** The email the code was sent to — verify-otp needs it. */
+  email: string
+}
 
-export function OtpForm({ className, ...props }: OtpFormProps) {
+export function OtpForm({ email, className, ...props }: OtpFormProps) {
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
 
@@ -42,14 +46,33 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
   // eslint-disable-next-line react-hooks/incompatible-library
   const otp = form.watch('otp')
 
-  function onSubmit(data: z.infer<typeof formSchema>) {
+  async function onSubmit(data: z.infer<typeof formSchema>) {
     setIsLoading(true)
-    showSubmittedData(data)
 
-    setTimeout(() => {
+    try {
+      const res = await apiClient.post<{ resetToken: string }>(
+        '/auth/verify-otp',
+        { email, otp: data.otp },
+      )
+      // The reset token is a 5-minute JWT — carry it in router state, not
+      // the URL, so it never lands in browser history or server logs.
+      navigate({
+        to: '/reset-password',
+        state: { resetToken: res.data.resetToken },
+      })
+    } catch (error: any) {
+      const raw = error.response?.data?.message
+      const message =
+        (Array.isArray(raw) ? raw.join(' ') : raw) ||
+        'Invalid or expired code. Please try again.'
+      // Surface the failure in-app (inline + toast) and STAY on this page:
+      // the old stub toasted the submitted values and bounced to '/', which
+      // stranded the user with no way to retry or reset.
+      form.setError('otp', { message })
+      toast.error(message)
+    } finally {
       setIsLoading(false)
-      navigate({ to: '/' })
-    }, 1000)
+    }
   }
 
   return (
@@ -69,6 +92,12 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
                 <InputOTP
                   maxLength={6}
                   {...field}
+                  onChange={(value) => {
+                    // Clear a stale server error as soon as the user types a
+                    // fresh code, so the old message doesn't linger.
+                    form.clearErrors('otp')
+                    field.onChange(value)
+                  }}
                   containerClassName='justify-between sm:[&>[data-slot="input-otp-group"]>div]:w-12'
                 >
                   <InputOTPGroup>

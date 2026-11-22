@@ -107,6 +107,12 @@ declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router
   }
+
+  // Router history state carried between auth pages: the password-reset
+  // JWT from OTP verification to /reset-password (never in the URL).
+  interface HistoryState {
+    resetToken?: string
+  }
 }
 
 // Remove the boot skeleton the moment React commits the first paint.

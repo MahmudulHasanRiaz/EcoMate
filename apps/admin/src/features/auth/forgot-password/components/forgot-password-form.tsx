@@ -39,15 +39,19 @@ export function ForgotPasswordForm({
   async function onSubmit(data: z.infer<typeof formSchema>) {
     setIsLoading(true)
 
+    // The OTP page needs the email to verify the code (and to resend it),
+    // so it travels as a search param in BOTH branches: the catch branch
+    // still routes to /otp (anti-enumeration — never reveal whether the
+    // email exists), and without the email that page would be unusable.
     try {
       await apiClient.post('/auth/forgot-password', { email: data.email })
       form.reset()
-      navigate({ to: '/otp' })
+      navigate({ to: '/otp', search: { email: data.email } })
       toast.success(`Email sent to ${data.email}`)
     } catch {
       toast.success('If the email exists, a reset code has been sent')
       form.reset()
-      navigate({ to: '/otp' })
+      navigate({ to: '/otp', search: { email: data.email } })
     } finally {
       setIsLoading(false)
     }

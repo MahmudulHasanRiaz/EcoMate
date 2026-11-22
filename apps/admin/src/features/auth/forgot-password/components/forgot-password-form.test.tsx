@@ -4,11 +4,16 @@ import { userEvent, type Locator } from 'vitest/browser'
 import { ForgotPasswordForm } from './forgot-password-form'
 
 const navigateMock = vi.fn()
+const postMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@tanstack/react-router', async (orig) => {
   const actual = await orig<typeof import('@tanstack/react-router')>()
   return { ...actual, useNavigate: () => navigateMock }
 })
+
+vi.mock('@/lib/api-client', () => ({
+  apiClient: { post: postMock },
+}))
 
 vi.mock('@/lib/utils', async (orig) => ({
   ...(await orig()),
@@ -22,6 +27,7 @@ describe('ForgotPasswordForm', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    postMock.mockResolvedValue({ data: {} })
 
     screen = await render(<ForgotPasswordForm />)
     emailInput = screen.getByRole('textbox', { name: /^Email$/i })
@@ -40,15 +46,38 @@ describe('ForgotPasswordForm', () => {
       .toBeInTheDocument()
   })
 
-  it('resets the form and navigates to /otp on success', async () => {
+  it('resets the form and navigates to /otp with the email on success', async () => {
     await userEvent.fill(emailInput, 'a@b.com')
     await userEvent.click(continueButton)
 
     await vi.waitFor(() =>
-      expect(navigateMock).toHaveBeenCalledWith({ to: '/otp' })
+      expect(postMock).toHaveBeenCalledWith('/auth/forgot-password', {
+        email: 'a@b.com',
+      }),
+    )
+    await vi.waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/otp',
+        search: { email: 'a@b.com' },
+      }),
     )
 
     // Form should reset on success
+    await expect.element(emailInput).toHaveValue('')
+  })
+
+  it('still routes to /otp with the email when the request fails (anti-enumeration)', async () => {
+    postMock.mockRejectedValue(new Error('network down'))
+
+    await userEvent.fill(emailInput, 'a@b.com')
+    await userEvent.click(continueButton)
+
+    await vi.waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/otp',
+        search: { email: 'a@b.com' },
+      }),
+    )
     await expect.element(emailInput).toHaveValue('')
   })
 })
