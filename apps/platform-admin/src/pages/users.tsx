@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth';
+import { Avatar } from '../components/avatar';
 import { ConfirmDialog, ErrorNote, PageHeader, Skeleton, StatusBadge } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDateTime } from '../lib/format';
+import { userAvatarUrl } from '../lib/media';
 import {
   accessLabel,
   PLATFORM_ROLES,
@@ -371,7 +373,16 @@ export function UsersPage() {
               {users.map((user) => (
                 <tr key={user.id}>
                   <td>{user.email}</td>
-                  <td>{user.name}</td>
+                  <td>
+                    <span className="user-name-cell">
+                      <Avatar
+                        name={user.name}
+                        email={user.email}
+                        avatarUrl={userAvatarUrl(user)}
+                      />
+                      {user.name}
+                    </span>
+                  </td>
                   <td>{roleLabel(user.role)}</td>
                   <td>
                     <StatusBadge status={user.status ?? 'ACTIVE'} />

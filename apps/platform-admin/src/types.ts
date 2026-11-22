@@ -200,6 +200,8 @@ export interface PlatformUser {
   name: string;
   role: string;
   status?: string;
+  /** Custom avatar object key (null = Gravatar/initials fallback). */
+  avatarKey?: string | null;
   lastLoginAt?: string | null;
   createdAt?: string;
   /** TOTP MFA enrolled (from /auth/me). */

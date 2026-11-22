@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -12,6 +13,7 @@ import { CurrentPlatformUser } from './current-platform-user.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { PlatformAuthGuard } from './platform-auth.guard';
 
 function requestMeta(req: any) {
@@ -49,6 +51,15 @@ export class AuthController {
   @UseGuards(PlatformAuthGuard)
   me(@CurrentPlatformUser() user: { id: string }) {
     return this.auth.me(user.id);
+  }
+
+  @Patch('me')
+  @UseGuards(PlatformAuthGuard)
+  updateMe(
+    @CurrentPlatformUser() user: { id: string },
+    @Body() dto: UpdateMeDto,
+  ) {
+    return this.auth.updateMe(user.id, dto);
   }
 
   @Post('change-password')

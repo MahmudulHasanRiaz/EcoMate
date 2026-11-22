@@ -419,6 +419,13 @@ export class MediaService {
   async delete(id: string, actorId?: string): Promise<void> {
     const row = await this.requireRow(id);
     await this.prisma.mediaAsset.delete({ where: { id: row.id } });
+    // An avatar pointing at this object would dangle: clear it so
+    // /auth/me stays honest (the Avatar fallback chain would cover a
+    // dangling key anyway, but the stored state should not lie).
+    await this.prisma.platformUser.updateMany({
+      where: { avatarKey: row.objectKey },
+      data: { avatarKey: null },
+    });
     const driver = await this.storage.resolveDriver(
       row.driver === 'r2' ? 'r2' : 'local',
     );
@@ -454,6 +461,42 @@ export class MediaService {
       throw new NotFoundException('Media file not found in storage.');
     }
     return { row, bytes: obj.bytes, mimeType: row.mimeType };
+  }
+
+  /**
+   * Avatar bytes for GET /public/avatar/:userId?k=<key> (StackMate M-23
+   * pattern). Public by design — an <img> cannot send a Bearer token —
+   * and gated by the key: the stored avatarKey embeds a random UUID, so
+   * only a console session that learned it from /auth/me or /users can
+   * build the URL. Every failure answers the same 404 (no oracle for
+   * user existence or avatar presence); the Avatar's onError then falls
+   * back to Gravatar/initials.
+   */
+  async getAvatarContent(
+    userId: string,
+    key: string | undefined,
+  ): Promise<{ bytes: Buffer; mimeType: string }> {
+    const user = /^[0-9a-f-]{36}$/i.test(userId)
+      ? await this.prisma.platformUser.findUnique({
+          where: { id: userId },
+          select: { avatarKey: true },
+        })
+      : null;
+    if (!user?.avatarKey || !key || key !== user.avatarKey) {
+      throw new NotFoundException('Avatar not found.');
+    }
+    const row = await this.prisma.mediaAsset.findUnique({
+      where: { objectKey: user.avatarKey },
+    });
+    if (!row) throw new NotFoundException('Avatar not found.');
+    const driver = await this.storage.resolveDriver(
+      row.driver === 'r2' ? 'r2' : 'local',
+    );
+    const obj = await driver.get(row.objectKey);
+    if (!obj) {
+      throw new NotFoundException('Avatar not found.');
+    }
+    return { bytes: obj.bytes, mimeType: row.mimeType };
   }
 
   /** Distinct folders present in the library, sorted ("" = root first when present). */

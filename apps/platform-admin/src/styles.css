@@ -583,6 +583,14 @@ kbd,
   font-weight: 700;
   font-size: 12px;
   line-height: 1;
+  overflow: hidden;
+}
+/* Avatar photo (custom upload / Gravatar) fills the square tile. */
+.account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .account-avatar--lg {
   width: 40px;
@@ -1596,6 +1604,22 @@ kbd,
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Profile dialog avatar row: preview tile + actions, vertically centred. */
+.profile-avatar-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+/* Users list Name cell: avatar tile + name, vertically centred. */
+.user-name-cell {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .error-text {

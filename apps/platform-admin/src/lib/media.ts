@@ -150,6 +150,24 @@ export function resolveAbsoluteMediaUrl(
   return new URL(resolveMediaUrl(contentUrl, apiBase), base).toString();
 }
 
+/**
+ * Custom-avatar <img> src for a platform user (StackMate M-23 pattern):
+ * GET /api/public/avatar/:userId?k=<avatarKey>. The key rides as the
+ * cache-buster, so a changed avatar is never served stale from the 1h
+ * private cache. Null when the user has no custom photo — the Avatar
+ * falls back to Gravatar, then initials.
+ */
+export function userAvatarUrl(
+  user: { id: string; avatarKey?: string | null },
+  apiBase?: string,
+): string | null {
+  if (!user.avatarKey) return null;
+  return resolveMediaUrl(
+    `/api/public/avatar/${user.id}?k=${encodeURIComponent(user.avatarKey)}`,
+    apiBase,
+  );
+}
+
 /** 'landing/hero' → 'landing / hero'; '' → 'Root'. */
 export function folderLabel(folder: string): string {
   if (!folder) return 'Root';

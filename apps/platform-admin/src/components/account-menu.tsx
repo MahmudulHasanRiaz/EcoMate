@@ -21,42 +21,15 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../auth';
 import { fetchApiHealth } from '../lib/api-status';
+import { userAvatarUrl } from '../lib/media';
 import {
   applyTheme,
   resolveThemeChoice,
   type ThemeChoice,
 } from '../lib/theme';
 import { roleLabel } from '../lib/users';
+import { Avatar } from './avatar';
 import { ChangePasswordDialog, ProfileDialog } from './account-dialogs';
-
-/* ------------------------------------------------------------------ */
-/* Avatar — square initials tile (Neon: 28px md / 36px lg, accent-soft */
-/* bg, accent text). Two initials: first + last word.                  */
-/* ------------------------------------------------------------------ */
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const first = parts[0]?.charAt(0) ?? '';
-  const second = parts.length > 1 ? (parts[parts.length - 1]?.charAt(0) ?? '') : '';
-  return (first + second).toUpperCase();
-}
-
-export function Avatar({
-  name,
-  size = 'md',
-}: {
-  name: string;
-  size?: 'md' | 'lg';
-}) {
-  return (
-    <span
-      className={`account-avatar${size === 'lg' ? ' account-avatar--lg' : ''}`}
-      aria-hidden="true"
-    >
-      {getInitials(name)}
-    </span>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /* Menu — dropdown (StackMate primitives pattern). Outside click + Esc  */
@@ -379,7 +352,11 @@ export function AccountMenu() {
         triggerClassName="account-btn"
         trigger={
           <>
-            <Avatar name={user.name} />
+            <Avatar
+              name={user.name}
+              email={user.email}
+              avatarUrl={userAvatarUrl(user)}
+            />
             <span className="account-name">{user.name}</span>
             <ChevronDown
               size={14}
@@ -390,7 +367,12 @@ export function AccountMenu() {
         }
       >
       <MenuHeader>
-        <Avatar name={user.name} size="lg" />
+        <Avatar
+          name={user.name}
+          email={user.email}
+          avatarUrl={userAvatarUrl(user)}
+          size="lg"
+        />
         <div className="menu-header-body">
           <div className="menu-header-name">{user.name}</div>
           <div className="menu-header-sub">{user.email}</div>

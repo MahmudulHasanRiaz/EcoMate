@@ -181,6 +181,14 @@ model PlatformUser {
   name         String
   role         PlatformUserRole   @default(READONLY)
   status       PlatformUserStatus @default(ACTIVE)
+  /// Custom avatar: the MediaAsset.objectKey (a KEY, never a URL —
+  /// StackMate M-23 pattern). Null = no custom photo; the console falls
+  /// back to Gravatar, then initials. The key embeds a random UUID, so
+  /// it doubles as the unguessable token for the public serve endpoint
+  /// GET /api/public/avatar/:userId?k=<key> (an <img> cannot send a
+  /// Bearer token). Set/cleared via PATCH /auth/me; cleared when the
+  /// referenced media asset is deleted.
+  avatarKey    String?
   /// TOTP secret, AES-256-GCM encrypted with APP_ENCRYPTION_KEY (enc:v1:
   /// prefix). Null until MFA is set up; inert until mfaEnabledAt is set.
   mfaSecret    String?
@@ -209,6 +217,8 @@ model PlatformUser {
   assignedLeads  Lead[]                @relation("LeadAssignedTo")
 
   @@index([role, status])
+  /// Media delete clears avatars by key (MediaService.delete).
+  @@index([avatarKey])
 }
 
 model PlatformUserInvite {

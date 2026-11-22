@@ -7,6 +7,7 @@ import {
   mediaQueryString,
   resolveAbsoluteMediaUrl,
   resolveMediaUrl,
+  userAvatarUrl,
   MEDIA_KIND_LABELS,
   MEDIA_KINDS,
 } from './media';
@@ -104,6 +105,30 @@ describe('media lib — folderLabel + formatBytes', () => {
     expect(formatBytes(2.5 * 1024 * 1024)).toBe('2.5 MB');
     expect(formatBytes(3 * 1024 * 1024 * 1024)).toBe('3.0 GB');
     expect(formatBytes(NaN)).toBe('—');
+  });
+});
+
+describe('media lib — userAvatarUrl', () => {
+  const user = {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    avatarKey: 'media/2026/11/uuid-photo.png',
+  };
+
+  it('builds the public avatar URL with the key as cache-buster', () => {
+    expect(userAvatarUrl(user, '/api')).toBe(
+      '/api/public/avatar/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa?k=media%2F2026%2F11%2Fuuid-photo.png',
+    );
+  });
+
+  it('resolves against a dev API base', () => {
+    expect(userAvatarUrl(user, 'http://127.0.0.1:4100/api')).toBe(
+      'http://127.0.0.1:4100/api/public/avatar/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa?k=media%2F2026%2F11%2Fuuid-photo.png',
+    );
+  });
+
+  it('returns null when the user has no custom photo', () => {
+    expect(userAvatarUrl({ id: user.id, avatarKey: null }, '/api')).toBeNull();
+    expect(userAvatarUrl({ id: user.id }, '/api')).toBeNull();
   });
 });
 

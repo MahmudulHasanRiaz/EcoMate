@@ -30,6 +30,7 @@ const userSelect = {
   name: true,
   role: true,
   status: true,
+  avatarKey: true,
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,

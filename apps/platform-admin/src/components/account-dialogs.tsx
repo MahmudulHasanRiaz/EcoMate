@@ -3,7 +3,10 @@ import { useNavigate } from '@tanstack/react-router';
 import { useAuth } from '../auth';
 import { errorMessage, readJson } from '../lib/api';
 import { formatDateTime } from '../lib/format';
+import { userAvatarUrl, type MediaAsset } from '../lib/media';
 import { roleLabel } from '../lib/users';
+import { Avatar } from './avatar';
+import { MediaPicker } from './media-picker';
 import { ErrorNote, Modal, useToast } from './ui';
 import type { PlatformUser } from '../types';
 
@@ -24,10 +27,14 @@ interface MfaStatus {
  * the MFA management surface. The Profile dialog's 2FA row links there
  * ("Manage two-factor"), so MFA is one click away, never dropped.
  *
- * Name is READ-ONLY in the Profile dialog: no profile-update endpoint
- * exists (verified — the auth module has no PATCH /auth/me), and the
- * /account page shows it read-only too. Adding name editing is a
- * separate backend decision, not part of this round.
+ * Name is READ-ONLY in the Profile dialog: PATCH /auth/me is avatar-only,
+ * and the /account page shows the name read-only too. Adding name editing
+ * is a separate backend decision, not part of this round.
+ *
+ * Avatar (StackMate M-23, ported): pick from the media library (or upload
+ * new from the same place) or remove the custom photo. Avatar updates
+ * PATCH immediately (separate from anything else in this dialog); Remove
+ * clears back to Gravatar/initials.
  */
 export function ProfileDialog({
   open,
@@ -36,11 +43,15 @@ export function ProfileDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const { api, session } = useAuth();
+  const { api, session, refreshProfile } = useAuth();
+  const { pushToast } = useToast();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<PlatformUser | null>(null);
   const [mfaStatus, setMfaStatus] = useState<MfaStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Avatar: the media picker opens as a sibling dialog.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [avatarSaving, setAvatarSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -65,12 +76,69 @@ export function ProfileDialog({
     };
   }, [open, api]);
 
+  // Avatar updates PATCH immediately: the picker hands back a media
+  // asset; its id is sent and the API stores the asset's object key
+  // (image-only). Remove clears it back to Gravatar/initials. The
+  // session user is refreshed so the account menu updates at once.
+  const setAvatar = async (asset: MediaAsset | null) => {
+    setAvatarSaving(true);
+    setError(null);
+    try {
+      const updated = await api('/auth/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ avatarAssetId: asset ? asset.id : null }),
+      }).then((r) => readJson<PlatformUser>(r));
+      setProfile(updated);
+      await refreshProfile().catch(() => undefined);
+      pushToast(
+        asset ? 'Avatar updated.' : 'Avatar removed. Showing your Gravatar photo or initials instead.',
+        'success',
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
+
   const user = profile ?? session?.user ?? null;
 
   return (
+    <>
     <Modal open={open} title="Profile" onClose={onClose}>
       {error ? <ErrorNote message={error} /> : null}
       {user ? (
+        <>
+        <div className="profile-avatar-row">
+          <Avatar
+            name={user.name}
+            email={user.email}
+            avatarUrl={userAvatarUrl(user)}
+            size="lg"
+          />
+          <button
+            type="button"
+            className="button"
+            disabled={avatarSaving}
+            onClick={() => setPickerOpen(true)}
+          >
+            {avatarSaving ? 'Saving…' : 'Choose from library'}
+          </button>
+          {user.avatarKey ? (
+            <button
+              type="button"
+              className="button button--ghost"
+              disabled={avatarSaving}
+              onClick={() => void setAvatar(null)}
+            >
+              Remove
+            </button>
+          ) : null}
+        </div>
+        <p className="muted-note">
+          Your photo — shown in the account menu and the users list.
+          Without one, your Gravatar photo shows, or your initials.
+        </p>
         <dl className="detail-list">
           <dt>Name</dt>
           <dd>{user.name}</dd>
@@ -106,6 +174,7 @@ export function ProfileDialog({
             )}
           </dd>
         </dl>
+        </>
       ) : (
         <p className="muted-note">Loading profile…</p>
       )}
@@ -125,6 +194,17 @@ export function ProfileDialog({
         </button>
       </div>
     </Modal>
+    <MediaPicker
+      open={pickerOpen}
+      onClose={() => setPickerOpen(false)}
+      onSelect={(asset) => {
+        setPickerOpen(false);
+        void setAvatar(asset);
+      }}
+      kinds={['image']}
+      title="Choose avatar from media library"
+    />
+    </>
   );
 }
 

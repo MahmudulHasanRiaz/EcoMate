@@ -78,6 +78,10 @@ function makeService(overrides: Record<string, any> = {}) {
         { mimeType: 'application/pdf', _count: { _all: 1 }, _sum: { byteSize: 500n } },
       ]),
     },
+    platformUser: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     platformSetting: {
       findUnique: jest.fn().mockResolvedValue(null),
     },
@@ -337,6 +341,75 @@ describe('MediaService — delete', () => {
     prisma.mediaAsset.findUnique.mockResolvedValue(makeRow({ driver: 'r2' }));
     await service.delete('11111111-1111-4111-8111-111111111111');
     expect(storage.resolveDriver).toHaveBeenCalledWith('r2');
+  });
+
+  it('clears avatars pointing at the deleted object key', async () => {
+    const { service, prisma } = makeService();
+    await service.delete('11111111-1111-4111-8111-111111111111', 'user-1');
+    expect(prisma.platformUser.updateMany).toHaveBeenCalledWith({
+      where: { avatarKey: 'media/2026/11/11111111-logo.png' },
+      data: { avatarKey: null },
+    });
+  });
+});
+
+describe('MediaService — getAvatarContent', () => {
+  const USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const KEY = 'media/2026/11/11111111-logo.png';
+
+  function avatarSetup(overrides: Record<string, any> = {}) {
+    const deps = makeService(overrides);
+    deps.store.set(KEY, PNG_1X1);
+    deps.prisma.platformUser.findUnique.mockResolvedValue({
+      avatarKey: KEY,
+    });
+    deps.prisma.mediaAsset.findUnique.mockResolvedValue(makeRow());
+    return deps;
+  }
+
+  it('serves bytes + mime when the key matches the stored avatarKey', async () => {
+    const { service } = avatarSetup();
+    const out = await service.getAvatarContent(USER_ID, KEY);
+    expect(out.bytes).toEqual(PNG_1X1);
+    expect(out.mimeType).toBe('image/png');
+  });
+
+  it('404s (uniformly) for a wrong key, a missing key, and no avatar', async () => {
+    const { service, prisma } = avatarSetup();
+    await expect(service.getAvatarContent(USER_ID, 'wrong-key')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(service.getAvatarContent(USER_ID, undefined)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    prisma.platformUser.findUnique.mockResolvedValue({ avatarKey: null });
+    await expect(service.getAvatarContent(USER_ID, KEY)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    prisma.platformUser.findUnique.mockResolvedValue(null);
+    await expect(service.getAvatarContent(USER_ID, KEY)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('404s for a non-UUID user id without hitting the database', async () => {
+    const { service, prisma } = avatarSetup();
+    await expect(service.getAvatarContent('not-a-uuid', KEY)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(prisma.platformUser.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('404s when the asset row or the stored object is gone', async () => {
+    const { service, prisma, store } = avatarSetup();
+    prisma.mediaAsset.findUnique.mockResolvedValueOnce(null);
+    await expect(service.getAvatarContent(USER_ID, KEY)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    store.delete(KEY);
+    await expect(service.getAvatarContent(USER_ID, KEY)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });
 

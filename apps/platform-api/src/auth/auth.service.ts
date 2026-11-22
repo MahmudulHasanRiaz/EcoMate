@@ -3,6 +3,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -18,6 +19,8 @@ export interface PlatformSessionUser {
   email: string;
   name: string;
   role: string;
+  /** Custom avatar object key (null = Gravatar/initials fallback). */
+  avatarKey: string | null;
 }
 
 export interface LoginMeta {
@@ -151,6 +154,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
+        avatarKey: user.avatarKey,
       },
     };
   }
@@ -272,6 +276,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      avatarKey: user.avatarKey,
     };
 
     // MFA second step: enrolled users must prove a code; SUPERADMIN
@@ -315,6 +320,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      avatarKey: user.avatarKey,
     };
     await this.recordSuccessfulLogin(sessionUser, meta);
     return this.issueTokens(sessionUser, undefined, meta);
@@ -383,6 +389,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
+        avatarKey: user.avatarKey,
       },
       row.familyId,
       {
@@ -449,6 +456,7 @@ export class AuthService {
         name: true,
         role: true,
         status: true,
+        avatarKey: true,
         lastLoginAt: true,
         mfaEnabledAt: true,
       },
@@ -460,9 +468,62 @@ export class AuthService {
       name: user.name,
       role: user.role,
       status: user.status,
+      avatarKey: user.avatarKey,
       lastLoginAt: user.lastLoginAt,
       mfaEnabled: !!user.mfaEnabledAt,
       mfaRequired: user.role === 'SUPERADMIN',
     };
+  }
+
+  /**
+   * PATCH /auth/me — avatar only. The caller passes a media-library
+   * asset id (from the MediaPicker) or null to remove the custom photo;
+   * the API stores the asset's object KEY, never a URL (StackMate M-23).
+   * The key embeds a random UUID, so it doubles as the unguessable token
+   * for the public serve endpoint GET /public/avatar/:userId?k=<key>.
+   * Returns the updated /me view.
+   */
+  async updateMe(
+    userId: string,
+    dto: { avatarAssetId?: string | null },
+  ) {
+    const current = await this.prisma.platformUser.findUnique({
+      where: { id: userId },
+      select: { id: true, avatarKey: true },
+    });
+    if (!current) {
+      throw new UnauthorizedException('Platform account not found');
+    }
+    if (dto.avatarAssetId === undefined) return this.me(userId);
+
+    let avatarKey: string | null = null;
+    if (dto.avatarAssetId !== null) {
+      const asset = await this.prisma.mediaAsset.findUnique({
+        where: { id: dto.avatarAssetId },
+        select: { objectKey: true, mimeType: true },
+      });
+      if (!asset) {
+        throw new NotFoundException('Media asset not found');
+      }
+      if (!asset.mimeType.toLowerCase().startsWith('image/')) {
+        throw new BadRequestException('Avatar must be an image');
+      }
+      avatarKey = asset.objectKey;
+    }
+
+    await this.prisma.platformUser.update({
+      where: { id: userId },
+      data: { avatarKey },
+    });
+    // Audit key PRESENCE, never the key value — it is a capability token.
+    await this.audit.record({
+      actorId: userId,
+      action: 'auth.avatar.update',
+      entity: 'PlatformUser',
+      entityId: userId,
+      before: { avatarSet: current.avatarKey !== null },
+      after: { avatarSet: avatarKey !== null },
+    });
+    return this.me(userId);
   }
 }

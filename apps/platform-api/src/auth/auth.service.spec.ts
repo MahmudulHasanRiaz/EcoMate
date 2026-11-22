@@ -13,6 +13,9 @@ const prisma: any = {
     findUnique: jest.fn(),
     update: jest.fn(),
   },
+  mediaAsset: {
+    findUnique: jest.fn(),
+  },
   platformRefreshToken: {
     create: jest.fn(),
     findUnique: jest.fn(),
@@ -597,6 +600,137 @@ describe('AuthService', () => {
     await expect(service.me('user-2')).resolves.toMatchObject({
       mfaEnabled: false,
       mfaRequired: false,
+    });
+  });
+
+  it('me() carries the avatar key (null when no custom photo)', async () => {
+    prisma.platformUser.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@ecomate.test',
+      name: 'Platform Admin',
+      role: 'BILLING',
+      status: 'ACTIVE',
+      avatarKey: 'media/2026/11/uuid-photo.png',
+      lastLoginAt: null,
+      mfaEnabledAt: null,
+    });
+    await expect(service.me('user-1')).resolves.toMatchObject({
+      avatarKey: 'media/2026/11/uuid-photo.png',
+    });
+
+    prisma.platformUser.findUnique.mockResolvedValue({
+      id: 'user-2',
+      email: 'billing@ecomate.test',
+      name: 'Billing',
+      role: 'BILLING',
+      status: 'ACTIVE',
+      avatarKey: null,
+      lastLoginAt: null,
+      mfaEnabledAt: null,
+    });
+    await expect(service.me('user-2')).resolves.toMatchObject({
+      avatarKey: null,
+    });
+  });
+
+  describe('updateMe (avatar)', () => {
+    const meRow = (avatarKey: string | null) => ({
+      id: 'user-1',
+      email: 'admin@ecomate.test',
+      name: 'Platform Admin',
+      role: 'BILLING',
+      status: 'ACTIVE',
+      avatarKey,
+      lastLoginAt: null,
+      mfaEnabledAt: null,
+    });
+
+    it('sets the avatar from an image asset id, storing the object KEY', async () => {
+      prisma.platformUser.findUnique
+        .mockResolvedValueOnce({ id: 'user-1', avatarKey: null })
+        .mockResolvedValueOnce(meRow('media/2026/11/uuid-photo.png'));
+      prisma.mediaAsset.findUnique.mockResolvedValue({
+        objectKey: 'media/2026/11/uuid-photo.png',
+        mimeType: 'image/png',
+      });
+      const result = await service.updateMe('user-1', {
+        avatarAssetId: 'asset-1',
+      });
+      expect(prisma.platformUser.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { avatarKey: 'media/2026/11/uuid-photo.png' },
+      });
+      expect(result.avatarKey).toBe('media/2026/11/uuid-photo.png');
+      // Audit records key PRESENCE, never the key value (capability token).
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'auth.avatar.update',
+          before: { avatarSet: false },
+          after: { avatarSet: true },
+        }),
+      );
+      expect(JSON.stringify(audit.record.mock.calls)).not.toContain(
+        'media/2026/11/uuid-photo.png',
+      );
+    });
+
+    it('removes the avatar with null', async () => {
+      prisma.platformUser.findUnique
+        .mockResolvedValueOnce({
+          id: 'user-1',
+          avatarKey: 'media/2026/11/uuid-photo.png',
+        })
+        .mockResolvedValueOnce(meRow(null));
+      const result = await service.updateMe('user-1', { avatarAssetId: null });
+      expect(prisma.platformUser.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { avatarKey: null },
+      });
+      expect(result.avatarKey).toBeNull();
+      expect(prisma.mediaAsset.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when avatarAssetId is omitted', async () => {
+      prisma.platformUser.findUnique
+        .mockResolvedValueOnce({ id: 'user-1', avatarKey: null })
+        .mockResolvedValueOnce(meRow(null));
+      await service.updateMe('user-1', {});
+      expect(prisma.platformUser.update).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('404s for an unknown asset id', async () => {
+      prisma.platformUser.findUnique.mockResolvedValueOnce({
+        id: 'user-1',
+        avatarKey: null,
+      });
+      prisma.mediaAsset.findUnique.mockResolvedValue(null);
+      await expect(
+        service.updateMe('user-1', { avatarAssetId: 'missing' }),
+      ).rejects.toThrow('Media asset not found');
+      expect(prisma.platformUser.update).not.toHaveBeenCalled();
+    });
+
+    it('400s for a non-image asset', async () => {
+      prisma.platformUser.findUnique.mockResolvedValueOnce({
+        id: 'user-1',
+        avatarKey: null,
+      });
+      prisma.mediaAsset.findUnique.mockResolvedValue({
+        objectKey: 'media/2026/11/uuid-doc.pdf',
+        mimeType: 'application/pdf',
+      });
+      await expect(
+        service.updateMe('user-1', { avatarAssetId: 'asset-1' }),
+      ).rejects.toThrow('Avatar must be an image');
+      expect(prisma.platformUser.update).not.toHaveBeenCalled();
+    });
+
+    it('401s for an unknown user', async () => {
+      prisma.platformUser.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.updateMe('ghost', { avatarAssetId: 'asset-1' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
 });

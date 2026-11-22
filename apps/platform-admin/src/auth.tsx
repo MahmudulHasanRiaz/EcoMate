@@ -42,6 +42,9 @@ interface AuthValue {
   ) => Promise<{ recoveryCodes: string[] }>;
   logout: () => void;
   api: (path: string, init?: RequestInit) => Promise<Response>;
+  /** Re-fetch /auth/me and merge the user into the stored session
+   * (e.g. after an avatar change, so the account menu updates at once). */
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -159,6 +162,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     storeSession(next);
     return request(path, init, false);
   }, [storeSession]);
+
+  const refreshProfile = useCallback(async () => {
+    const current = sessionRef.current ?? readSession();
+    if (!current) return;
+    const next = await api('/auth/me').then((r) => readJson<PlatformUser>(r));
+    storeSession({ ...current, user: next });
+  }, [api, storeSession]);
 
   const login = useCallback(
     async (email: string, password: string): Promise<LoginOutcome> => {
@@ -283,8 +293,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyMfaSetup,
       logout,
       api,
+      refreshProfile,
     }),
-    [session, login, completeMfa, startMfaSetup, verifyMfaSetup, logout, api],
+    [
+      session,
+      login,
+      completeMfa,
+      startMfaSetup,
+      verifyMfaSetup,
+      logout,
+      api,
+      refreshProfile,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

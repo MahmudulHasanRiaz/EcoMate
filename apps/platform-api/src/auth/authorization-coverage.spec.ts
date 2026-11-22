@@ -44,6 +44,8 @@ const PUBLIC_CONTROLLERS: Record<string, string> = {
     'public client reviews for the landing home page (published reviews only, cacheable)',
   PublicMediaController:
     'public media bytes for the landing (logos/landing images rendered for anonymous visitors; SVG sanitized at upload + sandbox CSP; the library itself is authenticated)',
+  PublicAvatarController:
+    'public avatar bytes (an <img> cannot send a Bearer token; key-gated — the ?k=<avatarKey> query must match the stored key, which embeds a random UUID and is only learned from an authenticated /auth/me or /users response; every failure answers the same 404)',
   HealthController: 'liveness probe, no data',
   PrometheusMetricsController:
     'Prometheus scrape endpoint (Phase 8 Stage 2) — operational metrics only, no tenant data; restricted to the private network in production',
@@ -78,6 +80,10 @@ const HANDLERS_WITHOUT_ROLES: Record<string, { reason: string; guard: string | n
     guard: null,
   },
   'AuthController.me': { reason: 'own profile', guard: 'PlatformAuthGuard' },
+  'AuthController.updateMe': {
+    reason: 'own profile (avatar only)',
+    guard: 'PlatformAuthGuard',
+  },
   'AuthController.changePassword': {
     reason: 'own profile',
     guard: 'PlatformAuthGuard',
@@ -226,6 +232,7 @@ describe('authorization coverage', () => {
       'PlansController',
       'PricingController',
       'PrometheusMetricsController',
+      'PublicAvatarController',
       'PublicBlogController',
       'PublicBrandingController',
       'PublicCaseStudiesController',
