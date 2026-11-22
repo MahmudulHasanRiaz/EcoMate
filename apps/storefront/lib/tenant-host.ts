@@ -152,6 +152,19 @@ export interface AliasRedirectOptions {
 }
 
 /**
+ * Redirect origin for a target host. A standard port for the protocol
+ * (80/http, 443/https) is never emitted — even when a caller passes one —
+ * so a redirect can never point at `https://{host}:443/` or carry a
+ * stray internal port through a standard-port public URL.
+ */
+function redirectOrigin(protocol: string, host: string, port?: string): string {
+  const standard =
+    (protocol === 'https:' && port === '443') ||
+    (protocol === 'http:' && port === '80');
+  return `${protocol}//${host}${port && !standard ? `:${port}` : ''}`;
+}
+
+/**
  * Absolute 301 target for a host the AUTHORITATIVE backend verdict says is
  * an alias (`GET /tenants/resolve` → `{isAlias, canonicalHost,
  * effectiveCanonicalHost}`), or null when the verdict is canonical /
@@ -188,7 +201,7 @@ export function canonicalRedirectTarget(
   if (normaliseHost(rawHost) === targetHost) return null;
 
   const protocol = options.protocol || 'https:';
-  const origin = `${protocol}//${targetHost}${options.port ? `:${options.port}` : ''}`;
+  const origin = redirectOrigin(protocol, targetHost, options.port);
   const target = `${pathname}${search}`;
   return `${origin}${target.startsWith('/') ? target : `/${target}`}`;
 }
@@ -219,7 +232,7 @@ export function aliasRedirectTarget(
   if (normaliseHost(rawHost) === targetHost) return null;
 
   const protocol = options.protocol || 'https:';
-  const origin = `${protocol}//${targetHost}${options.port ? `:${options.port}` : ''}`;
+  const origin = redirectOrigin(protocol, targetHost, options.port);
   const target = `${pathname}${search}`;
   return `${origin}${target.startsWith('/') ? target : `/${target}`}`;
 }

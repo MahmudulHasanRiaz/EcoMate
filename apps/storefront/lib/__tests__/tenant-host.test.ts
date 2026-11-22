@@ -159,6 +159,21 @@ describe('storefront base-domain alias resolution', () => {
       }),
     ).toBe('http://acme.ecomate.bd:3100/about?x=1');
   });
+
+  it('drops standard ports (80/443) even when a caller passes them', () => {
+    expect(
+      aliasRedirectTarget('acme.alias.example', '/about', '', config, {
+        protocol: 'https:',
+        port: '443',
+      }),
+    ).toBe('https://acme.ecomate.bd/about');
+    expect(
+      aliasRedirectTarget('acme.alias.example', '/about', '', config, {
+        protocol: 'http:',
+        port: '80',
+      }),
+    ).toBe('http://acme.ecomate.bd/about');
+  });
 });
 
 describe('canonicalRedirectTarget (authoritative backend verdict)', () => {
@@ -175,6 +190,22 @@ describe('canonicalRedirectTarget (authoritative backend verdict)', () => {
         '?page=2',
       ),
     ).toBe('https://acme.tenants.example/products/x?page=2');
+  });
+
+  it('drops a standard port (443) even when a caller passes it', () => {
+    expect(
+      canonicalRedirectTarget(
+        'acme.ecomate.bd',
+        {
+          isAlias: true,
+          canonicalHost: 'acme.tenants.example',
+          effectiveCanonicalHost: 'acme.tenants.example',
+        },
+        '/products/x',
+        '',
+        { protocol: 'https:', port: '443' },
+      ),
+    ).toBe('https://acme.tenants.example/products/x');
   });
 
   it('falls back to canonicalHost when the backend predates effectiveCanonicalHost', () => {

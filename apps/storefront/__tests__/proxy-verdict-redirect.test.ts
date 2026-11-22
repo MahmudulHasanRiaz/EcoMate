@@ -64,6 +64,30 @@ describe('storefront proxy authoritative-verdict redirect', () => {
     expect(res.headers.get('x-robots-tag')).toBe('noindex');
   });
 
+  it('never appends the internal container port (:3000) to a production verdict redirect', async () => {
+    fetchMock.mockResolvedValue(
+      resolveResponse({
+        tenantId: 'tenant-acme',
+        slug: 'acme',
+        canonicalHost: 'acme.tenants.example',
+        effectiveCanonicalHost: 'acme.tenants.example',
+        isAlias: true,
+        storefrontEnabled: true,
+      }),
+    );
+
+    const req = new NextRequest(
+      'https://acme.ecomate.bd:3000/products/x?page=2',
+      { headers: { host: 'acme.ecomate.bd:3000' } },
+    );
+    const res = await proxy(req);
+
+    expect(res.status).toBe(301);
+    expect(res.headers.get('location')).toBe(
+      'https://acme.tenants.example/products/x?page=2',
+    );
+  });
+
   it('serves a host the backend says is canonical', async () => {
     fetchMock.mockResolvedValue(
       resolveResponse({

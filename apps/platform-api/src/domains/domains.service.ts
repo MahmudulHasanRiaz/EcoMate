@@ -367,9 +367,25 @@ export class DomainsService {
         tenant: { select: { status: true } },
       },
     });
-    if (!domain || domain.tenant.status === 'DELETED') return false;
-    if (domain.type === 'SUBDOMAIN') return true;
-    return domain.status === 'VERIFIED' || domain.status === 'ACTIVE';
+    if (domain) {
+      if (domain.tenant.status === 'DELETED') return false;
+      if (domain.type === 'SUBDOMAIN') return true;
+      return domain.status === 'VERIFIED' || domain.status === 'ACTIVE';
+    }
+    // No stored row: a primary-domain move leaves stored SUBDOMAIN rows
+    // on the OLD base, so {slug}.{new base} has no row yet — but the
+    // backend resolver is dynamic and serves it, so Caddy must still be
+    // allowed to issue its certificate. resolveHost() applies the same
+    // slug rules as the backend resolver (dotted and reserved slugs are
+    // 'unknown', never 'tenant'), and the tenant lookup hits the unique
+    // index on Tenant.slug.
+    const resolution = this.domainConfig.resolveHost(host);
+    if (resolution.kind !== 'tenant') return false;
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug: resolution.slug },
+      select: { status: true },
+    });
+    return !!tenant && tenant.status !== 'DELETED';
   }
 
   private async requireTenant(tenantId: string) {

@@ -428,3 +428,110 @@ describe('DomainsService — remove + TLS allowlist', () => {
     expect(await service.isTlsHostAllowed('unknown.example.com')).toBe(false);
   });
 });
+
+describe('DomainsService — TLS allowlist for unstored base-domain hosts', () => {
+  // A primary-domain move leaves stored SUBDOMAIN rows on the OLD base,
+  // so {slug}.{new base} has no TenantDomain row — but the backend
+  // resolver is dynamic and serves it, so the TLS ask gate must allow it
+  // (otherwise Caddy aborts the handshake for the new host).
+  function tenantResolution(slug: string) {
+    return {
+      kind: 'tenant',
+      slug,
+      baseDomain: 'staging.faah.net',
+      canonicalHost: `${slug}.staging.faah.net`,
+      isAlias: false,
+    };
+  }
+
+  it('allows a {slug}.{base} host with no stored row when the tenant exists', async () => {
+    const { service, prisma, domainConfig } = makeService();
+    prisma.tenantDomain.findUnique.mockResolvedValue(null);
+    (domainConfig.resolveHost as jest.Mock).mockReturnValue(
+      tenantResolution('acme'),
+    );
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      status: 'ACTIVE',
+    });
+
+    expect(await service.isTlsHostAllowed('acme.staging.faah.net')).toBe(
+      true,
+    );
+    // Slug lookup hits the unique index on Tenant.slug.
+    expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
+      where: { slug: 'acme' },
+      select: { status: true },
+    });
+  });
+
+  it('denies a {slug}.{base} host when no tenant owns the slug', async () => {
+    const { service, prisma, domainConfig } = makeService();
+    prisma.tenantDomain.findUnique.mockResolvedValue(null);
+    (domainConfig.resolveHost as jest.Mock).mockReturnValue(
+      tenantResolution('ghost'),
+    );
+    prisma.tenant.findUnique.mockResolvedValue(null);
+
+    expect(await service.isTlsHostAllowed('ghost.staging.faah.net')).toBe(
+      false,
+    );
+  });
+
+  it('denies a {slug}.{base} host whose tenant is deleted', async () => {
+    const { service, prisma, domainConfig } = makeService();
+    prisma.tenantDomain.findUnique.mockResolvedValue(null);
+    (domainConfig.resolveHost as jest.Mock).mockReturnValue(
+      tenantResolution('gone'),
+    );
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-9',
+      slug: 'gone',
+      status: 'DELETED',
+    });
+
+    expect(await service.isTlsHostAllowed('gone.staging.faah.net')).toBe(
+      false,
+    );
+  });
+
+  it('denies non-tenant resolutions even when a tenant row exists', async () => {
+    const { service, prisma, domainConfig } = makeService();
+    prisma.tenantDomain.findUnique.mockResolvedValue(null);
+    // Reserved/dotted slugs resolve as 'unknown' in DomainConfigService —
+    // the gate must never fall through to a tenant lookup for them.
+    (domainConfig.resolveHost as jest.Mock).mockReturnValue({
+      kind: 'unknown',
+      host: 'www.staging.faah.net',
+    });
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'www',
+      status: 'ACTIVE',
+    });
+
+    expect(await service.isTlsHostAllowed('www.staging.faah.net')).toBe(
+      false,
+    );
+    expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('keeps custom-domain rules: unverified denied, verified/active allowed', async () => {
+    const { service, prisma } = makeService();
+
+    prisma.tenantDomain.findUnique.mockResolvedValue({
+      type: 'CUSTOM',
+      status: 'PENDING',
+      tenant: { status: 'ACTIVE' },
+    });
+    expect(await service.isTlsHostAllowed('shop.example.com')).toBe(false);
+
+    prisma.tenantDomain.findUnique.mockResolvedValue({
+      type: 'CUSTOM',
+      status: 'ACTIVE',
+      tenant: { status: 'ACTIVE' },
+    });
+    expect(await service.isTlsHostAllowed('shop.example.com')).toBe(true);
+  });
+});

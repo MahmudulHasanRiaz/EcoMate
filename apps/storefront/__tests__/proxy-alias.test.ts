@@ -189,6 +189,23 @@ describe('storefront proxy unknown/custom hosts (production)', () => {
     expect(res.status).toBe(200);
   });
 
+  it('never appends the internal container port (:3000) to a production alias redirect', async () => {
+    // Behind Caddy the storefront runs on an internal port (3000) while
+    // the public port is the standard 443 — request.nextUrl.port is the
+    // INTERNAL port, so a redirect that keeps it 301s visitors to
+    // https://{canonical}:3000/ (a plain-HTTP port → TLS error).
+    const req = new NextRequest(
+      'https://acme.alias.example:3000/products/x?page=2',
+      { headers: { host: 'acme.alias.example:3000' } },
+    );
+    const res = await proxy(req);
+
+    expect(res.status).toBe(301);
+    expect(res.headers.get('location')).toBe(
+      'https://acme.ecomate.bd/products/x?page=2',
+    );
+  });
+
   it('looks up base-domain hosts only to stamp the tenant id, and never 404s them', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
 

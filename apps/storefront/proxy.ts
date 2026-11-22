@@ -94,6 +94,19 @@ function isAliasExempt(pathname: string): boolean {
   );
 }
 
+/**
+ * The port to keep on a redirect target. In production the storefront sits
+ * behind Caddy on the standard ports, so NO port is ever emitted —
+ * `request.nextUrl.port` is the INTERNAL container port (3000) and keeping
+ * it 301s visitors to `https://{canonical}:3000/` (a plain-HTTP port →
+ * TLS error). Dev/E2E keep the request port so local redirects stay
+ * reachable on their non-standard port.
+ */
+function redirectPort(request: NextRequest): string | undefined {
+  if (process.env.NODE_ENV === "production") return undefined;
+  return request.nextUrl.port || undefined;
+}
+
 function notFoundHost(): NextResponse {
   return new NextResponse("Unknown host", {
     status: 404,
@@ -249,7 +262,7 @@ export async function proxy(request: NextRequest) {
   if (baseResolution?.isAlias && !exempt) {
     const redirect = aliasRedirectTarget(host, pathname, search, config, {
       protocol: request.nextUrl.protocol,
-      port: request.nextUrl.port,
+      port: redirectPort(request),
     });
     if (redirect) {
       const response = NextResponse.redirect(redirect, 301);
@@ -293,7 +306,7 @@ export async function proxy(request: NextRequest) {
       resolved,
       pathname,
       search,
-      { protocol: request.nextUrl.protocol, port: request.nextUrl.port },
+      { protocol: request.nextUrl.protocol, port: redirectPort(request) },
     );
     if (canonicalRedirect) {
       const response = NextResponse.redirect(canonicalRedirect, 301);
