@@ -124,6 +124,51 @@ describe('TenantSubscriptionService', () => {
     );
   });
 
+  it('fetches the trial review for the tenant id', async () => {
+    fetchMock.mockResolvedValue(
+      okJson({ tenantId: 'tenant-1', isTrialPlan: true, trialAddOns: [] }),
+    );
+
+    const result = await service.getTrialReview('tenant-1');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4100/api/internal/tenants/tenant-1/trial-review',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-platform-service-token': 'test-service-token',
+        }),
+      }),
+    );
+    expect(result).toEqual({
+      tenantId: 'tenant-1',
+      isTrialPlan: true,
+      trialAddOns: [],
+    });
+  });
+
+  it('forwards the add-on selection when creating a request', async () => {
+    fetchMock.mockResolvedValue(okJson({ id: 'r1', status: 'PENDING' }));
+    await service.createRequest(
+      'tenant-1',
+      {
+        targetPlanId: 'plan-9',
+        addOnIds: ['77777777-7777-4777-8777-777777777777'],
+      },
+      'user-7',
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({
+          targetPlanId: 'plan-9',
+          addOnIds: ['77777777-7777-4777-8777-777777777777'],
+          requestedBy: 'user-7',
+        }),
+      }),
+    );
+  });
+
   it('gets one request by id, tenant-scoped', async () => {
     fetchMock.mockResolvedValue(okJson({ id: 'r1', status: 'APPLIED' }));
     await service.getRequest('tenant-1', 'r1');

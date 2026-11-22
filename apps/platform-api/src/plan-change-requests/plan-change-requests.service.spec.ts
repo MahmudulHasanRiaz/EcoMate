@@ -25,6 +25,10 @@ function makeRow(overrides: Record<string, unknown> = {}) {
     status: 'PENDING',
     note: 'Need more orders',
     rejectionReason: null,
+    // Mirrors the real DB row: a non-nullable list + the choice flag.
+    // Default = no add-on choice was made (empty list, flag false).
+    requestedAddOnIds: [],
+    addOnChoiceMade: false,
     requestedBy: 'tenant-user-1',
     decidedBy: null,
     decidedAt: null,
@@ -54,6 +58,8 @@ function makeService() {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    subscription: { findUnique: jest.fn() },
+    addOn: { findMany: jest.fn().mockResolvedValue([]) },
   };
   const tenants = { changePlan: jest.fn().mockResolvedValue({}) };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
@@ -113,6 +119,10 @@ describe('PlanChangeRequestsService', () => {
           targetPlanId: PLAN_ID,
           targetPlanVersionId: VERSION_ID,
           note: 'Need more orders',
+          // No add-on choice: empty list + flag false (never a NULL
+          // list — Prisma has no nullable list).
+          requestedAddOnIds: [],
+          addOnChoiceMade: false,
           requestedBy: 'tenant-user-1',
         },
         include: { targetPlan: { select: { name: true } } },
@@ -224,6 +234,191 @@ describe('PlanChangeRequestsService', () => {
     });
   });
 
+  describe('create with trial add-on selection', () => {
+    const ADDON_1 = '77777777-7777-4777-8777-777777777777';
+    const ADDON_2 = '88888888-8888-4888-8888-888888888888';
+
+    it('stores the tenant-chosen add-ons when they are attached trial add-ons', async () => {
+      const { service, prisma } = makeService();
+      mockCreateHappyPath(prisma);
+      prisma.subscription.findUnique.mockResolvedValue({
+        addOns: [{ addOnId: ADDON_1 }, { addOnId: ADDON_2 }],
+      });
+
+      const result = await service.create(TENANT_ID, {
+        targetPlanId: PLAN_ID,
+        addOnIds: [ADDON_1],
+      });
+
+      expect(prisma.planChangeRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            requestedAddOnIds: [ADDON_1],
+            addOnChoiceMade: true,
+          }),
+        }),
+      );
+      expect(result.requestedAddOnIds).toEqual([ADDON_1]);
+    });
+
+    it('stores an empty list + choice flag when the tenant keeps no add-ons', async () => {
+      const { service, prisma } = makeService();
+      mockCreateHappyPath(prisma);
+      prisma.subscription.findUnique.mockResolvedValue({
+        addOns: [{ addOnId: ADDON_1 }],
+      });
+
+      const result = await service.create(TENANT_ID, {
+        targetPlanId: PLAN_ID,
+        addOnIds: [],
+      });
+
+      expect(prisma.planChangeRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            requestedAddOnIds: [],
+            addOnChoiceMade: true,
+          }),
+        }),
+      );
+      expect(result.requestedAddOnIds).toEqual([]);
+    });
+
+    it('rejects add-ons that are not attached trial add-ons', async () => {
+      const { service, prisma } = makeService();
+      mockCreateHappyPath(prisma);
+      prisma.subscription.findUnique.mockResolvedValue({
+        addOns: [{ addOnId: ADDON_1 }],
+      });
+
+      await expect(
+        service.create(TENANT_ID, {
+          targetPlanId: PLAN_ID,
+          addOnIds: [ADDON_2],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.planChangeRequest.create).not.toHaveBeenCalled();
+    });
+
+    it('stores no choice (empty list + flag false) when addOnIds is omitted', async () => {
+      const { service, prisma } = makeService();
+      mockCreateHappyPath(prisma);
+
+      const result = await service.create(TENANT_ID, {
+        targetPlanId: PLAN_ID,
+      });
+
+      expect(result.requestedAddOnIds).toBeNull();
+      expect(prisma.planChangeRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            requestedAddOnIds: [],
+            addOnChoiceMade: false,
+          }),
+        }),
+      );
+      expect(prisma.subscription.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getTrialReview', () => {
+    it('returns the trial state plus attached trial add-ons with prices', async () => {
+      const { service, prisma } = makeService();
+      prisma.tenant.findUnique.mockResolvedValue({
+        id: TENANT_ID,
+        name: 'My Store',
+        graceEndsAt: new Date('2026-11-29T08:00:00.000Z'),
+        subscription: {
+          status: 'TRIAL',
+          trialEndsAt: new Date('2026-11-22T08:00:00.000Z'),
+          addOns: [
+            {
+              confirmedAt: null,
+              addOn: {
+                id: 'addon-1',
+                slug: 'storefront',
+                name: 'Storefront',
+                price: 999,
+                currency: 'BDT',
+              },
+            },
+            {
+              confirmedAt: new Date('2026-11-20T08:00:00.000Z'),
+              addOn: {
+                id: 'addon-2',
+                slug: 'pos-system',
+                name: 'POS System',
+                price: 499,
+                currency: 'BDT',
+              },
+            },
+          ],
+        },
+        planVersion: { plan: { name: 'Trial', slug: 'trial' } },
+      });
+      prisma.planChangeRequest.findFirst.mockResolvedValue(null);
+
+      const review = await service.getTrialReview(TENANT_ID);
+
+      expect(review).toEqual({
+        tenantId: TENANT_ID,
+        tenantName: 'My Store',
+        subscriptionStatus: 'TRIAL',
+        planName: 'Trial',
+        planSlug: 'trial',
+        isTrialPlan: true,
+        trialEndsAt: new Date('2026-11-22T08:00:00.000Z'),
+        graceEndsAt: new Date('2026-11-29T08:00:00.000Z'),
+        trialAddOns: [
+          {
+            id: 'addon-1',
+            slug: 'storefront',
+            name: 'Storefront',
+            price: 999,
+            currency: 'BDT',
+            confirmed: false,
+          },
+          {
+            id: 'addon-2',
+            slug: 'pos-system',
+            name: 'POS System',
+            price: 499,
+            currency: 'BDT',
+            confirmed: true,
+          },
+        ],
+        hasPendingRequest: false,
+      });
+    });
+
+    it('flags a pending request and a non-trial plan', async () => {
+      const { service, prisma } = makeService();
+      prisma.tenant.findUnique.mockResolvedValue({
+        id: TENANT_ID,
+        name: 'My Store',
+        graceEndsAt: null,
+        subscription: { status: 'ACTIVE', trialEndsAt: null, addOns: [] },
+        planVersion: { plan: { name: 'Growth', slug: 'growth' } },
+      });
+      prisma.planChangeRequest.findFirst.mockResolvedValue({ id: 'req-1' });
+
+      const review = await service.getTrialReview(TENANT_ID);
+
+      expect(review.isTrialPlan).toBe(false);
+      expect(review.trialAddOns).toEqual([]);
+      expect(review.hasPendingRequest).toBe(true);
+    });
+
+    it('404s for an unknown tenant', async () => {
+      const { service, prisma } = makeService();
+      prisma.tenant.findUnique.mockResolvedValue(null);
+
+      await expect(service.getTrialReview(TENANT_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
   describe('listMine / getOne', () => {
     it('lists the tenant newest-first with target plan names', async () => {
       const { service, prisma } = makeService();
@@ -300,6 +495,50 @@ describe('PlanChangeRequestsService', () => {
       );
       expect(result.tenant.currentPlanName).toBeNull();
     });
+
+    it('resolves the requested add-ons with names and prices', async () => {
+      const { service, prisma } = makeService();
+      const ADDON_1 = '77777777-7777-4777-8777-777777777777';
+      prisma.planChangeRequest.findMany.mockResolvedValue([
+        makeRow({ requestedAddOnIds: [ADDON_1], addOnChoiceMade: true }),
+      ]);
+      prisma.addOn.findMany.mockResolvedValue([
+        { id: ADDON_1, name: 'Storefront', price: 999, currency: 'BDT' },
+      ]);
+
+      const [result] = await service.listForConsole({});
+
+      expect(result.requestedAddOnIds).toEqual([ADDON_1]);
+      expect(result.requestedAddOns).toEqual([
+        { id: ADDON_1, name: 'Storefront', price: 999, currency: 'BDT' },
+      ]);
+    });
+
+    it('returns an empty requested-add-ons list when no choice was made', async () => {
+      const { service, prisma } = makeService();
+      // No-choice row: empty list + flag false. The view must be null
+      // — the flag, never the list's emptiness, decides.
+      prisma.planChangeRequest.findMany.mockResolvedValue([makeRow()]);
+
+      const [result] = await service.listForConsole({});
+
+      expect(result.requestedAddOnIds).toBeNull();
+      expect(result.requestedAddOns).toEqual([]);
+      expect(prisma.addOn.findMany).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty list (keep none) when the choice flag is set with no ids', async () => {
+      const { service, prisma } = makeService();
+      prisma.planChangeRequest.findMany.mockResolvedValue([
+        makeRow({ requestedAddOnIds: [], addOnChoiceMade: true }),
+      ]);
+
+      const [result] = await service.listForConsole({});
+
+      expect(result.requestedAddOnIds).toEqual([]);
+      expect(result.requestedAddOns).toEqual([]);
+      expect(prisma.addOn.findMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('apply', () => {
@@ -356,6 +595,77 @@ describe('PlanChangeRequestsService', () => {
         { planVersionId: VERSION_ID, effectiveAt: 'next_period' },
         ACTOR_ID,
       );
+    });
+
+    it('passes the tenant add-on choice through as keepAddOnIds', async () => {
+      const { service, prisma, tenants } = makeService();
+      const ADDON_1 = '77777777-7777-4777-8777-777777777777';
+      prisma.planChangeRequest.findUnique.mockResolvedValue(
+        makeRow({ requestedAddOnIds: [ADDON_1], addOnChoiceMade: true }),
+      );
+      prisma.planChangeRequest.updateMany.mockResolvedValue({ count: 1 });
+      prisma.planChangeRequest.update.mockImplementation(
+        async ({ data }: any) =>
+          makeRow({
+            ...data,
+            requestedAddOnIds: [ADDON_1],
+            addOnChoiceMade: true,
+            decidedBy: ACTOR_ID,
+            decidedAt: NOW,
+          }),
+      );
+
+      await service.apply(REQUEST_ID, { effectiveAt: 'immediate' }, ACTOR_ID);
+
+      expect(tenants.changePlan).toHaveBeenCalledWith(
+        TENANT_ID,
+        {
+          planVersionId: VERSION_ID,
+          effectiveAt: 'immediate',
+          keepAddOnIds: [ADDON_1],
+        },
+        ACTOR_ID,
+      );
+    });
+
+    it('passes an empty keepAddOnIds when the tenant chose to keep none', async () => {
+      const { service, prisma, tenants } = makeService();
+      prisma.planChangeRequest.findUnique.mockResolvedValue(
+        makeRow({ requestedAddOnIds: [], addOnChoiceMade: true }),
+      );
+      prisma.planChangeRequest.updateMany.mockResolvedValue({ count: 1 });
+      prisma.planChangeRequest.update.mockImplementation(
+        async ({ data }: any) =>
+          makeRow({
+            ...data,
+            requestedAddOnIds: [],
+            addOnChoiceMade: true,
+            decidedBy: ACTOR_ID,
+            decidedAt: NOW,
+          }),
+      );
+
+      await service.apply(REQUEST_ID, {}, ACTOR_ID);
+
+      expect(tenants.changePlan).toHaveBeenCalledWith(
+        TENANT_ID,
+        expect.objectContaining({ keepAddOnIds: [] }),
+        ACTOR_ID,
+      );
+    });
+
+    it('passes no keepAddOnIds when the request carries no add-on choice', async () => {
+      const { service, prisma, tenants } = makeService();
+      // makeRow() is a no-choice row: an EMPTY list with the flag
+      // false. This is the D2 regression case — the flag, not the
+      // list's emptiness, must decide, or apply() would end every
+      // trial add-on on a plain plan change.
+      mockApplyHappyPath(prisma);
+
+      await service.apply(REQUEST_ID, {}, ACTOR_ID);
+
+      const dto = tenants.changePlan.mock.calls[0][1];
+      expect(dto.keepAddOnIds).toBeUndefined();
     });
 
     it('404s for an unknown request', async () => {
@@ -518,6 +828,21 @@ describe('PlanChangeRequestsService', () => {
         'note',
         'targetPlanId',
       ]);
+    });
+
+    it('accepts a valid add-on selection and rejects non-UUID add-on ids', async () => {
+      const valid = Object.assign(new CreatePlanChangeRequestDto(), {
+        targetPlanId: PLAN_ID,
+        addOnIds: ['77777777-7777-4777-8777-777777777777'],
+      });
+      expect(await validate(valid)).toEqual([]);
+
+      const invalid = Object.assign(new CreatePlanChangeRequestDto(), {
+        targetPlanId: PLAN_ID,
+        addOnIds: ['not-a-uuid'],
+      });
+      const errors = await validate(invalid);
+      expect(errors.map((e) => e.property)).toEqual(['addOnIds']);
     });
   });
 });

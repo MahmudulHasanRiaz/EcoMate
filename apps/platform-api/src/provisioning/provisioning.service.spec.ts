@@ -95,14 +95,28 @@ function makeService() {
     sendVerification: jest.fn(),
     sendWelcome: jest.fn().mockResolvedValue({ delivered: true }),
   };
+  const emailBalance = {
+    grantFreeAllowance: jest.fn().mockResolvedValue(undefined),
+  };
+  const settings = {
+    getTrialDefaults: jest.fn().mockReturnValue({
+      trialDays: 14,
+      graceDays: 7,
+      trialAddOnSlugs: null,
+      trialEndPolicy: 'grace_then_suspend',
+    }),
+  };
   return {
     prisma,
     domainConfig,
     mail,
+    settings,
     service: new ProvisioningService(
-      prisma,
+      prisma as any,
       domainConfig as any,
       mail as any,
+      emailBalance as any,
+      settings as any,
     ),
   };
 }
@@ -446,11 +460,101 @@ describe('ProvisioningService', () => {
 
     expect(prisma.subscriptionAddOn.createMany).toHaveBeenCalledWith({
       data: [
-        { subscriptionId: 'sub-1', addOnId: 'a1', startedAt: expect.any(Date) },
-        { subscriptionId: 'sub-1', addOnId: 'a2', startedAt: expect.any(Date) },
+        {
+          subscriptionId: 'sub-1',
+          addOnId: 'a1',
+          startedAt: expect.any(Date),
+          trialGranted: true,
+        },
+        {
+          subscriptionId: 'sub-1',
+          addOnId: 'a2',
+          startedAt: expect.any(Date),
+          trialGranted: true,
+        },
       ],
       skipDuplicates: true,
     });
+  });
+
+  it('attaches only the configured trial add-on slugs when set', async () => {
+    const { service, prisma, settings } = makeService();
+    settings.getTrialDefaults.mockReturnValue({
+      trialDays: 14,
+      graceDays: 7,
+      trialAddOnSlugs: ['storefront', 'pos-system'],
+      trialEndPolicy: 'grace_then_suspend',
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'TRIAL',
+      planVersion: { plan: { slug: 'trial' } },
+    });
+    prisma.addOn.findMany.mockResolvedValue([{ id: 'a1' }]);
+
+    await service.startForSignup('signup-1');
+
+    expect(prisma.addOn.findMany).toHaveBeenCalledWith({
+      where: {
+        isActive: true,
+        slug: { in: ['storefront', 'pos-system'] },
+      },
+      select: { id: true },
+    });
+    expect(prisma.subscriptionAddOn.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          subscriptionId: 'sub-1',
+          addOnId: 'a1',
+          startedAt: expect.any(Date),
+          trialGranted: true,
+        },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it('still excludes custom-domain even when the operator lists it', async () => {
+    const { service, prisma, settings } = makeService();
+    settings.getTrialDefaults.mockReturnValue({
+      trialDays: 14,
+      graceDays: 7,
+      trialAddOnSlugs: ['storefront', 'custom-domain'],
+      trialEndPolicy: 'grace_then_suspend',
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'TRIAL',
+      planVersion: { plan: { slug: 'trial' } },
+    });
+    prisma.addOn.findMany.mockResolvedValue([]);
+
+    await service.startForSignup('signup-1');
+
+    expect(prisma.addOn.findMany).toHaveBeenCalledWith({
+      where: { isActive: true, slug: { in: ['storefront'] } },
+      select: { id: true },
+    });
+  });
+
+  it('attaches nothing when the configured trial add-on list is empty', async () => {
+    const { service, prisma, settings } = makeService();
+    settings.getTrialDefaults.mockReturnValue({
+      trialDays: 14,
+      graceDays: 7,
+      trialAddOnSlugs: [],
+      trialEndPolicy: 'grace_then_suspend',
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'TRIAL',
+      planVersion: { plan: { slug: 'trial' } },
+    });
+
+    await service.startForSignup('signup-1');
+
+    expect(prisma.addOn.findMany).not.toHaveBeenCalled();
+    expect(prisma.subscriptionAddOn.createMany).not.toHaveBeenCalled();
   });
 
   it('excludes the custom-domain add-on from trial attach (Boss 2026-11-19)', async () => {

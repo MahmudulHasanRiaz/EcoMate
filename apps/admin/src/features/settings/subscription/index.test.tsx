@@ -70,6 +70,7 @@ function snapshot(overrides: Record<string, unknown> = {}) {
     features: ['admin_products', 'storefront_wishlist', '*'],
     limits: { products: 100 },
     validUntil: new Date(Date.now() + 30 * DAY).toISOString(),
+    graceEndsAt: null,
     ...overrides,
   }
 }
@@ -192,9 +193,43 @@ function planRequest(overrides: Record<string, unknown> = {}) {
     status: 'PENDING',
     note: null,
     rejectionReason: null,
+    requestedAddOnIds: null,
     requestedBy: 'u1',
     createdAt: '2026-11-18T00:00:00.000Z',
     decidedAt: null,
+    ...overrides,
+  }
+}
+
+function trialReview(overrides: Record<string, unknown> = {}) {
+  return {
+    tenantId: 'tenant-1',
+    tenantName: 'My Store',
+    subscriptionStatus: 'TRIAL',
+    planName: 'Trial',
+    planSlug: 'trial',
+    isTrialPlan: true,
+    trialEndsAt: new Date(Date.now() + 5 * DAY).toISOString(),
+    graceEndsAt: null,
+    trialAddOns: [
+      {
+        id: 'addon-storefront',
+        slug: 'storefront',
+        name: 'Storefront',
+        price: 999,
+        currency: 'BDT',
+        confirmed: false,
+      },
+      {
+        id: 'addon-pos',
+        slug: 'pos_system',
+        name: 'POS',
+        price: 499,
+        currency: 'BDT',
+        confirmed: false,
+      },
+    ],
+    hasPendingRequest: false,
     ...overrides,
   }
 }
@@ -204,6 +239,7 @@ interface MockData {
   plans?: unknown[]
   requests?: unknown[]
   snapshotOverrides?: Record<string, unknown>
+  trialReview?: unknown
 }
 
 let mockData: MockData = {}
@@ -223,6 +259,12 @@ function mockApi() {
         return { data: mockData.plans ?? [plan(), scalePlan()] }
       case '/subscription/plan-change-requests':
         return { data: mockData.requests ?? [] }
+      case '/subscription/trial-review':
+        return {
+          data:
+            mockData.trialReview ??
+            trialReview({ isTrialPlan: false, trialAddOns: [] }),
+        }
       case '/settings/smtp':
         return { data: { mode: 'BYO' } }
       default:
@@ -343,6 +385,12 @@ describe('SubscriptionSettings', () => {
     await waitFor(() =>
       expect(screen.getByRole('dialog', { name: /Request Scale/ })).toBeTruthy(),
     )
+    // Confirm stays disabled until the trial-review query settles.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Confirm request' }).disabled,
+      ).toBe(false),
+    )
     fireEvent.change(screen.getByLabelText('Note (optional)'), {
       target: { value: 'Need more products' },
     })
@@ -360,6 +408,153 @@ describe('SubscriptionSettings', () => {
     )
     expect(screen.getByText('Pending')).toBeTruthy()
     expect(screen.getByText('Note: Need more products')).toBeTruthy()
+  })
+
+  it('overview shows the trial-ended banner in grace and jumps to Plans', async () => {
+    mockData.snapshotOverrides = {
+      planName: 'Trial',
+      subscriptionStatus: 'PAST_DUE',
+      accessState: 'grace',
+      graceEndsAt: new Date(Date.now() + 3 * DAY).toISOString(),
+    }
+    mockData.trialReview = trialReview()
+    renderHub({ initialTab: 'overview' })
+
+    await waitFor(() =>
+      expect(screen.getByText('Your trial has ended')).toBeTruthy(),
+    )
+    expect(
+      screen.getByText(/Your shop stays online until/),
+    ).toBeTruthy()
+    screen.getByRole('button', { name: 'Choose a plan' }).click()
+    // The Plans tab opens (plan cards render).
+    await waitFor(() => expect(screen.getByText('Scale')).toBeTruthy())
+  })
+
+  it('plans dialog reviews trial add-ons and sends only the kept ones', async () => {
+    mockData.trialReview = trialReview()
+    const created = planRequest({
+      id: 'req-new',
+      requestedAddOnIds: ['addon-storefront'],
+    })
+    postMock.mockImplementation(async () => {
+      mockData.requests = [created]
+      return { data: created }
+    })
+    renderHub({ initialTab: 'plans' })
+
+    await waitFor(() => expect(screen.getByText('Scale')).toBeTruthy())
+    screen.getByRole('button', { name: /Request upgrade/ }).click()
+    await waitFor(() =>
+      expect(
+        screen.getByText('Your trial add-ons — choose what to keep'),
+      ).toBeTruthy(),
+    )
+    // Both trial add-ons are checked by default (keep-all).
+    const posCheckbox = screen.getByRole('checkbox', { name: /POS/ })
+    expect(screen.getByText('BDT 1,498.00')).toBeTruthy()
+    // Monthly total = Scale plan 12,000 + kept add-ons 1,498.
+    expect(screen.getByText('BDT 13,498.00')).toBeTruthy()
+    posCheckbox.click()
+    await waitFor(() =>
+      expect(screen.getByText('BDT 999.00')).toBeTruthy(),
+    )
+    await waitFor(() =>
+      expect(screen.getByText('BDT 12,999.00')).toBeTruthy(),
+    )
+    screen.getByRole('button', { name: 'Confirm request' }).click()
+
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith(
+        '/subscription/plan-change-requests',
+        {
+          targetPlanId: 'plan-scale',
+          addOnIds: ['addon-storefront'],
+        },
+      ),
+    )
+    await waitFor(() =>
+      expect(screen.getByText('Keeping 1 add-on')).toBeTruthy(),
+    )
+  })
+
+  it('plans dialog keeps confirmed add-ons checked, disabled and included', async () => {
+    mockData.trialReview = trialReview({
+      trialAddOns: [
+        {
+          id: 'addon-storefront',
+          slug: 'storefront',
+          name: 'Storefront',
+          price: 999,
+          currency: 'BDT',
+          confirmed: true,
+        },
+        {
+          id: 'addon-pos',
+          slug: 'pos_system',
+          name: 'POS',
+          price: 499,
+          currency: 'BDT',
+          confirmed: false,
+        },
+      ],
+    })
+    const created = planRequest({
+      id: 'req-new',
+      requestedAddOnIds: ['addon-storefront'],
+    })
+    postMock.mockImplementation(async () => {
+      mockData.requests = [created]
+      return { data: created }
+    })
+    renderHub({ initialTab: 'plans' })
+
+    await waitFor(() => expect(screen.getByText('Scale')).toBeTruthy())
+    screen.getByRole('button', { name: /Request upgrade/ }).click()
+    await waitFor(() =>
+      expect(
+        screen.getByText('Your trial add-ons — choose what to keep'),
+      ).toBeTruthy(),
+    )
+    const storefrontCheckbox = screen.getByRole('checkbox', {
+      name: /Storefront/,
+    })
+    expect(storefrontCheckbox.disabled).toBe(true)
+    expect(screen.getByText('(already confirmed)')).toBeTruthy()
+    // Drop POS; the confirmed storefront stays in the choice.
+    screen.getByRole('checkbox', { name: /POS/ }).click()
+    screen.getByRole('button', { name: 'Confirm request' }).click()
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith(
+        '/subscription/plan-change-requests',
+        {
+          targetPlanId: 'plan-scale',
+          addOnIds: ['addon-storefront'],
+        },
+      ),
+    )
+  })
+
+  it('plans dialog warns when the storefront is dropped', async () => {
+    mockData.trialReview = trialReview()
+    renderHub({ initialTab: 'plans' })
+
+    await waitFor(() => expect(screen.getByText('Scale')).toBeTruthy())
+    screen.getByRole('button', { name: /Request upgrade/ }).click()
+    await waitFor(() =>
+      expect(
+        screen.getByText('Your trial add-ons — choose what to keep'),
+      ).toBeTruthy(),
+    )
+    expect(
+      screen.queryByText(/Dropping the storefront will take your public shop offline/),
+    ).toBeNull()
+    screen.getByRole('checkbox', { name: /Storefront/ }).click()
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Dropping the storefront will take your public shop offline/),
+      ).toBeTruthy(),
+    )
   })
 
   it('plans shows a pending state and the rejection reason on decided requests', async () => {

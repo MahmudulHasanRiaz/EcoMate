@@ -4,16 +4,20 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { DomainConfigService } from '../config/domain-config.service';
 import { PlatformMailService } from '../common/platform-mail.service';
 import { EmailBalanceService } from '../email-balance/email-balance.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { parsePricingDocument } from '../pricing/pricing-document';
+import { SettingsService } from '../settings/settings.service';
 
 /** Slug of the seeded trial plan (prisma/seed.ts) — the only plan whose
- * trial period gets the full-product add-on attach (Boss 2026-11-21). */
-const TRIAL_PLAN_SLUG = 'trial';
+ * trial period gets the full-product add-on attach (Boss 2026-11-21).
+ * The billing jobs share this: a trial-plan trial never auto-renews
+ * into ACTIVE at trial end (trial-end design 2026-11-22). */
+export const TRIAL_PLAN_SLUG = 'trial';
 
 /** Slug of the custom-domain add-on — never attached to a trial
  * (Boss 2026-11-19: trial tenants don't get custom domains; the
@@ -58,6 +62,11 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
     private readonly domainConfig: DomainConfigService,
     private readonly mail: PlatformMailService,
     private readonly emailBalance: EmailBalanceService,
+    // @Optional: older specs construct this service without settings; the
+    // attach then falls back to the default (all active except
+    // custom-domain). In production SettingsModule is @Global, so this
+    // is always present.
+    @Optional() private readonly settings?: SettingsService,
   ) {}
 
   onModuleInit() {
@@ -427,11 +436,11 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
         include: { domains: true, subscription: true },
       });
       // Trial = the full product (Boss 2026-11-21): on the trial plan,
-      // every active add-on except custom-domain (storefront, POS,
-      // SMTP, …) attaches free for the trial. The attach itself creates
-      // no invoice (attach is invoice-free while the subscription is
-      // TRIAL); the renewal job bills attached add-ons once the trial
-      // ends. attachTrialAddOns enforces the trial-plan-only +
+      // the configured trial add-ons (default: every active add-on
+      // except custom-domain — storefront, POS, SMTP, …) attach free
+      // for the trial. Rows are trial-granted: never billed until the
+      // tenant confirms them at conversion (trial-end design
+      // 2026-11-22). attachTrialAddOns enforces the trial-plan-only +
       // no-custom-domain rules.
       await this.attachTrialAddOns(created.id);
       return created;
@@ -450,18 +459,25 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Attach every active add-on to a TRIAL subscription on the TRIAL
-   * PLAN, free for the trial period. Best-effort with a loud log (like
-   * the free-email grant): a failed attach must never fail
+   * Attach the configured trial add-ons to a TRIAL subscription on the
+   * TRIAL PLAN, free for the trial period. Best-effort with a loud log
+   * (like the free-email grant): a failed attach must never fail
    * provisioning — the trial plan version itself already includes
    * every catalogue feature, so entitlements stay complete and the
    * operator can attach from the console. Idempotent
    * (skipDuplicates) for the retry path.
    *
    * Trial-plan only: a paid plan's trial period trials THAT plan — a
-   * Base-plan trial must not silently collect every add-on (the
-   * renewal job would bill them all at trial end). The custom-domain
-   * add-on is excluded even on the trial plan (Boss 2026-11-19).
+   * Base-plan trial must not silently collect every add-on. The
+   * custom-domain add-on is excluded even on the trial plan (Boss
+   * 2026-11-19).
+   *
+   * Which add-ons attach is console-configurable (Settings → Trial,
+   * `trialAddOnSlugs`): null = every active add-on except custom-domain
+   * (today's behaviour, the default); [] = no add-ons; a list = exactly
+   * those slugs (unknown/inactive slugs ignored). Rows are created
+   * trial-granted: never billed until the tenant confirms them at
+   * conversion (trial-end design 2026-11-22).
    */
   private async attachTrialAddOns(tenantId: string): Promise<void> {
     try {
@@ -475,11 +491,25 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
       });
       if (!subscription || subscription.status !== 'TRIAL') return;
       if (subscription.planVersion?.plan?.slug !== TRIAL_PLAN_SLUG) return;
+      const configuredSlugs =
+        this.settings?.getTrialDefaults().trialAddOnSlugs ?? null;
+      // An explicitly empty list means "a trial with no add-ons".
+      if (configuredSlugs !== null && configuredSlugs.length === 0) return;
       const addOns = await this.prisma.addOn.findMany({
-        where: {
-          isActive: true,
-          slug: { not: CUSTOM_DOMAIN_ADD_ON_SLUG },
-        },
+        where:
+          configuredSlugs === null
+            ? {
+                isActive: true,
+                slug: { not: CUSTOM_DOMAIN_ADD_ON_SLUG },
+              }
+            : {
+                isActive: true,
+                slug: {
+                  in: configuredSlugs.filter(
+                    (slug) => slug !== CUSTOM_DOMAIN_ADD_ON_SLUG,
+                  ),
+                },
+              },
         select: { id: true },
       });
       if (addOns.length === 0) return;
@@ -488,6 +518,7 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
           subscriptionId: subscription.id,
           addOnId: addOn.id,
           startedAt: new Date(),
+          trialGranted: true,
         })),
         skipDuplicates: true,
       });

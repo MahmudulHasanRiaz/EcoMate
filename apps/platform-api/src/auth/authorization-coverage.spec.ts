@@ -50,6 +50,8 @@ const PUBLIC_CONTROLLERS: Record<string, string> = {
     'service-token guard (InternalServiceGuard) — tenant self-service domains (custom-domains subagent)',
   InternalPlanChangeRequestsController:
     'service-token guard (InternalServiceGuard) — tenant self-service plan-change requests (Subscription hub)',
+  InternalTrialReviewController:
+    'service-token guard (InternalServiceGuard) — tenant trial conversion review (trial-end design 2026-11-22)',
   TlsAskController: 'Caddy-only ask endpoint, token query param',
 };
 
@@ -209,6 +211,7 @@ describe('authorization coverage', () => {
       'InternalController',
       'InternalDomainsController',
       'InternalPlanChangeRequestsController',
+      'InternalTrialReviewController',
       'JobsController',
       'LandingCacheController',
       'LandingContentController',

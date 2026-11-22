@@ -310,6 +310,16 @@ export interface PlanChangeRequest {
   status: 'PENDING' | 'APPLIED' | 'REJECTED';
   note?: string | null;
   rejectionReason?: string | null;
+  /** Add-on ids the tenant chose to KEEP (trial conversion review).
+   * null = no add-on choice was made; [] = keep none. */
+  requestedAddOnIds?: string[] | null;
+  /** The kept add-ons, resolved with names and prices. */
+  requestedAddOns?: Array<{
+    id: string;
+    name: string;
+    price: number;
+    currency: string;
+  }>;
   requestedBy?: string | null;
   createdAt: string;
   decidedAt?: string | null;
@@ -407,6 +417,10 @@ export interface Subscription {
     addOnId: string;
     startedAt: string;
     endedAt?: string | null;
+    /** True when the row was attached by the trial attach — never
+     * billed until confirmedAt is set (trial-end design 2026-11-22). */
+    trialGranted?: boolean;
+    confirmedAt?: string | null;
     addOn?: { id: string; name: string; price: string | number };
   }>;
 }
@@ -606,9 +620,18 @@ export interface SmtpSettingsPublic {
   source: 'env' | 'setting' | 'none';
 }
 
+export type TrialEndPolicy = 'grace_then_suspend' | 'suspend_immediately';
+
 export interface TrialSettings {
   trialDays: number;
   graceDays: number;
+  /**
+   * Add-on slugs a new trial includes (trial-plan signups only).
+   * null = unset: every active add-on except custom-domain. [] = a
+   * trial with no add-ons. Changing this affects NEW signups only.
+   */
+  trialAddOnSlugs: string[] | null;
+  trialEndPolicy: TrialEndPolicy;
 }
 
 export interface TaxSettings {
@@ -969,6 +992,10 @@ export interface SubscriptionAddOn {
   addOnId: string;
   startedAt: string;
   endedAt?: string | null;
+  /** True when the row was attached by the trial attach — never billed
+   * until confirmedAt is set (trial-end design 2026-11-22). */
+  trialGranted?: boolean;
+  confirmedAt?: string | null;
   addOn?: AddOn | null;
   invoice?: {
     id: string;

@@ -53,6 +53,8 @@ describe('SettingsService', () => {
     expect(service.getTrialDefaults()).toEqual({
       trialDays: 14,
       graceDays: 7,
+      trialAddOnSlugs: null,
+      trialEndPolicy: 'grace_then_suspend',
     });
     expect(service.getTax()).toEqual({
       ratePercent: 0,
@@ -182,6 +184,8 @@ describe('SettingsService', () => {
     expect(service.getTrialDefaults()).toEqual({
       trialDays: 30,
       graceDays: 10,
+      trialAddOnSlugs: null,
+      trialEndPolicy: 'grace_then_suspend',
     });
     expect(service.getTax()).toEqual({
       ratePercent: 15,
@@ -491,10 +495,81 @@ describe('SettingsService', () => {
 
     const next = await service.updateTrial({ trialDays: 21 });
 
-    expect(next).toEqual({ trialDays: 21, graceDays: 7 });
+    expect(next).toEqual({
+      trialDays: 21,
+      graceDays: 7,
+      trialAddOnSlugs: null,
+      trialEndPolicy: 'grace_then_suspend',
+    });
     expect(service.getTrialDefaults().trialDays).toBe(21);
     expect(prisma.platformSetting.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { key: 'trial_defaults' } }),
+    );
+  });
+
+  it('persists trial add-on slugs and the trial-end policy', async () => {
+    const { service } = buildService();
+    await service.onModuleInit();
+
+    const next = await service.updateTrial({
+      trialAddOnSlugs: ['storefront', 'pos-system', 'storefront', ' '],
+      trialEndPolicy: 'suspend_immediately',
+    });
+
+    // Normalised: trimmed, de-duplicated, empties dropped.
+    expect(next.trialAddOnSlugs).toEqual(['storefront', 'pos-system']);
+    expect(next.trialEndPolicy).toBe('suspend_immediately');
+    expect(service.getTrialDefaults().trialEndPolicy).toBe(
+      'suspend_immediately',
+    );
+  });
+
+  it('accepts an explicitly empty trial add-on list (trial with no add-ons)', async () => {
+    const { service } = buildService();
+    await service.onModuleInit();
+
+    const next = await service.updateTrial({ trialAddOnSlugs: [] });
+    expect(next.trialAddOnSlugs).toEqual([]);
+  });
+
+  it('resets the trial add-on list to the default with null', async () => {
+    const { service } = buildService();
+    await service.onModuleInit();
+    await service.updateTrial({ trialAddOnSlugs: ['storefront'] });
+
+    const next = await service.updateTrial({ trialAddOnSlugs: null });
+    expect(next.trialAddOnSlugs).toBeNull();
+  });
+
+  it('rejects an invalid trial-end policy and non-string slugs', async () => {
+    const { service } = buildService();
+    await service.onModuleInit();
+
+    await expect(
+      service.updateTrial({ trialEndPolicy: 'delete_everything' as any }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.updateTrial({ trialAddOnSlugs: ['storefront', 42 as any] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('loads stored trial add-ons and policy on boot, tolerating bad values', async () => {
+    const { service } = buildService({
+      trial_defaults: {
+        trialDays: 14,
+        graceDays: 7,
+        trialAddOnSlugs: ['storefront', 42, '', 'pos-system'],
+        trialEndPolicy: 'suspend_immediately',
+      },
+    });
+    await service.onModuleInit();
+
+    expect(service.getTrialDefaults().trialAddOnSlugs).toEqual([
+      'storefront',
+      'pos-system',
+    ]);
+    expect(service.getTrialDefaults().trialEndPolicy).toBe(
+      'suspend_immediately',
     );
   });
 
@@ -570,6 +645,8 @@ describe('SettingsService', () => {
     expect(service.getTrialDefaults()).toEqual({
       trialDays: 14,
       graceDays: 7,
+      trialAddOnSlugs: null,
+      trialEndPolicy: 'grace_then_suspend',
     });
     expect(service.isMaintenanceEnabled()).toBe(false);
   });

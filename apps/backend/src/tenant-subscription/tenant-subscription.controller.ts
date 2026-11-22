@@ -36,6 +36,17 @@ export class TenantSubscriptionController {
     return this.subscription.listPublicPlans();
   }
 
+  /**
+   * Trial conversion review (trial-end design 2026-11-22): the trial
+   * state + attached trial add-ons with prices, for the Plans tab's
+   * review step. Read-only, open to staff like the plan catalogue.
+   */
+  @Get('trial-review')
+  @Roles('superadmin', 'admin', 'employee')
+  getTrialReview() {
+    return this.subscription.getTrialReview(requireTenantId());
+  }
+
   @Get('plan-change-requests')
   @Roles('superadmin', 'admin', 'employee')
   listRequests() {

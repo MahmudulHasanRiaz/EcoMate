@@ -150,6 +150,45 @@ describe('PricingService.resolveForSubscription', () => {
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('excludes unconfirmed trial-granted add-ons from billing', async () => {
+    const { service, prisma } = makeService();
+    prisma.subscription.findUnique.mockResolvedValue({
+      tenantId: 'tenant-1',
+      addOns: [
+        // Trial-granted, never confirmed: never billed.
+        {
+          trialGranted: true,
+          confirmedAt: null,
+          addOn: { name: 'Storefront', price: 999, metering: null },
+        },
+        // Trial-granted, confirmed at conversion: billed.
+        {
+          trialGranted: true,
+          confirmedAt: new Date('2026-11-22T00:00:00Z'),
+          addOn: { name: 'POS', price: 499, metering: null },
+        },
+        // Operator-attached (not trial-granted): billed as before.
+        {
+          trialGranted: false,
+          confirmedAt: null,
+          addOn: { name: 'Inbox', price: 500, metering: null },
+        },
+      ],
+    });
+
+    const resolved = await service.resolveForSubscription('sub-1', {
+      id: 'v1',
+      price: 0,
+      currency: 'BDT',
+      pricing: METERED_PRICING,
+    });
+
+    expect(resolved.addOns).toEqual([
+      { name: 'POS', baseFee: 499, metering: undefined },
+      { name: 'Inbox', baseFee: 500, metering: undefined },
+    ]);
+  });
 });
 
 describe('PricingService.preview', () => {

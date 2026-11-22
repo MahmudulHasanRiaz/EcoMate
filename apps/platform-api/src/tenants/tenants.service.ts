@@ -571,6 +571,20 @@ export class TenantsService {
           pendingPlanEffectiveAt: subscription.currentPeriodEnd,
         },
       });
+      // Trial conversion: the add-on choice is recorded now even though
+      // the plan switch defers — kept add-ons bill from the deferred
+      // renewal, dropped ones end now (the tenant is still on the trial
+      // plan version, whose features cover everything, so dropping
+      // removes no features until the new plan starts).
+      const scheduledSelection =
+        dto.keepAddOnIds !== undefined
+          ? await this.applyTrialAddOnSelection(
+              id,
+              subscription.id,
+              dto.keepAddOnIds,
+              now,
+            )
+          : null;
       await this.audit.record({
         actorId,
         tenantId: id,
@@ -581,12 +595,15 @@ export class TenantsService {
         after: {
           planVersionId: planVersion.id,
           effectiveAt: subscription.currentPeriodEnd.toISOString(),
+          keptAddOnIds: scheduledSelection?.kept.map((a) => a.id) ?? null,
+          droppedAddOnIds: scheduledSelection?.dropped ?? null,
         },
       });
       return {
         ...tenant,
         pendingPlanVersionId: planVersion.id,
         pendingPlanEffectiveAt: subscription.currentPeriodEnd,
+        keptAddOns: scheduledSelection?.kept ?? [],
       };
     }
 
@@ -666,6 +683,22 @@ export class TenantsService {
       }
     }
 
+    // Trial conversion (trial-end design 2026-11-22): apply the tenant's
+    // add-on choice AFTER the metered close-out is computed, so the
+    // close-out never bills a just-confirmed add-on's trial usage. The
+    // kept add-ons' fees join the conversion invoice below. Idempotent:
+    // a retry re-applies the same selection (confirmed stays confirmed,
+    // ended stays ended).
+    const trialSelection =
+      dto.keepAddOnIds !== undefined && subscription
+        ? await this.applyTrialAddOnSelection(
+            id,
+            subscription.id,
+            dto.keepAddOnIds,
+            now,
+          )
+        : null;
+
     const oldPrice =
       subscription && subscription.status !== 'TRIAL'
         ? Number(subscription.planVersion.price)
@@ -736,17 +769,36 @@ export class TenantsService {
           },
         });
         const newPrice = Number(planVersion.price);
+        // Trial conversion: the invoice is exactly what the tenant
+        // reviewed — base fee + kept add-on fees. A ৳0 base with priced
+        // kept add-ons still needs an invoice; a ৳0 base with no priced
+        // kept add-ons needs none.
+        const lines: Array<{
+          description: string;
+          quantity: number;
+          unitPrice: number;
+        }> = [];
         if (newPrice > 0) {
+          lines.push({
+            description: `${planVersion.plan.name} subscription — plan change`,
+            quantity: 1,
+            unitPrice: newPrice,
+          });
+        }
+        for (const addOn of trialSelection?.kept ?? []) {
+          if (addOn.price > 0) {
+            lines.push({
+              description: `${addOn.name} add-on — monthly`,
+              quantity: 1,
+              unitPrice: addOn.price,
+            });
+          }
+        }
+        if (lines.length > 0) {
           invoice = await this.invoices.createInvoice({
             tenantId: id,
             subscriptionId: subscription.id,
-            lines: [
-              {
-                description: `${planVersion.plan.name} subscription — plan change`,
-                quantity: 1,
-                unitPrice: newPrice,
-              },
-            ],
+            lines,
             kind: 'SUBSCRIPTION',
             periodStart,
             periodEnd,
@@ -786,6 +838,8 @@ export class TenantsService {
         prorationCredit,
         invoiceId: invoice?.id ?? null,
         usageInvoiceId: usageInvoice?.id ?? null,
+        keptAddOnIds: trialSelection?.kept.map((a) => a.id) ?? null,
+        droppedAddOnIds: trialSelection?.dropped ?? null,
       },
     });
     const pushed = await this.refresh.pushRefresh(tenant.slug);
@@ -794,6 +848,86 @@ export class TenantsService {
         `Entitlement refresh push failed for ${tenant.slug}: ${pushed.error}`,
       );
     }
-    return { ...updated, prorationCredit, invoice, usageInvoice };
+    return {
+      ...updated,
+      prorationCredit,
+      invoice,
+      usageInvoice,
+      keptAddOns: trialSelection?.kept ?? [],
+    };
+  }
+
+  /**
+   * Apply a trial conversion's add-on choice (trial-end design
+   * 2026-11-22). Only trial-granted rows are touched: kept ones are
+   * confirmed (billable from now on — the renewal job picks them up
+   * via resolveForSubscription), dropped ones end now (the tenant's
+   * explicit choice; while still on the trial plan version no features
+   * are lost, per the registry's plan-features union). Operator-
+   * attached rows are never touched. Ids that are not attached trial
+   * add-ons are ignored. Idempotent: re-applying the same selection is
+   * a no-op (confirmedAt/endedAt guards).
+   *
+   * Returns the kept add-ons (for the conversion invoice) and the
+   * dropped add-on ids (for the audit trail).
+   */
+  private async applyTrialAddOnSelection(
+    tenantId: string,
+    subscriptionId: string,
+    keepAddOnIds: string[],
+    now: Date,
+  ): Promise<{
+    kept: Array<{ id: string; name: string; price: number; currency: string }>;
+    dropped: string[];
+  }> {
+    const rows = await this.prisma.subscriptionAddOn.findMany({
+      where: { subscriptionId, trialGranted: true, endedAt: null },
+      include: {
+        addOn: { select: { id: true, name: true, price: true, currency: true } },
+      },
+    });
+    const keep = new Set(keepAddOnIds);
+    const keptRows = rows.filter((row) => keep.has(row.addOnId));
+    const droppedRows = rows.filter((row) => !keep.has(row.addOnId));
+    const toConfirm = keptRows.filter((row) => !row.confirmedAt);
+    if (toConfirm.length > 0) {
+      await this.prisma.subscriptionAddOn.updateMany({
+        where: {
+          subscriptionId,
+          addOnId: { in: toConfirm.map((row) => row.addOnId) },
+          confirmedAt: null,
+        },
+        data: { confirmedAt: now },
+      });
+    }
+    if (droppedRows.length > 0) {
+      await this.prisma.subscriptionAddOn.updateMany({
+        where: {
+          subscriptionId,
+          addOnId: { in: droppedRows.map((row) => row.addOnId) },
+          endedAt: null,
+        },
+        data: { endedAt: now },
+      });
+    }
+    await this.audit.record({
+      tenantId,
+      action: 'tenant.addon.trial-selection',
+      entity: 'Subscription',
+      entityId: subscriptionId,
+      after: {
+        keptAddOnIds: keptRows.map((row) => row.addOnId),
+        droppedAddOnIds: droppedRows.map((row) => row.addOnId),
+      },
+    });
+    return {
+      kept: keptRows.map((row) => ({
+        id: row.addOn.id,
+        name: row.addOn.name,
+        price: Number(row.addOn.price),
+        currency: row.addOn.currency,
+      })),
+      dropped: droppedRows.map((row) => row.addOnId),
+    };
   }
 }

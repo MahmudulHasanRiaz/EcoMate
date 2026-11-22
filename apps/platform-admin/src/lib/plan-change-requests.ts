@@ -33,6 +33,31 @@ export function planChangeSummary(request: PlanChangeRequest): string {
   return `${current} → ${request.targetPlanName}`;
 }
 
+/**
+ * One-line summary of the tenant's add-on choice (trial conversion
+ * review): null = no choice was made ("No add-on choice"); [] = the
+ * tenant chose to keep none ("Keep none"); otherwise the kept add-ons
+ * with their monthly prices.
+ */
+export function requestedAddOnsSummary(
+  request: PlanChangeRequest,
+  formatPrice: (price: number, currency: string) => string,
+): string {
+  if (request.requestedAddOnIds === null || request.requestedAddOnIds === undefined) {
+    return 'No add-on choice';
+  }
+  if (request.requestedAddOnIds.length === 0) {
+    return 'Keep none';
+  }
+  const resolved = request.requestedAddOns ?? [];
+  if (resolved.length === 0) {
+    return `${request.requestedAddOnIds.length} add-on${request.requestedAddOnIds.length === 1 ? '' : 's'}`;
+  }
+  return resolved
+    .map((a) => `${a.name} (${formatPrice(a.price, a.currency)})`)
+    .join(', ');
+}
+
 /** The console requires a real rejection reason (at least 3 characters
  * after trimming) — the same bar as payment-proof rejection. The API
  * itself only rejects blank reasons. */

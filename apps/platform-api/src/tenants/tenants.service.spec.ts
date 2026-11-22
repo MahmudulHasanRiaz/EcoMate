@@ -17,6 +17,10 @@ const prisma: any = {
     update: jest.fn().mockResolvedValue({}),
     updateMany: jest.fn(),
   },
+  subscriptionAddOn: {
+    findMany: jest.fn().mockResolvedValue([]),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+  },
   creditNote: {
     create: jest.fn().mockResolvedValue({ id: 'note-1' }),
   },
@@ -434,6 +438,256 @@ describe('TenantsService', () => {
     const data = prisma.subscription.update.mock.calls[0][0].data;
     expect(data.currentPeriodStart).toBeUndefined();
     expect(data.currentPeriodEnd).toBeUndefined();
+  });
+
+  it('applies a trial add-on selection on conversion: confirms kept, ends dropped, invoices kept', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      planVersionId: 'old',
+    });
+    prisma.planVersion.findUnique.mockResolvedValue({
+      id: 'new-version',
+      features: ['admin_products'],
+      limits: { products: 500 },
+      price: 2000,
+      currency: 'BDT',
+      interval: 'MONTHLY',
+      intervalDays: null,
+      plan: { name: 'Growth' },
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'PAST_DUE',
+      currentPeriodStart: new Date('2026-11-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-11-15T00:00:00.000Z'),
+      planVersion: {
+        price: 0,
+        currency: 'BDT',
+        plan: { name: 'Trial' },
+      },
+    });
+    prisma.subscriptionAddOn.findMany.mockResolvedValue([
+      {
+        addOnId: 'addon-keep',
+        confirmedAt: null,
+        addOn: {
+          id: 'addon-keep',
+          name: 'Storefront',
+          price: 999,
+          currency: 'BDT',
+        },
+      },
+      {
+        addOnId: 'addon-drop',
+        confirmedAt: null,
+        addOn: {
+          id: 'addon-drop',
+          name: 'POS System',
+          price: 499,
+          currency: 'BDT',
+        },
+      },
+    ]);
+
+    const result = await service.changePlan(
+      'tenant-1',
+      { planVersionId: 'new-version', keepAddOnIds: ['addon-keep'] } as any,
+      'u1',
+    );
+
+    // Kept: confirmed. Dropped: ended.
+    expect(prisma.subscriptionAddOn.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          subscriptionId: 'sub-1',
+          addOnId: { in: ['addon-keep'] },
+          confirmedAt: null,
+        }),
+        data: { confirmedAt: expect.any(Date) },
+      }),
+    );
+    expect(prisma.subscriptionAddOn.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          subscriptionId: 'sub-1',
+          addOnId: { in: ['addon-drop'] },
+          endedAt: null,
+        }),
+        data: { endedAt: expect.any(Date) },
+      }),
+    );
+    // The conversion invoice is exactly what the tenant reviewed:
+    // base fee + the kept add-on's fee (the dropped one is not billed).
+    expect(invoices.createInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        subscriptionId: 'sub-1',
+        lines: [
+          {
+            description: 'Growth subscription — plan change',
+            quantity: 1,
+            unitPrice: 2000,
+          },
+          {
+            description: 'Storefront add-on — monthly',
+            quantity: 1,
+            unitPrice: 999,
+          },
+        ],
+      }),
+    );
+    expect((result as any).keptAddOns).toEqual([
+      { id: 'addon-keep', name: 'Storefront', price: 999, currency: 'BDT' },
+    ]);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'tenant.addon.trial-selection' }),
+    );
+  });
+
+  it('invoices kept add-ons even when the new plan is free', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      planVersionId: 'old',
+    });
+    prisma.planVersion.findUnique.mockResolvedValue({
+      id: 'new-version',
+      features: ['admin_products'],
+      limits: {},
+      price: 0,
+      currency: 'BDT',
+      interval: 'MONTHLY',
+      intervalDays: null,
+      plan: { name: 'Free' },
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'PAST_DUE',
+      currentPeriodStart: new Date('2026-11-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-11-15T00:00:00.000Z'),
+      planVersion: { price: 0, currency: 'BDT', plan: { name: 'Trial' } },
+    });
+    prisma.subscriptionAddOn.findMany.mockResolvedValue([
+      {
+        addOnId: 'addon-keep',
+        confirmedAt: null,
+        addOn: {
+          id: 'addon-keep',
+          name: 'Storefront',
+          price: 999,
+          currency: 'BDT',
+        },
+      },
+    ]);
+
+    await service.changePlan(
+      'tenant-1',
+      { planVersionId: 'new-version', keepAddOnIds: ['addon-keep'] } as any,
+      'u1',
+    );
+
+    expect(invoices.createInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lines: [
+          {
+            description: 'Storefront add-on — monthly',
+            quantity: 1,
+            unitPrice: 999,
+          },
+        ],
+      }),
+    );
+  });
+
+  it('applies a trial add-on selection during a trial switch, with no invoice', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      planVersionId: 'old',
+    });
+    prisma.planVersion.findUnique.mockResolvedValue({
+      id: 'new-version',
+      features: ['admin_products'],
+      limits: {},
+      price: 2000,
+      currency: 'BDT',
+      interval: 'MONTHLY',
+      intervalDays: null,
+      plan: { name: 'Growth' },
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'TRIAL',
+      currentPeriodStart: new Date('2026-11-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-11-15T00:00:00.000Z'),
+      planVersion: { price: 0, currency: 'BDT', plan: { name: 'Trial' } },
+    });
+    prisma.subscriptionAddOn.findMany.mockResolvedValue([
+      {
+        addOnId: 'addon-keep',
+        confirmedAt: null,
+        addOn: {
+          id: 'addon-keep',
+          name: 'Storefront',
+          price: 999,
+          currency: 'BDT',
+        },
+      },
+      {
+        addOnId: 'addon-drop',
+        confirmedAt: null,
+        addOn: {
+          id: 'addon-drop',
+          name: 'POS System',
+          price: 499,
+          currency: 'BDT',
+        },
+      },
+    ]);
+
+    await service.changePlan(
+      'tenant-1',
+      { planVersionId: 'new-version', keepAddOnIds: ['addon-keep'] } as any,
+      'u1',
+    );
+
+    expect(prisma.subscriptionAddOn.updateMany).toHaveBeenCalledTimes(2);
+    expect(invoices.createInvoice).not.toHaveBeenCalled();
+  });
+
+  it('leaves trial add-ons untouched on a plain plan change (no selection)', async () => {
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+      planVersionId: 'old',
+    });
+    prisma.planVersion.findUnique.mockResolvedValue({
+      id: 'new-version',
+      features: ['admin_products'],
+      limits: {},
+      price: 2000,
+      currency: 'BDT',
+      interval: 'MONTHLY',
+      intervalDays: null,
+      plan: { name: 'Growth' },
+    });
+    prisma.subscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      status: 'ACTIVE',
+      currentPeriodStart: new Date('2026-11-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-12-01T00:00:00.000Z'),
+      planVersion: { price: 1000, currency: 'BDT', plan: { name: 'Starter' } },
+    });
+
+    await service.changePlan(
+      'tenant-1',
+      { planVersionId: 'new-version' } as any,
+      'u1',
+    );
+
+    expect(prisma.subscriptionAddOn.findMany).not.toHaveBeenCalled();
+    expect(prisma.subscriptionAddOn.updateMany).not.toHaveBeenCalled();
   });
 
   it('closes out a metered plan on change: prorated minimum, standalone invoice', async () => {

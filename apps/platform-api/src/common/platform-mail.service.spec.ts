@@ -292,6 +292,39 @@ describe('PlatformMailService', () => {
           subject: expect.stringContaining('trial ends on 2026-11-19'),
         }),
       );
+      // Trial-ending copy points at choosing a plan (there is no renewal
+      // invoice for trial-plan tenants since the 2026-11-22 trial-end
+      // change) and mentions the add-on review.
+      expect(mockSendMail.mock.calls[0][0].text).toContain('choose a plan');
+      expect(mockSendMail.mock.calls[0][0].text).toContain(
+        'review the add-ons',
+      );
+
+      jest.clearAllMocks();
+      await service.sendTrialExpired({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        graceEndsAt: new Date('2026-11-26T00:00:00.000Z'),
+      });
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: expect.stringContaining('Your trial has ended'),
+        }),
+      );
+      expect(mockSendMail.mock.calls[0][0].text).toContain('2026-11-26');
+      expect(mockSendMail.mock.calls[0][0].text).toContain(
+        'Nothing is billed until you choose',
+      );
+
+      jest.clearAllMocks();
+      await service.sendTrialExpired({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        graceEndsAt: null,
+      });
+      expect(mockSendMail.mock.calls[0][0].text).toContain(
+        'Your workspace is now suspended',
+      );
 
       jest.clearAllMocks();
       await service.sendSuspension({
@@ -400,6 +433,12 @@ describe('PlatformMailService', () => {
         planName: 'Growth',
       });
       collect('trial');
+      await service.sendTrialExpired({
+        to: 'owner@acme.test',
+        tenantName: 'Acme',
+        graceEndsAt: new Date('2026-11-26T00:00:00.000Z'),
+      });
+      collect('trial-expired');
       await service.sendSuspension({
         to: 'owner@acme.test',
         tenantName: 'Acme',
@@ -439,6 +478,8 @@ describe('PlatformMailService', () => {
       approved: 'Payment approved for invoice INV-2611-0001 — EcoMate',
       rejected: 'Payment proof rejected for invoice INV-2611-0001 — EcoMate',
       trial: 'Your Growth trial ends on 2026-11-19 — EcoMate',
+      'trial-expired':
+        'Your trial has ended — choose a plan to keep your shop running (EcoMate)',
       suspension: 'Your workspace Acme has been suspended — EcoMate',
       reactivation: 'Your workspace Acme is active again — EcoMate',
       lead: 'New lead: Lead Test — EcoMate',
@@ -448,7 +489,7 @@ describe('PlatformMailService', () => {
     it('renders every user-facing template in the shared branded layout with unchanged subjects', async () => {
       const { service } = makeService();
       const mails = await sendAll(service);
-      expect(mails).toHaveLength(11);
+      expect(mails).toHaveLength(12);
       for (const { name, mail } of mails) {
         expect(mail.subject).toBe(SUBJECTS[name]);
         expect(mail.html).toContain('<!DOCTYPE html>');

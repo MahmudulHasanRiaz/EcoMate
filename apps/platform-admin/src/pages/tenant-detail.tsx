@@ -19,6 +19,7 @@ import {
 import type {
   Plan,
   PlanVersion,
+  SubscriptionAddOn,
   Tenant,
   TenantUsage,
   UsageMetricRow,
@@ -79,6 +80,10 @@ export function TenantDetailPage() {
     Record<string, string>
   >({});
   const [usageNotice, setUsageNotice] = useState<string | null>(null);
+  const [attachedAddOns, setAttachedAddOns] = useState<SubscriptionAddOn[]>(
+    [],
+  );
+  const [addOnsLoading, setAddOnsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +101,28 @@ export function TenantDetailPage() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, tenantId, refresh]);
+
+  // Attached add-ons (trial-end design 2026-11-22): the tenant detail
+  // payload does not include them, so they load from the add-ons
+  // endpoint. Reloads with the tenant after any action (confirm).
+  useEffect(() => {
+    let cancelled = false;
+    setAddOnsLoading(true);
+    api(`/tenants/${tenantId}/add-ons`)
+      .then((response) => readJson<SubscriptionAddOn[]>(response))
+      .then((result) => {
+        if (!cancelled) setAttachedAddOns(result);
+      })
+      .catch(() => {
+        if (!cancelled) setAttachedAddOns([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAddOnsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -888,6 +915,100 @@ export function TenantDetailPage() {
             ) : null}
           </dl>
         </article>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h2>Add-ons</h2>
+            <p>
+              Trial add-ons are free during the trial and are never billed
+              until the tenant confirms them at conversion — or you
+              confirm one here. Ended rows are history only.
+            </p>
+          </div>
+        </div>
+        {addOnsLoading ? (
+          <Skeleton />
+        ) : attachedAddOns.length === 0 ? (
+          <p className="muted-note">No add-ons attached.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Add-on</th>
+                  <th>Monthly price</th>
+                  <th>Status</th>
+                  <th>Since</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {attachedAddOns.map((row) => {
+                  const ended = row.endedAt
+                    ? new Date(row.endedAt).getTime() <= Date.now()
+                    : false;
+                  const unconfirmedTrial =
+                    row.trialGranted && !row.confirmedAt;
+                  return (
+                    <tr key={row.id}>
+                      <td>{row.addOn?.name ?? row.addOnId}</td>
+                      <td>
+                        {row.addOn
+                          ? formatMoney(row.addOn.price, row.addOn.currency)
+                          : '—'}
+                      </td>
+                      <td>
+                        {ended ? (
+                          <span className="badge badge--neutral">Ended</span>
+                        ) : unconfirmedTrial ? (
+                          <span className="badge badge--warning">
+                            Trial — not billed
+                          </span>
+                        ) : row.trialGranted ? (
+                          <span className="badge badge--accent">
+                            Trial — confirmed
+                          </span>
+                        ) : (
+                          <span className="badge badge--neutral">
+                            Attached
+                          </span>
+                        )}
+                      </td>
+                      <td>{formatDate(row.startedAt)}</td>
+                      <td>
+                        {!ended && unconfirmedTrial ? (
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            disabled={!!busy}
+                            onClick={() =>
+                              void runAction(
+                                `confirm-addon:${row.addOnId}`,
+                                async () => {
+                                  await api(
+                                    `/tenants/${tenantId}/add-ons/${row.addOnId}/confirm`,
+                                    { method: 'POST' },
+                                  ).then((r) => readJson(r));
+                                },
+                                `${row.addOn?.name ?? 'Add-on'} confirmed — it bills from the next renewal.`,
+                              )
+                            }
+                          >
+                            {busy === `confirm-addon:${row.addOnId}`
+                              ? 'Confirming…'
+                              : 'Confirm'}
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="card">

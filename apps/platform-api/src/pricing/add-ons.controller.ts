@@ -95,6 +95,16 @@ export class AddOnsController {
     return this.addOns.attach(id, addOnId, dto, user?.id);
   }
 
+  @Post('tenants/:id/add-ons/:addOnId/confirm')
+  @Roles('SUPERADMIN', 'BILLING')
+  confirm(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('addOnId', ParseUUIDPipe) addOnId: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.addOns.confirm(id, addOnId, user?.id);
+  }
+
   @Delete('tenants/:id/add-ons/:addOnId')
   @Roles('SUPERADMIN', 'BILLING')
   detach(

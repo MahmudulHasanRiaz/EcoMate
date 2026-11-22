@@ -132,16 +132,25 @@ export class PricingService {
       rateTierPurchases: purchases,
     });
 
-    const addOns: ResolvedAddOn[] = subscription.addOns.map((row) => {
-      const metering = row.addOn.metering
-        ? parsePricingDocument({ metering: row.addOn.metering }).metering
-        : undefined;
-      return {
-        name: row.addOn.name,
-        baseFee: Number(row.addOn.price),
-        metering,
-      };
-    });
+    // Trial-end rule (2026-11-22): a trial-granted add-on is NEVER billed
+    // until the tenant confirms it at conversion (or an operator confirms
+    // it). This is the single billing choke point — trial expiry, renewal,
+    // plan-change close-out and quotes all flow through here — so one
+    // filter fixes the silent trial-end billing and its repeat at every
+    // later renewal. The rows still grant their features while attached
+    // (the registry is a separate read); only the money waits.
+    const addOns: ResolvedAddOn[] = subscription.addOns
+      .filter((row) => !(row.trialGranted && !row.confirmedAt))
+      .map((row) => {
+        const metering = row.addOn.metering
+          ? parsePricingDocument({ metering: row.addOn.metering }).metering
+          : undefined;
+        return {
+          name: row.addOn.name,
+          baseFee: Number(row.addOn.price),
+          metering,
+        };
+      });
 
     return { pricing, sources, addOns };
   }

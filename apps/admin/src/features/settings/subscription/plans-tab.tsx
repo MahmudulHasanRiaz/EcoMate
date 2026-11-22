@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpCircle, CheckCircle2 } from 'lucide-react'
+import { AlertTriangle, ArrowUpCircle, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Card,
   CardContent,
@@ -27,6 +28,7 @@ import {
   getEntitlements,
   getPlanChangeRequests,
   getPublicPlans,
+  getTrialReview,
   type PlanChangeRequestStatus,
   type PlanChangeRequestView,
   type PublicPlan,
@@ -70,6 +72,11 @@ export function PlansTab({ canManage }: PlansTabProps) {
   const queryClient = useQueryClient()
   const [requestTarget, setRequestTarget] = useState<PublicPlan | null>(null)
   const [note, setNote] = useState('')
+  /** The tenant's add-on choice in the dialog. null = not touched yet,
+   * which means keep-all (the default). */
+  const [selectedAddOnIds, setSelectedAddOnIds] = useState<string[] | null>(
+    null,
+  )
 
   const snapshotQuery = useQuery({
     queryKey: ['entitlements', 'me'],
@@ -88,18 +95,72 @@ export function PlansTab({ canManage }: PlansTabProps) {
     queryFn: getPlanChangeRequests,
   })
 
+  // Trial add-on review — only loaded while the request dialog is open.
+  // Empty when the tenant has no unconfirmed trial add-ons (e.g. already
+  // on a paid plan), in which case the dialog shows no review step.
+  const trialReviewQuery = useQuery({
+    queryKey: ['subscription', 'trial-review'],
+    queryFn: getTrialReview,
+    enabled: requestTarget !== null,
+    staleTime: 60_000,
+  })
+
+  const reviewAddOns = trialReviewQuery.data?.trialAddOns ?? []
+  const hasReview = reviewAddOns.length > 0
+  // Confirmed trial add-ons are already billable — they are always
+  // kept (checked + disabled) and always included in the choice.
+  const confirmedIds = reviewAddOns
+    .filter((addOn) => addOn.confirmed)
+    .map((addOn) => addOn.id)
+  // Default: keep everything the trial gave. The tenant drops what they
+  // do not want to pay for — nothing is billed without this choice.
+  const effectiveSelectedIds = Array.from(
+    new Set([
+      ...confirmedIds,
+      ...(selectedAddOnIds ?? reviewAddOns.map((addOn) => addOn.id)),
+    ]),
+  )
+  const reviewCurrency = reviewAddOns[0]?.currency ?? 'BDT'
+  const keptTotal = reviewAddOns
+    .filter((addOn) => effectiveSelectedIds.includes(addOn.id))
+    .reduce((sum, addOn) => sum + Number(addOn.price), 0)
+  const storefrontAddOn = reviewAddOns.find(
+    (addOn) => addOn.slug === 'storefront',
+  )
+  const droppingStorefront =
+    storefrontAddOn !== undefined &&
+    !effectiveSelectedIds.includes(storefrontAddOn.id)
+
+  function toggleAddOn(addOnId: string, checked: boolean) {
+    setSelectedAddOnIds((prev) => {
+      const base = prev ?? reviewAddOns.map((addOn) => addOn.id)
+      return checked
+        ? [...base, addOnId]
+        : base.filter((id) => id !== addOnId)
+    })
+  }
+
+  function closeRequestDialog() {
+    setRequestTarget(null)
+    setNote('')
+    setSelectedAddOnIds(null)
+  }
+
   const requestMutation = useMutation({
     mutationFn: (plan: PublicPlan) =>
       createPlanChangeRequest({
         targetPlanId: plan.id,
         note: note.trim() || undefined,
+        // Only send the choice when there was something to review;
+        // otherwise the request carries no add-on choice (null) and
+        // the operator flow leaves add-ons untouched.
+        ...(hasReview ? { addOnIds: effectiveSelectedIds } : {}),
       }),
     onSuccess: (created: PlanChangeRequestView) => {
       toast.success(
         `Upgrade requested — ${created.targetPlanName}. We will review it shortly.`,
       )
-      setRequestTarget(null)
-      setNote('')
+      closeRequestDialog()
       queryClient.invalidateQueries({
         queryKey: ['subscription', 'plan-change-requests'],
       })
@@ -286,6 +347,14 @@ export function PlansTab({ canManage }: PlansTabProps) {
                 <span className='text-xs text-muted-foreground'>
                   Requested {formatDate(request.createdAt)}
                 </span>
+                {request.requestedAddOnIds !== null &&
+                request.requestedAddOnIds !== undefined ? (
+                  <span className='text-xs text-muted-foreground'>
+                    {request.requestedAddOnIds.length === 0
+                      ? 'No add-ons kept'
+                      : `Keeping ${request.requestedAddOnIds.length} add-on${request.requestedAddOnIds.length === 1 ? '' : 's'}`}
+                  </span>
+                ) : null}
                 {request.note ? (
                   <span className='w-full text-xs text-muted-foreground'>
                     Note: {request.note}
@@ -305,13 +374,10 @@ export function PlansTab({ canManage }: PlansTabProps) {
       <Dialog
         open={requestTarget !== null}
         onOpenChange={(open) => {
-          if (!open) {
-            setRequestTarget(null)
-            setNote('')
-          }
+          if (!open) closeRequestDialog()
         }}
       >
-        <DialogContent>
+        <DialogContent className='max-w-lg'>
           <DialogHeader>
             <DialogTitle>
               Request {requestTarget?.name ?? 'plan change'}
@@ -321,6 +387,91 @@ export function PlansTab({ canManage }: PlansTabProps) {
               approved. You can add an optional note for the review team.
             </DialogDescription>
           </DialogHeader>
+
+          {trialReviewQuery.isLoading ? (
+            <Skeleton className='h-24 w-full rounded-lg' />
+          ) : hasReview ? (
+            <div className='space-y-3'>
+              <div>
+                <h3 className='text-sm font-medium'>
+                  Your trial add-ons — choose what to keep
+                </h3>
+                <p className='text-xs text-muted-foreground'>
+                  These were free during your trial. Only the add-ons you
+                  keep here will be billed on the new plan — dropped ones
+                  stop when the plan changes, and nothing is charged for
+                  them.
+                </p>
+              </div>
+              <div className='max-h-64 space-y-1 overflow-y-auto rounded-lg border p-2'>
+                {reviewAddOns.map((addOn) => (
+                  <label
+                    key={addOn.id}
+                    htmlFor={`trial-addon-${addOn.id}`}
+                    className={`flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm ${addOn.confirmed ? 'opacity-70' : 'cursor-pointer hover:bg-muted'}`}
+                  >
+                    <span className='flex items-center gap-2'>
+                      <Checkbox
+                        id={`trial-addon-${addOn.id}`}
+                        checked={effectiveSelectedIds.includes(addOn.id)}
+                        disabled={addOn.confirmed}
+                        onCheckedChange={(checked) =>
+                          toggleAddOn(addOn.id, checked === true)
+                        }
+                      />
+                      {addOn.name}
+                      {addOn.confirmed ? (
+                        <span className='text-xs text-muted-foreground'>
+                          (already confirmed)
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className='text-muted-foreground'>
+                      {money(addOn.price, addOn.currency)} / month
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className='space-y-1 text-sm'>
+                <p className='flex justify-between'>
+                  <span className='text-muted-foreground'>
+                    {requestTarget?.name ?? 'Plan'} plan
+                  </span>
+                  <span>
+                    {requestTarget
+                      ? money(Number(requestTarget.price), requestTarget.currency)
+                      : '—'}
+                  </span>
+                </p>
+                <p className='flex justify-between'>
+                  <span className='text-muted-foreground'>
+                    Kept add-ons, monthly
+                  </span>
+                  <span>{money(keptTotal, reviewCurrency)}</span>
+                </p>
+                <p className='flex justify-between font-medium'>
+                  <span>Monthly total</span>
+                  <span>
+                    {requestTarget
+                      ? money(
+                          Number(requestTarget.price) + keptTotal,
+                          requestTarget.currency,
+                        )
+                      : money(keptTotal, reviewCurrency)}
+                  </span>
+                </p>
+              </div>
+              {droppingStorefront ? (
+                <p className='flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'>
+                  <AlertTriangle className='mt-0.5 h-4 w-4 shrink-0' />
+                  Dropping the storefront will take your public shop offline
+                  when the plan changes. Your products and orders stay safe
+                  in the admin.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className='space-y-2'>
             <Label htmlFor='plan-change-note'>Note (optional)</Label>
             <Textarea
@@ -331,20 +482,18 @@ export function PlansTab({ canManage }: PlansTabProps) {
             />
           </div>
           <DialogFooter>
-            <Button
-              variant='outline'
-              onClick={() => {
-                setRequestTarget(null)
-                setNote('')
-              }}
-            >
+            <Button variant='outline' onClick={closeRequestDialog}>
               Cancel
             </Button>
             <Button
               onClick={() =>
                 requestTarget && requestMutation.mutate(requestTarget)
               }
-              disabled={requestMutation.isPending || requestTarget === null}
+              disabled={
+                requestMutation.isPending ||
+                requestTarget === null ||
+                trialReviewQuery.isLoading
+              }
             >
               {requestMutation.isPending
                 ? 'Sending…'

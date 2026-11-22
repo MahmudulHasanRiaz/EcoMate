@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
+import { TRIAL_PLAN_SLUG } from '../provisioning/provisioning.service';
 import { addInterval } from '../billing/billing-dates';
 import { InvoiceService } from '../billing/invoice.service';
 import { EmailBalanceService } from '../email-balance/email-balance.service';
@@ -68,6 +69,11 @@ export const BILLING_JOB_BATCH_SIZE = 500;
  *   --30d--> CANCELLED
  *   ACTIVE --period ends unpaid--> PAST_DUE (grace) --grace ends--> SUSPENDED
  *   A paid invoice (approve) moves PAST_DUE/SUSPENDED back to ACTIVE.
+ *   Trial-plan trials end WITHOUT an invoice (trial-end design
+ *   2026-11-22): the tenant has not chosen a plan or confirmed any
+ *   add-on, so there is nothing to bill — they convert from the
+ *   subscription hub instead (grace_then_suspend by default, or
+ *   suspend_immediately per the trial-end policy setting).
  */
 @Injectable()
 export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
@@ -268,6 +274,8 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
       trialsExpired: 0,
       invoicesCreated: 0,
       trialEndingReminders: 0,
+      trialExpiredReminders: 0,
+      trialPlansExpired: 0,
       freePeriodsStarted: 0,
     };
 
@@ -323,14 +331,16 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
       counts.trialEndingReminders += 1;
     }
 
-    // Expired trials: first renewal invoice + PAST_DUE with a grace window.
+    // Expired trials: trial-plan tenants get NO invoice (they have not
+    // chosen a plan or an add-on yet — trial-end design 2026-11-22);
+    // paid-plan trials get their first renewal invoice as before.
     const expired = await this.prisma.subscription.findMany({
       where: { status: 'TRIAL', trialEndsAt: { lte: now } },
       orderBy: { trialEndsAt: 'asc' },
       take: BILLING_JOB_BATCH_SIZE,
       include: {
         tenant: { select: { id: true, name: true, ownerEmail: true, status: true } },
-        planVersion: { include: { plan: { select: { name: true } } } },
+        planVersion: { include: { plan: { select: { name: true, slug: true } } } },
       },
     });
     this.warnIfCapped('trial-expiry', 'expired trials', expired);
@@ -339,6 +349,13 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
       const graceDays = this.graceDaysFor(subscription.planVersion.graceDays);
       const graceEndsAt = new Date(now.getTime() + graceDays * DAY_MS);
       try {
+        if (subscription.planVersion.plan.slug === TRIAL_PLAN_SLUG) {
+          await this.expireTrialPlanSubscription(subscription, {
+            graceEndsAt,
+            counts,
+          });
+          continue;
+        }
         // First invoice covers the UPCOMING period: the pre-paid part
         // only (base fee + add-ons). Metering is post-paid and bills at
         // the end of that period, so it is stripped here — the trial
@@ -454,6 +471,115 @@ export class BillingJobsService implements OnModuleInit, OnModuleDestroy {
       }
     }
     result.counts = { ...result.counts, ...counts };
+  }
+
+  /**
+   * Trial-plan trial end (trial-end design 2026-11-22). The trial plan
+   * is price 0 and the tenant has not chosen a plan or confirmed any
+   * add-on, so NO invoice is created — billing nothing the tenant did
+   * not knowingly keep — and the trial plan NEVER auto-renews into
+   * ACTIVE (no free-plan roll, no freeMonths roll: a trial-plan tenant
+   * who never chooses a plan must not get the full product free
+   * forever). The trial add-ons stay attached and keep granting their
+   * features through grace, so the shop never breaks; the tenant
+   * chooses a plan + add-ons from the subscription hub, and the
+   * conversion invoice is built from that choice.
+   *
+   * grace_then_suspend (default): PAST_DUE + grace window; the
+   * grace-suspend job suspends past grace and cancels after 30 days
+   * if the tenant never converts. suspend_immediately: SUSPENDED at
+   * once, no grace, no invoice — the hub still works from the
+   * suspended state, so conversion remains possible.
+   */
+  private async expireTrialPlanSubscription(
+    subscription: {
+      id: string;
+      tenantId: string;
+      tenant: { id: string; name: string; ownerEmail: string; status: string };
+    },
+    input: {
+      graceEndsAt: Date;
+      counts: {
+        trialsExpired: number;
+        trialPlansExpired: number;
+        trialExpiredReminders: number;
+      };
+    },
+  ): Promise<void> {
+    const { graceEndsAt, counts } = input;
+    const policy =
+      this.settings.getTrialDefaults().trialEndPolicy ??
+      'grace_then_suspend';
+    if (policy === 'suspend_immediately') {
+      await this.tenants.updateStatus(subscription.tenantId, {
+        status: 'SUSPENDED',
+        reason: 'Trial ended',
+      });
+    } else {
+      await this.prisma.$transaction([
+        this.prisma.subscription.update({
+          where: { id: subscription.id },
+          data: { status: 'PAST_DUE' },
+        }),
+        this.prisma.tenant.update({
+          where: { id: subscription.tenantId },
+          data: { status: 'PAST_DUE', graceEndsAt },
+        }),
+      ]);
+    }
+    counts.trialsExpired += 1;
+    counts.trialPlansExpired += 1;
+
+    // Trial-expired mail, once per subscription (same once-only
+    // InvoiceReminder pattern as the trial-ending reminder). A failed
+    // send leaves no reminder row, so the next tick retries.
+    const sent = await this.prisma.invoiceReminder.findUnique({
+      where: {
+        tenantId_kind_referenceId: {
+          tenantId: subscription.tenantId,
+          kind: 'TRIAL_EXPIRED',
+          referenceId: subscription.id,
+        },
+      },
+    });
+    if (!sent) {
+      let mailed = false;
+      try {
+        await this.mail.sendTrialExpired({
+          to: subscription.tenant.ownerEmail,
+          tenantName: subscription.tenant.name,
+          graceEndsAt: policy === 'suspend_immediately' ? null : graceEndsAt,
+        });
+        mailed = true;
+      } catch (error) {
+        this.logger.warn(
+          `Trial-expired email failed for ${subscription.tenantId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (mailed) {
+        await this.prisma.invoiceReminder.create({
+          data: {
+            tenantId: subscription.tenantId,
+            kind: 'TRIAL_EXPIRED',
+            referenceId: subscription.id,
+          },
+        });
+        counts.trialExpiredReminders += 1;
+      }
+    }
+    await this.audit.record({
+      tenantId: subscription.tenantId,
+      action: 'billing.job.trial-expired',
+      entity: 'Subscription',
+      entityId: subscription.id,
+      after: {
+        policy,
+        graceEndsAt:
+          policy === 'suspend_immediately'
+            ? null
+            : graceEndsAt.toISOString(),
+      },
+    });
   }
 
   private async renewalInvoices(result: JobResult): Promise<void> {

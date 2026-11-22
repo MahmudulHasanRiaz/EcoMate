@@ -6,7 +6,11 @@ import {
   isValidRejectionReason,
   planChangeSummary,
   PLAN_CHANGE_REQUEST_STATUSES,
+  requestedAddOnsSummary,
 } from './plan-change-requests';
+
+const price = (value: number, currency: string) =>
+  `${currency} ${value.toFixed(0)}`;
 
 function makeRequest(
   overrides: Partial<PlanChangeRequest> = {},
@@ -64,6 +68,36 @@ describe('plan-change-requests lib', () => {
     const request = makeRequest();
     request.tenant.currentPlanName = null;
     expect(planChangeSummary(request)).toBe('No plan → Growth');
+  });
+
+  it('summarises the add-on choice: none made, keep none, or the kept list', () => {
+    expect(
+      requestedAddOnsSummary(makeRequest({ requestedAddOnIds: null }), price),
+    ).toBe('No add-on choice');
+    expect(
+      requestedAddOnsSummary(makeRequest({ requestedAddOnIds: [] }), price),
+    ).toBe('Keep none');
+    expect(
+      requestedAddOnsSummary(
+        makeRequest({
+          requestedAddOnIds: ['a1', 'a2'],
+          requestedAddOns: [
+            { id: 'a1', name: 'Storefront', price: 999, currency: 'BDT' },
+            { id: 'a2', name: 'POS', price: 499, currency: 'BDT' },
+          ],
+        }),
+        price,
+      ),
+    ).toBe('Storefront (BDT 999), POS (BDT 499)');
+  });
+
+  it('falls back to a count when the kept add-ons did not resolve', () => {
+    expect(
+      requestedAddOnsSummary(
+        makeRequest({ requestedAddOnIds: ['a1'], requestedAddOns: [] }),
+        price,
+      ),
+    ).toBe('1 add-on');
   });
 
   it('requires a rejection reason of at least 3 characters', () => {

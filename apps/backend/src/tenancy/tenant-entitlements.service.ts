@@ -108,6 +108,10 @@ export class TenantEntitlementsService {
       features: this.getActiveFeatures(),
       limits: this.getLimits(),
       validUntil: record?.validUntil ?? null,
+      // The trial-ended banner in the tenant hub shows the grace
+      // deadline (trial-end design 2026-11-22); null when the tenant
+      // is not in grace.
+      graceEndsAt: record?.graceEndsAt ?? null,
     };
   }
 

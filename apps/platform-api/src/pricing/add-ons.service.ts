@@ -265,7 +265,16 @@ export class AddOnsService {
       const row = existing
         ? await this.prisma.subscriptionAddOn.update({
             where: { id: existing.id },
-            data: { startedAt, endedAt: null },
+            data: {
+              startedAt,
+              endedAt: null,
+              // Re-attaching a trial-granted row is a deliberate
+              // operator choice: confirm it so it bills from the
+              // next period (trial-end design 2026-11-22).
+              ...(existing.trialGranted && !existing.confirmedAt
+                ? { confirmedAt: now }
+                : {}),
+            },
           })
         : await this.prisma.subscriptionAddOn.create({
             data: {
@@ -325,7 +334,16 @@ export class AddOnsService {
     const row = existing
       ? await this.prisma.subscriptionAddOn.update({
           where: { id: existing.id },
-          data: { startedAt: now, endedAt: null },
+          data: {
+            startedAt: now,
+            endedAt: null,
+            // Re-attaching a trial-granted row is a deliberate
+            // operator choice: confirm it so it bills (trial-end
+            // design 2026-11-22).
+            ...(existing.trialGranted && !existing.confirmedAt
+              ? { confirmedAt: now }
+              : {}),
+          },
         })
       : await this.prisma.subscriptionAddOn.create({
           data: { subscriptionId: subscription.id, addOnId, startedAt: now },
@@ -346,6 +364,68 @@ export class AddOnsService {
       );
     }
     return { ...row, invoice };
+  }
+
+  /**
+   * Confirm a trial-granted add-on (trial-end design 2026-11-22): the
+   * operator deliberately keeps it, so it becomes billable from the
+   * next renewal (resolveForSubscription includes confirmed rows).
+   * Only trial-granted, unconfirmed, active rows can be confirmed;
+   * anything else is a 400 (an operator-attached row needs no
+   * confirmation, and a dropped row is re-attached via attach()).
+   * Idempotent-ish: confirming an already-confirmed row is a 400, not
+   * a silent no-op — the console only offers the button when it applies.
+   */
+  async confirm(tenantId: string, addOnId: string, actorId?: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, slug: true },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { tenantId },
+      select: { id: true },
+    });
+    if (!subscription) {
+      throw new BadRequestException('This tenant has no subscription');
+    }
+    const existing = await this.prisma.subscriptionAddOn.findUnique({
+      where: {
+        subscriptionId_addOnId: {
+          subscriptionId: subscription.id,
+          addOnId,
+        },
+      },
+    });
+    const now = new Date();
+    const isActive =
+      existing &&
+      existing.startedAt <= now &&
+      (existing.endedAt === null || existing.endedAt > now);
+    if (!isActive || !existing) {
+      throw new NotFoundException('This add-on is not attached');
+    }
+    if (!existing.trialGranted) {
+      throw new BadRequestException(
+        'This add-on was not granted by a trial and needs no confirmation',
+      );
+    }
+    if (existing.confirmedAt) {
+      throw new BadRequestException('This add-on is already confirmed');
+    }
+    const row = await this.prisma.subscriptionAddOn.update({
+      where: { id: existing.id },
+      data: { confirmedAt: now },
+    });
+    await this.audit.record({
+      actorId,
+      tenantId,
+      action: 'tenant.addon.confirm',
+      entity: 'SubscriptionAddOn',
+      entityId: row.id,
+      after: { addOnId, confirmedAt: now.toISOString() },
+    });
+    return row;
   }
 
   /**

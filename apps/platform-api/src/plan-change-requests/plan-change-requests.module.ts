@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { InternalServiceGuard } from '../internal/internal-service.guard';
 import { TenantsModule } from '../tenants/tenants.module';
 import { InternalPlanChangeRequestsController } from './internal-plan-change-requests.controller';
+import { InternalTrialReviewController } from './internal-trial-review.controller';
 import { PlanChangeRequestsController } from './plan-change-requests.controller';
 import { PlanChangeRequestsService } from './plan-change-requests.service';
 
@@ -21,6 +22,7 @@ import { PlanChangeRequestsService } from './plan-change-requests.service';
   controllers: [
     PlanChangeRequestsController,
     InternalPlanChangeRequestsController,
+    InternalTrialReviewController,
   ],
   providers: [PlanChangeRequestsService, InternalServiceGuard],
   exports: [PlanChangeRequestsService],

@@ -52,12 +52,16 @@ function makeService() {
   };
   const mail = {
     sendTrialEnding: jest.fn().mockResolvedValue({ delivered: true }),
+    sendTrialExpired: jest.fn().mockResolvedValue({ delivered: true }),
     sendInvoice: jest.fn().mockResolvedValue({ delivered: true }),
   };
   const settings = {
-    getTrialDefaults: jest
-      .fn()
-      .mockReturnValue({ trialDays: 14, graceDays: 7 }),
+    getTrialDefaults: jest.fn().mockReturnValue({
+      trialDays: 14,
+      graceDays: 7,
+      trialAddOnSlugs: null,
+      trialEndPolicy: 'grace_then_suspend',
+    }),
   };
   // Pricing resolution mirrors the real service's price-column fallback:
   // a version with no pricing doc bills its price as a fixed base fee.
@@ -99,6 +103,7 @@ function makeService() {
     tenants,
     mail,
     pricing,
+    settings,
     service: new BillingJobsService(
       prisma as any,
       audit as any,
@@ -153,6 +158,8 @@ describe('BillingJobsService', () => {
         trialsExpired: 1,
         invoicesCreated: 1,
         trialEndingReminders: 1,
+        trialExpiredReminders: 0,
+        trialPlansExpired: 0,
         freePeriodsStarted: 0,
       });
       expect(mail.sendTrialEnding).toHaveBeenCalledWith(
@@ -231,6 +238,8 @@ describe('BillingJobsService', () => {
         trialsExpired: 1,
         invoicesCreated: 0,
         trialEndingReminders: 0,
+        trialExpiredReminders: 0,
+        trialPlansExpired: 0,
         freePeriodsStarted: 0,
       });
       expect(invoices.createInvoice).not.toHaveBeenCalled();
@@ -239,6 +248,197 @@ describe('BillingJobsService', () => {
           data: expect.objectContaining({ status: 'ACTIVE' }),
         }),
       );
+    });
+
+    it('expires a trial-plan trial with NO invoice: PAST_DUE + grace + trial-expired mail', async () => {
+      const { service, prisma, invoices, mail, audit } = makeService();
+      prisma.subscription.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: 'sub-trial-plan',
+            tenantId: 'tenant-9',
+            status: 'TRIAL',
+            trialEndsAt: new Date(Date.now() - DAY_MS),
+            tenant: {
+              id: 'tenant-9',
+              name: 'TrialShop',
+              ownerEmail: 'owner@trial.test',
+              status: 'TRIAL',
+            },
+            planVersion: planVersion({
+              price: 0,
+              plan: { name: 'Trial', slug: 'trial' },
+            }),
+          },
+        ]);
+
+      const result = await service.runJob('trial-expiry');
+
+      expect(result.counts).toMatchObject({
+        trialsExpired: 1,
+        invoicesCreated: 0,
+        trialPlansExpired: 1,
+        trialExpiredReminders: 1,
+      });
+      // Nothing is billed: the tenant has not chosen a plan or an add-on.
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+      expect(prisma.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sub-trial-plan' },
+          data: { status: 'PAST_DUE' },
+        }),
+      );
+      expect(prisma.tenant.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'tenant-9' },
+          data: expect.objectContaining({
+            status: 'PAST_DUE',
+            graceEndsAt: expect.any(Date),
+          }),
+        }),
+      );
+      expect(mail.sendTrialExpired).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'owner@trial.test',
+          graceEndsAt: expect.any(Date),
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'billing.job.trial-expired',
+          after: expect.objectContaining({ policy: 'grace_then_suspend' }),
+        }),
+      );
+    });
+
+    it('never auto-renews a trial-plan trial, even with freeMonths on the version', async () => {
+      const { service, prisma, invoices } = makeService();
+      prisma.subscription.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: 'sub-trial-fm',
+            tenantId: 'tenant-10',
+            status: 'TRIAL',
+            trialEndsAt: new Date(Date.now() - DAY_MS),
+            freePeriodsRemaining: 2,
+            tenant: {
+              id: 'tenant-10',
+              name: 'TrialFM',
+              ownerEmail: 'owner@fm2.test',
+              status: 'TRIAL',
+            },
+            planVersion: planVersion({
+              price: 0,
+              plan: { name: 'Trial', slug: 'trial' },
+              pricing: {
+                pricingVersion: 1,
+                baseFee: { amount: 0, currency: 'BDT' },
+                billingCycle: 'MONTHLY',
+                freeMonths: 2,
+              },
+            }),
+          },
+        ]);
+
+      const result = await service.runJob('trial-expiry');
+
+      expect(result.counts).toMatchObject({
+        trialsExpired: 1,
+        invoicesCreated: 0,
+        trialPlansExpired: 1,
+        freePeriodsStarted: 0,
+      });
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+      expect(prisma.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: 'PAST_DUE' } }),
+      );
+      expect(prisma.subscription.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'ACTIVE' }),
+        }),
+      );
+    });
+
+    it('suspends immediately at trial end under the suspend_immediately policy', async () => {
+      const { service, prisma, invoices, mail, tenants, settings } =
+        makeService();
+      settings.getTrialDefaults.mockReturnValue({
+        trialDays: 14,
+        graceDays: 7,
+        trialAddOnSlugs: null,
+        trialEndPolicy: 'suspend_immediately',
+      });
+      prisma.subscription.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: 'sub-trial-susp',
+            tenantId: 'tenant-11',
+            status: 'TRIAL',
+            trialEndsAt: new Date(Date.now() - DAY_MS),
+            tenant: {
+              id: 'tenant-11',
+              name: 'TrialSusp',
+              ownerEmail: 'owner@susp.test',
+              status: 'TRIAL',
+            },
+            planVersion: planVersion({
+              price: 0,
+              plan: { name: 'Trial', slug: 'trial' },
+            }),
+          },
+        ]);
+
+      const result = await service.runJob('trial-expiry');
+
+      expect(result.counts).toMatchObject({
+        trialsExpired: 1,
+        invoicesCreated: 0,
+        trialPlansExpired: 1,
+      });
+      expect(invoices.createInvoice).not.toHaveBeenCalled();
+      expect(tenants.updateStatus).toHaveBeenCalledWith(
+        'tenant-11',
+        expect.objectContaining({ status: 'SUSPENDED' }),
+      );
+      expect(mail.sendTrialExpired).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'owner@susp.test', graceEndsAt: null }),
+      );
+      // No PAST_DUE flip: suspension replaces the grace path entirely.
+      expect(prisma.tenant.update).not.toHaveBeenCalled();
+    });
+
+    it('does not send the trial-expired mail twice for the same trial', async () => {
+      const { service, prisma, mail } = makeService();
+      prisma.subscription.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: 'sub-trial-twice',
+            tenantId: 'tenant-12',
+            status: 'TRIAL',
+            trialEndsAt: new Date(Date.now() - DAY_MS),
+            tenant: {
+              id: 'tenant-12',
+              name: 'TrialTwice',
+              ownerEmail: 'owner@twice.test',
+              status: 'TRIAL',
+            },
+            planVersion: planVersion({
+              price: 0,
+              plan: { name: 'Trial', slug: 'trial' },
+            }),
+          },
+        ]);
+      prisma.invoiceReminder.findUnique.mockResolvedValue({ id: 'rem-1' });
+
+      const result = await service.runJob('trial-expiry');
+
+      expect(result.counts.trialExpiredReminders).toBe(0);
+      expect(mail.sendTrialExpired).not.toHaveBeenCalled();
+      expect(prisma.invoiceReminder.create).not.toHaveBeenCalled();
     });
 
     it('starts free months on trial expiry: ACTIVE, counter set, no invoice', async () => {

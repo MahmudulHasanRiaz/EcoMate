@@ -215,6 +215,107 @@ describe('AddOnsService.attach', () => {
   });
 });
 
+describe('AddOnsService.confirm', () => {
+  function mockAttached(prisma: any, row: Record<string, unknown>) {
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+    });
+    prisma.subscription.findUnique.mockResolvedValue({ id: 'sub-1' });
+    prisma.subscriptionAddOn.findUnique.mockResolvedValue({
+      id: 'row-1',
+      subscriptionId: 'sub-1',
+      addOnId: 'addon-1',
+      startedAt: new Date('2026-11-01T00:00:00.000Z'),
+      endedAt: null,
+      trialGranted: true,
+      confirmedAt: null,
+      ...row,
+    });
+    prisma.subscriptionAddOn.update.mockImplementation(
+      async ({ data }: any) => ({ id: 'row-1', ...data }),
+    );
+  }
+
+  it('confirms an unconfirmed trial-granted row', async () => {
+    const { service, prisma, audit } = makeService();
+    mockAttached(prisma, {});
+
+    const result = await service.confirm('tenant-1', 'addon-1', 'u1');
+
+    expect(prisma.subscriptionAddOn.update).toHaveBeenCalledWith({
+      where: { id: 'row-1' },
+      data: { confirmedAt: expect.any(Date) },
+    });
+    expect(result.confirmedAt).toBeInstanceOf(Date);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'tenant.addon.confirm' }),
+    );
+  });
+
+  it('404s when the add-on is not attached', async () => {
+    const { service, prisma } = makeService();
+    mockAttached(prisma, { endedAt: new Date('2026-11-10T00:00:00.000Z') });
+
+    await expect(service.confirm('tenant-1', 'addon-1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('400s for a non-trial row and for an already-confirmed row', async () => {
+    const { service, prisma } = makeService();
+    mockAttached(prisma, { trialGranted: false });
+
+    await expect(service.confirm('tenant-1', 'addon-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    mockAttached(prisma, {
+      confirmedAt: new Date('2026-11-20T00:00:00.000Z'),
+    });
+    await expect(service.confirm('tenant-1', 'addon-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});
+
+describe('AddOnsService.attach confirms a re-attached trial row', () => {
+  it('sets confirmedAt when re-attaching an ended trial-granted row', async () => {
+    const { service, prisma } = makeService();
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      slug: 'acme',
+    });
+    prisma.addOn.findUnique.mockResolvedValue(ADD_ON);
+    const sub = subscription();
+    prisma.subscription.findUnique.mockResolvedValue(sub);
+    prisma.subscriptionAddOn.findUnique.mockResolvedValue({
+      id: 'row-1',
+      subscriptionId: 'sub-1',
+      addOnId: 'addon-1',
+      startedAt: new Date('2026-11-01T00:00:00.000Z'),
+      endedAt: new Date('2026-11-10T00:00:00.000Z'),
+      trialGranted: true,
+      confirmedAt: null,
+    });
+    prisma.subscriptionAddOn.update.mockImplementation(
+      async ({ data }: any) => ({ id: 'row-1', ...data }),
+    );
+
+    await service.attach('tenant-1', 'addon-1', {}, 'u1');
+
+    expect(prisma.subscriptionAddOn.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'row-1' },
+        data: expect.objectContaining({
+          endedAt: null,
+          confirmedAt: expect.any(Date),
+        }),
+      }),
+    );
+  });
+});
+
 describe('AddOnsService.detach', () => {
   function attachedRow() {
     return {

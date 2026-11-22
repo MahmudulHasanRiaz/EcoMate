@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { TRIAL_PLAN_SLUG } from '../provisioning/provisioning.service';
 import { TenantsService } from '../tenants/tenants.service';
 
 export type PlanChangeRequestStatus = 'PENDING' | 'APPLIED' | 'REJECTED';
@@ -24,13 +25,29 @@ export interface PlanChangeRequestView {
   status: PlanChangeRequestStatus;
   note: string | null;
   rejectionReason: string | null;
+  /** Add-on ids the tenant chose to KEEP (trial conversion review).
+   * null = no add-on choice was made; [] = keep none. Stored as a
+   * non-nullable list + the addOnChoiceMade flag (Prisma has no
+   * nullable list) — the flag, not the list, is the source of truth
+   * for the null case. */
+  requestedAddOnIds: string[] | null;
   requestedBy: string | null;
   createdAt: Date;
   decidedAt: Date | null;
 }
 
+/** One add-on the tenant chose to keep, resolved for the operator. */
+export interface RequestedAddOnView {
+  id: string;
+  name: string;
+  price: number;
+  currency: string;
+}
+
 /** Console view: the tenant view plus the operator's context — who
- * asked, and which plan they are on now (current → target). */
+ * asked, which plan they are on now (current → target), and which
+ * add-ons they chose to keep (resolved names/prices; empty when the
+ * tenant made no add-on choice). */
 export interface ConsolePlanChangeRequestView
   extends PlanChangeRequestView {
   tenant: {
@@ -39,6 +56,7 @@ export interface ConsolePlanChangeRequestView
     slug: string;
     currentPlanName: string | null;
   };
+  requestedAddOns: RequestedAddOnView[];
 }
 
 export interface CreatePlanChangeRequestInput {
@@ -47,6 +65,35 @@ export interface CreatePlanChangeRequestInput {
   /** Tenant user id from the backend JWT — accepted from the internal
    * call body (the backend is the trusted caller). */
   requestedBy?: string;
+  /** Add-on ids the tenant chose to KEEP in the conversion review.
+   * Undefined = no add-on choice (plain plan change). */
+  addOnIds?: string[];
+}
+
+/** Trial conversion review (trial-end design 2026-11-22): what the
+ * tenant hub shows so the tenant can pick a plan and review the trial
+ * add-ons before the first paid invoice. */
+export interface TrialReviewView {
+  tenantId: string;
+  tenantName: string;
+  subscriptionStatus: string | null;
+  planName: string | null;
+  planSlug: string | null;
+  /** True when the tenant is on the trial plan — the only plan whose
+   * trials carry trial add-ons. */
+  isTrialPlan: boolean;
+  trialEndsAt: Date | null;
+  graceEndsAt: Date | null;
+  /** Attached trial add-ons (active rows only), with prices. */
+  trialAddOns: Array<{
+    id: string;
+    slug: string;
+    name: string;
+    price: number;
+    currency: string;
+    confirmed: boolean;
+  }>;
+  hasPendingRequest: boolean;
 }
 
 type RequestRow = {
@@ -57,6 +104,13 @@ type RequestRow = {
   status: PlanChangeRequestStatus;
   note: string | null;
   rejectionReason: string | null;
+  // Non-nullable list + explicit flag (Prisma has no nullable list):
+  // addOnChoiceMade=false means no choice was made, and the list is
+  // then an empty list with no meaning. NEVER read the list's
+  // emptiness as the choice — an empty list WITH the flag set means
+  // the tenant chose to keep NONE.
+  requestedAddOnIds: string[];
+  addOnChoiceMade: boolean;
   requestedBy: string | null;
   decidedBy: string | null;
   decidedAt: Date | null;
@@ -166,17 +220,121 @@ export class PlanChangeRequestsService {
       );
     }
 
+    // Trial conversion: the tenant may only choose among their attached
+    // trial add-ons. Anything else is rejected here (fail fast) rather
+    // than silently ignored at apply time.
+    let requestedAddOnIds: string[] | null = null;
+    if (input.addOnIds !== undefined) {
+      const subscription = await this.prisma.subscription.findUnique({
+        where: { tenantId },
+        select: {
+          addOns: {
+            where: { trialGranted: true, endedAt: null },
+            select: { addOnId: true },
+          },
+        },
+      });
+      const attachable = new Set(
+        (subscription?.addOns ?? []).map((row) => row.addOnId),
+      );
+      const unknown = input.addOnIds.filter((id) => !attachable.has(id));
+      if (unknown.length > 0) {
+        throw new BadRequestException(
+          'One or more selected add-ons are not part of this trial',
+        );
+      }
+      requestedAddOnIds = [...new Set(input.addOnIds)];
+    }
+
     const created = await this.prisma.planChangeRequest.create({
       data: {
         tenantId,
         targetPlanId: plan.id,
         targetPlanVersionId: version.id,
         note: input.note ?? null,
+        // Prisma has no nullable list: the no-choice state is carried
+        // by addOnChoiceMade, not by omitting the field. A choice
+        // (possibly "keep none") stores the list + true; no choice
+        // stores [] + false — and apply() then leaves trial add-ons
+        // untouched. Omitting the list here would store [] with the
+        // flag at its false default, which is the same no-choice
+        // state, but both fields are written explicitly so the
+        // intent is visible at the call site.
+        requestedAddOnIds: requestedAddOnIds ?? [],
+        addOnChoiceMade: requestedAddOnIds !== null,
         requestedBy: input.requestedBy ?? null,
       },
       include: VIEW_INCLUDE,
     });
-    return this.toView(created as RequestRow);
+    return this.toView(created as unknown as RequestRow);
+  }
+
+  /**
+   * Trial conversion review for the tenant hub (trial-end design
+   * 2026-11-22): the subscription/trial state plus the attached trial
+   * add-ons with prices, so the tenant can pick a plan and choose which
+   * add-ons to keep before the first paid invoice. Also served for
+   * expired-trial (PAST_DUE/SUSPENDED) tenants — conversion stays open
+   * until they choose or the subscription is cancelled.
+   */
+  async getTrialReview(tenantId: string): Promise<TrialReviewView> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        id: true,
+        name: true,
+        graceEndsAt: true,
+        subscription: {
+          select: {
+            status: true,
+            trialEndsAt: true,
+            addOns: {
+              where: { trialGranted: true, endedAt: null },
+              include: {
+                addOn: {
+                  select: {
+                    id: true,
+                    slug: true,
+                    name: true,
+                    price: true,
+                    currency: true,
+                  },
+                },
+              },
+              orderBy: { addOn: { sortOrder: 'asc' } },
+            },
+          },
+        },
+        planVersion: {
+          select: { plan: { select: { name: true, slug: true } } },
+        },
+      },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const pending = await this.prisma.planChangeRequest.findFirst({
+      where: { tenantId, status: 'PENDING' },
+      select: { id: true },
+    });
+    const planSlug = tenant.planVersion?.plan?.slug ?? null;
+    return {
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      subscriptionStatus: tenant.subscription?.status ?? null,
+      planName: tenant.planVersion?.plan?.name ?? null,
+      planSlug,
+      isTrialPlan: planSlug === TRIAL_PLAN_SLUG,
+      trialEndsAt: tenant.subscription?.trialEndsAt ?? null,
+      graceEndsAt: tenant.graceEndsAt,
+      trialAddOns: (tenant.subscription?.addOns ?? []).map((row) => ({
+        id: row.addOn.id,
+        slug: row.addOn.slug,
+        name: row.addOn.name,
+        price: Number(row.addOn.price),
+        currency: row.addOn.currency,
+        confirmed: row.confirmedAt !== null,
+      })),
+      hasPendingRequest: !!pending,
+    };
   }
 
   async listMine(tenantId: string): Promise<PlanChangeRequestView[]> {
@@ -210,7 +368,38 @@ export class PlanChangeRequestsService {
       orderBy: { createdAt: 'desc' },
       include: CONSOLE_INCLUDE,
     });
-    return rows.map((row) => this.toConsoleView(row as RequestRow));
+    const addOnsById = await this.resolveRequestedAddOns(
+      rows.flatMap((row) =>
+        row.addOnChoiceMade ? row.requestedAddOnIds : [],
+      ),
+    );
+    return rows.map((row) =>
+      this.toConsoleView(row as RequestRow, addOnsById),
+    );
+  }
+
+  /** Resolve requested add-on ids to name/price rows (one query for a
+   * whole list; ids of deleted add-ons resolve to nothing and are
+   * dropped from the view). */
+  private async resolveRequestedAddOns(
+    ids: string[],
+  ): Promise<Map<string, RequestedAddOnView>> {
+    const out = new Map<string, RequestedAddOnView>();
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return out;
+    const rows = await this.prisma.addOn.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, name: true, price: true, currency: true },
+    });
+    for (const row of rows) {
+      out.set(row.id, {
+        id: row.id,
+        name: row.name,
+        price: Number(row.price),
+        currency: row.currency,
+      });
+    }
+    return out;
   }
 
   async apply(
@@ -249,6 +438,15 @@ export class PlanChangeRequestsService {
         {
           planVersionId: existing.targetPlanVersionId,
           effectiveAt: dto.effectiveAt,
+          // Trial conversion: addOnChoiceMade=false = no add-on
+          // choice — changePlan leaves trial add-ons untouched. A
+          // choice (possibly an empty list = keep none) = confirm
+          // the kept, end the dropped. The flag — never the list's
+          // emptiness — decides: an empty list WITHOUT the flag is
+          // no choice at all.
+          keepAddOnIds: existing.addOnChoiceMade
+            ? existing.requestedAddOnIds
+            : undefined,
         },
         actorId,
       );
@@ -278,9 +476,18 @@ export class PlanChangeRequestsService {
         status: 'APPLIED',
         targetPlanVersionId: existing.targetPlanVersionId,
         effectiveAt: dto.effectiveAt ?? 'immediate',
+        requestedAddOnIds: existing.addOnChoiceMade
+          ? existing.requestedAddOnIds
+          : null,
+        addOnChoiceMade: existing.addOnChoiceMade,
       },
     });
-    return this.toConsoleView(decided as RequestRow);
+    const addOnsById = await this.resolveRequestedAddOns(
+      (decided as RequestRow).addOnChoiceMade
+        ? (decided as RequestRow).requestedAddOnIds
+        : [],
+    );
+    return this.toConsoleView(decided as RequestRow, addOnsById);
   }
 
   async reject(
@@ -335,7 +542,11 @@ export class PlanChangeRequestsService {
       before: { status: 'PENDING' },
       after: { status: 'REJECTED', rejectionReason: reason },
     });
-    return this.toConsoleView(decided as unknown as RequestRow);
+    const decidedRow = decided as unknown as RequestRow;
+    const addOnsById = await this.resolveRequestedAddOns(
+      decidedRow.addOnChoiceMade ? decidedRow.requestedAddOnIds : [],
+    );
+    return this.toConsoleView(decidedRow, addOnsById);
   }
 
   private toView(row: RequestRow): PlanChangeRequestView {
@@ -348,13 +559,20 @@ export class PlanChangeRequestsService {
       status: row.status,
       note: row.note,
       rejectionReason: row.rejectionReason,
+      // The API contract keeps null = no choice: the flag decides,
+      // never the list's emptiness (an empty list WITH the flag set
+      // is the tenant's explicit "keep none").
+      requestedAddOnIds: row.addOnChoiceMade ? row.requestedAddOnIds : null,
       requestedBy: row.requestedBy,
       createdAt: row.createdAt,
       decidedAt: row.decidedAt,
     };
   }
 
-  private toConsoleView(row: RequestRow): ConsolePlanChangeRequestView {
+  private toConsoleView(
+    row: RequestRow,
+    addOnsById?: Map<string, RequestedAddOnView>,
+  ): ConsolePlanChangeRequestView {
     return {
       ...this.toView(row),
       tenant: {
@@ -363,6 +581,13 @@ export class PlanChangeRequestsService {
         slug: row.tenant?.slug ?? '',
         currentPlanName: row.tenant?.planVersion?.plan?.name ?? null,
       },
+      requestedAddOns: row.addOnChoiceMade
+        ? row.requestedAddOnIds
+            .map((id) => addOnsById?.get(id))
+            .filter(
+              (addOn): addOn is RequestedAddOnView => addOn !== undefined,
+            )
+        : [],
     };
   }
 }

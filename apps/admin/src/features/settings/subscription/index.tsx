@@ -80,7 +80,7 @@ export function SubscriptionSettings({
           <TabsTrigger value='invoices'>Invoices</TabsTrigger>
         </TabsList>
         <TabsContent value='overview' className='mt-6'>
-          <OverviewTab />
+          <OverviewTab onSelectPlans={() => changeTab('plans')} />
         </TabsContent>
         <TabsContent value='renew' className='mt-6'>
           <RenewTab canManage={canManage} />

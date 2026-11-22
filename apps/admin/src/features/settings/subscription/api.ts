@@ -9,6 +9,8 @@ export interface EntitlementSnapshot {
   features: string[]
   limits: Record<string, unknown>
   validUntil: string | null
+  /** End of the grace window; null when the tenant is not in grace. */
+  graceEndsAt?: string | null
 }
 
 export interface LimitUsageRow {
@@ -113,9 +115,40 @@ export interface PlanChangeRequestView {
   status: PlanChangeRequestStatus
   note: string | null
   rejectionReason: string | null
+  /** Add-on ids the tenant chose to KEEP (trial conversion review).
+   * null = no add-on choice was made; [] = keep none. */
+  requestedAddOnIds: string[] | null
   requestedBy: string | null
   createdAt: string
   decidedAt: string | null
+}
+
+/** One trial add-on the tenant can keep or drop at conversion.
+ * Mirrors the platform TrialReviewView (confirmed = already billable:
+ * the tenant or the operator confirmed it earlier). */
+export interface TrialReviewAddOn {
+  id: string
+  slug: string
+  name: string
+  price: number
+  currency: string
+  confirmed: boolean
+}
+
+/** The trial add-on review: the subscription/trial state plus the
+ * attached trial add-ons with prices — the tenant picks which to keep
+ * when requesting a paid plan. Mirrors the platform TrialReviewView. */
+export interface TrialReview {
+  tenantId: string
+  tenantName: string
+  subscriptionStatus: string | null
+  planName: string | null
+  planSlug: string | null
+  isTrialPlan: boolean
+  trialEndsAt: string | null
+  graceEndsAt: string | null
+  trialAddOns: TrialReviewAddOn[]
+  hasPendingRequest: boolean
 }
 
 export interface ProofPayload {
@@ -152,9 +185,18 @@ export function getPlanChangeRequests(): Promise<PlanChangeRequestView[]> {
     .then((r) => r.data as PlanChangeRequestView[])
 }
 
+export function getTrialReview(): Promise<TrialReview> {
+  return apiClient
+    .get('/subscription/trial-review')
+    .then((r) => r.data as TrialReview)
+}
+
 export function createPlanChangeRequest(input: {
   targetPlanId: string
   note?: string
+  /** Add-on ids to KEEP — the trial conversion choice. Omit when the
+   * tenant made no add-on choice (leaves add-ons untouched). */
+  addOnIds?: string[]
 }): Promise<PlanChangeRequestView> {
   return apiClient
     .post('/subscription/plan-change-requests', input)

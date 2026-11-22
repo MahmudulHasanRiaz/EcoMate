@@ -59,6 +59,26 @@ describe('TenantEntitlementsService', () => {
     expect(result.access).toBe('full');
   });
 
+  it('exposes graceEndsAt in the snapshot (trial-ended banner)', () => {
+    const graceEndsAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    registry.replace([
+      {
+        id: context.tenantId,
+        slug: context.slug,
+        status: 'PAST_DUE',
+        hosts: [],
+        features: ['admin_products'],
+        limits: {},
+        planName: 'Trial',
+        subscriptionStatus: 'PAST_DUE',
+        graceEndsAt,
+      },
+    ]);
+    const result = runWithTenant(context, () => service.getSnapshot());
+    expect(result.graceEndsAt).toBe(graceEndsAt);
+    expect(result.accessState).toBe('grace');
+  });
+
   it('fails closed in production when no snapshot exists', () => {
     process.env.NODE_ENV = 'production';
     const result = runWithTenant(context, () => ({

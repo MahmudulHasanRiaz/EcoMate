@@ -1,4 +1,10 @@
-import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 /**
  * Internal create body (tenant backend → platform). The tenant id comes
@@ -18,4 +24,15 @@ export class CreatePlanChangeRequestDto {
   @IsString()
   @MaxLength(100)
   requestedBy?: string;
+
+  /**
+   * Trial conversion review (trial-end design 2026-11-22): the add-on
+   * ids the tenant chose to KEEP. Omitted = no add-on choice (plain
+   * plan change). The service validates every id against the tenant's
+   * attached trial add-ons.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  addOnIds?: string[];
 }

@@ -20,8 +20,10 @@ import {
   isValidRejectionReason,
   planChangeSummary,
   PLAN_CHANGE_REQUEST_STATUSES,
+  requestedAddOnsSummary,
   type PlanChangeEffectiveAt,
 } from '../lib/plan-change-requests';
+import { subscriptionAddOnsSummary } from '../lib/subscriptions';
 import type {
   BillingSummary,
   Coupon,
@@ -1532,11 +1534,7 @@ export function BillingPage() {
                       </td>
                       <td>{formatDate(subscription.currentPeriodEnd)}</td>
                       <td>
-                        {subscription.addOns?.length
-                          ? subscription.addOns
-                              .map((addOn) => addOn.addOn?.name ?? addOn.addOnId)
-                              .join(', ')
-                          : '—'}
+                        {subscriptionAddOnsSummary(subscription.addOns)}
                       </td>
                       <td>
                         <div className="row-action">
@@ -1624,6 +1622,7 @@ export function BillingPage() {
                       <th>Requested</th>
                       <th>Tenant</th>
                       <th>Plan change</th>
+                      <th>Add-ons to keep</th>
                       <th>Note</th>
                       <th>Status</th>
                       <th>Decided</th>
@@ -1645,6 +1644,9 @@ export function BillingPage() {
                           <span className="sub">{request.tenant.slug}</span>
                         </td>
                         <td>{planChangeSummary(request)}</td>
+                        <td>
+                          {requestedAddOnsSummary(request, formatMoney)}
+                        </td>
                         <td>{request.note || '—'}</td>
                         <td>
                           <StatusBadge status={request.status} />
@@ -2125,6 +2127,18 @@ export function BillingPage() {
                 {confirmApply.targetPlanName}? This runs the same plan
                 change as the operator flow.
               </p>
+              {confirmApply.requestedAddOnIds !== null &&
+              confirmApply.requestedAddOnIds !== undefined ? (
+                <p>
+                  Add-ons: {requestedAddOnsSummary(confirmApply, formatMoney)}.
+                  Kept trial add-ons become billable; dropped ones end now.
+                </p>
+              ) : (
+                <p>
+                  No add-on choice — the tenant&apos;s trial add-ons stay
+                  as they are.
+                </p>
+              )}
               <label className="inline-field">
                 <span>Effective</span>
                 <select

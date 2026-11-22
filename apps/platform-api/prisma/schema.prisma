@@ -460,6 +460,22 @@ model PlanChangeRequest {
   status              PlanChangeRequestStatus @default(PENDING)
   note                String?
   rejectionReason     String?
+  /// Add-on ids the tenant chose to KEEP in the conversion review
+  /// (trial-end design 2026-11-22). Prisma has no nullable list
+  /// (`String[]?` is invalid, P1012), so the no-choice state is
+  /// carried by addOnChoiceMade, not by NULL: false = the tenant made
+  /// no add-on choice (plain plan change, or a request filed before
+  /// the review step existed) — apply() leaves trial add-ons
+  /// untouched. true + [] = the tenant chose to keep NONE — apply()
+  /// ends all trial add-ons. apply() confirms the kept trial add-ons
+  /// and ends the dropped ones; ids that are not attached trial
+  /// add-ons are ignored. Read by id/tenant only — no index.
+  requestedAddOnIds String[] @default([])
+  /// True when the tenant made an explicit add-on choice in the
+  /// conversion review — including "keep none" (an empty
+  /// requestedAddOnIds WITH this flag set). False = no choice was
+  /// made; requestedAddOnIds is then an empty list with no meaning.
+  addOnChoiceMade   Boolean  @default(false)
   /// Tenant user id (backend JWT `userId`) that filed the request.
   requestedBy         String?
   /// Platform user id that decided the request.
@@ -543,6 +559,17 @@ model SubscriptionAddOn {
   addOn          AddOn        @relation(fields: [addOnId], references: [id], onDelete: Restrict)
   startedAt      DateTime     @default(now())
   endedAt        DateTime?
+  /// Trial-end design (2026-11-22): true when the row was attached by
+  /// the trial attach (provisioning), never by an operator or a
+  /// conversion. A trial-granted row is NEVER billed until confirmed:
+  /// resolveForSubscription excludes trialGranted rows with no
+  /// confirmedAt. The row still grants its features while attached
+  /// (the registry is untouched), so the shop never breaks during
+  /// trial/grace — only the billing waits for a knowing choice.
+  trialGranted   Boolean      @default(false)
+  /// When the tenant kept this add-on in the conversion review, or an
+  /// operator confirmed/attached it deliberately. Null = unconfirmed.
+  confirmedAt    DateTime?
 
   @@unique([subscriptionId, addOnId])
   @@index([addOnId])

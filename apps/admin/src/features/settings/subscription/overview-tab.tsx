@@ -7,6 +7,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -15,7 +16,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getEntitlements, getUsage } from './api'
+import { getEntitlements, getTrialReview, getUsage } from './api'
 import {
   ACCESS_STATE_META,
   daysLeftLabel,
@@ -23,7 +24,12 @@ import {
   prettyFeature,
 } from './lib'
 
-export function OverviewTab() {
+interface OverviewTabProps {
+  /** Jump to the Plans tab (trial-ended banner action). */
+  onSelectPlans?: () => void
+}
+
+export function OverviewTab({ onSelectPlans }: OverviewTabProps) {
   const snapshotQuery = useQuery({
     queryKey: ['entitlements', 'me'],
     queryFn: getEntitlements,
@@ -36,12 +42,26 @@ export function OverviewTab() {
     staleTime: 60_000,
   })
 
+  // Same query key as the Plans tab — one cached fetch serves both.
+  const trialReviewQuery = useQuery({
+    queryKey: ['subscription', 'trial-review'],
+    queryFn: getTrialReview,
+    staleTime: 60_000,
+  })
+
   const snapshot = snapshotQuery.data
   const accessState = snapshot?.accessState ?? 'full'
   const stateMeta = ACCESS_STATE_META[accessState]
   const features = snapshot?.features ?? []
   const hasWildcard = features.includes('*')
   const usageRows = usageQuery.data?.limits ?? []
+  // Still on the trial plan but no longer in trial: the trial ended
+  // (PAST_DUE = grace window, SUSPENDED = grace over or immediate
+  // suspension). An active trial has status TRIAL, not these.
+  const trialEnded =
+    trialReviewQuery.data?.isTrialPlan === true &&
+    (snapshot?.subscriptionStatus === 'PAST_DUE' ||
+      snapshot?.subscriptionStatus === 'SUSPENDED')
 
   if (snapshotQuery.isLoading) {
     return (
@@ -54,7 +74,34 @@ export function OverviewTab() {
 
   return (
     <div className='space-y-6'>
-      {accessState !== 'full' && (
+      {trialEnded ? (
+        <div
+          className={
+            accessState === 'grace'
+              ? 'flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100'
+              : 'flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100'
+          }
+        >
+          {accessState === 'grace' ? (
+            <AlertTriangle className='mt-0.5 h-5 w-5 shrink-0' />
+          ) : (
+            <ShieldAlert className='mt-0.5 h-5 w-5 shrink-0' />
+          )}
+          <div className='space-y-2'>
+            <p className='text-sm font-semibold'>Your trial has ended</p>
+            <p className='text-xs'>
+              {accessState === 'grace'
+                ? `Your shop stays online until ${formatDate(snapshot?.graceEndsAt ?? null)}. Choose a plan before then to keep it running — you can review your trial add-ons and pick which ones to keep.`
+                : 'Your workspace is suspended. Choose a plan to restore full access — your products, orders and storefront content are safe.'}
+            </p>
+            {onSelectPlans ? (
+              <Button size='sm' variant='outline' onClick={onSelectPlans}>
+                Choose a plan
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : accessState !== 'full' ? (
         <div
           className={
             accessState === 'grace'
@@ -80,7 +127,7 @@ export function OverviewTab() {
             </p>
           </div>
         </div>
-      )}
+      ) : null}
 
       <div className='grid gap-4 md:grid-cols-3'>
         <Card>

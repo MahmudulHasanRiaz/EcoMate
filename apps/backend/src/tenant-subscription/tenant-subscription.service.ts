@@ -61,13 +61,25 @@ export class TenantSubscriptionService {
     return this.platformFetch('/public/plans');
   }
 
+  /**
+   * Trial conversion review (trial-end design 2026-11-22): the
+   * subscription/trial state plus the attached trial add-ons with
+   * prices, so the tenant can pick a plan and choose which add-ons to
+   * keep before the first paid invoice.
+   */
+  getTrialReview(tenantId: string) {
+    return this.platformFetch(
+      `/internal/tenants/${encodeURIComponent(tenantId)}/trial-review`,
+    );
+  }
+
   listRequests(tenantId: string) {
     return this.platformFetch(this.tenantPath(tenantId));
   }
 
   createRequest(
     tenantId: string,
-    dto: { targetPlanId: string; note?: string },
+    dto: { targetPlanId: string; note?: string; addOnIds?: string[] },
     requestedBy?: string | null,
   ) {
     return this.platformFetch(this.tenantPath(tenantId), {

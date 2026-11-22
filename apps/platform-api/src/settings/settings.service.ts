@@ -46,9 +46,31 @@ export interface SmtpSettingsPublic {
   source: 'env' | 'setting' | 'none';
 }
 
+/**
+ * What happens when a trial-plan trial ends (trial-end design 2026-11-22).
+ * grace_then_suspend: PAST_DUE + grace window (shop stays up), then the
+ * existing suspend/cancel jobs take over. suspend_immediately: the tenant
+ * is suspended at trial end with no grace and no invoice — the hub still
+ * works from the suspended state, so conversion remains possible.
+ */
+export type TrialEndPolicy = 'grace_then_suspend' | 'suspend_immediately';
+
+export const TRIAL_END_POLICIES: TrialEndPolicy[] = [
+  'grace_then_suspend',
+  'suspend_immediately',
+];
+
 export interface TrialSettings {
   trialDays: number;
   graceDays: number;
+  /**
+   * Add-on slugs a new trial includes (trial-plan signups only).
+   * null = unset: today's behaviour — every active add-on except
+   * custom-domain. [] = a trial with no add-ons. Changing this affects
+   * NEW signups only; existing trials are untouched.
+   */
+  trialAddOnSlugs: string[] | null;
+  trialEndPolicy: TrialEndPolicy;
 }
 
 export interface TaxSettings {
@@ -141,6 +163,8 @@ export const DEFAULT_GRACE_DAYS = 7;
 const DEFAULT_TRIAL: TrialSettings = {
   trialDays: DEFAULT_TRIAL_DAYS,
   graceDays: DEFAULT_GRACE_DAYS,
+  trialAddOnSlugs: null,
+  trialEndPolicy: 'grace_then_suspend',
 };
 
 const DEFAULT_TAX: TaxSettings = {
@@ -298,7 +322,7 @@ export class SettingsService implements OnModuleInit {
     const { pass: _pass, ...smtp } = this.smtp;
     return {
       smtp,
-      trial: { ...this.trial },
+      trial: this.getTrialDefaults(),
       tax: { ...this.tax },
       branding: { ...this.branding },
       maintenance: { ...this.maintenance },
@@ -328,7 +352,12 @@ export class SettingsService implements OnModuleInit {
   }
 
   getTrialDefaults(): TrialSettings {
-    return { ...this.trial };
+    return {
+      ...this.trial,
+      trialAddOnSlugs: this.trial.trialAddOnSlugs
+        ? [...this.trial.trialAddOnSlugs]
+        : null,
+    };
   }
 
   getTax(): TaxSettings {
@@ -453,10 +482,17 @@ export class SettingsService implements OnModuleInit {
   async updateTrial(input: {
     trialDays?: number;
     graceDays?: number;
+    trialAddOnSlugs?: string[] | null;
+    trialEndPolicy?: TrialEndPolicy;
   }): Promise<TrialSettings> {
     const next: TrialSettings = {
       trialDays: input.trialDays ?? this.trial.trialDays,
       graceDays: input.graceDays ?? this.trial.graceDays,
+      trialAddOnSlugs:
+        input.trialAddOnSlugs !== undefined
+          ? input.trialAddOnSlugs
+          : this.trial.trialAddOnSlugs,
+      trialEndPolicy: input.trialEndPolicy ?? this.trial.trialEndPolicy,
     };
     if (
       !Number.isInteger(next.trialDays) ||
@@ -476,9 +512,29 @@ export class SettingsService implements OnModuleInit {
         'graceDays must be an integer between 0 and 90',
       );
     }
+    if (
+      next.trialAddOnSlugs !== null &&
+      (!Array.isArray(next.trialAddOnSlugs) ||
+        next.trialAddOnSlugs.some((slug) => typeof slug !== 'string'))
+    ) {
+      throw new BadRequestException(
+        'trialAddOnSlugs must be null or an array of add-on slugs',
+      );
+    }
+    if (!TRIAL_END_POLICIES.includes(next.trialEndPolicy)) {
+      throw new BadRequestException(
+        'trialEndPolicy must be grace_then_suspend or suspend_immediately',
+      );
+    }
+    // Normalise: trim slugs, drop empties and duplicates (stable order).
+    if (next.trialAddOnSlugs) {
+      next.trialAddOnSlugs = [
+        ...new Set(next.trialAddOnSlugs.map((slug) => slug.trim())),
+      ].filter(Boolean);
+    }
     await this.store('trial_defaults', next);
     this.trial = next;
-    return { ...next };
+    return this.getTrialDefaults();
   }
 
   async updateTax(input: {
@@ -779,9 +835,21 @@ export class SettingsService implements OnModuleInit {
     await this.loadSmtp();
     const trial = await this.readStored('trial_defaults');
     if (isRecord(trial)) {
+      const storedSlugs = Array.isArray(trial.trialAddOnSlugs)
+        ? trial.trialAddOnSlugs.filter(
+            (slug): slug is string =>
+              typeof slug === 'string' && slug.trim().length > 0,
+          )
+        : null;
+      const storedPolicy =
+        trial.trialEndPolicy === 'suspend_immediately'
+          ? 'suspend_immediately'
+          : 'grace_then_suspend';
       this.trial = {
         trialDays: asNumber(trial.trialDays, DEFAULT_TRIAL_DAYS),
         graceDays: asNumber(trial.graceDays, DEFAULT_GRACE_DAYS),
+        trialAddOnSlugs: storedSlugs,
+        trialEndPolicy: storedPolicy,
       };
     }
     const tax = await this.readStored('tax');

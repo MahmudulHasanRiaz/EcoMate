@@ -11,6 +11,7 @@ const PLAN_ID = '22222222-2222-4222-8222-222222222222';
 function makeController() {
   const service = {
     listPublicPlans: jest.fn().mockResolvedValue([]),
+    getTrialReview: jest.fn().mockResolvedValue({ isTrialPlan: true }),
     listRequests: jest.fn().mockResolvedValue([]),
     createRequest: jest.fn().mockResolvedValue({ id: 'r1' }),
     getRequest: jest.fn().mockResolvedValue({ id: 'r1' }),
@@ -31,6 +32,12 @@ describe('TenantSubscriptionController', () => {
     const { controller, service } = makeController();
     await controller.listPlans();
     expect(service.listPublicPlans).toHaveBeenCalledWith();
+  });
+
+  it('gets the trial review with the tenant id from context', async () => {
+    const { controller, service } = makeController();
+    await asTenant(() => controller.getTrialReview());
+    expect(service.getTrialReview).toHaveBeenCalledWith(TENANT_ID);
   });
 
   it('lists requests with the tenant id from context, never the request', async () => {
@@ -94,6 +101,11 @@ describe('TenantSubscriptionController', () => {
       'employee',
       'superadmin',
     ]);
+    expect([...rolesOf('getTrialReview')].sort()).toEqual([
+      'admin',
+      'employee',
+      'superadmin',
+    ]);
     expect([...rolesOf('listRequests')].sort()).toEqual([
       'admin',
       'employee',
@@ -129,6 +141,21 @@ describe('TenantSubscriptionController', () => {
         'note',
         'targetPlanId',
       ]);
+    });
+
+    it('accepts a valid add-on selection and rejects non-UUID add-on ids', async () => {
+      const valid = Object.assign(new CreatePlanChangeRequestDto(), {
+        targetPlanId: PLAN_ID,
+        addOnIds: ['77777777-7777-4777-8777-777777777777'],
+      });
+      expect(await validate(valid)).toEqual([]);
+
+      const invalid = Object.assign(new CreatePlanChangeRequestDto(), {
+        targetPlanId: PLAN_ID,
+        addOnIds: ['not-a-uuid'],
+      });
+      const errors = await validate(invalid);
+      expect(errors.map((e) => e.property)).toEqual(['addOnIds']);
     });
   });
 });

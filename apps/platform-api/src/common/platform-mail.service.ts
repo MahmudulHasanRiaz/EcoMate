@@ -632,8 +632,10 @@ export class PlatformMailService {
       input.to,
       `Your ${input.planName} trial ends on ${ends} — ${platformName}`,
       `Hi,\n\nYour ${input.planName} trial for ${input.tenantName} ends on ` +
-        `${ends}. To keep your workspace fully available, pay the renewal ` +
-        `invoice from your admin billing page before then.\n\n` +
+        `${ends}. To keep your workspace fully available, choose a plan ` +
+        `from your admin subscription page before then — you can review ` +
+        `the add-ons from your trial there and keep only the ones you ` +
+        `want.\n\n` +
         `After the trial ends you will have a short grace period before ` +
         `the workspace becomes read-only.`,
       renderEmailLayout({
@@ -646,8 +648,9 @@ export class PlatformMailService {
             `Your <strong>${plan}</strong> trial for ` +
               `<strong>${escapeHtml(input.tenantName)}</strong> ends on ` +
               `<strong>${escapeHtml(ends)}</strong>. To keep your workspace fully ` +
-              `available, pay the renewal invoice from your admin billing page ` +
-              `before then.`,
+              `available, choose a plan from your admin subscription page ` +
+              `before then — you can review the add-ons from your trial ` +
+              `there and keep only the ones you want.`,
           ) +
           para(
             'After the trial ends you will have a short grace period before ' +
@@ -655,6 +658,55 @@ export class PlatformMailService {
           ),
       }),
       `trial ending for ${input.tenantName} (${ends})`,
+    );
+  }
+
+  /**
+   * Trial ended (trial-end design 2026-11-22): the tenant has not chosen
+   * a plan yet, so there is no invoice to pay — the mail points at the
+   * subscription page, where the tenant picks a plan and reviews the
+   * trial add-ons. Sent once per subscription (InvoiceReminder kind
+   * TRIAL_EXPIRED). When there is no grace window (suspend-immediately
+   * policy) graceEndsAt is null and the copy says so.
+   */
+  async sendTrialExpired(input: {
+    to: string;
+    tenantName: string;
+    graceEndsAt: Date | string | null;
+  }): Promise<{ delivered: boolean }> {
+    const platformName = this.settings.getBranding().platformName;
+    const grace = input.graceEndsAt
+      ? formatDhakaDate(input.graceEndsAt)
+      : null;
+    const graceText = grace
+      ? `You have until ${grace} to choose a plan — until then your shop and workspace stay fully available.`
+      : 'Your workspace is now suspended — choose a plan from your admin subscription page to restore it.';
+    return this.deliver(
+      input.to,
+      `Your trial has ended — choose a plan to keep your shop running (${platformName})`,
+      `Hi,\n\nYour trial for ${input.tenantName} has ended. ${graceText}\n\n` +
+        `On the subscription page you can pick a plan and review the ` +
+        `add-ons from your trial, keeping only the ones you want. ` +
+        `Nothing is billed until you choose.\n\n` +
+        `Your products, orders and settings are safe.`,
+      renderEmailLayout({
+        brand: this.brand(),
+        heading: 'Your trial has ended',
+        preheader: `Your trial for ${input.tenantName} has ended.`,
+        bodyHtml:
+          para('Hi,') +
+          para(
+            `Your trial for <strong>${escapeHtml(input.tenantName)}</strong> ` +
+              `has ended. ${escapeHtml(graceText)}`,
+          ) +
+          para(
+            'On the subscription page you can pick a plan and review the ' +
+              'add-ons from your trial, keeping only the ones you want. ' +
+              'Nothing is billed until you choose.',
+          ) +
+          para('Your products, orders and settings are safe.'),
+      }),
+      `trial expired for ${input.tenantName}`,
     );
   }
 
