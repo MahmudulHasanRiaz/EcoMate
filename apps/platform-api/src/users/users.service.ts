@@ -11,6 +11,7 @@ import { createHash, randomBytes } from 'crypto';
 import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
 import { MfaService } from '../auth/mfa.service';
+import { DomainConfigService } from '../config/domain-config.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -47,6 +48,7 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly mail: PlatformMailService,
     private readonly mfa: MfaService,
+    private readonly domainConfig: DomainConfigService,
   ) {}
 
   getRoles() {
@@ -560,9 +562,10 @@ export class UsersService {
   }
 
   private adminBaseUrl(): string {
-    const base =
-      process.env.PLATFORM_ADMIN_URL || 'http://localhost:5174';
-    return base.replace(/\/$/, '');
+    // UI-managed console URL (DomainConfig.adminUrl): the stored
+    // override, else https://{console host}. PLATFORM_ADMIN_URL env
+    // remains only as the bootstrap value for the config.
+    return this.domainConfig.adminUrl().replace(/\/$/, '');
   }
 
   private async assertNotLastSuperadmin(excludeUserId: string) {

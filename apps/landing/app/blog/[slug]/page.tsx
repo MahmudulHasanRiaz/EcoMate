@@ -5,12 +5,6 @@ import { fetchBlogPost } from '@/lib/blog';
 import { fetchLandingSettings } from '@/lib/landing-settings';
 import { BlogDetailView } from './blog-detail-view';
 
-function siteUrl(): string {
-  const domain =
-    (process.env.NEXT_PUBLIC_PRIMARY_DOMAIN ?? '').trim() || 'ecomate.bd';
-  return `https://www.${domain}`;
-}
-
 /**
  * Per-post SEO from the post's own SEO fields (default locale, else
  * English, else the post title/excerpt). Canonical URL is the
@@ -46,7 +40,7 @@ export async function generateMetadata({
     description,
     alternates: post.canonicalUrl
       ? { canonical: post.canonicalUrl }
-      : { canonical: `${siteUrl()}/blog/${post.slug}` },
+      : { canonical: `${settings.landingUrl}/blog/${post.slug}` },
     openGraph: {
       title: `${title} — EcoMate`,
       description,

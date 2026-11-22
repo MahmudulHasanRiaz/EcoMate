@@ -17,12 +17,35 @@ describe('fetchLandingSettings', () => {
         json: async () => ({
           defaultLocale: 'bn',
           seoIndexingEnabled: false,
+          landingUrl: 'https://shop.example.net',
+          tenantDomain: 'tenants.example',
         }),
       }),
     );
     await expect(fetchLandingSettings()).resolves.toEqual({
       defaultLocale: 'bn',
       seoIndexingEnabled: false,
+      landingUrl: 'https://shop.example.net',
+      tenantDomain: 'tenants.example',
+    });
+  });
+
+  it('falls back to env-derived domains when the API predates the fields', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          defaultLocale: 'en',
+          seoIndexingEnabled: true,
+        }),
+      }),
+    );
+    await expect(fetchLandingSettings()).resolves.toEqual({
+      defaultLocale: 'en',
+      seoIndexingEnabled: true,
+      landingUrl: 'https://www.ecomate.bd',
+      tenantDomain: 'ecomate.bd',
     });
   });
 
@@ -48,6 +71,8 @@ describe('fetchLandingSettings', () => {
         json: async () => ({
           defaultLocale: 'fr',
           seoIndexingEnabled: 'yes',
+          landingUrl: 'ftp://files.example',
+          tenantDomain: 'not a domain',
         }),
       }),
     );

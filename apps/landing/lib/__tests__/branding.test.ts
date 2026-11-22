@@ -155,6 +155,16 @@ describe('tenantAdminSignInUrl', () => {
     ).toBe('https://acme.staging.ecomate.bd/admin/sign-in');
   });
 
+  it('prefers an explicit tenant domain over the env fallback', () => {
+    expect(
+      tenantAdminSignInUrl(
+        'acme',
+        { NEXT_PUBLIC_PRIMARY_DOMAIN: 'staging.ecomate.bd' },
+        'tenants.example',
+      ),
+    ).toBe('https://acme.tenants.example/admin/sign-in');
+  });
+
   it('rejects invalid slugs instead of building a bad URL', () => {
     expect(tenantAdminSignInUrl('ab')).toBe(null);
     expect(tenantAdminSignInUrl('-acme')).toBe(null);

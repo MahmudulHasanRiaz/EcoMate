@@ -120,4 +120,30 @@ describe('TenantMiddleware host resolution', () => {
     process.env.DEFAULT_TENANT_ID = 'tenant-fallback';
     expect(resolve(request('unknown.example.com'))).toBeUndefined();
   });
+
+  it('resolves hosts under the SYNCED tenant domain, not the env domain', () => {
+    // Env still says ecomate.bd, but the platform synced a new tenant
+    // domain — resolution must follow the sync, not the env.
+    registry.setDomainConfig({
+      primaryDomain: 'tenants.example',
+      baseDomains: ['tenants.example'],
+      customDomainCname: 'cname.tenants.example',
+      allowExternalFallback: false,
+      platformHosts: {
+        landing: 'www.tenants.example',
+        platformAdmin: 'saas.app.example.net',
+        platformApi: 'api.app.example.net',
+        webhooks: 'api.app.example.net',
+      },
+    });
+    const context = resolve(request('acme.tenants.example'));
+    expect(context?.tenantId).toBe('tenant-acme');
+    expect(context?.canonicalHost).toBe('acme.tenants.example');
+    // The old env-domain host no longer resolves as a tenant subdomain
+    // (it still matches via the registry host list as a custom host —
+    // the row keeps working — but the canonical host is the new one).
+    const oldContext = resolve(request('acme.ecomate.bd'));
+    expect(oldContext?.tenantId).toBe('tenant-acme');
+    expect(oldContext?.canonicalHost).toBe('acme.ecomate.bd');
+  });
 });

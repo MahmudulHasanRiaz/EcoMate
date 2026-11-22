@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { SignInForm } from '@/components/sign-in-form';
 import { SiteHeader } from '@/components/site-header';
+import { fetchLandingSettings } from '@/lib/landing-settings';
 
 export const metadata: Metadata = {
   title: 'Sign in — EcoMate',
@@ -8,7 +9,8 @@ export const metadata: Metadata = {
     'Returning store owner? Enter your store address to open your workspace admin.',
 };
 
-export default function SignInPage() {
+export default async function SignInPage() {
+  const { tenantDomain } = await fetchLandingSettings();
   return (
     <>
       <SiteHeader />
@@ -22,7 +24,7 @@ export default function SignInPage() {
             workspace sign-in.
           </p>
         </div>
-        <SignInForm />
+        <SignInForm tenantDomain={tenantDomain} />
         <p className="center-note">
           New here? <a href="/signup">Start a trial</a> instead.
         </p>

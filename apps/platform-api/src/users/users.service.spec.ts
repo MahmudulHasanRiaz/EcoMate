@@ -77,27 +77,25 @@ function makeService() {
     sendInvite: jest.fn().mockResolvedValue({ delivered: true }),
   };
   const mfa = { clearMfa: jest.fn().mockResolvedValue(undefined) };
+  const domainConfig = { adminUrl: () => 'https://saas.ecomate.test' };
   return {
     prisma,
     audit,
     mail,
     mfa,
     admin,
-    service: new UsersService(prisma as any, audit as any, mail as any, mfa as any),
+    domainConfig,
+    service: new UsersService(
+      prisma as any,
+      audit as any,
+      mail as any,
+      mfa as any,
+      domainConfig as any,
+    ),
   };
 }
 
 describe('UsersService', () => {
-  const ORIGINAL_ADMIN_URL = process.env.PLATFORM_ADMIN_URL;
-
-  beforeEach(() => {
-    process.env.PLATFORM_ADMIN_URL = 'https://saas.ecomate.test';
-  });
-
-  afterAll(() => {
-    if (ORIGINAL_ADMIN_URL === undefined) delete process.env.PLATFORM_ADMIN_URL;
-    else process.env.PLATFORM_ADMIN_URL = ORIGINAL_ADMIN_URL;
-  });
 
   it('lists users with filters and page meta', async () => {
     const { service, prisma } = makeService();

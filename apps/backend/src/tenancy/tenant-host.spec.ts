@@ -1,5 +1,6 @@
 import {
   canonicalTenantHost,
+  parseTenantDomainConfig,
   readTenantDomainConfig,
   resolveTenantHost,
 } from './tenant-host';
@@ -120,5 +121,86 @@ describe('tenant host resolution', () => {
       canonicalHost: 'acme.ecomate.bd',
       isAlias: true,
     });
+  });
+});
+
+describe('parseTenantDomainConfig (platform registry payload)', () => {
+  const payload = {
+    primaryDomain: 'tenants.example',
+    baseDomains: ['tenants.example', 'alias.example'],
+    appDomain: 'app.example.net',
+    landingUrl: 'https://www.tenants.example',
+    adminUrl: 'https://saas.app.example.net',
+    fallbackDomain: null,
+    customDomainCname: 'cname.tenants.example',
+    allowExternalFallback: false,
+    primaryHealthy: true,
+    platformHosts: {
+      landing: 'www.tenants.example',
+      platformAdmin: 'saas.app.example.net',
+      platformApi: 'api.app.example.net',
+      webhooks: 'api.app.example.net',
+    },
+  };
+
+  it('parses a full platform DomainConfig', () => {
+    const parsed = parseTenantDomainConfig(payload);
+    expect(parsed).toMatchObject({
+      primaryDomain: 'tenants.example',
+      baseDomains: ['tenants.example', 'alias.example'],
+      customDomainCname: 'cname.tenants.example',
+      platformHosts: {
+        landing: 'www.tenants.example',
+        platformAdmin: 'saas.app.example.net',
+        platformApi: 'api.app.example.net',
+        webhooks: 'api.app.example.net',
+      },
+    });
+    expect(parsed && resolveTenantHost('acme.tenants.example', parsed)).toMatchObject({
+      kind: 'tenant',
+      slug: 'acme',
+    });
+    expect(
+      parsed && resolveTenantHost('saas.app.example.net', parsed),
+    ).toMatchObject({ kind: 'platform', role: 'platformAdmin' });
+  });
+
+  it('derives missing hosts/CNAME from the primary + app domain', () => {
+    const parsed = parseTenantDomainConfig({
+      primaryDomain: 'tenants.example',
+      baseDomains: ['tenants.example'],
+      appDomain: 'app.example.net',
+    });
+    expect(parsed).toMatchObject({
+      customDomainCname: 'cname.tenants.example',
+      platformHosts: {
+        landing: 'www.tenants.example',
+        platformAdmin: 'saas.app.example.net',
+        platformApi: 'api.app.example.net',
+      },
+    });
+  });
+
+  it('returns null for a missing or invalid primary domain', () => {
+    expect(parseTenantDomainConfig(null)).toBeNull();
+    expect(parseTenantDomainConfig('nope')).toBeNull();
+    expect(parseTenantDomainConfig({})).toBeNull();
+    expect(
+      parseTenantDomainConfig({ primaryDomain: 'not a domain' }),
+    ).toBeNull();
+    expect(
+      parseTenantDomainConfig({ primaryDomain: 'single-label' }),
+    ).toBeNull();
+  });
+
+  it('drops invalid alias entries instead of failing the whole payload', () => {
+    const parsed = parseTenantDomainConfig({
+      primaryDomain: 'tenants.example',
+      baseDomains: ['tenants.example', 'bad host!!', 'alias.example'],
+    });
+    expect(parsed?.baseDomains).toEqual([
+      'tenants.example',
+      'alias.example',
+    ]);
   });
 });

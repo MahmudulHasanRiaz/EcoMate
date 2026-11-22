@@ -17,11 +17,29 @@ function makeController(refreshResult = true) {
 }
 
 describe('InternalRegistryController', () => {
-  it('triggers a registry refresh and reports the tenant count', async () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    delete process.env.SAAS_PRIMARY_DOMAIN;
+    delete process.env.SAAS_BASE_DOMAINS;
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('triggers a registry refresh and reports the tenant count + domain config', async () => {
     const { sync, controller } = makeController();
     await expect(controller.refresh()).resolves.toEqual({
       refreshed: true,
       tenants: 2,
+      domains: {
+        primaryDomain: 'ecomate.bd',
+        baseDomains: ['ecomate.bd'],
+        source: 'env',
+        updatedAt: null,
+      },
     });
     expect(sync.refreshNow).toHaveBeenCalledTimes(1);
   });
@@ -31,6 +49,12 @@ describe('InternalRegistryController', () => {
     await expect(controller.refresh()).resolves.toEqual({
       refreshed: false,
       tenants: 2,
+      domains: {
+        primaryDomain: 'ecomate.bd',
+        baseDomains: ['ecomate.bd'],
+        source: 'env',
+        updatedAt: null,
+      },
     });
   });
 

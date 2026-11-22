@@ -48,6 +48,7 @@ function makeService() {
   const domainConfig = {
     absoluteUrl: (slug: string, path: string) =>
       `https://${slug}.ecomate.bd${path}`,
+    landingUrl: () => 'http://localhost:3002',
   };
   return {
     prisma,

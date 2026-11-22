@@ -101,13 +101,22 @@ export function isSafeLogoUrl(url: string): boolean {
   }
 }
 
-/** `https://<slug>.<primary-domain>/admin/sign-in`, or null for a bad slug. */
+/**
+ * `https://<slug>.<primary-domain>/admin/sign-in`, or null for a bad slug.
+ * The tenant domain comes from the explicit `tenantDomain` argument when
+ * given (the runtime platform value, passed down from the server page),
+ * else NEXT_PUBLIC_PRIMARY_DOMAIN (build-time fallback).
+ */
 export function tenantAdminSignInUrl(
   slug: string,
   env: Record<string, string | undefined> = process.env,
+  tenantDomain?: string,
 ): string | null {
   const clean = slug.trim().toLowerCase();
   if (!SLUG_PATTERN.test(clean)) return null;
-  const domain = (env.NEXT_PUBLIC_PRIMARY_DOMAIN ?? '').trim() || 'ecomate.bd';
+  const domain =
+    (tenantDomain ?? '').trim() ||
+    (env.NEXT_PUBLIC_PRIMARY_DOMAIN ?? '').trim() ||
+    'ecomate.bd';
   return `https://${clean}.${domain}/admin/sign-in`;
 }

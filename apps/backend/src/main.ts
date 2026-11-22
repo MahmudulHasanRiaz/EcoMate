@@ -461,7 +461,10 @@ async function bootstrap() {
       // Resolve the tenant from the Host (or the dev default) before any
       // Better Auth adapter query runs. baPrisma reads this ALS context.
       const baHost = String(request.headers.host ?? '');
-      const baResolution = resolveTenantHost(baHost);
+      const baResolution = resolveTenantHost(
+        baHost,
+        tenantRegistry.getDomainConfig(),
+      );
       let baTenant:
         | {
             tenantId: string;

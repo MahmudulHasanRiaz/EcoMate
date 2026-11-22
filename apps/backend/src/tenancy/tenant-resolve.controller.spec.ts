@@ -37,6 +37,7 @@ describe('TenantResolveController', () => {
       tenantId: 'tenant-acme',
       slug: 'acme',
       canonicalHost: 'acme.ecomate.bd',
+      effectiveCanonicalHost: 'acme.ecomate.bd',
       isAlias: false,
       storefrontEnabled: true,
     });
@@ -99,5 +100,68 @@ describe('TenantResolveController', () => {
     expect(() => makeController().resolve(undefined)).toThrow(
       BadRequestException,
     );
+  });
+
+  it('resolves hosts under the SYNCED tenant domain, not the env domain', () => {
+    const registry = new TenantRegistryService();
+    registry.replace([
+      {
+        id: 'tenant-acme',
+        slug: 'acme',
+        status: 'ACTIVE',
+        hosts: ['acme.ecomate.bd', 'shop.example.com'],
+        features: ['storefront'],
+      },
+    ]);
+    registry.setDomainConfig({
+      primaryDomain: 'tenants.example',
+      baseDomains: ['tenants.example', 'ecomate.bd'],
+      customDomainCname: 'cname.tenants.example',
+      allowExternalFallback: false,
+      platformHosts: {
+        landing: 'www.tenants.example',
+        platformAdmin: 'saas.app.example.net',
+        platformApi: 'api.app.example.net',
+        webhooks: 'api.app.example.net',
+      },
+    });
+    const controller = new TenantResolveController(registry);
+
+    // New tenant domain: canonical.
+    expect(controller.resolve('acme.tenants.example')).toEqual({
+      kind: 'tenant',
+      tenantId: 'tenant-acme',
+      slug: 'acme',
+      canonicalHost: 'acme.tenants.example',
+      effectiveCanonicalHost: 'acme.tenants.example',
+      isAlias: false,
+      storefrontEnabled: true,
+    });
+    // Old env domain kept as an alias base: resolves, alias-flagged.
+    expect(controller.resolve('acme.ecomate.bd')).toMatchObject({
+      kind: 'tenant',
+      slug: 'acme',
+      canonicalHost: 'acme.tenants.example',
+      isAlias: true,
+    });
+    // The split app host is never a tenant.
+    expect(() => controller.resolve('saas.app.example.net')).toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('points redirects at the fallback base during a primary outage', () => {
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd,alias.example';
+    process.env.SAAS_FALLBACK_DOMAIN = 'alias.example';
+    process.env.SAAS_PRIMARY_UNHEALTHY = 'true';
+    expect(makeController(['storefront']).resolve('acme.alias.example')).toMatchObject({
+      kind: 'tenant',
+      slug: 'acme',
+      // Canonical identity does not move...
+      canonicalHost: 'acme.ecomate.bd',
+      // ...but the redirect target is the reachable fallback host.
+      effectiveCanonicalHost: 'acme.alias.example',
+      isAlias: true,
+    });
   });
 });

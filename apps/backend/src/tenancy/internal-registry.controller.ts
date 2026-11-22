@@ -37,6 +37,16 @@ export class InternalRegistryController {
   @HttpCode(200)
   async refresh() {
     const refreshed = await this.sync.refreshNow();
-    return { refreshed, tenants: this.registry.list().length };
+    const domains = this.registry.getDomainConfig();
+    return {
+      refreshed,
+      tenants: this.registry.list().length,
+      domains: {
+        primaryDomain: domains.primaryDomain,
+        baseDomains: domains.baseDomains,
+        source: this.registry.getDomainConfigSource(),
+        updatedAt: this.registry.getDomainConfigUpdatedAt()?.toISOString() ?? null,
+      },
+    };
   }
 }

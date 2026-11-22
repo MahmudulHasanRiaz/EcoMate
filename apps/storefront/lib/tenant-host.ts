@@ -152,6 +152,48 @@ export interface AliasRedirectOptions {
 }
 
 /**
+ * Absolute 301 target for a host the AUTHORITATIVE backend verdict says is
+ * an alias (`GET /tenants/resolve` → `{isAlias, canonicalHost,
+ * effectiveCanonicalHost}`), or null when the verdict is canonical /
+ * missing / already on the effective canonical host.
+ *
+ * The redirect target is the EFFECTIVE canonical host (the fallback base
+ * during a primary-domain outage — the backend computes it), never the
+ * raw canonical host: redirecting a fallback-host visitor to an
+ * unreachable primary would break the outage behaviour. When healthy the
+ * two are identical.
+ *
+ * This is what makes alias canonicalisation follow the PLATFORM domain
+ * config even when the storefront's own env config is stale (a console
+ * tenant-domain change reaches the backend via the registry sync; the
+ * storefront's env only changes on redeploy). The local
+ * `aliasRedirectTarget` stays as the fast path for env-known aliases.
+ */
+export function canonicalRedirectTarget(
+  rawHost: string,
+  verdict: {
+    isAlias?: boolean;
+    canonicalHost?: string;
+    effectiveCanonicalHost?: string;
+  } | null,
+  pathname: string,
+  search: string,
+  options: AliasRedirectOptions = {},
+): string | null {
+  if (!verdict?.isAlias) return null;
+  const targetHost = normaliseHost(
+    verdict.effectiveCanonicalHost ?? verdict.canonicalHost ?? '',
+  );
+  if (!targetHost) return null;
+  if (normaliseHost(rawHost) === targetHost) return null;
+
+  const protocol = options.protocol || 'https:';
+  const origin = `${protocol}//${targetHost}${options.port ? `:${options.port}` : ''}`;
+  const target = `${pathname}${search}`;
+  return `${origin}${target.startsWith('/') ? target : `/${target}`}`;
+}
+
+/**
  * Absolute 301 target for an alias host (path + query preserved), or null when
  * the request is already on the effective base / is not a tenant subdomain.
  *

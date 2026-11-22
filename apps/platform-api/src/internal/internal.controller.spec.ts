@@ -9,8 +9,26 @@ function makeController() {
       findUnique: jest.fn().mockResolvedValue(null),
     },
   };
+  const domainConfig = {
+    getConfig: jest.fn().mockReturnValue({
+      primaryDomain: 'ecomate.bd',
+      baseDomains: ['ecomate.bd'],
+      landingUrl: 'https://www.ecomate.bd',
+      adminUrl: 'https://saas.ecomate.bd',
+      customDomainCname: 'cname.ecomate.bd',
+      allowExternalFallback: false,
+      primaryHealthy: true,
+      platformHosts: {
+        landing: 'www.ecomate.bd',
+        platformAdmin: 'saas.ecomate.bd',
+        platformApi: 'api.ecomate.bd',
+        webhooks: 'api.ecomate.bd',
+      },
+    }),
+  };
   return {
     prisma,
+    domainConfig,
     // Registry + entitlements only use prisma; the other services are
     // stubs (billing/invoices predate this spec; emailBalance is the
     // SMTP worker's param).
@@ -20,6 +38,7 @@ function makeController() {
       {} as any,
       {} as any,
       {} as any,
+      domainConfig as any,
     ),
   };
 }
@@ -45,6 +64,23 @@ function tenantFixture(overrides: any[] = []) {
     limitOverrides: overrides,
   };
 }
+
+describe('InternalController — registry domain config', () => {
+  it('includes the live domain config in the registry payload', async () => {
+    const { controller } = makeController();
+    const result = await controller.registry();
+
+    expect(result.domains).toMatchObject({
+      primaryDomain: 'ecomate.bd',
+      baseDomains: ['ecomate.bd'],
+      customDomainCname: 'cname.ecomate.bd',
+      platformHosts: {
+        landing: 'www.ecomate.bd',
+        platformAdmin: 'saas.ecomate.bd',
+      },
+    });
+  });
+});
 
 describe('InternalController — effective limits', () => {
   it('applies per-tenant overrides to the registry limits', async () => {

@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { normaliseHost } from './tenant-host';
+import {
+  normaliseHost,
+  readTenantDomainConfig,
+  type TenantDomainConfig,
+} from './tenant-host';
 
 export interface TenantRegistryRecord {
   id: string;
@@ -45,6 +49,38 @@ export class TenantRegistryService {
   private bySlug = new Map<string, TenantRegistryRecord>();
   private byHost = new Map<string, TenantRegistryRecord>();
   private byId = new Map<string, TenantRegistryRecord>();
+  /**
+   * Domain config synced from the platform registry (set by
+   * TenantRegistrySyncService). Null until the first successful sync
+   * carrying a `domains` payload — until then resolution uses the env
+   * config, exactly as before.
+   */
+  private syncedDomainConfig: TenantDomainConfig | null = null;
+  private syncedDomainConfigAt: Date | null = null;
+
+  /** Store the platform-synced domain config (validated by the sync service). */
+  setDomainConfig(config: TenantDomainConfig): void {
+    this.syncedDomainConfig = config;
+    this.syncedDomainConfigAt = new Date();
+  }
+
+  /**
+   * Domain config for host resolution: the synced platform config when
+   * available, else the env config. The platform is the source of truth
+   * (it is what the console edits); env is the bootstrap/fallback.
+   */
+  getDomainConfig(): TenantDomainConfig {
+    return this.syncedDomainConfig ?? readTenantDomainConfig();
+  }
+
+  /** Where the current domain config came from — for status/verification. */
+  getDomainConfigSource(): 'synced' | 'env' {
+    return this.syncedDomainConfig ? 'synced' : 'env';
+  }
+
+  getDomainConfigUpdatedAt(): Date | null {
+    return this.syncedDomainConfigAt;
+  }
 
   replace(records: TenantRegistryRecord[]): void {
     this.bySlug.clear();

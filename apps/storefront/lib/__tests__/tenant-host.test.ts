@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   aliasRedirectTarget,
+  canonicalRedirectTarget,
   isBaseOrPlatformHost,
   readDomainConfig,
   resolveBaseDomainAlias,
@@ -157,5 +158,86 @@ describe('storefront base-domain alias resolution', () => {
         port: '3100',
       }),
     ).toBe('http://acme.ecomate.bd:3100/about?x=1');
+  });
+});
+
+describe('canonicalRedirectTarget (authoritative backend verdict)', () => {
+  it('301s an alias verdict to the canonical host, path + query preserved', () => {
+    expect(
+      canonicalRedirectTarget(
+        'acme.ecomate.bd',
+        {
+          isAlias: true,
+          canonicalHost: 'acme.tenants.example',
+          effectiveCanonicalHost: 'acme.tenants.example',
+        },
+        '/products/x',
+        '?page=2',
+      ),
+    ).toBe('https://acme.tenants.example/products/x?page=2');
+  });
+
+  it('falls back to canonicalHost when the backend predates effectiveCanonicalHost', () => {
+    expect(
+      canonicalRedirectTarget(
+        'acme.ecomate.bd',
+        { isAlias: true, canonicalHost: 'acme.tenants.example' },
+        '/products',
+        '',
+      ),
+    ).toBe('https://acme.tenants.example/products');
+  });
+
+  it('redirects to the EFFECTIVE host during a primary outage, not the dead primary', () => {
+    expect(
+      canonicalRedirectTarget(
+        'acme.other.example',
+        {
+          isAlias: true,
+          canonicalHost: 'acme.ecomate.bd',
+          effectiveCanonicalHost: 'acme.alias.example',
+        },
+        '/products',
+        '',
+      ),
+    ).toBe('https://acme.alias.example/products');
+  });
+
+  it('never redirects when already on the effective host', () => {
+    expect(
+      canonicalRedirectTarget(
+        'acme.alias.example',
+        {
+          isAlias: true,
+          canonicalHost: 'acme.ecomate.bd',
+          effectiveCanonicalHost: 'acme.alias.example',
+        },
+        '/products',
+        '',
+      ),
+    ).toBeNull();
+    expect(
+      canonicalRedirectTarget(
+        'acme.tenants.example',
+        {
+          isAlias: false,
+          canonicalHost: 'acme.tenants.example',
+          effectiveCanonicalHost: 'acme.tenants.example',
+        },
+        '/products',
+        '',
+      ),
+    ).toBeNull();
+    expect(
+      canonicalRedirectTarget('acme.ecomate.bd', null, '/products', ''),
+    ).toBeNull();
+    expect(
+      canonicalRedirectTarget(
+        'acme.ecomate.bd',
+        { isAlias: true },
+        '/products',
+        '',
+      ),
+    ).toBeNull();
   });
 });

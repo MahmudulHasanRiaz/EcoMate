@@ -536,6 +536,16 @@ services:
       SAAS_PRIMARY_UNHEALTHY: ${SAAS_PRIMARY_UNHEALTHY:-false}
       SAAS_CUSTOM_DOMAIN_CNAME: ${SAAS_CUSTOM_DOMAIN_CNAME:-}
       SAAS_ALLOW_EXTERNAL_FALLBACK: ${SAAS_ALLOW_EXTERNAL_FALLBACK:-false}
+      # App domain (parent of the console/API hosts). Empty = legacy
+      # single-domain mode (hosts derive from SAAS_PRIMARY_DOMAIN). When
+      # set it must be fully separate from the tenant domain.
+      SAAS_APP_DOMAIN: ${SAAS_APP_DOMAIN:-}
+      # Edge hosts, shared with Caddy: the platform API derives its own
+      # platformHosts from the same values so links and routing agree.
+      # Empty = derive from SAAS_APP_DOMAIN / SAAS_PRIMARY_DOMAIN.
+      PLATFORM_LANDING_HOST: ${PLATFORM_LANDING_HOST:-}
+      PLATFORM_ADMIN_HOST: ${PLATFORM_ADMIN_HOST:-}
+      PLATFORM_API_HOST: ${PLATFORM_API_HOST:-}
       # Observability (Phase 8): structured JSON logging level.
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Sentry DSN (Phase 8). Empty = disabled (no account, no spend).

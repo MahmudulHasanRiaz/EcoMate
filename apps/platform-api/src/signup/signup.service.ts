@@ -311,9 +311,10 @@ export class SignupService {
   }
 
   private verificationUrl(token: string): string {
-    const base = (
-      process.env.PLATFORM_LANDING_URL || 'http://localhost:3002'
-    ).replace(/\/+$/, '');
+    // UI-managed landing URL (DomainConfig.landingUrl): the stored
+    // override, else https://{landing host}. PLATFORM_LANDING_URL env
+    // remains only as the bootstrap value for the config.
+    const base = this.domainConfig.landingUrl().replace(/\/+$/, '');
     return `${base}/verify-email?token=${encodeURIComponent(token)}`;
   }
 

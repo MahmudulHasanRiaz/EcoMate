@@ -5,20 +5,16 @@ import { fetchLandingSettings } from '@/lib/landing-settings';
 
 /**
  * Minimal sitemap: the public landing pages (no tenant or token routes).
+ * The site URL is the UI-managed landing origin from the platform
+ * (env-derived fallback when the API is down).
  *
  * Search-engine kill-switch (Batch 1, item 5): when indexing is off,
  * the sitemap is empty (and robots.txt stops advertising it).
  */
-function siteUrl(): string {
-  const domain =
-    (process.env.NEXT_PUBLIC_PRIMARY_DOMAIN ?? '').trim() || 'ecomate.bd';
-  return `https://www.${domain}`;
-}
-
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const { seoIndexingEnabled } = await fetchLandingSettings();
+  const { seoIndexingEnabled, landingUrl } = await fetchLandingSettings();
   if (!seoIndexingEnabled) return [];
-  const base = siteUrl();
+  const base = landingUrl;
   const now = new Date();
   // Published case studies only (the fetch is fail-soft: [] when the
   // API is down). The index page is listed only when at least one

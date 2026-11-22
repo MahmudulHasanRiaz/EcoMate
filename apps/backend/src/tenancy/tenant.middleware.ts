@@ -25,7 +25,10 @@ export class TenantMiddleware implements NestMiddleware {
       return;
     }
 
-    const resolution = resolveTenantHost(host);
+    const resolution = resolveTenantHost(
+      host,
+      this.registry.getDomainConfig(),
+    );
 
     if (resolution.kind === 'tenant') {
       const tenant = this.registry.resolveBySlug(resolution.slug);

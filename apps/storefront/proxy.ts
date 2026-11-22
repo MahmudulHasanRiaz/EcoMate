@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
   aliasRedirectTarget,
+  canonicalRedirectTarget,
   isBaseOrPlatformHost,
   normaliseHost,
   readDomainConfig,
@@ -28,6 +29,13 @@ interface TenantResolvePayload {
   tenantId: string;
   slug: string;
   canonicalHost?: string;
+  /**
+   * Redirect target: the canonical host, except during a primary-domain
+   * outage, when the backend points at the fallback base instead.
+   * Undefined = the backend predates the field — fall back to
+   * canonicalHost (healthy behaviour).
+   */
+  effectiveCanonicalHost?: string;
   isAlias?: boolean;
   /**
    * False when the tenant's plan/add-ons do not include the `storefront`
@@ -200,6 +208,10 @@ async function lookupTenantHost(
       tenantId: body.tenantId,
       slug: typeof body.slug === "string" ? body.slug : "",
       canonicalHost: body.canonicalHost,
+      effectiveCanonicalHost:
+        typeof body.effectiveCanonicalHost === "string"
+          ? body.effectiveCanonicalHost
+          : undefined,
       isAlias: body.isAlias,
       storefrontEnabled:
         typeof body.storefrontEnabled === "boolean"
@@ -264,6 +276,29 @@ export async function proxy(request: NextRequest) {
       // the tenant id for cache tags. A stale registry must not 404 a valid
       // base host, so a 404 here is ignored.
       resolved = (await lookupTenantHost(normalisedHost)).result;
+    }
+  }
+
+  // Authoritative canonicalisation: the backend verdict (which follows the
+  // PLATFORM domain config, synced from the console) outranks the local
+  // env config. A tenant-domain change via the console therefore 301s
+  // old-domain hosts to the new canonical host even before this app is
+  // redeployed with new env. The local alias redirect above stays as the
+  // fast path for env-known aliases; this covers the rest (including a
+  // host the stale env does not know is an alias at all). Exempt paths
+  // never reach here with a verdict (no lookup ran for them).
+  if (!exempt && resolved) {
+    const canonicalRedirect = canonicalRedirectTarget(
+      normalisedHost,
+      resolved,
+      pathname,
+      search,
+      { protocol: request.nextUrl.protocol, port: request.nextUrl.port },
+    );
+    if (canonicalRedirect) {
+      const response = NextResponse.redirect(canonicalRedirect, 301);
+      response.headers.set("X-Robots-Tag", "noindex");
+      return response;
     }
   }
 

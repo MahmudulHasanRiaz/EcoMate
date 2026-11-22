@@ -91,4 +91,81 @@ describe('TenantRegistrySyncService', () => {
     await expect(service.refreshNow()).resolves.toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('syncs the domain config from the registry payload', async () => {
+    process.env.PLATFORM_API_URL = 'http://platform.test/api';
+    process.env.INTERNAL_SERVICE_SECRET = 'service-secret';
+    process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        domains: {
+          primaryDomain: 'tenants.example',
+          baseDomains: ['tenants.example', 'alias.example'],
+          customDomainCname: 'cname.tenants.example',
+          allowExternalFallback: false,
+          platformHosts: {
+            landing: 'www.tenants.example',
+            platformAdmin: 'saas.app.example.net',
+            platformApi: 'api.app.example.net',
+            webhooks: 'api.app.example.net',
+          },
+        },
+        tenants: [],
+      }),
+    }) as any;
+
+    const registry = new TenantRegistryService();
+    const service = new TenantRegistrySyncService(registry);
+
+    await expect(service.refreshNow()).resolves.toBe(true);
+
+    expect(registry.getDomainConfigSource()).toBe('synced');
+    expect(registry.getDomainConfig()).toMatchObject({
+      primaryDomain: 'tenants.example',
+      baseDomains: ['tenants.example', 'alias.example'],
+    });
+    expect(registry.getDomainConfigUpdatedAt()).toBeInstanceOf(Date);
+  });
+
+  it('keeps the previous domain config when the payload omits or mangles domains', async () => {
+    process.env.PLATFORM_API_URL = 'http://platform.test/api';
+    process.env.INTERNAL_SERVICE_SECRET = 'service-secret';
+    process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+    process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+
+    const registry = new TenantRegistryService();
+    const service = new TenantRegistrySyncService(registry);
+
+    // First sync: valid domains.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        domains: {
+          primaryDomain: 'tenants.example',
+          baseDomains: ['tenants.example'],
+        },
+        tenants: [],
+      }),
+    }) as any;
+    await service.refreshNow();
+    expect(registry.getDomainConfig().primaryDomain).toBe('tenants.example');
+
+    // Second sync: malformed domains — previous config survives.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ domains: { primaryDomain: 'bad!!' }, tenants: [] }),
+    }) as any;
+    await expect(service.refreshNow()).resolves.toBe(true);
+    expect(registry.getDomainConfig().primaryDomain).toBe('tenants.example');
+
+    // Third sync: no domains key at all (older platform API) — same.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ tenants: [] }),
+    }) as any;
+    await expect(service.refreshNow()).resolves.toBe(true);
+    expect(registry.getDomainConfig().primaryDomain).toBe('tenants.example');
+  });
 });

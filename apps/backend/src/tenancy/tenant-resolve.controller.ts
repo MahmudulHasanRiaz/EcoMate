@@ -44,16 +44,28 @@ export class TenantResolveController {
     const host = (rawHost ?? '').trim();
     if (!host) throw new BadRequestException('host is required');
 
-    const resolution = resolveTenantHost(host);
+    const domainConfig = this.registry.getDomainConfig();
+    const resolution = resolveTenantHost(host, domainConfig);
 
     if (resolution.kind === 'tenant') {
       const tenant = this.registry.resolveBySlug(resolution.slug);
       if (!tenant) throw new NotFoundException('Unknown host');
+      // Redirect target for the storefront edge: the canonical host,
+      // except during a primary-domain outage, when aliases redirect to
+      // the fallback base instead of bouncing visitors to an unreachable
+      // primary (same rule as the storefront's local alias redirect).
+      // canonicalHost itself never moves — only redirect targets do.
+      const effectiveCanonicalHost =
+        domainConfig.primaryHealthy === false &&
+        domainConfig.fallbackDomain
+          ? `${resolution.slug}.${domainConfig.fallbackDomain}`
+          : resolution.canonicalHost;
       return {
         kind: 'tenant' as const,
         tenantId: tenant.id,
         slug: tenant.slug,
         canonicalHost: resolution.canonicalHost,
+        effectiveCanonicalHost,
         isAlias: resolution.isAlias,
         storefrontEnabled: this.storefrontEnabled(tenant),
       };

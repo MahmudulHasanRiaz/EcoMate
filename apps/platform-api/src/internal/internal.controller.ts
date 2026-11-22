@@ -15,6 +15,10 @@ import {
 import { BillingService } from '../billing/billing.service';
 import { SubmitProofDto } from '../billing/dto/submit-proof.dto';
 import { InvoiceService } from '../billing/invoice.service';
+import {
+  DomainConfigService,
+  type DomainConfig,
+} from '../config/domain-config.service';
 import { CreateTopUpDto } from '../email-balance/dto/create-top-up.dto';
 import { EmailBalanceService } from '../email-balance/email-balance.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
@@ -39,6 +43,7 @@ export class InternalController {
     private readonly billing: BillingService,
     private readonly invoices: InvoiceService,
     private readonly emailBalance: EmailBalanceService,
+    private readonly domainConfig: DomainConfigService,
   ) {}
 
   @Get('tenants/registry')
@@ -108,6 +113,11 @@ export class InternalController {
 
     return {
       generatedAt: new Date().toISOString(),
+      // Live domain config: the tenant backend resolves hosts from this
+      // (synced every TENANT_REGISTRY_REFRESH_MS) instead of its own env,
+      // so a console domain change reaches backend resolution without a
+      // backend restart. The backend falls back to env when absent.
+      domains: this.domainConfig.getConfig() satisfies DomainConfig,
       tenants: tenants.map((tenant) => {
         const planPricing = parsePricingDocument(
           tenant.planVersion?.pricing,

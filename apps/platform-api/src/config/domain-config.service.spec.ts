@@ -24,6 +24,12 @@ describe('DomainConfigService', () => {
     delete process.env.SAAS_CUSTOM_DOMAIN_CNAME;
     delete process.env.SAAS_ALLOW_EXTERNAL_FALLBACK;
     delete process.env.SAAS_PRIMARY_UNHEALTHY;
+    delete process.env.SAAS_APP_DOMAIN;
+    delete process.env.PLATFORM_LANDING_HOST;
+    delete process.env.PLATFORM_ADMIN_HOST;
+    delete process.env.PLATFORM_API_HOST;
+    delete process.env.PLATFORM_LANDING_URL;
+    delete process.env.PLATFORM_ADMIN_URL;
   });
 
   afterAll(() => {
@@ -37,13 +43,18 @@ describe('DomainConfigService', () => {
     expect(service.getConfig()).toMatchObject({
       primaryDomain: 'ecomate.bd',
       baseDomains: ['ecomate.bd'],
+      appDomain: undefined,
       customDomainCname: 'cname.ecomate.bd',
+      landingUrl: 'https://www.ecomate.bd',
+      adminUrl: 'https://saas.ecomate.bd',
       platformHosts: {
         landing: 'www.ecomate.bd',
         platformAdmin: 'saas.ecomate.bd',
         platformApi: 'api.ecomate.bd',
       },
     });
+    expect(service.landingUrl()).toBe('https://www.ecomate.bd');
+    expect(service.adminUrl()).toBe('https://saas.ecomate.bd');
   });
 
   it('accepts additional base domains and a fallback in the list', async () => {
@@ -254,6 +265,338 @@ describe('DomainConfigService', () => {
       baseDomain: 'fallback.example',
       canonicalHost: 'acme.ecomate.bd',
       isAlias: true,
+    });
+  });
+
+  describe('app/tenant domain split', () => {
+    it('derives console/API hosts from SAAS_APP_DOMAIN, landing stays on the tenant domain', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'staging.ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'staging.ecomate.bd';
+      process.env.SAAS_APP_DOMAIN = 'em.staging.commercians.com';
+
+      const service = buildService();
+      await service.onModuleInit();
+
+      expect(service.getConfig()).toMatchObject({
+        primaryDomain: 'staging.ecomate.bd',
+        appDomain: 'em.staging.commercians.com',
+        customDomainCname: 'cname.staging.ecomate.bd',
+        landingUrl: 'https://www.staging.ecomate.bd',
+        adminUrl: 'https://saas.em.staging.commercians.com',
+        platformHosts: {
+          landing: 'www.staging.ecomate.bd',
+          platformAdmin: 'saas.em.staging.commercians.com',
+          platformApi: 'api.em.staging.commercians.com',
+          webhooks: 'api.em.staging.commercians.com',
+        },
+      });
+      // Resolution honours the split: app hosts are platform, tenant
+      // subdomains still resolve under the tenant domain.
+      expect(
+        service.resolveHost('saas.em.staging.commercians.com'),
+      ).toMatchObject({ kind: 'platform', role: 'platformAdmin' });
+      expect(service.resolveHost('acme.staging.ecomate.bd')).toMatchObject({
+        kind: 'tenant',
+        slug: 'acme',
+      });
+    });
+
+    it('honours explicit PLATFORM_*_HOST env vars over derivation', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      process.env.PLATFORM_ADMIN_HOST = 'console.example.net';
+      process.env.PLATFORM_API_HOST = 'api.example.net';
+      process.env.PLATFORM_LANDING_HOST = 'site.example.net';
+
+      const service = buildService();
+      await service.onModuleInit();
+
+      expect(service.getConfig().platformHosts).toEqual({
+        landing: 'site.example.net',
+        platformAdmin: 'console.example.net',
+        platformApi: 'api.example.net',
+        webhooks: 'api.example.net',
+      });
+      expect(service.landingUrl()).toBe('https://site.example.net');
+      expect(service.adminUrl()).toBe('https://console.example.net');
+    });
+
+    it('rejects an app domain equal to the tenant domain', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      const service = buildService();
+      await service.onModuleInit();
+
+      await expect(
+        service.update({ appDomain: 'ecomate.bd' }),
+      ).rejects.toThrow('must differ from the tenant domain');
+    });
+
+    it('rejects an app domain that is a subdomain or parent of the tenant domain', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      const service = buildService();
+      await service.onModuleInit();
+
+      await expect(
+        service.update({ appDomain: 'app.ecomate.bd' }),
+      ).rejects.toThrow('must not be a subdomain or a parent');
+      await expect(
+        service.update({ appDomain: 'commercians.com' }),
+      ).resolves.toMatchObject({ appDomain: 'commercians.com' });
+      // Parent direction: tenant domain under the app domain.
+      await expect(
+        service.update({
+          appDomain: 'commercians.com',
+          primaryDomain: 'tenant.commercians.com',
+        }),
+      ).rejects.toThrow('must not be a subdomain or a parent');
+    });
+
+    it('rejects an app domain equal to a tenant alias base', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd,alias.example';
+      const service = buildService();
+      await service.onModuleInit();
+
+      await expect(
+        service.update({ appDomain: 'alias.example' }),
+      ).rejects.toThrow('must not be one of the tenant base domains');
+    });
+
+    it('setting the app domain re-derives console/API hosts but not landing', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      const service = buildService();
+      await service.onModuleInit();
+
+      const next = await service.update({
+        appDomain: 'em.staging.commercians.com',
+      });
+
+      expect(next.platformHosts).toEqual({
+        landing: 'www.ecomate.bd',
+        platformAdmin: 'saas.em.staging.commercians.com',
+        platformApi: 'api.em.staging.commercians.com',
+        webhooks: 'api.em.staging.commercians.com',
+      });
+      expect(next.adminUrl).toBe('https://saas.em.staging.commercians.com');
+      expect(next.landingUrl).toBe('https://www.ecomate.bd');
+    });
+
+    it('clearing the app domain returns to legacy single-domain derivation', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      process.env.SAAS_APP_DOMAIN = 'em.staging.commercians.com';
+      const service = buildService();
+      await service.onModuleInit();
+      expect(service.getConfig().appDomain).toBe(
+        'em.staging.commercians.com',
+      );
+
+      const next = await service.update({ appDomain: '' });
+
+      expect(next.appDomain).toBeUndefined();
+      expect(next.platformHosts).toEqual({
+        landing: 'www.ecomate.bd',
+        platformAdmin: 'saas.ecomate.bd',
+        platformApi: 'api.ecomate.bd',
+        webhooks: 'api.ecomate.bd',
+      });
+    });
+
+    it('a primary change with an app domain set moves no platform host', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      process.env.SAAS_APP_DOMAIN = 'em.staging.commercians.com';
+      const service = buildService();
+      await service.onModuleInit();
+
+      const next = await service.update({
+        primaryDomain: 'tenants.example',
+        baseDomains: ['tenants.example'],
+      });
+
+      expect(next.platformHosts).toEqual({
+        landing: 'www.ecomate.bd',
+        platformAdmin: 'saas.em.staging.commercians.com',
+        platformApi: 'api.em.staging.commercians.com',
+        webhooks: 'api.em.staging.commercians.com',
+      });
+      // ...but the CNAME target follows the TENANT domain.
+      expect(next.customDomainCname).toBe('cname.tenants.example');
+    });
+
+    it('a primary change re-derives the CNAME target in legacy mode too', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      const service = buildService();
+      await service.onModuleInit();
+
+      const next = await service.update({
+        primaryDomain: 'new.example',
+        baseDomains: ['new.example'],
+      });
+
+      expect(next.customDomainCname).toBe('cname.new.example');
+    });
+
+    it('an explicit CNAME override survives a primary change', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      const service = buildService();
+      await service.onModuleInit();
+
+      const next = await service.update({
+        primaryDomain: 'new.example',
+        baseDomains: ['new.example'],
+        customDomainCname: 'cdn.other.example',
+      });
+
+      expect(next.customDomainCname).toBe('cdn.other.example');
+    });
+
+    it('ignores an invalid SAAS_APP_DOMAIN at boot instead of failing', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      process.env.SAAS_APP_DOMAIN = 'not a domain!!';
+
+      const service = buildService();
+      await service.onModuleInit();
+
+      expect(service.getConfig().appDomain).toBeUndefined();
+      expect(service.getConfig().platformHosts.platformAdmin).toBe(
+        'saas.ecomate.bd',
+      );
+    });
+  });
+
+  describe('landing/console URLs', () => {
+    it('bootstraps landing/admin URLs from PLATFORM_*_URL env', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      process.env.PLATFORM_LANDING_URL = 'http://localhost:3002';
+      process.env.PLATFORM_ADMIN_URL = 'http://localhost:5174';
+
+      const service = buildService();
+      await service.onModuleInit();
+
+      expect(service.landingUrl()).toBe('http://localhost:3002');
+      expect(service.adminUrl()).toBe('http://localhost:5174');
+    });
+
+    it('a landing-host change re-derives the landing URL unless overridden', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      const service = buildService();
+      await service.onModuleInit();
+
+      const next = await service.update({
+        platformHosts: { landing: 'site.example.net' },
+      });
+      expect(next.landingUrl).toBe('https://site.example.net');
+
+      // An explicit URL in the same update wins over re-derivation.
+      const overridden = await service.update({
+        platformHosts: { landing: 'other.example.net' },
+        landingUrl: 'https://custom.example.org/landing',
+      });
+      expect(overridden.landingUrl).toBe(
+        'https://custom.example.org/landing',
+      );
+
+      // Clearing the override derives from the current host again.
+      const cleared = await service.update({ landingUrl: '' });
+      expect(cleared.landingUrl).toBe('https://other.example.net');
+    });
+
+    it('rejects a non-http(s) landing/admin URL', async () => {
+      const service = buildService();
+      await service.onModuleInit();
+
+      await expect(
+        service.update({ landingUrl: 'ftp://files.example' }),
+      ).rejects.toThrow('landingUrl must be a valid http(s) URL');
+      await expect(
+        service.update({ adminUrl: 'not-a-url' }),
+      ).rejects.toThrow('adminUrl must be a valid http(s) URL');
+    });
+
+    it('rejects invalid hostnames in base domains, fallback, CNAME and hosts', async () => {
+      const service = buildService();
+      await service.onModuleInit();
+
+      await expect(
+        service.update({ baseDomains: ['ecomate.bd', 'bad host!!'] }),
+      ).rejects.toThrow('is not a valid hostname');
+      await expect(
+        service.update({ fallbackDomain: 'no-dot' }),
+      ).rejects.toThrow('is not a valid hostname');
+      await expect(
+        service.update({ customDomainCname: 'cname!' }),
+      ).rejects.toThrow('must be a hostname');
+      await expect(
+        service.update({ platformHosts: { landing: 'bad host' } }),
+      ).rejects.toThrow('is not a valid hostname');
+    });
+
+    it('a stored row predating the URL fields re-derives from the stored hosts', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'env.example';
+      process.env.SAAS_BASE_DOMAINS = 'env.example';
+
+      const service = buildService({
+        primaryDomain: 'ecomate.bd',
+        baseDomains: ['ecomate.bd'],
+        fallbackDomain: null,
+        customDomainCname: 'cname.ecomate.bd',
+        allowExternalFallback: false,
+        platformHosts: {
+          landing: 'www.ecomate.bd',
+          platformAdmin: 'saas.ecomate.bd',
+          platformApi: 'api.ecomate.bd',
+          webhooks: 'api.ecomate.bd',
+        },
+      });
+      await service.onModuleInit();
+
+      // NOT https://www.env.example (the env-derived value): the stored
+      // hosts win, and the URLs derive from them.
+      expect(service.landingUrl()).toBe('https://www.ecomate.bd');
+      expect(service.adminUrl()).toBe('https://saas.ecomate.bd');
+    });
+
+    it('a form echo (derived value re-sent) does not block re-derivation', async () => {
+      process.env.SAAS_PRIMARY_DOMAIN = 'ecomate.bd';
+      process.env.SAAS_BASE_DOMAINS = 'ecomate.bd';
+      const service = buildService();
+      await service.onModuleInit();
+
+      // The console sends every field on every save: the derived hosts
+      // and URLs come back verbatim alongside the new primary. They must
+      // not pin the old derivation.
+      const next = await service.update({
+        primaryDomain: 'new.example',
+        baseDomains: ['new.example'],
+        platformHosts: {
+          landing: 'www.ecomate.bd',
+          platformAdmin: 'saas.ecomate.bd',
+          platformApi: 'api.ecomate.bd',
+          webhooks: 'api.ecomate.bd',
+        },
+        customDomainCname: 'cname.ecomate.bd',
+        landingUrl: 'https://www.ecomate.bd',
+        adminUrl: 'https://saas.ecomate.bd',
+      });
+
+      expect(next.platformHosts).toEqual({
+        landing: 'www.new.example',
+        platformAdmin: 'saas.new.example',
+        platformApi: 'api.new.example',
+        webhooks: 'api.new.example',
+      });
+      expect(next.customDomainCname).toBe('cname.new.example');
+      expect(next.landingUrl).toBe('https://www.new.example');
+      expect(next.adminUrl).toBe('https://saas.new.example');
     });
   });
 

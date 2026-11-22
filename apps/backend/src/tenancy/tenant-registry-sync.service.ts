@@ -4,6 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import { parseTenantDomainConfig } from './tenant-host';
 import {
   TenantRegistryRecord,
   TenantRegistryService,
@@ -11,6 +12,8 @@ import {
 
 export interface PlatformRegistryResponse {
   generatedAt?: string;
+  /** Live domain config (platform-api DomainConfig). Absent on older APIs. */
+  domains?: unknown;
   tenants?: Array<{
     id: string;
     slug: string;
@@ -160,6 +163,27 @@ export class TenantRegistrySyncService
       );
 
       this.registry.replace(records);
+      // Domain config rides the same payload: a console domain change
+      // reaches backend host resolution on the next sync (≤60s) without
+      // a backend restart. An absent/malformed `domains` payload keeps
+      // the previous config (or the env fallback) — resolution never
+      // breaks on a bad payload.
+      if (payload.domains !== undefined) {
+        const parsed = parseTenantDomainConfig(payload.domains);
+        if (parsed) {
+          const previous = this.registry.getDomainConfig();
+          this.registry.setDomainConfig(parsed);
+          if (previous.primaryDomain !== parsed.primaryDomain) {
+            this.logger.log(
+              `Tenant domain config synced: primary=${parsed.primaryDomain} base=[${parsed.baseDomains.join(',')}]`,
+            );
+          }
+        } else {
+          this.logger.warn(
+            'Ignoring malformed domains payload from the platform registry; keeping previous domain config',
+          );
+        }
+      }
       this.lastRefreshAt = new Date();
       this.lastError = null;
       this.logger.log(`Tenant registry refreshed (${records.length} tenants)`);

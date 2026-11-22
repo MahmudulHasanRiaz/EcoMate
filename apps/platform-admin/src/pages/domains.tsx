@@ -28,6 +28,12 @@ export function DomainsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [primaryDomain, setPrimaryDomain] = useState('');
   const [baseDomains, setBaseDomains] = useState('');
+  const [appDomain, setAppDomain] = useState('');
+  const [landingHost, setLandingHost] = useState('');
+  const [platformAdminHost, setPlatformAdminHost] = useState('');
+  const [platformApiHost, setPlatformApiHost] = useState('');
+  const [landingUrl, setLandingUrl] = useState('');
+  const [adminUrl, setAdminUrl] = useState('');
   const [fallbackDomain, setFallbackDomain] = useState('');
   const [customDomainCname, setCustomDomainCname] = useState('');
   const [allowExternalFallback, setAllowExternalFallback] = useState(false);
@@ -62,6 +68,17 @@ export function DomainsPage() {
       setTenants(tenantPage.data);
       setPrimaryDomain(nextConfig.primaryDomain);
       setBaseDomains(nextConfig.baseDomains.join(', '));
+      setAppDomain(nextConfig.appDomain ?? '');
+      setLandingHost(nextConfig.platformHosts.landing);
+      setPlatformAdminHost(nextConfig.platformHosts.platformAdmin);
+      setPlatformApiHost(nextConfig.platformHosts.platformApi);
+      setLandingUrl(
+        nextConfig.landingUrl ?? `https://${nextConfig.platformHosts.landing}`,
+      );
+      setAdminUrl(
+        nextConfig.adminUrl ??
+          `https://${nextConfig.platformHosts.platformAdmin}`,
+      );
       setFallbackDomain(nextConfig.fallbackDomain ?? '');
       setCustomDomainCname(nextConfig.customDomainCname);
       setAllowExternalFallback(nextConfig.allowExternalFallback);
@@ -93,6 +110,15 @@ export function DomainsPage() {
             .split(',')
             .map((domain) => domain.trim())
             .filter(Boolean),
+          appDomain: appDomain.trim(),
+          platformHosts: {
+            landing: landingHost.trim(),
+            platformAdmin: platformAdminHost.trim(),
+            platformApi: platformApiHost.trim(),
+            webhooks: platformApiHost.trim(),
+          },
+          landingUrl: landingUrl.trim(),
+          adminUrl: adminUrl.trim(),
           fallbackDomain: fallbackDomain.trim(),
           customDomainCname: customDomainCname.trim(),
           allowExternalFallback,
@@ -204,13 +230,15 @@ export function DomainsPage() {
               <h2>Domain configuration</h2>
               <p>
                 Persisted in PlatformSetting.domains and applied without a
-                deploy. Primary must lead the base list.
+                deploy. Primary must lead the base list. The app domain and
+                the tenant domain must stay fully separate.
               </p>
             </div>
           </div>
+          <h3 className="domain-group-title">Tenant domains</h3>
           <div className="domain-config-grid">
             <label className="inline-field">
-              <span>Primary domain</span>
+              <span>Primary domain (tenant base)</span>
               <input
                 value={primaryDomain}
                 onChange={(event) => setPrimaryDomain(event.target.value)}
@@ -241,6 +269,79 @@ export function DomainsPage() {
                 onChange={(event) => setCustomDomainCname(event.target.value)}
                 aria-label="Custom domain CNAME"
               />
+              <span className="sub">
+                Follows the tenant domain when the primary changes, unless
+                you set it explicitly.
+              </span>
+            </label>
+          </div>
+          <h3 className="domain-group-title">App domains</h3>
+          <div className="domain-config-grid">
+            <label className="inline-field">
+              <span>App domain (console + API parent)</span>
+              <input
+                value={appDomain}
+                onChange={(event) => setAppDomain(event.target.value)}
+                placeholder="Blank = same as tenant domain"
+                aria-label="App domain"
+              />
+              <span className="sub">
+                Blank keeps the single-domain setup. When set, it must
+                differ from the tenant domain and must not be its
+                subdomain or parent.
+              </span>
+            </label>
+            <label className="inline-field">
+              <span>Landing host</span>
+              <input
+                value={landingHost}
+                onChange={(event) => setLandingHost(event.target.value)}
+                aria-label="Landing host"
+              />
+            </label>
+            <label className="inline-field">
+              <span>Console host</span>
+              <input
+                value={platformAdminHost}
+                onChange={(event) => setPlatformAdminHost(event.target.value)}
+                aria-label="Console host"
+              />
+            </label>
+            <label className="inline-field">
+              <span>API host</span>
+              <input
+                value={platformApiHost}
+                onChange={(event) => setPlatformApiHost(event.target.value)}
+                aria-label="API host"
+              />
+            </label>
+          </div>
+          <h3 className="domain-group-title">Public URLs</h3>
+          <div className="domain-config-grid">
+            <label className="inline-field">
+              <span>Landing URL</span>
+              <input
+                value={landingUrl}
+                onChange={(event) => setLandingUrl(event.target.value)}
+                aria-label="Landing URL"
+              />
+              <span className="sub">
+                Used in verification emails and as the landing&apos;s
+                canonical URL. Changing the landing host re-derives it
+                unless you edit it here in the same save.
+              </span>
+            </label>
+            <label className="inline-field">
+              <span>Console URL</span>
+              <input
+                value={adminUrl}
+                onChange={(event) => setAdminUrl(event.target.value)}
+                aria-label="Console URL"
+              />
+              <span className="sub">
+                Used in operator invite links. Changing the console host
+                re-derives it unless you edit it here in the same save.
+              </span>
             </label>
           </div>
           <div className="domain-flags">
@@ -263,20 +364,25 @@ export function DomainsPage() {
               Primary domain is healthy
             </label>
           </div>
-          <dl className="facts">
-            <div>
-              <dt>Landing host</dt>
-              <dd className="mono">{config.platformHosts.landing}</dd>
-            </div>
-            <div>
-              <dt>Platform admin host</dt>
-              <dd className="mono">{config.platformHosts.platformAdmin}</dd>
-            </div>
-            <div>
-              <dt>Platform API host</dt>
-              <dd className="mono">{config.platformHosts.platformApi}</dd>
-            </div>
-          </dl>
+          <div className="domain-notes" role="note">
+            <p>
+              <strong>Applies immediately:</strong> platform links and
+              emails, tenant resolution in the backend (within about a
+              minute), and the landing&apos;s canonical URLs (within a few
+              minutes).
+            </p>
+            <p>
+              <strong>Needs a redeploy:</strong> Caddy routing for new
+              hosts (stack env: SAAS_APP_DOMAIN, PLATFORM_LANDING_HOST,
+              PLATFORM_ADMIN_HOST, PLATFORM_API_HOST), DNS records for new
+              hosts, and the media base URL.
+            </p>
+            <p>
+              <strong>Turnstile:</strong> if the landing host ever moves
+              off ecomate.bd, add the new host to the Turnstile widget in
+              Cloudflare first, or signup verification will stop working.
+            </p>
+          </div>
           <div className="progress-actions">
             <button
               type="button"

@@ -4,6 +4,13 @@ export interface TenantDomainConfig {
   fallbackDomain?: string;
   customDomainCname: string;
   allowExternalFallback: boolean;
+  /**
+   * False during a primary-domain/TLS outage: redirects use the fallback
+   * base (see TenantResolveController.effectiveCanonicalHost). Undefined
+   * (older configs) means healthy. The canonical host itself never moves
+   * — only redirect targets do.
+   */
+  primaryHealthy?: boolean;
   platformHosts: {
     landing: string;
     platformAdmin: string;
@@ -40,6 +47,107 @@ export function normaliseDomain(domain: string): string {
   return normaliseHost(domain).replace(/^www\./, '');
 }
 
+// Hostname shape: at least one dot, labels of alphanumerics/hyphens that
+// neither start nor end with a hyphen. Keep in sync with
+// apps/platform-api/src/config/domain-config.service.ts.
+const HOSTNAME_RE =
+  /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+
+export function isValidHostname(host: string): boolean {
+  return host.length > 0 && host.length <= 253 && HOSTNAME_RE.test(host);
+}
+
+/**
+ * Validate a domain-config payload from the platform registry
+ * (`GET /internal/tenants/registry` → `domains`) into a TenantDomainConfig.
+ * Returns null when the payload is structurally unusable (missing/invalid
+ * primary domain) — the caller then keeps the previous config (or the env
+ * fallback) instead of breaking resolution. Lenient where safe: invalid
+ * alias entries are dropped, missing platform hosts re-derive from the
+ * primary/app domain, a missing CNAME target derives from the primary.
+ */
+export function parseTenantDomainConfig(
+  input: unknown,
+): TenantDomainConfig | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null;
+  }
+  const raw = input as Record<string, unknown>;
+  const primaryDomain = normaliseDomain(
+    typeof raw.primaryDomain === 'string' ? raw.primaryDomain : '',
+  );
+  if (!isValidHostname(primaryDomain)) return null;
+
+  const baseDomains = Array.from(
+    new Set(
+      (Array.isArray(raw.baseDomains) ? raw.baseDomains : [])
+        .filter((d): d is string => typeof d === 'string')
+        .map((d) => normaliseDomain(d))
+        .filter((d) => d && isValidHostname(d)),
+    ),
+  );
+  if (!baseDomains.includes(primaryDomain)) {
+    baseDomains.unshift(primaryDomain);
+  }
+  const fallbackDomain =
+    typeof raw.fallbackDomain === 'string'
+      ? normaliseDomain(raw.fallbackDomain)
+      : undefined;
+  const validFallback =
+    fallbackDomain && isValidHostname(fallbackDomain)
+      ? fallbackDomain
+      : undefined;
+  const allowExternalFallback = raw.allowExternalFallback === true;
+  if (
+    validFallback &&
+    allowExternalFallback &&
+    !baseDomains.includes(validFallback)
+  ) {
+    baseDomains.push(validFallback);
+  }
+
+  const rawCname =
+    typeof raw.customDomainCname === 'string'
+      ? normaliseHost(raw.customDomainCname)
+      : '';
+  const customDomainCname =
+    rawCname && isValidHostname(rawCname)
+      ? rawCname
+      : `cname.${primaryDomain}`;
+
+  const rawHosts =
+    raw.platformHosts && typeof raw.platformHosts === 'object'
+      ? (raw.platformHosts as Record<string, unknown>)
+      : {};
+  const appDomain =
+    typeof raw.appDomain === 'string'
+      ? normaliseDomain(raw.appDomain)
+      : undefined;
+  const validAppDomain =
+    appDomain && isValidHostname(appDomain) ? appDomain : undefined;
+  const appBase = validAppDomain || primaryDomain;
+  const host = (key: string, fallback: string): string => {
+    const value =
+      typeof rawHosts[key] === 'string' ? normaliseHost(rawHosts[key]) : '';
+    return value && isValidHostname(value) ? value : fallback;
+  };
+
+  return {
+    primaryDomain,
+    baseDomains,
+    fallbackDomain: validFallback,
+    customDomainCname,
+    allowExternalFallback,
+    primaryHealthy: raw.primaryHealthy !== false,
+    platformHosts: {
+      landing: host('landing', `www.${primaryDomain}`),
+      platformAdmin: host('platformAdmin', `saas.${appBase}`),
+      platformApi: host('platformApi', `api.${appBase}`),
+      webhooks: host('webhooks', `api.${appBase}`),
+    },
+  };
+}
+
 export function readTenantDomainConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): TenantDomainConfig {
@@ -71,6 +179,7 @@ export function readTenantDomainConfig(
       normaliseHost(env.SAAS_CUSTOM_DOMAIN_CNAME ?? '') ||
       `cname.${primaryDomain}`,
     allowExternalFallback,
+    primaryHealthy: env.SAAS_PRIMARY_UNHEALTHY !== 'true',
     platformHosts: {
       landing: `www.${primaryDomain}`,
       platformAdmin: `saas.${primaryDomain}`,

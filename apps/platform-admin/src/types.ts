@@ -25,6 +25,12 @@ export interface TenantDomain {
 export interface DomainConfig {
   primaryDomain: string;
   baseDomains: string[];
+  /** Parent domain of the console/API hosts; unset = same as primary. */
+  appDomain?: string;
+  /** Full landing origin (stored override, else derived from the host). */
+  landingUrl?: string;
+  /** Full console origin (stored override, else derived from the host). */
+  adminUrl?: string;
   fallbackDomain?: string;
   customDomainCname: string;
   allowExternalFallback: boolean;

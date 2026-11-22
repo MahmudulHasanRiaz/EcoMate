@@ -50,6 +50,11 @@
     },
     {
       "default": "",
+      "label": "App domain, parent of the console/API hosts (empty = same as the tenant domain; when set it must be fully separate from it)",
+      "name": "SAAS_APP_DOMAIN"
+    },
+    {
+      "default": "",
       "label": "Landing host (Caddy; empty = www.ecomate.bd — set explicitly for staging)",
       "name": "PLATFORM_LANDING_HOST"
     },

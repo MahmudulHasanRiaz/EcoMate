@@ -10,10 +10,17 @@ import { SLUG_PATTERN } from '@/lib/signup-validation';
  * know the visitor's slug — so ask for it and redirect. The slug is
  * validated client-side (server validates again by resolving the host);
  * nothing is submitted to the landing itself.
+ *
+ * `tenantDomain` is the runtime platform value from the server page;
+ * without it the build-time NEXT_PUBLIC_PRIMARY_DOMAIN fallback applies.
  */
-export function SignInForm() {
+export function SignInForm({ tenantDomain }: { tenantDomain?: string }) {
   const [slug, setSlug] = useState('');
   const [error, setError] = useState('');
+  const domainSuffix =
+    (tenantDomain ?? '').trim() ||
+    process.env.NEXT_PUBLIC_PRIMARY_DOMAIN ||
+    'ecomate.bd';
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -24,7 +31,7 @@ export function SignInForm() {
       );
       return;
     }
-    const url = tenantAdminSignInUrl(clean);
+    const url = tenantAdminSignInUrl(clean, process.env, tenantDomain);
     if (!url) {
       setError('That store address does not look right. Check it and try again.');
       return;
@@ -52,7 +59,7 @@ export function SignInForm() {
             spellCheck={false}
           />
           <span className="slug-suffix" aria-hidden>
-            .{process.env.NEXT_PUBLIC_PRIMARY_DOMAIN || 'ecomate.bd'}
+            .{domainSuffix}
           </span>
         </div>
         {error ? (

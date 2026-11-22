@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { DomainConfigService } from '../config/domain-config.service';
 import { SettingsService } from './settings.service';
 
 /**
@@ -12,7 +13,10 @@ import { SettingsService } from './settings.service';
  */
 @Controller('public')
 export class PublicBrandingController {
-  constructor(private readonly settings: SettingsService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly domainConfig: DomainConfigService,
+  ) {}
 
   @Get('branding')
   branding() {
@@ -25,10 +29,22 @@ export class PublicBrandingController {
     };
   }
 
-  /** Public landing behaviour: default locale + search-indexing flag. */
+  /**
+   * Public landing behaviour: default locale + search-indexing flag, plus
+   * the UI-managed landing origin and tenant base domain. Both domains
+   * are public information (the landing URL is the site's own address;
+   * tenant subdomains are public) — the landing app derives its
+   * canonical URLs + tenant sign-in links from them at runtime instead
+   * of a build-time env var.
+   */
   @Get('landing-settings')
   landingSettings() {
     const { defaultLocale, seoIndexingEnabled } = this.settings.getLanding();
-    return { defaultLocale, seoIndexingEnabled };
+    return {
+      defaultLocale,
+      seoIndexingEnabled,
+      landingUrl: this.domainConfig.landingUrl(),
+      tenantDomain: this.domainConfig.getConfig().primaryDomain,
+    };
   }
 }

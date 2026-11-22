@@ -1833,6 +1833,42 @@ kbd,
   gap: 14px;
 }
 
+.domain-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--em-text-muted);
+  margin: 18px 0 10px;
+}
+
+.domain-group-title:first-of-type {
+  margin-top: 4px;
+}
+
+/* Domain config explainer: what applies immediately vs needs a redeploy. */
+.domain-notes {
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  background: var(--em-surface-raised);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--em-text-muted);
+  margin: 4px 0 16px;
+}
+
+.domain-notes p {
+  margin: 0 0 8px;
+}
+
+.domain-notes p:last-child {
+  margin-bottom: 0;
+}
+
+.domain-notes strong {
+  color: var(--em-text);
+  font-weight: 600;
+}
+
 .domain-flags {
   display: flex;
   flex-wrap: wrap;
