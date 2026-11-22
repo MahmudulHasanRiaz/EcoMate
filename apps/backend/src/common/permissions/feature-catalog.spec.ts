@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { DEPENDENCY_MAP, FEATURES } from '@ecomate/shared-types';
 
 describe('feature catalog — HR module registration (P0-I)', () => {
@@ -35,6 +37,97 @@ describe('feature catalog — courier settlement (settlement module)', () => {
       'admin_accounting',
       'admin_orders',
     ]);
+  });
+});
+
+describe('feature catalog — central-commerce P0 keys', () => {
+  const NEW_KEYS = [
+    'admin_stores',
+    'store_product_sync',
+    'store_order_sync',
+    'store_stock_sync',
+    'admin_sync_center',
+  ];
+
+  it.each(NEW_KEYS)('registers %s enabled', (key) => {
+    expect(FEATURES).toHaveProperty(key);
+    expect(FEATURES[key].key).toBe(key);
+    expect(FEATURES[key].enabled).toBe(true);
+  });
+
+  it('wires central-commerce dependencies (parent → children)', () => {
+    expect(DEPENDENCY_MAP['admin_stores']).toEqual(
+      expect.arrayContaining(['admin_products', 'admin_orders']),
+    );
+    for (const child of [
+      'store_product_sync',
+      'store_order_sync',
+      'store_stock_sync',
+      'admin_sync_center',
+    ]) {
+      expect(DEPENDENCY_MAP[child]).toEqual(['admin_stores']);
+    }
+  });
+});
+
+describe('feature catalog — @RequiresFeature ↔ catalog consistency (P0)', () => {
+  /**
+   * SaaS recomputation (2026-11-22): ZERO mismatches — every
+   * @RequiresFeature key used in apps/backend/src is in the catalog
+   * (93 keys). The upstream port's six pre-existing mismatches
+   * (admin_campaigns, admin_cms, admin_courier, admin_shipments,
+   * admin_import, admin_checkout_leads) are all registered in the SaaS
+   * catalog, so the allowlist is empty. Any NEW missing key fails the
+   * build — an unknown key 403s permanently (R-11).
+   */
+  const PRE_EXISTING_MISMATCH_ALLOWLIST: string[] = [];
+
+  function collectUsedKeys(srcDir: string): string[] {
+    const found = new Set<string>();
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === 'node_modules') continue;
+          walk(full);
+        } else if (
+          entry.name.endsWith('.ts') &&
+          !entry.name.endsWith('.spec.ts') &&
+          !entry.name.endsWith('.test.ts')
+        ) {
+          const content = fs.readFileSync(full, 'utf8');
+          const re = /RequiresFeature\(\s*['"]([^'"]+)['"]/g;
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(content)) !== null) found.add(m[1]);
+        }
+      }
+    };
+    walk(srcDir);
+    return [...found].sort();
+  }
+
+  it('reports exactly the pre-existing mismatches, no more', () => {
+    const srcDir = path.resolve(__dirname, '..', '..');
+    const used = collectUsedKeys(srcDir);
+    expect(used.length).toBeGreaterThan(0);
+    const missing = used.filter((k) => !(k in FEATURES));
+    expect(missing.sort()).toEqual(
+      [...PRE_EXISTING_MISMATCH_ALLOWLIST].sort(),
+    );
+  });
+
+  it('every newly added central-commerce key is actually referenced-or-reserved', () => {
+    // Reserved by design: P1+ controllers will reference them. The catalog
+    // must contain them BEFORE first use (R-11: unknown key ⇒ permanent 403).
+    for (const k of [
+      'admin_stores',
+      'store_product_sync',
+      'store_order_sync',
+      'store_stock_sync',
+      'admin_sync_center',
+    ]) {
+      expect(FEATURES[k]).toBeDefined();
+    }
   });
 });
 

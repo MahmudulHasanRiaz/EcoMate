@@ -16,7 +16,15 @@ export interface RateLimitPolicy {
   limits: Record<TrustTier, TierLimit>;
   burst?: TierLimit;
   riskScore: RiskScoreConfig;
-  trackingKey: 'identity' | 'ip';
+  /**
+   * 'identity' = the trust-tier identity (user/session/browser-trust/IP);
+   * 'ip' = the source IP only; 'store' = storeId + IP (Phase 9 — the
+   * store key comes from the route param `:storeKey` or the `storeId`
+   * query param; one abusive store cannot exhaust another store's
+   * budget, and one abusive IP cannot exhaust a store's budget from a
+   * second IP without also being per-store counted).
+   */
+  trackingKey: 'identity' | 'ip' | 'store';
 }
 
 export interface RateLimitResult {

@@ -385,4 +385,50 @@ describe('permission gating (journal, preset supremacy 2026-10-24)', () => {
     expect(journal?.permissions).toEqual(['view_accounting'])
     expect('roles' in (journal ?? {})).toBe(false)
   })
+
+  /* ── Phase 9 central-commerce: Sales Channels + Store Availability ── */
+
+  const opGroup = sidebarData.navGroups.find(g => g.panel === 'operational')!
+  const salesChannels = opGroup.items.find(
+    (i): i is NavItem & { items: NavItem[] } =>
+      'items' in i && i.items !== undefined && i.title === 'Sales Channels',
+  )!
+  const productsGroup = opGroup.items.find(
+    (i): i is NavItem & { items: NavItem[] } =>
+      'items' in i && i.items !== undefined && i.title === 'Products',
+  )!
+
+  it('sidebarData has Sales Channels gated on admin_stores with Overview/Stores/Sync Center', () => {
+    expect(salesChannels).toBeDefined()
+    expect(salesChannels.feature).toBe('admin_stores')
+    const urls = salesChannels.items.map(i => i.url)
+    expect(urls).toEqual(['/op/channels', '/op/channels/stores', '/op/channels/sync-center'])
+  })
+
+  it('sidebarData hides Sales Channels entirely without admin_stores', () => {
+    const result = filterNavItems([salesChannels], ['admin_products', 'admin_orders'], [])
+    expect(result).toHaveLength(0)
+  })
+
+  it('sidebarData shows Sales Channels with admin_stores', () => {
+    const result = filterNavItems([salesChannels], ['admin_stores'], [])
+    expect(result).toHaveLength(1)
+    expect('items' in result[0] && result[0].items).toHaveLength(3)
+  })
+
+  it('sidebarData Products hides Store Availability without admin_stores', () => {
+    const result = filterNavItems([productsGroup], ['admin_products'], [])
+    const titles = ('items' in result[0] && result[0].items ? result[0].items : []).map(i => i.title)
+    expect(titles).not.toContain('Store Availability')
+  })
+
+  it('sidebarData Products shows Store Availability with admin_stores', () => {
+    const result = filterNavItems([productsGroup], ['admin_products', 'admin_stores'], [])
+    const titles = ('items' in result[0] && result[0].items ? result[0].items : []).map(i => i.title)
+    expect(titles).toContain('Store Availability')
+    const item = ('items' in result[0] && result[0].items
+      ? result[0].items.find(i => i.title === 'Store Availability')
+      : undefined)
+    expect(item?.url).toBe('/op/products/store-availability')
+  })
 })

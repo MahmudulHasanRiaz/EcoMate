@@ -17,6 +17,7 @@ import { PlatformAuthGuard } from '../auth/platform-auth.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { DomainsService } from '../domains/domains.service';
+import { ExternalStoresService } from '../external-stores/external-stores.service';
 import { AddDomainDto } from './dto/add-domain.dto';
 import { CancelTenantDto } from './dto/cancel-tenant.dto';
 import { ChangePlanDto } from './dto/change-plan.dto';
@@ -35,6 +36,7 @@ export class TenantsController {
     private readonly domains: DomainsService,
     private readonly lifecycle: TenantLifecycleService,
     private readonly impersonation: ImpersonationService,
+    private readonly externalStores: ExternalStoresService,
   ) {}
 
   @Get()
@@ -244,5 +246,22 @@ export class TenantsController {
     @CurrentPlatformUser() user?: { id: string },
   ) {
     return this.domains.remove(id, domainId, user?.id);
+  }
+
+  /**
+   * Operator force-unbind (Phase 9 §6.2): deletes the platform binding
+   * for an external store, freeing its fingerprint for another tenant.
+   * The tenant-DB Store row's identity columns are cleared first (via
+   * the backend internal endpoint); its history stays. SUPERADMIN-only:
+   * this releases a store identity another tenant could immediately claim.
+   */
+  @Post(':id/external-stores/:storeId/unbind')
+  @Roles('SUPERADMIN')
+  forceUnbindExternalStore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    return this.externalStores.forceUnbind(id, storeId, user?.id);
   }
 }

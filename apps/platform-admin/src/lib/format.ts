@@ -62,6 +62,9 @@ const WARNING_STATUSES = new Set([
   'AWAITING_PAYMENT',
   'PARTIALLY_PAID',
   'PARTIAL',
+  // External-store binding (Phase 9): disconnected keeps the binding
+  // for reconnect — degraded, not failed.
+  'DISCONNECTED',
 ]);
 
 const DANGER_STATUSES = new Set([
@@ -77,6 +80,8 @@ const DANGER_STATUSES = new Set([
   'OVERDUE',
   'REVOKED',
   'UNREACHABLE',
+  // External-store binding (Phase 9): blocked must not resolve.
+  'BLOCKED',
 ]);
 
 export function statusTone(status: string): string {

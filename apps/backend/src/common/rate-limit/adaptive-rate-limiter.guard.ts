@@ -79,10 +79,28 @@ export class AdaptiveRateLimiterGuard {
     const ip = this.tierService.extractIp(request);
     const isWhitelisted = await this.checkWhitelisted(ip, identity);
 
-    // 3. Resolve counter key
-    const trackingKey = policy.trackingKey === 'ip'
-      ? this.counter.buildKey(this.tenant, policyName, tier, `ip:${ip}`)
-      : this.counter.buildKey(this.tenant, policyName, tier, identity);
+    // 3. Resolve counter key. 'store' scopes by (store, IP): the store key
+    // comes from the :storeKey route param (webhooks) or the storeId query
+    // param (bridge contact-check); without either, fall back to IP-only.
+    // A store-scoped key means one store's flood cannot exhaust another
+    // store's budget (Phase 9 §3.3).
+    let trackingIdentity = identity;
+    if (policy.trackingKey === 'ip') trackingIdentity = `ip:${ip}`;
+    else if (policy.trackingKey === 'store') {
+      const storeKey =
+        (request.params as Record<string, unknown> | undefined)?.storeKey ??
+        (request.query as Record<string, unknown> | undefined)?.storeId;
+      trackingIdentity =
+        typeof storeKey === 'string' && storeKey
+          ? `store:${storeKey}:ip:${ip}`
+          : `ip:${ip}`;
+    }
+    const trackingKey = this.counter.buildKey(
+      this.tenant,
+      policyName,
+      tier,
+      trackingIdentity,
+    );
 
     const tierLimit = policy.limits[tier] || policy.limits[TrustTier.UNKNOWN];
 
@@ -91,10 +109,14 @@ export class AdaptiveRateLimiterGuard {
       ? { limit: Math.round(tierLimit.limit * 5), windowMs: tierLimit.windowMs }
       : tierLimit;
 
-    // 5. Check burst first
+    // 5. Check burst first. Store-scoped policies scope the burst by
+    // (store, IP) too; every other policy keeps its existing identity
+    // key (unchanged behaviour).
     let burstRemaining = Infinity;
     if (policy.burst) {
-      const burstKey = this.counter.buildKey(this.tenant, policyName, `${tier}:burst`, identity);
+      const burstIdentity =
+        policy.trackingKey === 'store' ? trackingIdentity : identity;
+      const burstKey = this.counter.buildKey(this.tenant, policyName, `${tier}:burst`, burstIdentity);
       const burstResult = await this.counter.increment(
         burstKey,
         isWhitelisted

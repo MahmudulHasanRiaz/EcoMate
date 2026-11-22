@@ -11,7 +11,7 @@ import type {
   OrderImportError,
 } from './types/order-import.types';
 
-const STATUS_MAP: Record<string, string> = {
+export const STATUS_MAP: Record<string, string> = {
   completed: 'Delivered',
   cancelled: 'Cancelled',
   refunded: 'Returned',

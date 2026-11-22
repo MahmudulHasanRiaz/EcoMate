@@ -3,9 +3,16 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+// Value import: Nest needs the runtime token for DI. Acyclic: the
+// stock-status module never imports the products module.
+import { StockStatusSyncService } from '../stores/sync/stock-status-sync.service';
+// Value import (runtime token for DI). Acyclic: SyncQueuesService imports
+// only Prisma + run/queue services, never the products module.
+import { SyncQueuesService } from '../stores/sync/sync-queues.service';
 import {
   CreateProductDto,
   UpdateProductDto,
@@ -69,7 +76,27 @@ export class ProductsService {
     private readonly mediaResolver: MediaResolverService,
     private readonly stockService: StockService,
     private readonly customization: CustomizationService,
+    // P5 §8.4: post-commit stock-change notification. @Optional so unit
+    // specs constructing ProductsService manually keep working; every call
+    // is guarded and non-propagating (R-2).
+    @Optional() private readonly stockStatus?: StockStatusSyncService,
+    // P4/BR-09: hard deletes propagate to mapped stores via queue (never
+    // inline provider calls). @Optional for the same manual-construction
+    // reason; absent queue simply means no propagation.
+    @Optional() private readonly syncQueues?: SyncQueuesService,
   ) {}
+
+  /**
+   * P5 §8.4 change notification — post-commit, never propagates, never
+   * blocks. No provider call happens here (R-2): only a debounced enqueue.
+   */
+  private notifyStockChanged(productId: string, variantId?: string | null, reason?: string): void {
+    try {
+      void this.stockStatus?.notifyStockChanged(productId, variantId ?? null, reason).catch(() => undefined);
+    } catch {
+      // never propagate into the mutation path
+    }
+  }
 
   /**
    * Customization definition gate + normalization (owner Q15/Q20):
@@ -1624,6 +1651,11 @@ export class ProductsService {
     // ONLY its managed counter; physical stock enters exclusively
     // through physical entry points, so creation also succeeds with no
     // warehouse anywhere.
+    // P5 §8.4: initial stock (product + variant rows) committed above.
+    this.notifyStockChanged(product.id, null, 'product-create');
+    for (const v of product.variants ?? []) {
+      this.notifyStockChanged(product.id, v.id, 'product-create');
+    }
     return product;
   }
 
@@ -1803,6 +1835,8 @@ export class ProductsService {
       }
     }
 
+    // P5 §8.4: availability-mode transitions zero managed rows above.
+    this.notifyStockChanged(id, null, 'product-update');
     await this.cache.invalidateByPrefix('product:');
     return product;
   }
@@ -1828,6 +1862,25 @@ export class ProductsService {
         );
       }
       throw e;
+    }
+    // BR-09: external deletion happens ONLY here (permanent EcoMate
+    // deletion), capability-gated in deleteRemote. Post-commit enqueue per
+    // mapped store — never an inline provider call (R-2), never throwing.
+    try {
+      const mappings = await this.prisma.storeProductMapping.findMany({
+        where: { productId: id },
+        select: { storeId: true },
+      });
+      for (const m of mappings) {
+        await this.syncQueues?.enqueue(
+          'store-product-sync',
+          'product-delete',
+          { storeId: m.storeId, productId: id },
+          `delete-${m.storeId}-${id}`,
+        ).catch(() => undefined);
+      }
+    } catch {
+      // Propagation must never fail the already-committed local delete.
     }
     return { message: 'Product deleted' };
   }
@@ -2081,6 +2134,8 @@ export class ProductsService {
     }
 
     await this.syncTags(dto.tags || [], product.id);
+    // P5 §8.4: draft carries initial variant/product stock rows.
+    this.notifyStockChanged(product.id, null, 'product-draft-create');
     await this.cache.invalidateByPrefix('product:');
     return product;
   }
@@ -2286,6 +2341,11 @@ export class ProductsService {
       await this.cache.invalidateByPrefix('product:');
     } catch (e) {
       this.mapProductWriteError(e);
+    }
+    // P5 §8.4: draft autosave replaces the variant set wholesale (stock rows).
+    this.notifyStockChanged(id, null, 'product-draft-update');
+    for (const v of (product as any).variants ?? []) {
+      this.notifyStockChanged(id, v.id, 'product-draft-update');
     }
     return product;
   }
@@ -2540,6 +2600,11 @@ export class ProductsService {
     } catch (e) {
       this.mapProductWriteError(e);
     }
+    // P5 §8.4: publishing activates stock rows (incl. the variant set).
+    this.notifyStockChanged(id, null, 'product-draft-publish');
+    for (const v of (product as any).variants ?? []) {
+      this.notifyStockChanged(id, v.id, 'product-draft-publish');
+    }
     return product;
   }
 
@@ -2648,6 +2713,8 @@ export class ProductsService {
     // PLP scale round: the regenerated set carries fresh prices.
     await this.syncEffectivePrice(productId);
 
+    // P5 §8.4: regenerated variant set (with initial stock rows) committed.
+    this.notifyStockChanged(productId, null, 'product-variants-generate');
     return this.findOne(productId);
   }
 
@@ -2921,6 +2988,9 @@ export class ProductsService {
     // PLP scale round: back to a simple product — the sort price is the
     // product rule again, not the deleted variants' minimum.
     await this.syncEffectivePrice(productId);
+    // P5 §8.4 (SaaS-only method — same class of event as removeVariant):
+    // the variant set and its stock rows are gone; re-evaluate the parent.
+    this.notifyStockChanged(productId, null, 'product-variants-remove-all');
     await this.cache.invalidateByPrefix('product:');
     return { message: 'All variants removed. Product reset to simple type.' };
   }
@@ -2946,6 +3016,9 @@ export class ProductsService {
     // PLP scale round: removing the cheapest variant raises the
     // parent's sort price.
     await this.syncEffectivePrice(productId);
+    // P5 §8.4: variant row (and its stock) deleted — re-evaluate the parent.
+    this.notifyStockChanged(productId, variantId, 'product-variant-remove');
+    this.notifyStockChanged(productId, null, 'product-variant-remove');
     await this.cache.invalidateByPrefix('product:');
     return { message: 'Variant deleted' };
   }

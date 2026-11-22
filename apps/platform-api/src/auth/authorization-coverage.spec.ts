@@ -56,6 +56,8 @@ const PUBLIC_CONTROLLERS: Record<string, string> = {
     'service-token guard (InternalServiceGuard) — tenant self-service plan-change requests (Subscription hub)',
   InternalTrialReviewController:
     'service-token guard (InternalServiceGuard) — tenant trial conversion review (trial-end design 2026-11-22)',
+  ExternalStoresInternalController:
+    'service-token guard (InternalServiceGuard) — tenant-backend ExternalStoreResolver + connect flow (Phase 9 §3.4)',
   TlsAskController: 'Caddy-only ask endpoint, token query param',
 };
 
@@ -215,6 +217,7 @@ describe('authorization coverage', () => {
       'DomainsAdminController',
       'EmailBalanceController',
       'EmailBalanceOverviewController',
+      'ExternalStoresInternalController',
       'FeaturesController',
       'HealthController',
       'InternalController',

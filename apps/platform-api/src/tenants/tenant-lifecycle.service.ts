@@ -712,6 +712,16 @@ export class TenantLifecycleService implements OnModuleInit, OnModuleDestroy {
       where: { slug: tenant.slug },
     });
 
+    // External-store bindings (Phase 9 §3.4): purge releases the store
+    // identities so another tenant may claim them later. The FK cascade
+    // would delete them with the tenant row below, but the explicit
+    // delete keeps the count in the audit record — and makes the purge
+    // hook visible instead of relying on cascade behaviour.
+    const bindingsDeleted =
+      await this.prisma.tenantExternalStoreBinding.deleteMany({
+        where: { tenantId: tenant.id },
+      });
+
     await this.audit.record({
       actorId,
       tenantId: tenant.id,
@@ -726,6 +736,7 @@ export class TenantLifecycleService implements OnModuleInit, OnModuleDestroy {
         mediaFailedFiles,
         jobsRemoved,
         signupRequestsDeleted: signupRequestsDeleted.count,
+        externalStoreBindingsDeleted: bindingsDeleted.count,
       },
     });
     await this.prisma.tenant.delete({ where: { id: tenant.id } });
@@ -746,6 +757,7 @@ export class TenantLifecycleService implements OnModuleInit, OnModuleDestroy {
       mediaFailedFiles,
       jobsRemoved,
       signupRequestsDeleted: signupRequestsDeleted.count,
+      externalStoreBindingsDeleted: bindingsDeleted.count,
       purgedAt: new Date().toISOString(),
     };
   }

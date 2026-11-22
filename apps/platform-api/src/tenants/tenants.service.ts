@@ -100,6 +100,9 @@ export class TenantsService {
       where: { id },
       include: {
         domains: true,
+        // External-store bindings drive the console's External Stores
+        // panel (Phase 9 §6.2) — same shape as the domains include.
+        externalStoreBindings: { orderBy: { createdAt: 'asc' } },
         planVersion: true,
         subscription: { include: { planVersion: true } },
         invoices: { orderBy: { createdAt: 'desc' }, take: 20 },

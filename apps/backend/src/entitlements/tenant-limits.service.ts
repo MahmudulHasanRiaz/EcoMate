@@ -96,6 +96,13 @@ export class TenantLimitsService {
         const bytes = aggregate._sum.size ?? 0;
         return Math.ceil(bytes / BYTES_PER_MB);
       }
+      case 'external_stores': {
+        // Phase 9 §5.2: non-NATIVE stores in connectable states. DISCONNECTED
+        // frees the slot; the NATIVE row never counts.
+        return this.prisma.store.count({
+          where: { kind: { not: 'NATIVE' }, status: { not: 'DISCONNECTED' } },
+        });
+      }
       default:
         return 0;
     }

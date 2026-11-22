@@ -12,6 +12,7 @@ function mockService(limits: Record<string, unknown> = {}) {
     userProfile: { count: jest.fn().mockResolvedValue(0) },
     order: { count: jest.fn().mockResolvedValue(0) },
     media: { aggregate: jest.fn().mockResolvedValue({ _sum: { size: 0 } }) },
+    store: { count: jest.fn().mockResolvedValue(0) },
   };
   return {
     entitlements,
@@ -114,6 +115,15 @@ describe('TenantLimitsService', () => {
         where: { status: { not: 'draft' } },
       });
     });
+
+    it('counts non-NATIVE, non-DISCONNECTED stores only (Phase 9 §5.2)', async () => {
+      const { service, prisma } = mockService({ external_stores: 3 });
+      prisma.store.count.mockResolvedValue(2);
+      expect(await service.getUsage('external_stores')).toBe(2);
+      expect(prisma.store.count).toHaveBeenCalledWith({
+        where: { kind: { not: 'NATIVE' }, status: { not: 'DISCONNECTED' } },
+      });
+    });
   });
 
   describe('assertWithinLimit', () => {
@@ -206,6 +216,14 @@ describe('TenantLimitsService', () => {
           limit: 10,
           used: 2,
           percent: 20,
+          warning: false,
+        },
+        {
+          key: 'external_stores',
+          label: 'External stores',
+          limit: null,
+          used: 0,
+          percent: null,
           warning: false,
         },
       ]);

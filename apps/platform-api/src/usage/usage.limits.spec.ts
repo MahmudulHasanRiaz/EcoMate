@@ -74,6 +74,13 @@ describe('usage limit helpers', () => {
         override: null,
         limit: null,
       },
+      {
+        key: 'external_stores',
+        label: 'External stores',
+        planLimit: null,
+        override: null,
+        limit: null,
+      },
     ]);
   });
 

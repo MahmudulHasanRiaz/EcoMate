@@ -117,6 +117,28 @@ const DEFAULT_POLICIES: Record<string, Omit<RateLimitPolicy, 'name'>> = {
   },
 
   /**
+   * Store webhooks — WooCommerce / Shopify / Custom bridge order + product
+   * events. HMAC signature verification is the primary auth gate; limits
+   * are per (store, source IP) with burst headroom for reconcile-driven
+   * retries. P0 foundation for central-commerce §8.7 (public, signed,
+   * rate-limited). The `store` tracking key scopes the counter by the
+   * `:storeKey` route param (webhooks) or `storeId` query param (bridge
+   * contact-check) — an IP-only key would let one store's flood exhaust
+   * every other store's budget.
+   */
+  store_webhook: {
+    limits: {
+      [TrustTier.UNKNOWN]: { limit: 60, windowMs: 60000 },
+      [TrustTier.SESSION]: { limit: 60, windowMs: 60000 },
+      [TrustTier.BROWSER_TRUST]: { limit: 60, windowMs: 60000 },
+      [TrustTier.AUTHENTICATED]: { limit: 60, windowMs: 60000 },
+    },
+    burst: { limit: 20, windowMs: 10000 },
+    riskScore: { violationWeight: 5, autoBlockThreshold: 10, autoBlockDurationMinutes: 1440 },
+    trackingKey: 'store',
+  },
+
+  /**
    * Health — very high limit, never block normal checks.
    */
   health: {

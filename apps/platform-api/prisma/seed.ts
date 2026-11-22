@@ -25,6 +25,20 @@ if (!connectionString) {
 const pool = new Pool({ connectionString, max: 5 });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
+/**
+ * Catalogue features NEVER in a fresh trial plan v1 (see seedTrialPlan):
+ * custom_domain (Boss 2026-11-19) + the five External Stores keys
+ * (Phase 9 ruling D3 — out of trial until the isolation gate passes).
+ */
+const TRIAL_EXCLUDED_FEATURES = new Set([
+  'custom_domain',
+  'admin_stores',
+  'store_product_sync',
+  'store_order_sync',
+  'store_stock_sync',
+  'admin_sync_center',
+]);
+
 function humanize(key: string): string {
   return key
     .split('_')
@@ -145,7 +159,7 @@ async function seedAddOns(): Promise<void> {
         currency: 'BDT',
         interval: 'MONTHLY',
         features: row.features,
-        limits: {},
+        limits: row.limits ?? {},
         // Four infra rows ship private (isPublic: false) — their
         // features have no code gate yet, so they must not be sold
         // until enforcement is wired (see ADD_ON_SEED_ROWS).
@@ -196,10 +210,16 @@ async function seedTrialPlan(): Promise<void> {
         trialDays: 14,
         // Trial includes every catalog feature EXCEPT custom_domain (Boss
         // decision 2026-11-19: trial tenants don't get custom domains; an
-        // operator can grant it later from the console plan editor).
+        // operator can grant it later from the console plan editor) and
+        // EXCEPT the five External Stores keys (Phase 9 ruling D3: the
+        // keys stay out of trial until the two-tenant isolation gate
+        // passes; trial never attaches the external-stores add-on).
+        // Same filter shape as the custom_domain exclusion. This only
+        // runs when trial v1 does not exist yet — an existing trial v1
+        // is never rewritten, so a re-seed cannot add or remove keys.
         features: Object.values(FEATURES)
           .map((f) => f.key)
-          .filter((k) => k !== 'custom_domain'),
+          .filter((k) => !TRIAL_EXCLUDED_FEATURES.has(k)),
         limits: {},
         graceDays: 7,
         isDefault: !currentDefault,

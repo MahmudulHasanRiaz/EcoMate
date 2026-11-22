@@ -48,6 +48,27 @@ enum TenantDomainStatus {
   DISABLED
 }
 
+/// External-store provider for the platform binding (Phase 9 central
+/// commerce). NATIVE is not a provider: the per-tenant NATIVE store row
+/// lives only in the tenant DB and never gets a platform binding.
+enum StoreProvider {
+  WOOCOMMERCE
+  SHOPIFY
+  CUSTOM
+}
+
+/// Platform binding lifecycle (Phase 9): PENDING from claim until the
+/// tenant connect flow succeeds (expires after 10 minutes if it never
+/// does); ACTIVE while connected; DISCONNECTED retains the row so a
+/// reconnect reuses the same fingerprint (only tenant purge or an
+/// operator force-unbind releases it); BLOCKED is operator-set.
+enum BindingStatus {
+  PENDING
+  ACTIVE
+  DISCONNECTED
+  BLOCKED
+}
+
 enum SignupStatus {
   PENDING_EMAIL
   VERIFIED
@@ -281,6 +302,7 @@ model Tenant {
   updatedAt          DateTime     @updatedAt
 
   domains           TenantDomain[]
+  externalStoreBindings TenantExternalStoreBinding[]
   subscription      Subscription?
   invoices          Invoice[]
   reminders         InvoiceReminder[]
@@ -327,6 +349,44 @@ model TenantDomain {
 
   @@index([tenantId, isPrimary])
   @@index([status])
+}
+
+/// Platform-side claim on an external store's identity (Phase 9 central
+/// commerce, §3.12.4). The tenant backend owns the Store row; this row is
+/// the GLOBAL registry that makes a store identity claimable by exactly
+/// one tenant: `identityFingerprint` (sha256 of kind | providerStoreId |
+/// normalised domain, tenant-independent by design) and
+/// (provider, domainNormalised) are both globally unique, so a second
+/// tenant connecting the same Woo/Shopify store gets a generic 409
+/// STORE_ALREADY_BOUND with no identifying data. The tenant backend's
+/// ExternalStoreResolver reads this row (via the internal resolve
+/// endpoint) to map a webhook's storeId / shop domain to a tenant BEFORE
+/// any tenant-DB query.
+///
+/// No RLS / tenant_id: the platform DB is the control plane.
+/// `storeId` is the SAME UUID as the tenant DB Store.id (pre-generated
+/// by the backend before claim). Disconnect RETAINS the row (ruling D9);
+/// only tenant purge or an operator force-unbind deletes it.
+model TenantExternalStoreBinding {
+  storeId             String        @id
+  tenantId            String
+  tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider            StoreProvider
+  providerStoreId     String?
+  domainNormalised    String?
+  identityFingerprint String        @unique
+  status              BindingStatus @default(PENDING)
+  /// Cached sync health, reported by the tenant backend on sync
+  /// completion (POST /internal/external-stores/:storeId/sync-report).
+  /// Null until the first sync report; the console panel renders
+  /// binding status + created/updated when these are absent.
+  lastSyncAt          DateTime?
+  lastError           String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@unique([provider, domainNormalised])
+  @@index([tenantId])
 }
 
 /// Public signup request, before the tenant/provisioning rows exist.

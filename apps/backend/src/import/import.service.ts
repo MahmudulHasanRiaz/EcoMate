@@ -9,6 +9,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
 import { CacheService } from '../cache/cache.service';
 import { StockService } from '../stock/stock.service';
+// Value import: Nest needs the runtime token for DI. Acyclic: the
+// stock-status module never imports the import module.
+import { StockStatusSyncService } from '../stores/sync/stock-status-sync.service';
 import { ProductsService } from '../products/products.service';
 import * as Papa from 'papaparse';
 import slugify from './utils/slugify';
@@ -54,7 +57,23 @@ export class ImportService {
     // imports ProductsModule in the real app.
     @Optional()
     private readonly products?: ProductsService,
+    // P5 §8.4: post-commit stock-change notification. @Optional so unit
+    // specs constructing ImportService manually keep working; every call is
+    // guarded and non-propagating (R-2).
+    @Optional() private readonly stockStatus?: StockStatusSyncService,
   ) {}
+
+  /**
+   * P5 §8.4 change notification — post-commit, never propagates, never
+   * blocks. No provider call happens here (R-2): only a debounced enqueue.
+   */
+  private notifyStockChanged(productId: string, variantId?: string | null, reason?: string): void {
+    try {
+      void this.stockStatus?.notifyStockChanged(productId, variantId ?? null, reason).catch(() => undefined);
+    } catch {
+      // never propagate into the import path
+    }
+  }
 
   async importFromCsv(
     csvContent: string,
@@ -797,6 +816,9 @@ export class ImportService {
 
     summary.productsCreated++;
 
+    // P5 §8.4: imported product row (with stock) committed above.
+    this.notifyStockChanged(product.id, null, 'import-product-create');
+
     if (
       isVariable &&
       resolvedAttrs.length > 0 &&
@@ -1008,6 +1030,8 @@ export class ImportService {
     }
 
     this.logger.log(`Product ${productId}: updated (type=${type})`);
+    // P5 §8.4: imported stock value committed above.
+    this.notifyStockChanged(productId, null, 'import-product-update');
     summary.productsUpdated++;
     return existingMode;
   }
@@ -1152,6 +1176,8 @@ export class ImportService {
 
       await applyIcPhysical();
 
+      // P5 §8.4: imported variant stock committed above.
+      this.notifyStockChanged(productId, existingId, 'import-variant-update');
       summary.productsUpdated++;
       return;
     }
@@ -1201,6 +1227,9 @@ export class ImportService {
         quantity: stock,
       });
     }
+
+    // P5 §8.4: imported variant row (with stock) committed above.
+    this.notifyStockChanged(productId, variant.id, 'import-variant-create');
 
     if (mainImage) {
       const ingested = await this.ingestImageCached(

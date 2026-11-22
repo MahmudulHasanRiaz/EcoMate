@@ -88,6 +88,31 @@
 {$PLATFORM_API_HOST:api.ecomate.bd} {
 	# Platform API + webhooks (master plan §13 item 2: webhooks use api.
 	# unless a dedicated webhooks. host is decided later).
+	#
+	# Phase 9 (central-commerce, ruling D1): the tenant backend owns the
+	# external-store surface, so these paths route to backend:4000 instead
+	# of platform-api:4100. Handle blocks are first-match-wins — these
+	# MUST stay above the catch-all handle.
+	@store_webhooks path /api/webhooks/stores /api/webhooks/stores/*
+	handle @store_webhooks {
+		reverse_proxy backend:4000
+	}
+
+	# Public install URL is api.<base>/store-install (no /api prefix) but
+	# the Nest route is /api/store-install (global prefix) — rewrite in
+	# the edge, keep main.ts untouched. {uri} carries the query string
+	# (shop/hmac/timestamp) through the rewrite.
+	@store_install path /store-install /store-install/*
+	handle @store_install {
+		rewrite * /api{uri}
+		reverse_proxy backend:4000
+	}
+
+	@store_bridge path /api/store-bridge /api/store-bridge/*
+	handle @store_bridge {
+		reverse_proxy backend:4000
+	}
+
 	handle {
 		reverse_proxy platform-api:4100
 	}

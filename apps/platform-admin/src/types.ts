@@ -22,6 +22,26 @@ export interface TenantDomain {
   tenant?: { id: string; name: string; slug: string };
 }
 
+/**
+ * Platform-side external-store binding (Phase 9 central commerce).
+ * The storeId is the same UUID as the tenant-DB Store row. NEVER
+ * carries credentials — the platform only stores the identity claim
+ * (provider + domain + fingerprint) and cached sync health.
+ */
+export interface TenantExternalStoreBinding {
+  storeId: string;
+  tenantId: string;
+  provider: 'WOOCOMMERCE' | 'SHOPIFY' | 'CUSTOM';
+  providerStoreId?: string | null;
+  domainNormalised?: string | null;
+  identityFingerprint: string;
+  status: 'PENDING' | 'ACTIVE' | 'DISCONNECTED' | 'BLOCKED';
+  lastSyncAt?: string | null;
+  lastError?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DomainConfig {
   primaryDomain: string;
   baseDomains: string[];
@@ -167,6 +187,7 @@ export interface Tenant {
   deletedAt?: string | null;
   createdAt: string;
   domains?: TenantDomain[];
+  externalStoreBindings?: TenantExternalStoreBinding[];
   planVersion?: PlanVersion | null;
   subscription?: Subscription | null;
   invoices?: Invoice[];

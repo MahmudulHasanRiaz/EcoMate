@@ -18,11 +18,18 @@ const CLEANUP_INTERVAL_MS = 60_000;
  * drop queued jobs and reset abuse counters, so a purge deletes every
  * other key and keeps these. This is why purge uses a SCAN + protected
  * prefix list and never FLUSHDB.
+ *
+ * `extstore:` (Phase 9) is the external-store binding resolution cache
+ * (`extstore:<storeId>` / `extstore:domain:<provider>:<domain>`). A purge
+ * must never drop it: webhook intake resolves the tenant from it, and a
+ * purge-time drop would 401 every in-flight webhook until the platform
+ * re-resolve repopulates it.
  */
 export const CACHE_PURGE_PROTECTED_REDIS_PREFIXES = [
   'bull:',
   'rl:',
   'ratelimit:',
+  'extstore:',
 ] as const;
 
 export function isProtectedRedisKey(key: string): boolean {
@@ -214,6 +221,127 @@ export class CacheService implements OnModuleDestroy {
       }
     }
     this.store.delete(scoped);
+  }
+
+  /**
+   * Unscoped (global) get/set/delete — the key is used EXACTLY as given,
+   * with no tenant prefix. For state that exists before any tenant is
+   * known: the Phase 9 external-store resolver cache (`extstore:*`) runs
+   * without a tenant context (webhook intake resolves the tenant FROM
+   * it), so a scoped write would mis-key under whatever context happened
+   * to be ambient. Never use these for tenant-owned data.
+   */
+  async getGlobal<T>(key: string): Promise<T | undefined> {
+    if (this.redis) {
+      try {
+        const raw = await this.redis.get(key);
+        if (raw) return JSON.parse(raw) as T;
+      } catch {
+        /* fall through to memory */
+      }
+    }
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return entry.data as T;
+  }
+
+  async setGlobal<T>(key: string, data: T, ttlMs?: number): Promise<void> {
+    const effectiveTtl = ttlMs ?? this.defaultTtl;
+    if (this.store.size >= MAX_MEMORY_ENTRIES) {
+      this.evictExpired();
+      if (this.store.size >= MAX_MEMORY_ENTRIES) {
+        const eldest = this.store.keys().next().value;
+        if (eldest) this.store.delete(eldest);
+      }
+    }
+    this.store.set(key, { data, expiresAt: Date.now() + effectiveTtl });
+    if (this.redis) {
+      try {
+        await this.redis.setex(
+          key,
+          Math.ceil(effectiveTtl / 1000),
+          JSON.stringify(data),
+        );
+      } catch {
+        /* fall through to memory */
+      }
+    }
+  }
+
+  async deleteGlobal(key: string): Promise<void> {
+    if (this.redis) {
+      try {
+        await this.redis.del(key);
+      } catch {
+        /* ignore */
+      }
+    }
+    this.store.delete(key);
+  }
+
+  /**
+   * Distributed lock (Phase 9 per-store sync serialization). `SET NX PX`
+   * on Redis; the returned token MUST be passed to `releaseLock` — the
+   * release is a Lua compare-and-delete so a lock can only be released
+   * by its holder (an expired-then-reacquired lock is never stolen by a
+   * stale holder's finally block).
+   *
+   * Returns the token on acquisition, `null` when the lock is held. The
+   * caller decides whether to wait-and-retry or fail. Without Redis the
+   * lock degrades to the in-memory mirror (single-process only) — the
+   * sync workers that use it cannot run without Redis anyway (BullMQ),
+   * so this only ever matters in unit/dev contexts.
+   */
+  async acquireLock(
+    key: string,
+    ttlMs: number,
+    token?: string,
+  ): Promise<string | null> {
+    const scoped = this.scopedKey(key);
+    const holder = token ?? `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    if (this.redis) {
+      try {
+        const res = await this.redis.set(scoped, holder, 'PX', ttlMs, 'NX');
+        return res === 'OK' ? holder : null;
+      } catch {
+        /* fall through to memory */
+      }
+    }
+    const existing = this.store.get(scoped);
+    if (existing && Date.now() <= existing.expiresAt) return null;
+    this.store.set(scoped, { data: holder, expiresAt: Date.now() + ttlMs });
+    return holder;
+  }
+
+  async releaseLock(key: string, token: string): Promise<boolean> {
+    const scoped = this.scopedKey(key);
+    if (this.redis) {
+      try {
+        const released = await this.redis.eval(
+          "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+          1,
+          scoped,
+          token,
+        );
+        if (released === 1) {
+          this.store.delete(scoped);
+          return true;
+        }
+        return false;
+      } catch {
+        /* fall through to memory */
+      }
+    }
+    const existing = this.store.get(scoped);
+    if (existing?.data === token) {
+      this.store.delete(scoped);
+      return true;
+    }
+    return false;
   }
 
   async invalidateByPrefix(prefix: string): Promise<void> {

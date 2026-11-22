@@ -24,9 +24,10 @@ export class UpdateTrialSettingsDto {
 
   /**
    * Add-on slugs a new trial includes (trial-plan signups only).
-   * null (or omitted) = unset: every active add-on except custom-domain.
-   * [] = a trial with no add-ons. Unknown/inactive slugs are ignored at
-   * attach time. Changing this affects NEW signups only.
+   * null (or omitted) = unset: every active add-on except custom-domain
+   * and external-stores. [] = a trial with no add-ons. Unknown/inactive
+   * slugs are ignored at attach time. Changing this affects NEW signups
+   * only.
    */
   @IsOptional()
   @IsArray()

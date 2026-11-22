@@ -41,6 +41,10 @@ describe('format', () => {
     expect(statusTone('EXPIRING_SOON')).toBe('warning');
     expect(statusTone('PARTIALLY_PAID')).toBe('warning');
     expect(statusTone('AWAITING_PAYMENT')).toBe('warning');
+    // External-store bindings (Phase 9): disconnected is degraded
+    // (reconnect reuses the binding); blocked must not resolve.
+    expect(statusTone('DISCONNECTED')).toBe('warning');
+    expect(statusTone('BLOCKED')).toBe('danger');
     // Bad / terminal → red.
     expect(statusTone('PAST_DUE')).toBe('danger');
     expect(statusTone('SUSPENDED')).toBe('danger');

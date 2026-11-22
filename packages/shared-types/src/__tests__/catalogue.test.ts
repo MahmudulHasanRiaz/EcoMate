@@ -4,8 +4,8 @@ import { ClientConfig } from '../client-config';
 
 describe('shared-types', () => {
   describe('FEATURES', () => {
-    it('has 88 features', () => {
-      expect(Object.keys(FEATURES).length).toBe(88);
+    it('has 93 features', () => {
+      expect(Object.keys(FEATURES).length).toBe(93);
     });
 
     it('registers the six backend-gated admin keys (fix #3)', () => {
@@ -79,6 +79,34 @@ describe('shared-types', () => {
     it('pos_system depends only on admin_products', () => {
       const f = FEATURES['pos_system'];
       expect(f.dependencies).toEqual(['admin_products']);
+    });
+
+    it('registers the five external-stores keys with the exact upstream dependencies (Phase 9)', () => {
+      for (const key of [
+        'admin_stores',
+        'store_product_sync',
+        'store_order_sync',
+        'store_stock_sync',
+        'admin_sync_center',
+      ]) {
+        expect(FEATURES).toHaveProperty(key);
+        expect(FEATURES[key].enabled).toBe(true);
+      }
+      // Upstream license-types.ts: admin_stores funnels through the
+      // product + order admin keys; the four sync keys funnel through
+      // admin_stores only (never directly to admin_products/admin_orders).
+      expect(FEATURES['admin_stores'].dependencies).toEqual([
+        'admin_products',
+        'admin_orders',
+      ]);
+      for (const key of [
+        'store_product_sync',
+        'store_order_sync',
+        'store_stock_sync',
+        'admin_sync_center',
+      ]) {
+        expect(FEATURES[key].dependencies).toEqual(['admin_stores']);
+      }
     });
   });
 

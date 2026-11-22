@@ -24,6 +24,8 @@ const badgeVariants = cva(
           'gloss-sheen border-warning/25 bg-warning-soft text-warning',
         info:
           'gloss-sheen border-info/25 bg-info-soft text-info',
+        muted:
+          'gloss-sheen border-transparent bg-muted text-muted-foreground',
         violet:
           'gloss-sheen border-accent-violet/25 bg-accent-violet-soft text-accent-violet',
         cyan:

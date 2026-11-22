@@ -19,6 +19,7 @@ import { CommissionsModule } from '../commissions/commissions.module';
 import { CodMismatchModule } from '../cod-mismatch/cod-mismatch.module';
 import { DispatchCancelModule } from '../dispatch-cancel/dispatch-cancel.module';
 import { AccountingModule } from '../accounting/accounting.module';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   controllers: [OrdersController, OrderStatusController],
@@ -50,6 +51,11 @@ import { AccountingModule } from '../accounting/accounting.module';
     CodMismatchModule,
     DispatchCancelModule,
     AccountingModule,
+    // P7 §8.6: order hooks notify StoreOrderPushService post-commit
+    // (acyclic: StoresModule never imports the orders module — ingest
+    // resolves OrdersService lazily via ModuleRef). NO ChannelBackfillService
+    // — the no-backfill contract (§3.12) forbids the upstream backfill.
+    StoresModule,
   ],
 })
 export class OrdersModule {}

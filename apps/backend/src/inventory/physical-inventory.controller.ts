@@ -1,6 +1,9 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException, UseGuards, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { StockService } from '../stock/stock.service';
+// Value import: Nest needs the runtime token for DI. Acyclic: the
+// stock-status module never imports the inventory module.
+import { StockStatusSyncService } from '../stores/sync/stock-status-sync.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -16,7 +19,23 @@ export class PhysicalInventoryController {
     private readonly stockService: StockService,
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    // P5 §8.4: post-commit stock-change notification. @Optional so unit
+    // specs constructing the controller manually keep working; every call
+    // is guarded and non-propagating (R-2).
+    @Optional() private readonly stockStatus?: StockStatusSyncService,
   ) {}
+
+  /**
+   * P5 §8.4 change notification — post-commit, never propagates, never
+   * blocks. No provider call happens here (R-2): only a debounced enqueue.
+   */
+  private notifyStockChanged(productId: string, variantId?: string | null, reason?: string): void {
+    try {
+      void this.stockStatus?.notifyStockChanged(productId, variantId ?? null, reason).catch(() => undefined);
+    } catch {
+      // never propagate into the mutation path
+    }
+  }
 
   /** Share of a location's available stock a single adjustment may remove. */
   private static readonly DESTRUCTIVE_RATIO = 0.9;
@@ -205,6 +224,12 @@ export class PhysicalInventoryController {
     // whatever its syncManagedStock flag says.
     await this.cache.invalidateByPrefix('product:');
 
+    // P5 §8.4: physical adjustment committed above (no managed mirror in
+    // SaaS — the 2026-11-11 layer decision).
+    if (dto.productId) {
+      this.notifyStockChanged(dto.productId, dto.variantId ?? null, 'physical-adjust');
+    }
+
     return { ok: true };
   }
 
@@ -259,6 +284,10 @@ export class PhysicalInventoryController {
       );
     }
 
+    // P5 §8.4: collect the distinct (product, variant) pairs for the
+    // deduped stock-status notify below.
+    const seenKeys = new Set<string>();
+
     for (const item of dto.items) {
       // Same guard+write transaction as the single endpoint (row-locked).
       await this.prisma.$transaction(async (tx) => {
@@ -303,10 +332,18 @@ export class PhysicalInventoryController {
           quantity: Math.abs(item.quantity),
         });
       }
+
+      seenKeys.add(`${item.productId}|${item.variantId ?? ''}`);
     }
 
     // No managed mirror on the bulk path either (2026-11-11).
     await this.cache.invalidateByPrefix('product:');
+
+    // P5 §8.4: bulk physical adjustments committed above.
+    for (const key of seenKeys) {
+      const [pid, vid] = key.split('|');
+      this.notifyStockChanged(pid, vid || null, 'physical-bulk-adjust');
+    }
 
     return { ok: true };
   }

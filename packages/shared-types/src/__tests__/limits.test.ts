@@ -13,6 +13,7 @@ describe('limit catalogue', () => {
       'staff_users',
       'orders_per_month',
       'storage_mb',
+      'external_stores',
     ]);
   });
 

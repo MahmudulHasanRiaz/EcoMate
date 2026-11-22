@@ -161,6 +161,20 @@ export const FEATURES: Record<string, FeatureFlag> = {
   s3_storage: { key: 's3_storage', enabled: true },
   db_backup: { key: 'db_backup', enabled: true },
   custom_domain: { key: 'custom_domain', enabled: true },
+
+  // ── P: External Stores (5) ──
+  // Central commerce (Phase 9, multi-tenant first): connecting external
+  // WooCommerce / Shopify / custom-bridge stores and syncing products,
+  // orders and stock with them. Dependencies are the EXACT upstream
+  // mapping (license-types.ts): everything funnels through admin_stores.
+  // Note: FeatureGuard ignores dependencies today (ruling D11) — the
+  // Option-A add-on bundles all 5 keys, which mitigates that in
+  // practice; do not rely on the guard to enforce these parents.
+  admin_stores: { key: 'admin_stores', enabled: true, dependencies: ['admin_products', 'admin_orders'] },
+  store_product_sync: { key: 'store_product_sync', enabled: true, dependencies: ['admin_stores'] },
+  store_order_sync: { key: 'store_order_sync', enabled: true, dependencies: ['admin_stores'] },
+  store_stock_sync: { key: 'store_stock_sync', enabled: true, dependencies: ['admin_stores'] },
+  admin_sync_center: { key: 'admin_sync_center', enabled: true, dependencies: ['admin_stores'] },
 };
 
 export const FEATURE_KEYS = Object.keys(FEATURES);

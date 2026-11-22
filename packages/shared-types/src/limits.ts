@@ -10,6 +10,9 @@ export const LIMIT_KEYS = [
   'staff_users',
   'orders_per_month',
   'storage_mb',
+  // Connected external stores (WooCommerce / Shopify / custom bridge),
+  // excluding the per-tenant NATIVE row and DISCONNECTED stores (Phase 9).
+  'external_stores',
 ] as const;
 
 export type LimitKey = (typeof LIMIT_KEYS)[number];
@@ -19,6 +22,7 @@ export const LIMIT_LABELS: Record<LimitKey, string> = {
   staff_users: 'Staff users',
   orders_per_month: 'Orders per month',
   storage_mb: 'Media storage (MB)',
+  external_stores: 'External stores',
 };
 
 const LIMIT_KEY_SET = new Set<string>(LIMIT_KEYS);

@@ -20,6 +20,9 @@ export function Settings() {
   // still loading, keep the entry (fail open) to avoid nav flicker.
   const { hasFeature, loading: featuresLoading } = useFeatures()
   const showSmtp = featuresLoading || hasFeature('smtp_server')
+  // Store Availability Rules is gated by the admin_stores feature (Phase 9
+  // central-commerce); fail open while entitlements load, like SMTP above.
+  const showStoreAvailability = featuresLoading || hasFeature('admin_stores')
 
   const opNavGroups = [
     {
@@ -60,6 +63,16 @@ export function Settings() {
         { title: 'Auth & Integrations', href: '/mon/settings/auth', icon: <Shield size={18} /> },
       ],
     },
+    ...(showStoreAvailability
+      ? [
+          {
+            groupLabel: 'Catalog',
+            items: [
+              { title: 'Store Availability Rules', href: '/mon/settings/store-availability', icon: <Package size={18} /> },
+            ],
+          },
+        ]
+      : []),
     {
       groupLabel: 'Content',
       items: [

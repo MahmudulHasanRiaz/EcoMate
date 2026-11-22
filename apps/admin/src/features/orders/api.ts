@@ -3,6 +3,8 @@ import { apiClient } from '@/lib/api-client'
 export interface OrderResponse {
   id: string; displayId: string; customerId?: string | null; statusId: string;
   warnings?: string[];
+  /** External-store order id (Phase 9 central-commerce ingest; null for native orders). */
+  externalOrderId?: string | null;
   kind?: 'SALE' | 'RETURN' | 'EXCHANGE';
   /** Badge flags from the list response (server-counted, no extra fetches). */
   hasActiveReturn?: boolean;

@@ -19,6 +19,23 @@ import ProductAnalytics from '../features/business-analytics/products'
 import ProductAnalyticsDetail from '../features/business-analytics/product-detail'
 import { isRedirect } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
+import { Route as OpChannelsRoute } from '../routes/_authenticated/op/channels/index'
+import { Route as OpChannelsStoresRoute } from '../routes/_authenticated/op/channels/stores/index'
+import { Route as OpChannelsStoresIdRoute } from '../routes/_authenticated/op/channels/stores/$id'
+import { Route as OpChannelsStoresNewRoute } from '../routes/_authenticated/op/channels/stores/new/index'
+import { Route as OpChannelsSyncCenterRoute } from '../routes/_authenticated/op/channels/sync-center'
+import { Route as OpProductsStoreAvailabilityRoute } from '../routes/_authenticated/op/products/store-availability'
+import { Route as MonSettingsStoreAvailabilityRoute } from '../routes/_authenticated/mon/settings/store-availability/index'
+import {
+  ChannelsOverview,
+  ChannelsStores,
+  ChannelStoreDetail,
+  StoreConnectPage,
+} from '../features/channels'
+import { SyncCenter } from '../features/channels/sync-center'
+import { ProductAvailability } from '../features/channels/product-availability'
+import { AvailabilityRules } from '../features/channels/availability-rules'
+import { useEntitlementsStore } from '@/stores/entitlements-store'
 
 function signInAs(user: { role: string; permissions: string[] } | null) {
   useAuthStore.setState((s) => ({
@@ -140,5 +157,67 @@ describe('Product analytics detail route (nested-outlet regression)', () => {
     // (Drill-href shape `/mon/analytics/products/${id}` is pinned by
     // products.test.tsx; detail rendering by product-detail.test.tsx.)
     expect(MonAnalyticsProductsIdRoute.options.component).not.toBe(MonAnalyticsProductsRoute.options.component)
+  })
+})
+
+describe('Phase 9 central-commerce routes (channels UI)', () => {
+  // Upstream has NO beforeLoad gating on these routes — the SaaS port adds
+  // it. Hiding the sidebar link is not access control: without the guard
+  // a tenant who typed the URL would reach the page and only hit the
+  // backend 403 on the first API call.
+  function setEntitlements(features: string[]) {
+    useEntitlementsStore.setState({ features, previousFeatures: features, loaded: true })
+  }
+
+  beforeEach(() => setEntitlements([]))
+
+  const storeRoutes = [
+    ['channels overview', OpChannelsRoute, ChannelsOverview, 'admin_stores'],
+    ['channels stores list', OpChannelsStoresRoute, ChannelsStores, 'admin_stores'],
+    ['channels store detail', OpChannelsStoresIdRoute, ChannelStoreDetail, 'admin_stores'],
+    ['channels store connect', OpChannelsStoresNewRoute, StoreConnectPage, 'admin_stores'],
+    ['product store availability', OpProductsStoreAvailabilityRoute, ProductAvailability, 'admin_stores'],
+    ['settings store availability rules', MonSettingsStoreAvailabilityRoute, AvailabilityRules, 'admin_stores'],
+  ] as const
+
+  it.each(storeRoutes)('%s renders its component', (_label, route, component) => {
+    expect(route.options.component).toBe(component)
+  })
+
+  it.each(storeRoutes)('%s beforeLoad redirects without admin_stores', (_label, route) => {
+    setEntitlements(['admin_products', 'admin_orders'])
+    const options = redirectOptions(route.options.beforeLoad)
+    expect(options.to).toBe('/feature-unavailable')
+    expect(options.search).toEqual({ feature: 'admin_stores' })
+  })
+
+  it.each(storeRoutes)('%s beforeLoad lets an entitled tenant through', (_label, route) => {
+    setEntitlements(['admin_stores'])
+    expect(route.options.beforeLoad!({} as any)).toBeUndefined()
+  })
+
+  it('sync-center renders SyncCenter', () => {
+    expect(OpChannelsSyncCenterRoute.options.component).toBe(SyncCenter)
+  })
+
+  it('sync-center beforeLoad redirects without admin_sync_center', () => {
+    setEntitlements(['admin_products', 'admin_orders'])
+    const options = redirectOptions(OpChannelsSyncCenterRoute.options.beforeLoad)
+    expect(options.to).toBe('/feature-unavailable')
+    expect(options.search).toEqual({ feature: 'admin_sync_center' })
+  })
+
+  it('sync-center beforeLoad redirects with admin_stores alone (its own key)', () => {
+    // admin_sync_center is a separate key — holding admin_stores does not
+    // open the Sync Center.
+    setEntitlements(['admin_stores'])
+    const options = redirectOptions(OpChannelsSyncCenterRoute.options.beforeLoad)
+    expect(options.to).toBe('/feature-unavailable')
+    expect(options.search).toEqual({ feature: 'admin_sync_center' })
+  })
+
+  it('sync-center beforeLoad lets a tenant with admin_sync_center through', () => {
+    setEntitlements(['admin_stores', 'admin_sync_center'])
+    expect(OpChannelsSyncCenterRoute.options.beforeLoad!({} as any)).toBeUndefined()
   })
 })

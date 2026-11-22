@@ -66,8 +66,9 @@ export interface TrialSettings {
   /**
    * Add-on slugs a new trial includes (trial-plan signups only).
    * null = unset: today's behaviour — every active add-on except
-   * custom-domain. [] = a trial with no add-ons. Changing this affects
-   * NEW signups only; existing trials are untouched.
+   * custom-domain and external-stores. [] = a trial with no add-ons.
+   * Changing this affects NEW signups only; existing trials are
+   * untouched.
    */
   trialAddOnSlugs: string[] | null;
   trialEndPolicy: TrialEndPolicy;

@@ -102,6 +102,7 @@
 
 - **One pooled backend** serves every tenant. Tenant is resolved from `Host` (or a signed internal tenant header), stored in `AsyncLocalStorage`, and every DB query runs through a connection whose `app.tenant_id` is fixed.
 - **Platform API is separate** from tenant runtime: its own DB, auth, domain, and secrets. A tenant request can never reach platform tables.
+- **Phase 9 exception (ruling D1):** on the api host, `/api/webhooks/stores/*`, `/store-install` (rewritten to `/api/store-install` — the Nest route carries the global `/api` prefix), and `/api/store-bridge/*` route to `apps/backend:4000`, NOT platform-api. External stores call the platform-stable api host, and the tenant backend owns the store surface. See `portainer/Caddyfile` (validated with caddy 2.10.2).
 - **Storefront is one app** with host-based resolution. If ISR performance becomes a problem at scale, the same image can be deployed per tenant without changing the DB model (later lever).
 - **Multiple base domains** are supported from day one: any host matching `*.<base>` for a configured base resolves to the tenant slug; the canonical host is the primary base (or the tenant's verified custom domain).
 

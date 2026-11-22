@@ -657,6 +657,66 @@
       "default": "",
       "label": "Primary-domain probe enabled (Phase 8; empty = default)",
       "name": "TLS_PRIMARY_PROBE_ENABLED"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9 master kill-switch: third-party stores (all OFF at launch; explicit 'false' required — code defaults ON)",
+      "name": "THIRD_PARTY_STORES_ENABLED"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9 kill-switch: store sync master (all OFF at launch)",
+      "name": "store_sync_enabled"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9 kill-switch: product sync (all OFF at launch)",
+      "name": "store_product_sync_enabled"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9 kill-switch: order sync / ingest (all OFF at launch)",
+      "name": "store_order_sync_enabled"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9 kill-switch: stock sync (all OFF at launch)",
+      "name": "store_stock_sync_enabled"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9 kill-switch: order-status push (all OFF at launch)",
+      "name": "store_order_push_enabled"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9 kill-switch: order reconcile (all OFF at launch)",
+      "name": "store_reconcile_enabled"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9 kill-switch: reconcile widening (all OFF at launch)",
+      "name": "store_reconcile_widening_enabled"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9 kill-switch: stock audit (all OFF at launch)",
+      "name": "store_stock_audit_enabled"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9: dispatch tracking for external-store orders (fail-closed; explicit 'true' required)",
+      "name": "tracking_send_external_store_orders"
+    },
+    {
+      "default": "262144",
+      "label": "Phase 9: store webhook max body bytes (256KB cap; overage -> 413)",
+      "name": "store_webhook_max_body_bytes"
+    },
+    {
+      "default": "false",
+      "label": "Phase 9: new sales-channel model (ships OFF; P8 dual-write stays on)",
+      "name": "NEW_SALES_CHANNEL_MODEL_ENABLED"
     }
   ]
 }

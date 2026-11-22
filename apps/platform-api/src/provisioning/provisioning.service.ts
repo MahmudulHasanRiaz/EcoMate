@@ -19,11 +19,17 @@ import { SettingsService } from '../settings/settings.service';
  * into ACTIVE at trial end (trial-end design 2026-11-22). */
 export const TRIAL_PLAN_SLUG = 'trial';
 
-/** Slug of the custom-domain add-on — never attached to a trial
- * (Boss 2026-11-19: trial tenants don't get custom domains; the
- * 2026-11-21 "trial = full product" decision covered storefront +
- * POS only and did not reverse this exclusion). */
-const CUSTOM_DOMAIN_ADD_ON_SLUG = 'custom-domain';
+/** Add-on slugs NEVER attached to a trial, even when the operator lists
+ * them in the trial settings:
+ * - 'custom-domain' (Boss 2026-11-19: trial tenants don't get custom
+ *   domains; the 2026-11-21 "trial = full product" decision covered
+ *   storefront + POS only and did not reverse this exclusion).
+ * - 'external-stores' (Phase 9 ruling D3: central commerce is a heavy
+ *   paid add-on; trial = full product covered storefront + POS only).
+ *   Boss can enable it from the console later (trial contents are
+ *   console-configurable) — but the default attach never includes it.
+ */
+const TRIAL_EXCLUDED_ADD_ON_SLUGS = ['custom-domain', 'external-stores'];
 
 const TRIAL_DAYS_FALLBACK = 14;
 const FETCH_TIMEOUT_MS = 15_000;
@@ -437,11 +443,11 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
       });
       // Trial = the full product (Boss 2026-11-21): on the trial plan,
       // the configured trial add-ons (default: every active add-on
-      // except custom-domain — storefront, POS, SMTP, …) attach free
-      // for the trial. Rows are trial-granted: never billed until the
-      // tenant confirms them at conversion (trial-end design
-      // 2026-11-22). attachTrialAddOns enforces the trial-plan-only +
-      // no-custom-domain rules.
+      // except custom-domain and external-stores — storefront, POS,
+      // SMTP, …) attach free for the trial. Rows are trial-granted:
+      // never billed until the tenant confirms them at conversion
+      // (trial-end design 2026-11-22). attachTrialAddOns enforces the
+      // trial-plan-only + no-custom-domain / no-external-stores rules.
       await this.attachTrialAddOns(created.id);
       return created;
     } catch (err: any) {
@@ -469,13 +475,14 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
    *
    * Trial-plan only: a paid plan's trial period trials THAT plan — a
    * Base-plan trial must not silently collect every add-on. The
-   * custom-domain add-on is excluded even on the trial plan (Boss
-   * 2026-11-19).
+   * custom-domain and external-stores add-ons are excluded even on the
+   * trial plan (Boss 2026-11-19; Phase 9 ruling D3).
    *
    * Which add-ons attach is console-configurable (Settings → Trial,
    * `trialAddOnSlugs`): null = every active add-on except custom-domain
-   * (today's behaviour, the default); [] = no add-ons; a list = exactly
-   * those slugs (unknown/inactive slugs ignored). Rows are created
+   * and external-stores (today's behaviour, the default); [] = no
+   * add-ons; a list = exactly those slugs (unknown/inactive slugs
+   * ignored, excluded slugs filtered out). Rows are created
    * trial-granted: never billed until the tenant confirms them at
    * conversion (trial-end design 2026-11-22).
    */
@@ -500,13 +507,13 @@ export class ProvisioningService implements OnModuleInit, OnModuleDestroy {
           configuredSlugs === null
             ? {
                 isActive: true,
-                slug: { not: CUSTOM_DOMAIN_ADD_ON_SLUG },
+                slug: { notIn: TRIAL_EXCLUDED_ADD_ON_SLUGS },
               }
             : {
                 isActive: true,
                 slug: {
                   in: configuredSlugs.filter(
-                    (slug) => slug !== CUSTOM_DOMAIN_ADD_ON_SLUG,
+                    (slug) => !TRIAL_EXCLUDED_ADD_ON_SLUGS.includes(slug),
                   ),
                 },
               },

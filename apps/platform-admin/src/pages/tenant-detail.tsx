@@ -40,7 +40,18 @@ type ConfirmKind =
   | 'suspend'
   | 'cancel'
   | 'plan'
+  | 'unbind'
   | null;
+
+const EXTERNAL_STORE_PROVIDERS: Record<string, string> = {
+  WOOCOMMERCE: 'WooCommerce',
+  SHOPIFY: 'Shopify',
+  CUSTOM: 'Custom bridge',
+};
+
+function providerLabel(provider: string): string {
+  return EXTERNAL_STORE_PROVIDERS[provider] ?? formatStatus(provider);
+}
 
 interface PlanOption {
   version: PlanVersion;
@@ -76,6 +87,7 @@ export function TenantDetailPage() {
   const [usageBusy, setUsageBusy] = useState<string | null>(null);
   const [usageReload, setUsageReload] = useState(0);
   const [confirm, setConfirm] = useState<ConfirmKind>(null);
+  const [unbindStoreId, setUnbindStoreId] = useState<string | null>(null);
   const [overrideInputs, setOverrideInputs] = useState<
     Record<string, string>
   >({});
@@ -485,6 +497,20 @@ export function TenantDetailPage() {
     );
   }
 
+  async function forceUnbindExternalStore(storeId: string) {
+    await runAction(
+      `unbind:${storeId}`,
+      async () => {
+        const response = await api(
+          `/tenants/${tenantId}/external-stores/${storeId}/unbind`,
+          { method: 'POST' },
+        );
+        await readJson<unknown>(response);
+      },
+      'External store unbound — its identity can now be claimed by another tenant.',
+    );
+  }
+
   if (loading && !tenant) return <Skeleton />;
   if (error) return <ErrorNote message={error} />;
   if (!tenant) return null;
@@ -498,15 +524,25 @@ export function TenantDetailPage() {
 
   async function confirmAction() {
     const kind = confirm;
+    const storeId = unbindStoreId;
     setConfirm(null);
+    setUnbindStoreId(null);
     if (kind === 'impersonate') await impersonateTenant();
     else if (kind === 'delete') await deleteTenant();
     else if (kind === 'suspend') await toggleSuspension();
     else if (kind === 'cancel') await cancelTenant();
     else if (kind === 'plan') await changePlan();
+    else if (kind === 'unbind' && storeId) {
+      await forceUnbindExternalStore(storeId);
+    }
   }
 
   const suspending = tenant.status !== 'SUSPENDED';
+  const unbindTarget = unbindStoreId
+    ? tenant.externalStoreBindings?.find(
+        (binding) => binding.storeId === unbindStoreId,
+      )
+    : undefined;
   const confirmCopy: Record<
     Exclude<ConfirmKind, null>,
     { title: string; body: string; confirmLabel: string; danger: boolean }
@@ -553,6 +589,14 @@ export function TenantDetailPage() {
         : 'Switch the plan for this tenant.',
       confirmLabel: 'Change plan',
       danger: false,
+    },
+    unbind: {
+      title: 'Force-unbind external store',
+      body: unbindTarget
+        ? `Release the ${providerLabel(unbindTarget.provider)} binding for "${unbindTarget.domainNormalised ?? unbindTarget.providerStoreId ?? unbindTarget.storeId}"? The store's identity becomes claimable by another tenant and its webhooks stop resolving. The tenant's store data is untouched.`
+        : 'Release this external-store binding? The store identity becomes claimable by another tenant.',
+      confirmLabel: 'Force-unbind',
+      danger: true,
     },
   };
 
@@ -1009,6 +1053,98 @@ export function TenantDetailPage() {
             </table>
           </div>
         )}
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h2>External Stores</h2>
+            <p>
+              Platform bindings for the tenant&apos;s connected WooCommerce,
+              Shopify, and custom-bridge stores. A binding claims the store
+              identity for this tenant — disconnect keeps it, force-unbind
+              releases it. No credentials are ever shown here.
+            </p>
+          </div>
+        </div>
+        {!tenant.externalStoreBindings ||
+        tenant.externalStoreBindings.length === 0 ? (
+          <p className="muted-note">
+            No external stores bound. Bindings appear when the tenant connects
+            a store from Sales Channels.
+          </p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Provider</th>
+                  <th>Domain</th>
+                  <th>Status</th>
+                  <th>Last sync</th>
+                  <th>Last error</th>
+                  <th>Bound</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {tenant.externalStoreBindings.map((binding) => (
+                  <tr key={binding.storeId}>
+                    <td>{providerLabel(binding.provider)}</td>
+                    <td className="mono">
+                      {binding.domainNormalised ??
+                        binding.providerStoreId ??
+                        '—'}
+                    </td>
+                    <td>
+                      <StatusBadge status={binding.status} />
+                    </td>
+                    <td>
+                      {binding.lastSyncAt
+                        ? formatDateTime(binding.lastSyncAt)
+                        : '—'}
+                    </td>
+                    <td>
+                      {binding.lastError ? (
+                        <span
+                          className="muted-note"
+                          title={binding.lastError}
+                        >
+                          {binding.lastError.length > 80
+                            ? `${binding.lastError.slice(0, 80)}…`
+                            : binding.lastError}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td>{formatDateTime(binding.createdAt)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="button button--danger button--sm"
+                        disabled={!!busy}
+                        onClick={() => {
+                          setUnbindStoreId(binding.storeId);
+                          setConfirm('unbind');
+                        }}
+                      >
+                        {busy === `unbind:${binding.storeId}`
+                          ? 'Unbinding…'
+                          : 'Force-unbind'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="muted-note usage-footnote">
+          Last sync and last error are reported by the tenant runtime on sync
+          completion; they stay empty until the first sync. A pending binding
+          that never completes expires after 10 minutes.
+        </p>
       </section>
 
       <section className="card">

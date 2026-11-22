@@ -112,6 +112,9 @@ export class CreateOrderDto {
   @IsOptional() @IsString() sourcePlatform?: string;
   @IsOptional() @IsString() sourceType?: string;
   @IsOptional() @IsString() sourceEntity?: string;
+  // P8 §9.1: explicit showroom FK (admin POS picker). Optional; the service
+  // name-resolves sourceEntity when absent. Validated as a showroom row.
+  @IsOptional() @IsString() showroomId?: string;
   // ── Canonical sales-attribution dimensions ──────────────────────────────
   // Four INDEPENDENT facts; none implies another. All optional — an order is
   // never rejected because an attribution field was omitted. Compatibility

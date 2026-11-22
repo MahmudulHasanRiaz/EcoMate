@@ -84,6 +84,8 @@ import { Route as AuthenticatedOpBlockedIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedOpBrandsIndexRouteImport } from './routes/_authenticated/op/brands/index'
 import { Route as AuthenticatedOpCampaignsIndexRouteImport } from './routes/_authenticated/op/campaigns/index'
 import { Route as AuthenticatedOpCategoriesIndexRouteImport } from './routes/_authenticated/op/categories/index'
+import { Route as AuthenticatedOpChannelsIndexRouteImport } from './routes/_authenticated/op/channels/index'
+import { Route as AuthenticatedOpChannelsSyncCenterRouteImport } from './routes/_authenticated/op/channels/sync-center'
 import { Route as AuthenticatedOpChatsIndexRouteImport } from './routes/_authenticated/op/chats/index'
 import { Route as AuthenticatedOpCombosIndexRouteImport } from './routes/_authenticated/op/combos/index'
 import { Route as AuthenticatedOpCouponsIndexRouteImport } from './routes/_authenticated/op/coupons/index'
@@ -127,6 +129,7 @@ import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedOpPayrollIndexRouteImport } from './routes/_authenticated/op/payroll/index'
 import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
 import { Route as AuthenticatedOpProductsIdRouteImport } from './routes/_authenticated/op/products/$id'
+import { Route as AuthenticatedOpProductsStoreAvailabilityRouteImport } from './routes/_authenticated/op/products/store-availability'
 import { Route as AuthenticatedOpPurchasesIndexRouteImport } from './routes/_authenticated/op/purchases/index'
 import { Route as AuthenticatedOpReferralsIndexRouteImport } from './routes/_authenticated/op/referrals/index'
 import { Route as AuthenticatedOpRefundsIndexRouteImport } from './routes/_authenticated/op/refunds/index'
@@ -162,6 +165,7 @@ import { Route as AuthenticatedMonSettingsPriceLabelIndexRouteImport } from './r
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
 import { Route as AuthenticatedMonSettingsSmtpIndexRouteImport } from './routes/_authenticated/mon/settings/smtp/index'
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
+import { Route as AuthenticatedMonSettingsStoreAvailabilityIndexRouteImport } from './routes/_authenticated/mon/settings/store-availability/index'
 import { Route as AuthenticatedMonSettingsStoreLocationsIndexRouteImport } from './routes/_authenticated/mon/settings/store-locations/index'
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
 import { Route as AuthenticatedMonSettingsSubscriptionIndexRouteImport } from './routes/_authenticated/mon/settings/subscription/index'
@@ -169,6 +173,8 @@ import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './route
 import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './routes/_authenticated/mon/settings/tracking/index'
 import { Route as AuthenticatedMonSettingsTrackingMonitoringRouteImport } from './routes/_authenticated/mon/settings/tracking/monitoring'
 import { Route as AuthenticatedOpAnalyticsProductsIdRouteImport } from './routes/_authenticated/op/analytics/products.$id'
+import { Route as AuthenticatedOpChannelsStoresIndexRouteImport } from './routes/_authenticated/op/channels/stores/index'
+import { Route as AuthenticatedOpChannelsStoresIdRouteImport } from './routes/_authenticated/op/channels/stores/$id'
 import { Route as AuthenticatedOpDispatchDuplicateReviewIndexRouteImport } from './routes/_authenticated/op/dispatch/duplicate-review/index'
 import { Route as AuthenticatedOpInventoryPhysicalIndexRouteImport } from './routes/_authenticated/op/inventory/physical/index'
 import { Route as AuthenticatedOpInventoryPhysicalReservationsRouteImport } from './routes/_authenticated/op/inventory/physical/reservations'
@@ -190,6 +196,7 @@ import { Route as AuthenticatedOpPrintInvoiceIdRouteImport } from './routes/_aut
 import { Route as AuthenticatedOpPrintPriceLabelsIndexRouteImport } from './routes/_authenticated/op/print/price-labels/index'
 import { Route as AuthenticatedOpPrintStickerIdRouteImport } from './routes/_authenticated/op/print/sticker/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
+import { Route as AuthenticatedOpChannelsStoresNewIndexRouteImport } from './routes/_authenticated/op/channels/stores/new/index'
 import { Route as AuthenticatedOpMarketingAdAccountsManageIndexRouteImport } from './routes/_authenticated/op/marketing/ad-accounts/manage/index'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIdConvertRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/$id/convert'
 
@@ -618,6 +625,18 @@ const AuthenticatedOpCategoriesIndexRoute =
     path: '/op/categories/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpChannelsIndexRoute =
+  AuthenticatedOpChannelsIndexRouteImport.update({
+    id: '/op/channels/',
+    path: '/op/channels/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpChannelsSyncCenterRoute =
+  AuthenticatedOpChannelsSyncCenterRouteImport.update({
+    id: '/op/channels/sync-center',
+    path: '/op/channels/sync-center',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpChatsIndexRoute =
   AuthenticatedOpChatsIndexRouteImport.update({
     id: '/op/chats/',
@@ -875,6 +894,12 @@ const AuthenticatedOpProductsIdRoute =
     path: '/op/products/$id',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpProductsStoreAvailabilityRoute =
+  AuthenticatedOpProductsStoreAvailabilityRouteImport.update({
+    id: '/op/products/store-availability',
+    path: '/op/products/store-availability',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpPurchasesIndexRoute =
   AuthenticatedOpPurchasesIndexRouteImport.update({
     id: '/op/purchases/',
@@ -1085,6 +1110,12 @@ const AuthenticatedMonSettingsStorageIndexRoute =
     path: '/storage/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedMonSettingsStoreAvailabilityIndexRoute =
+  AuthenticatedMonSettingsStoreAvailabilityIndexRouteImport.update({
+    id: '/store-availability/',
+    path: '/store-availability/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
 const AuthenticatedMonSettingsStoreLocationsIndexRoute =
   AuthenticatedMonSettingsStoreLocationsIndexRouteImport.update({
     id: '/store-locations/',
@@ -1126,6 +1157,18 @@ const AuthenticatedOpAnalyticsProductsIdRoute =
     id: '/$id',
     path: '/$id',
     getParentRoute: () => AuthenticatedOpAnalyticsProductsRoute,
+  } as any)
+const AuthenticatedOpChannelsStoresIndexRoute =
+  AuthenticatedOpChannelsStoresIndexRouteImport.update({
+    id: '/op/channels/stores/',
+    path: '/op/channels/stores/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpChannelsStoresIdRoute =
+  AuthenticatedOpChannelsStoresIdRouteImport.update({
+    id: '/op/channels/stores/$id',
+    path: '/op/channels/stores/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpDispatchDuplicateReviewIndexRoute =
   AuthenticatedOpDispatchDuplicateReviewIndexRouteImport.update({
@@ -1253,6 +1296,12 @@ const AuthenticatedOpSettingsPersonalIndexRoute =
     path: '/personal/',
     getParentRoute: () => AuthenticatedOpSettingsRouteRoute,
   } as any)
+const AuthenticatedOpChannelsStoresNewIndexRoute =
+  AuthenticatedOpChannelsStoresNewIndexRouteImport.update({
+    id: '/op/channels/stores/new/',
+    path: '/op/channels/stores/new/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpMarketingAdAccountsManageIndexRoute =
   AuthenticatedOpMarketingAdAccountsManageIndexRouteImport.update({
     id: '/op/marketing/ad-accounts/manage/',
@@ -1323,6 +1372,7 @@ export interface FileRoutesByFullPath {
   '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/op/analytics/sales': typeof AuthenticatedOpAnalyticsSalesRoute
+  '/op/channels/sync-center': typeof AuthenticatedOpChannelsSyncCenterRoute
   '/op/courier-settlement/$id': typeof AuthenticatedOpCourierSettlementIdRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
@@ -1344,6 +1394,7 @@ export interface FileRoutesByFullPath {
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
+  '/op/products/store-availability': typeof AuthenticatedOpProductsStoreAvailabilityRoute
   '/op/returns/$id': typeof AuthenticatedOpReturnsIdRoute
   '/op/support-enquiries/$id': typeof AuthenticatedOpSupportEnquiriesIdRoute
   '/hr/careers/': typeof AuthenticatedHrCareersIndexRoute
@@ -1364,6 +1415,7 @@ export interface FileRoutesByFullPath {
   '/op/brands/': typeof AuthenticatedOpBrandsIndexRoute
   '/op/campaigns/': typeof AuthenticatedOpCampaignsIndexRoute
   '/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
+  '/op/channels/': typeof AuthenticatedOpChannelsIndexRoute
   '/op/chats/': typeof AuthenticatedOpChatsIndexRoute
   '/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
@@ -1402,6 +1454,7 @@ export interface FileRoutesByFullPath {
   '/mon/analytics/products/$id': typeof AuthenticatedMonAnalyticsProductsIdRoute
   '/mon/settings/tracking/monitoring': typeof AuthenticatedMonSettingsTrackingMonitoringRoute
   '/op/analytics/products/$id': typeof AuthenticatedOpAnalyticsProductsIdRoute
+  '/op/channels/stores/$id': typeof AuthenticatedOpChannelsStoresIdRoute
   '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/op/orders/$id/edit': typeof AuthenticatedOpOrdersIdEditRoute
@@ -1427,11 +1480,13 @@ export interface FileRoutesByFullPath {
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/store-availability/': typeof AuthenticatedMonSettingsStoreAvailabilityIndexRoute
   '/mon/settings/store-locations/': typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/subscription/': typeof AuthenticatedMonSettingsSubscriptionIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
+  '/op/channels/stores/': typeof AuthenticatedOpChannelsStoresIndexRoute
   '/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   '/op/inventory/physical/': typeof AuthenticatedOpInventoryPhysicalIndexRoute
   '/op/marketing/ad-accounts/': typeof AuthenticatedOpMarketingAdAccountsIndexRoute
@@ -1448,6 +1503,7 @@ export interface FileRoutesByFullPath {
   '/op/print/price-labels/': typeof AuthenticatedOpPrintPriceLabelsIndexRoute
   '/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
   '/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
+  '/op/channels/stores/new/': typeof AuthenticatedOpChannelsStoresNewIndexRoute
   '/op/marketing/ad-accounts/manage/': typeof AuthenticatedOpMarketingAdAccountsManageIndexRoute
 }
 export interface FileRoutesByTo {
@@ -1507,6 +1563,7 @@ export interface FileRoutesByTo {
   '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/op/analytics/sales': typeof AuthenticatedOpAnalyticsSalesRoute
+  '/op/channels/sync-center': typeof AuthenticatedOpChannelsSyncCenterRoute
   '/op/courier-settlement/$id': typeof AuthenticatedOpCourierSettlementIdRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
@@ -1528,6 +1585,7 @@ export interface FileRoutesByTo {
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
+  '/op/products/store-availability': typeof AuthenticatedOpProductsStoreAvailabilityRoute
   '/op/returns/$id': typeof AuthenticatedOpReturnsIdRoute
   '/op/support-enquiries/$id': typeof AuthenticatedOpSupportEnquiriesIdRoute
   '/hr/careers': typeof AuthenticatedHrCareersIndexRoute
@@ -1548,6 +1606,7 @@ export interface FileRoutesByTo {
   '/op/brands': typeof AuthenticatedOpBrandsIndexRoute
   '/op/campaigns': typeof AuthenticatedOpCampaignsIndexRoute
   '/op/categories': typeof AuthenticatedOpCategoriesIndexRoute
+  '/op/channels': typeof AuthenticatedOpChannelsIndexRoute
   '/op/chats': typeof AuthenticatedOpChatsIndexRoute
   '/op/combos': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons': typeof AuthenticatedOpCouponsIndexRoute
@@ -1586,6 +1645,7 @@ export interface FileRoutesByTo {
   '/mon/analytics/products/$id': typeof AuthenticatedMonAnalyticsProductsIdRoute
   '/mon/settings/tracking/monitoring': typeof AuthenticatedMonSettingsTrackingMonitoringRoute
   '/op/analytics/products/$id': typeof AuthenticatedOpAnalyticsProductsIdRoute
+  '/op/channels/stores/$id': typeof AuthenticatedOpChannelsStoresIdRoute
   '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/op/orders/$id/edit': typeof AuthenticatedOpOrdersIdEditRoute
@@ -1611,11 +1671,13 @@ export interface FileRoutesByTo {
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/store-availability': typeof AuthenticatedMonSettingsStoreAvailabilityIndexRoute
   '/mon/settings/store-locations': typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/subscription': typeof AuthenticatedMonSettingsSubscriptionIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking': typeof AuthenticatedMonSettingsTrackingIndexRoute
+  '/op/channels/stores': typeof AuthenticatedOpChannelsStoresIndexRoute
   '/op/dispatch/duplicate-review': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   '/op/inventory/physical': typeof AuthenticatedOpInventoryPhysicalIndexRoute
   '/op/marketing/ad-accounts': typeof AuthenticatedOpMarketingAdAccountsIndexRoute
@@ -1632,6 +1694,7 @@ export interface FileRoutesByTo {
   '/op/print/price-labels': typeof AuthenticatedOpPrintPriceLabelsIndexRoute
   '/op/settings/personal': typeof AuthenticatedOpSettingsPersonalIndexRoute
   '/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
+  '/op/channels/stores/new': typeof AuthenticatedOpChannelsStoresNewIndexRoute
   '/op/marketing/ad-accounts/manage': typeof AuthenticatedOpMarketingAdAccountsManageIndexRoute
 }
 export interface FileRoutesById {
@@ -1693,6 +1756,7 @@ export interface FileRoutesById {
   '/_authenticated/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/_authenticated/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/_authenticated/op/analytics/sales': typeof AuthenticatedOpAnalyticsSalesRoute
+  '/_authenticated/op/channels/sync-center': typeof AuthenticatedOpChannelsSyncCenterRoute
   '/_authenticated/op/courier-settlement/$id': typeof AuthenticatedOpCourierSettlementIdRoute
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/_authenticated/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
@@ -1714,6 +1778,7 @@ export interface FileRoutesById {
   '/_authenticated/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/_authenticated/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/_authenticated/op/products/$id': typeof AuthenticatedOpProductsIdRoute
+  '/_authenticated/op/products/store-availability': typeof AuthenticatedOpProductsStoreAvailabilityRoute
   '/_authenticated/op/returns/$id': typeof AuthenticatedOpReturnsIdRoute
   '/_authenticated/op/support-enquiries/$id': typeof AuthenticatedOpSupportEnquiriesIdRoute
   '/_authenticated/hr/careers/': typeof AuthenticatedHrCareersIndexRoute
@@ -1734,6 +1799,7 @@ export interface FileRoutesById {
   '/_authenticated/op/brands/': typeof AuthenticatedOpBrandsIndexRoute
   '/_authenticated/op/campaigns/': typeof AuthenticatedOpCampaignsIndexRoute
   '/_authenticated/op/categories/': typeof AuthenticatedOpCategoriesIndexRoute
+  '/_authenticated/op/channels/': typeof AuthenticatedOpChannelsIndexRoute
   '/_authenticated/op/chats/': typeof AuthenticatedOpChatsIndexRoute
   '/_authenticated/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/_authenticated/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
@@ -1772,6 +1838,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/analytics/products/$id': typeof AuthenticatedMonAnalyticsProductsIdRoute
   '/_authenticated/mon/settings/tracking/monitoring': typeof AuthenticatedMonSettingsTrackingMonitoringRoute
   '/_authenticated/op/analytics/products/$id': typeof AuthenticatedOpAnalyticsProductsIdRoute
+  '/_authenticated/op/channels/stores/$id': typeof AuthenticatedOpChannelsStoresIdRoute
   '/_authenticated/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/_authenticated/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/_authenticated/op/orders_/$id/edit': typeof AuthenticatedOpOrdersIdEditRoute
@@ -1797,11 +1864,13 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/_authenticated/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/_authenticated/mon/settings/store-availability/': typeof AuthenticatedMonSettingsStoreAvailabilityIndexRoute
   '/_authenticated/mon/settings/store-locations/': typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/_authenticated/mon/settings/subscription/': typeof AuthenticatedMonSettingsSubscriptionIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/_authenticated/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
+  '/_authenticated/op/channels/stores/': typeof AuthenticatedOpChannelsStoresIndexRoute
   '/_authenticated/op/dispatch/duplicate-review/': typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   '/_authenticated/op/inventory/physical/': typeof AuthenticatedOpInventoryPhysicalIndexRoute
   '/_authenticated/op/marketing/ad-accounts/': typeof AuthenticatedOpMarketingAdAccountsIndexRoute
@@ -1818,6 +1887,7 @@ export interface FileRoutesById {
   '/_authenticated/op/print/price-labels/': typeof AuthenticatedOpPrintPriceLabelsIndexRoute
   '/_authenticated/op/settings/personal/': typeof AuthenticatedOpSettingsPersonalIndexRoute
   '/_authenticated/op/orders/incomplete-leads/$id/convert': typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
+  '/_authenticated/op/channels/stores/new/': typeof AuthenticatedOpChannelsStoresNewIndexRoute
   '/_authenticated/op/marketing/ad-accounts/manage/': typeof AuthenticatedOpMarketingAdAccountsManageIndexRoute
 }
 export interface FileRouteTypes {
@@ -1879,6 +1949,7 @@ export interface FileRouteTypes {
     | '/op/analytics/overview'
     | '/op/analytics/products'
     | '/op/analytics/sales'
+    | '/op/channels/sync-center'
     | '/op/courier-settlement/$id'
     | '/op/customers/$id'
     | '/op/employees/create'
@@ -1900,6 +1971,7 @@ export interface FileRouteTypes {
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/op/products/$id'
+    | '/op/products/store-availability'
     | '/op/returns/$id'
     | '/op/support-enquiries/$id'
     | '/hr/careers/'
@@ -1920,6 +1992,7 @@ export interface FileRouteTypes {
     | '/op/brands/'
     | '/op/campaigns/'
     | '/op/categories/'
+    | '/op/channels/'
     | '/op/chats/'
     | '/op/combos/'
     | '/op/coupons/'
@@ -1958,6 +2031,7 @@ export interface FileRouteTypes {
     | '/mon/analytics/products/$id'
     | '/mon/settings/tracking/monitoring'
     | '/op/analytics/products/$id'
+    | '/op/channels/stores/$id'
     | '/op/inventory/physical/reservations'
     | '/op/marketing/campaigns/$id'
     | '/op/orders/$id/edit'
@@ -1983,11 +2057,13 @@ export interface FileRouteTypes {
     | '/mon/settings/shipping/'
     | '/mon/settings/smtp/'
     | '/mon/settings/storage/'
+    | '/mon/settings/store-availability/'
     | '/mon/settings/store-locations/'
     | '/mon/settings/storefront/'
     | '/mon/settings/subscription/'
     | '/mon/settings/system/'
     | '/mon/settings/tracking/'
+    | '/op/channels/stores/'
     | '/op/dispatch/duplicate-review/'
     | '/op/inventory/physical/'
     | '/op/marketing/ad-accounts/'
@@ -2004,6 +2080,7 @@ export interface FileRouteTypes {
     | '/op/print/price-labels/'
     | '/op/settings/personal/'
     | '/op/orders/incomplete-leads/$id/convert'
+    | '/op/channels/stores/new/'
     | '/op/marketing/ad-accounts/manage/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -2063,6 +2140,7 @@ export interface FileRouteTypes {
     | '/op/analytics/overview'
     | '/op/analytics/products'
     | '/op/analytics/sales'
+    | '/op/channels/sync-center'
     | '/op/courier-settlement/$id'
     | '/op/customers/$id'
     | '/op/employees/create'
@@ -2084,6 +2162,7 @@ export interface FileRouteTypes {
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/op/products/$id'
+    | '/op/products/store-availability'
     | '/op/returns/$id'
     | '/op/support-enquiries/$id'
     | '/hr/careers'
@@ -2104,6 +2183,7 @@ export interface FileRouteTypes {
     | '/op/brands'
     | '/op/campaigns'
     | '/op/categories'
+    | '/op/channels'
     | '/op/chats'
     | '/op/combos'
     | '/op/coupons'
@@ -2142,6 +2222,7 @@ export interface FileRouteTypes {
     | '/mon/analytics/products/$id'
     | '/mon/settings/tracking/monitoring'
     | '/op/analytics/products/$id'
+    | '/op/channels/stores/$id'
     | '/op/inventory/physical/reservations'
     | '/op/marketing/campaigns/$id'
     | '/op/orders/$id/edit'
@@ -2167,11 +2248,13 @@ export interface FileRouteTypes {
     | '/mon/settings/shipping'
     | '/mon/settings/smtp'
     | '/mon/settings/storage'
+    | '/mon/settings/store-availability'
     | '/mon/settings/store-locations'
     | '/mon/settings/storefront'
     | '/mon/settings/subscription'
     | '/mon/settings/system'
     | '/mon/settings/tracking'
+    | '/op/channels/stores'
     | '/op/dispatch/duplicate-review'
     | '/op/inventory/physical'
     | '/op/marketing/ad-accounts'
@@ -2188,6 +2271,7 @@ export interface FileRouteTypes {
     | '/op/print/price-labels'
     | '/op/settings/personal'
     | '/op/orders/incomplete-leads/$id/convert'
+    | '/op/channels/stores/new'
     | '/op/marketing/ad-accounts/manage'
   id:
     | '__root__'
@@ -2248,6 +2332,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/analytics/overview'
     | '/_authenticated/op/analytics/products'
     | '/_authenticated/op/analytics/sales'
+    | '/_authenticated/op/channels/sync-center'
     | '/_authenticated/op/courier-settlement/$id'
     | '/_authenticated/op/customers/$id'
     | '/_authenticated/op/employees/create'
@@ -2269,6 +2354,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/orders/$id'
     | '/_authenticated/op/orders/create'
     | '/_authenticated/op/products/$id'
+    | '/_authenticated/op/products/store-availability'
     | '/_authenticated/op/returns/$id'
     | '/_authenticated/op/support-enquiries/$id'
     | '/_authenticated/hr/careers/'
@@ -2289,6 +2375,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/brands/'
     | '/_authenticated/op/campaigns/'
     | '/_authenticated/op/categories/'
+    | '/_authenticated/op/channels/'
     | '/_authenticated/op/chats/'
     | '/_authenticated/op/combos/'
     | '/_authenticated/op/coupons/'
@@ -2327,6 +2414,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/analytics/products/$id'
     | '/_authenticated/mon/settings/tracking/monitoring'
     | '/_authenticated/op/analytics/products/$id'
+    | '/_authenticated/op/channels/stores/$id'
     | '/_authenticated/op/inventory/physical/reservations'
     | '/_authenticated/op/marketing/campaigns/$id'
     | '/_authenticated/op/orders_/$id/edit'
@@ -2352,11 +2440,13 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/shipping/'
     | '/_authenticated/mon/settings/smtp/'
     | '/_authenticated/mon/settings/storage/'
+    | '/_authenticated/mon/settings/store-availability/'
     | '/_authenticated/mon/settings/store-locations/'
     | '/_authenticated/mon/settings/storefront/'
     | '/_authenticated/mon/settings/subscription/'
     | '/_authenticated/mon/settings/system/'
     | '/_authenticated/mon/settings/tracking/'
+    | '/_authenticated/op/channels/stores/'
     | '/_authenticated/op/dispatch/duplicate-review/'
     | '/_authenticated/op/inventory/physical/'
     | '/_authenticated/op/marketing/ad-accounts/'
@@ -2373,6 +2463,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/print/price-labels/'
     | '/_authenticated/op/settings/personal/'
     | '/_authenticated/op/orders/incomplete-leads/$id/convert'
+    | '/_authenticated/op/channels/stores/new/'
     | '/_authenticated/op/marketing/ad-accounts/manage/'
   fileRoutesById: FileRoutesById
 }
@@ -2919,6 +3010,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpCategoriesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/channels/': {
+      id: '/_authenticated/op/channels/'
+      path: '/op/channels'
+      fullPath: '/op/channels/'
+      preLoaderRoute: typeof AuthenticatedOpChannelsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/channels/sync-center': {
+      id: '/_authenticated/op/channels/sync-center'
+      path: '/op/channels/sync-center'
+      fullPath: '/op/channels/sync-center'
+      preLoaderRoute: typeof AuthenticatedOpChannelsSyncCenterRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/chats/': {
       id: '/_authenticated/op/chats/'
       path: '/op/chats'
@@ -3220,6 +3325,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpProductsIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/products/store-availability': {
+      id: '/_authenticated/op/products/store-availability'
+      path: '/op/products/store-availability'
+      fullPath: '/op/products/store-availability'
+      preLoaderRoute: typeof AuthenticatedOpProductsStoreAvailabilityRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/purchases/': {
       id: '/_authenticated/op/purchases/'
       path: '/op/purchases'
@@ -3465,6 +3577,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsStorageIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/mon/settings/store-availability/': {
+      id: '/_authenticated/mon/settings/store-availability/'
+      path: '/store-availability'
+      fullPath: '/mon/settings/store-availability/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsStoreAvailabilityIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
     '/_authenticated/mon/settings/store-locations/': {
       id: '/_authenticated/mon/settings/store-locations/'
       path: '/store-locations'
@@ -3513,6 +3632,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/op/analytics/products/$id'
       preLoaderRoute: typeof AuthenticatedOpAnalyticsProductsIdRouteImport
       parentRoute: typeof AuthenticatedOpAnalyticsProductsRoute
+    }
+    '/_authenticated/op/channels/stores/': {
+      id: '/_authenticated/op/channels/stores/'
+      path: '/op/channels/stores'
+      fullPath: '/op/channels/stores/'
+      preLoaderRoute: typeof AuthenticatedOpChannelsStoresIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/channels/stores/$id': {
+      id: '/_authenticated/op/channels/stores/$id'
+      path: '/op/channels/stores/$id'
+      fullPath: '/op/channels/stores/$id'
+      preLoaderRoute: typeof AuthenticatedOpChannelsStoresIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/dispatch/duplicate-review/': {
       id: '/_authenticated/op/dispatch/duplicate-review/'
@@ -3661,6 +3794,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpSettingsPersonalIndexRouteImport
       parentRoute: typeof AuthenticatedOpSettingsRouteRoute
     }
+    '/_authenticated/op/channels/stores/new/': {
+      id: '/_authenticated/op/channels/stores/new/'
+      path: '/op/channels/stores/new'
+      fullPath: '/op/channels/stores/new/'
+      preLoaderRoute: typeof AuthenticatedOpChannelsStoresNewIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/marketing/ad-accounts/manage/': {
       id: '/_authenticated/op/marketing/ad-accounts/manage/'
       path: '/op/marketing/ad-accounts/manage'
@@ -3697,6 +3837,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
   AuthenticatedMonSettingsSmtpIndexRoute: typeof AuthenticatedMonSettingsSmtpIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
+  AuthenticatedMonSettingsStoreAvailabilityIndexRoute: typeof AuthenticatedMonSettingsStoreAvailabilityIndexRoute
   AuthenticatedMonSettingsStoreLocationsIndexRoute: typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   AuthenticatedMonSettingsStorefrontIndexRoute: typeof AuthenticatedMonSettingsStorefrontIndexRoute
   AuthenticatedMonSettingsSubscriptionIndexRoute: typeof AuthenticatedMonSettingsSubscriptionIndexRoute
@@ -3742,6 +3883,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsSmtpIndexRoute,
     AuthenticatedMonSettingsStorageIndexRoute:
       AuthenticatedMonSettingsStorageIndexRoute,
+    AuthenticatedMonSettingsStoreAvailabilityIndexRoute:
+      AuthenticatedMonSettingsStoreAvailabilityIndexRoute,
     AuthenticatedMonSettingsStoreLocationsIndexRoute:
       AuthenticatedMonSettingsStoreLocationsIndexRoute,
     AuthenticatedMonSettingsStorefrontIndexRoute:
@@ -3855,6 +3998,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpAnalyticsOverviewRoute: typeof AuthenticatedOpAnalyticsOverviewRoute
   AuthenticatedOpAnalyticsProductsRoute: typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   AuthenticatedOpAnalyticsSalesRoute: typeof AuthenticatedOpAnalyticsSalesRoute
+  AuthenticatedOpChannelsSyncCenterRoute: typeof AuthenticatedOpChannelsSyncCenterRoute
   AuthenticatedOpCourierSettlementIdRoute: typeof AuthenticatedOpCourierSettlementIdRoute
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
   AuthenticatedOpEmployeesCreateRoute: typeof AuthenticatedOpEmployeesCreateRoute
@@ -3876,6 +4020,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpOrdersIdRoute: typeof AuthenticatedOpOrdersIdRoute
   AuthenticatedOpOrdersCreateRoute: typeof AuthenticatedOpOrdersCreateRoute
   AuthenticatedOpProductsIdRoute: typeof AuthenticatedOpProductsIdRoute
+  AuthenticatedOpProductsStoreAvailabilityRoute: typeof AuthenticatedOpProductsStoreAvailabilityRoute
   AuthenticatedOpReturnsIdRoute: typeof AuthenticatedOpReturnsIdRoute
   AuthenticatedOpSupportEnquiriesIdRoute: typeof AuthenticatedOpSupportEnquiriesIdRoute
   AuthenticatedHrCareersIndexRoute: typeof AuthenticatedHrCareersIndexRoute
@@ -3896,6 +4041,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpBrandsIndexRoute: typeof AuthenticatedOpBrandsIndexRoute
   AuthenticatedOpCampaignsIndexRoute: typeof AuthenticatedOpCampaignsIndexRoute
   AuthenticatedOpCategoriesIndexRoute: typeof AuthenticatedOpCategoriesIndexRoute
+  AuthenticatedOpChannelsIndexRoute: typeof AuthenticatedOpChannelsIndexRoute
   AuthenticatedOpChatsIndexRoute: typeof AuthenticatedOpChatsIndexRoute
   AuthenticatedOpCombosIndexRoute: typeof AuthenticatedOpCombosIndexRoute
   AuthenticatedOpCouponsIndexRoute: typeof AuthenticatedOpCouponsIndexRoute
@@ -3932,12 +4078,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
   AuthenticatedMonAnalyticsProductsIdRoute: typeof AuthenticatedMonAnalyticsProductsIdRoute
+  AuthenticatedOpChannelsStoresIdRoute: typeof AuthenticatedOpChannelsStoresIdRoute
   AuthenticatedOpInventoryPhysicalReservationsRoute: typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   AuthenticatedOpMarketingCampaignsIdRoute: typeof AuthenticatedOpMarketingCampaignsIdRoute
   AuthenticatedOpOrdersIdEditRoute: typeof AuthenticatedOpOrdersIdEditRoute
   AuthenticatedOpOrdersIdExchangeRoute: typeof AuthenticatedOpOrdersIdExchangeRoute
   AuthenticatedMonAnalyticsProductsIndexRoute: typeof AuthenticatedMonAnalyticsProductsIndexRoute
   AuthenticatedMonMarketingCatalogIndexRoute: typeof AuthenticatedMonMarketingCatalogIndexRoute
+  AuthenticatedOpChannelsStoresIndexRoute: typeof AuthenticatedOpChannelsStoresIndexRoute
   AuthenticatedOpDispatchDuplicateReviewIndexRoute: typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   AuthenticatedOpInventoryPhysicalIndexRoute: typeof AuthenticatedOpInventoryPhysicalIndexRoute
   AuthenticatedOpMarketingAdAccountsIndexRoute: typeof AuthenticatedOpMarketingAdAccountsIndexRoute
@@ -3951,6 +4099,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpMarketingSpendSnapshotsIndexRoute: typeof AuthenticatedOpMarketingSpendSnapshotsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIndexRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIndexRoute
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute: typeof AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute
+  AuthenticatedOpChannelsStoresNewIndexRoute: typeof AuthenticatedOpChannelsStoresNewIndexRoute
   AuthenticatedOpMarketingAdAccountsManageIndexRoute: typeof AuthenticatedOpMarketingAdAccountsManageIndexRoute
 }
 
@@ -4013,6 +4162,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpAnalyticsProductsRoute:
     AuthenticatedOpAnalyticsProductsRouteWithChildren,
   AuthenticatedOpAnalyticsSalesRoute: AuthenticatedOpAnalyticsSalesRoute,
+  AuthenticatedOpChannelsSyncCenterRoute:
+    AuthenticatedOpChannelsSyncCenterRoute,
   AuthenticatedOpCourierSettlementIdRoute:
     AuthenticatedOpCourierSettlementIdRoute,
   AuthenticatedOpCustomersIdRoute: AuthenticatedOpCustomersIdRoute,
@@ -4044,6 +4195,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpOrdersIdRoute: AuthenticatedOpOrdersIdRoute,
   AuthenticatedOpOrdersCreateRoute: AuthenticatedOpOrdersCreateRoute,
   AuthenticatedOpProductsIdRoute: AuthenticatedOpProductsIdRoute,
+  AuthenticatedOpProductsStoreAvailabilityRoute:
+    AuthenticatedOpProductsStoreAvailabilityRoute,
   AuthenticatedOpReturnsIdRoute: AuthenticatedOpReturnsIdRoute,
   AuthenticatedOpSupportEnquiriesIdRoute:
     AuthenticatedOpSupportEnquiriesIdRoute,
@@ -4067,6 +4220,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpBrandsIndexRoute: AuthenticatedOpBrandsIndexRoute,
   AuthenticatedOpCampaignsIndexRoute: AuthenticatedOpCampaignsIndexRoute,
   AuthenticatedOpCategoriesIndexRoute: AuthenticatedOpCategoriesIndexRoute,
+  AuthenticatedOpChannelsIndexRoute: AuthenticatedOpChannelsIndexRoute,
   AuthenticatedOpChatsIndexRoute: AuthenticatedOpChatsIndexRoute,
   AuthenticatedOpCombosIndexRoute: AuthenticatedOpCombosIndexRoute,
   AuthenticatedOpCouponsIndexRoute: AuthenticatedOpCouponsIndexRoute,
@@ -4108,6 +4262,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,
   AuthenticatedMonAnalyticsProductsIdRoute:
     AuthenticatedMonAnalyticsProductsIdRoute,
+  AuthenticatedOpChannelsStoresIdRoute: AuthenticatedOpChannelsStoresIdRoute,
   AuthenticatedOpInventoryPhysicalReservationsRoute:
     AuthenticatedOpInventoryPhysicalReservationsRoute,
   AuthenticatedOpMarketingCampaignsIdRoute:
@@ -4118,6 +4273,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedMonAnalyticsProductsIndexRoute,
   AuthenticatedMonMarketingCatalogIndexRoute:
     AuthenticatedMonMarketingCatalogIndexRoute,
+  AuthenticatedOpChannelsStoresIndexRoute:
+    AuthenticatedOpChannelsStoresIndexRoute,
   AuthenticatedOpDispatchDuplicateReviewIndexRoute:
     AuthenticatedOpDispatchDuplicateReviewIndexRoute,
   AuthenticatedOpInventoryPhysicalIndexRoute:
@@ -4144,6 +4301,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedOpOrdersIncompleteLeadsIndexRoute,
   AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute:
     AuthenticatedOpOrdersIncompleteLeadsIdConvertRoute,
+  AuthenticatedOpChannelsStoresNewIndexRoute:
+    AuthenticatedOpChannelsStoresNewIndexRoute,
   AuthenticatedOpMarketingAdAccountsManageIndexRoute:
     AuthenticatedOpMarketingAdAccountsManageIndexRoute,
 }

@@ -753,6 +753,54 @@ export const FEATURE_CONTENT: Record<string, FeatureContent> = {
     withoutAccess:
       'No custom domain; the storefront only answers on its EcoMate subdomain.',
   },
+
+  // ── P: External Stores (5) ──
+  // Central commerce (Phase 9, multi-tenant first). All five are
+  // add-ons, sold together as the single `external-stores` add-on
+  // (ruling D2, Option A) — but each key stays individually addressable
+  // in the catalogue (pricing-v2 three-catalogue direction), so
+  // per-provider / per-feature splits stay expressible later through
+  // console add-on configuration alone, with no code change.
+  admin_stores: {
+    kind: ADD_ON,
+    category: 'P: External Stores',
+    scope:
+      'External stores: connect WooCommerce, Shopify, or custom-bridge stores to EcoMate and manage them from Sales Channels — connection, health, and per-store settings.',
+    withoutAccess:
+      'No Sales Channels section; no external store can be connected, so products, orders, and stock live only in EcoMate.',
+  },
+  store_product_sync: {
+    kind: ADD_ON,
+    category: 'P: External Stores',
+    scope:
+      'Product sync: publish EcoMate products, variants, categories, and media to connected external stores, and keep field ownership and overrides in sync.',
+    withoutAccess:
+      'Products cannot be published or synced to external stores; the store catalogue must be maintained separately on each channel.',
+  },
+  store_order_sync: {
+    kind: ADD_ON,
+    category: 'P: External Stores',
+    scope:
+      'Order sync: pull orders placed on connected external stores into EcoMate, and push EcoMate order status (cancelled, delivered) back to the channel.',
+    withoutAccess:
+      'Orders from external stores are not pulled in and EcoMate order status is not pushed back; each channel must be fulfilled separately.',
+  },
+  store_stock_sync: {
+    kind: ADD_ON,
+    category: 'P: External Stores',
+    scope:
+      'Stock sync: keep stock levels on connected external stores in step with EcoMate inventory — real quantities in the 1–5 band, capped or status-only above it.',
+    withoutAccess:
+      'Stock on external stores is never updated from EcoMate; quantities shown on each channel drift from real inventory.',
+  },
+  admin_sync_center: {
+    kind: ADD_ON,
+    category: 'P: External Stores',
+    scope:
+      'Sync Center: run history, per-item results, sync issues, retries, and retention for every external-store sync job.',
+    withoutAccess:
+      'No Sync Center; sync runs, failures, and issues cannot be inspected or retried from the admin panel.',
+  },
 };
 
 /** Feature keys classified as add-ons by default (Boss §0). */
@@ -763,9 +811,11 @@ export const ADD_ON_BATCH: string[] = Object.entries(FEATURE_CONTENT)
 /**
  * Placeholder add-on rows seeded for the add-on batch — one add-on per
  * feature (Boss: prices are Muse's choice for now, all configurable
- * from the console). Slugs follow the convert-flow derivation
- * (featureKey with '_' → '-'), so a later conversion of an
- * already-seeded feature finds its add-on instead of duplicating it.
+ * from the console), EXCEPT `external-stores`, which bundles the five
+ * External Stores keys into one add-on (Phase 9 ruling D2, Option A).
+ * Slugs follow the convert-flow derivation (featureKey with '_' → '-'),
+ * so a later conversion of an already-seeded feature finds its add-on
+ * instead of duplicating it — the bundled row is the one exception.
  * All MONTHLY / BDT; public unless isPublic is false.
  *
  * isPublic: false marks the four infra add-ons whose features have NO
@@ -774,7 +824,10 @@ export const ADD_ON_BATCH: string[] = Object.entries(FEATURE_CONTENT)
  * hasFeature checks for them). They stay private / console-only until
  * enforcement is wired — selling an add-on nothing enforces would
  * charge tenants for nothing. Flip to public when the gates land.
- * Trial attach ignores isPublic, so trial tenants still get them.
+ * `external-stores` is likewise private until the Phase 9 isolation
+ * gate passes (port plan §3.12.2). Trial attach ignores isPublic, so
+ * trial tenants still get them — except external-stores, which trial
+ * never attaches (ruling D3).
  */
 export interface AddOnSeedRow {
   slug: string;
@@ -783,6 +836,8 @@ export interface AddOnSeedRow {
   /** Placeholder monthly price in BDT. */
   price: number;
   features: string[];
+  /** Plan-limit grants, merged max-wins with the plan (e.g. { external_stores: 3 }). */
+  limits?: Record<string, number>;
   sortOrder: number;
   /** Default true. False = private, console-only (see the note above). */
   isPublic?: boolean;
@@ -969,5 +1024,26 @@ export const ADD_ON_SEED_ROWS: AddOnSeedRow[] = [
     price: 199,
     features: ['mobile_distribution_pos'],
     sortOrder: 82,
+  },
+  {
+    slug: 'external-stores',
+    name: 'External Stores',
+    description:
+      'Connect WooCommerce, Shopify, or custom-bridge stores and sync products, orders, and stock with EcoMate.',
+    price: 499,
+    features: [
+      'admin_stores',
+      'store_product_sync',
+      'store_order_sync',
+      'store_stock_sync',
+      'admin_sync_center',
+    ],
+    // Ruling D4: the add-on grants 3 connected external stores.
+    limits: { external_stores: 3 },
+    sortOrder: 90,
+    // Private until the Phase 9 two-tenant isolation gate passes
+    // (port plan §3.12.2) — the keys must not be sold before then.
+    // Trial never attaches this add-on (ruling D3).
+    isPublic: false,
   },
 ];

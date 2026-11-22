@@ -69,6 +69,9 @@ function makeService() {
     signupRequest: {
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    tenantExternalStoreBinding: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
+    },
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const registry = new ExportProgressRegistry();
@@ -530,6 +533,34 @@ describe('TenantLifecycleService', () => {
       where: { slug: tenant.slug },
     });
     expect(result.signupRequestsDeleted).toBe(1);
+  });
+
+  it('deletes the external-store bindings so the store identities can be re-claimed (Phase 9 §3.4)', async () => {
+    const { service, prisma } = makeService();
+    prisma.tenant.findUnique.mockResolvedValue({
+      ...tenant,
+      status: 'DELETED',
+      deletedAt: new Date(Date.now() - 31 * DAY),
+    });
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(manifestResponse([]))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          deletedRows: 7,
+          mediaDeletedFiles: 0,
+          mediaFailedFiles: [],
+          jobsRemoved: 0,
+        }),
+      });
+
+    const result = await service.purgeNow('tenant-1', 'admin-1');
+
+    expect(
+      prisma.tenantExternalStoreBinding.deleteMany,
+    ).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1' } });
+    expect(result.externalStoreBindingsDeleted).toBe(2);
   });
 
   it('still purges when the registry-refresh push fails', async () => {

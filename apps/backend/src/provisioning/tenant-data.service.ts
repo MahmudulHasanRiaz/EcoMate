@@ -3,11 +3,13 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { ExternalStoreResolver } from '../external-stores/external-store-resolver.service';
 
 const DEFAULT_MAX_ROWS_PER_TABLE = 250_000;
 /** Default rows per export chunk; the caller may ask for fewer, never more. */
@@ -49,6 +51,13 @@ export class TenantDataService {
     // 2026-11-17: the optional injection resolved to undefined and
     // removeQueuedJobs no-op'd while delayed jobs survived the purge.
     private readonly discovery: DiscoveryService,
+    // Phase 9 §3.4: purge invalidates the resolver cache for the tenant's
+    // stores (best-effort; @Optional so unit specs constructing this
+    // service manually keep working). The binding ROWS are deleted
+    // platform-side (tenant-lifecycle.service.ts purge) — the internal
+    // release endpoint is PENDING-only, so the backend must not call it
+    // for ACTIVE bindings; the cache invalidation is the backend's half.
+    @Optional() private readonly storeResolver?: ExternalStoreResolver,
   ) {}
 
   async exportTenant(tenantId: string) {
@@ -160,6 +169,22 @@ export class TenantDataService {
     // removed so it can never run against a half-purged tenant. In-flight
     // jobs are stopped by the TenantWorkerHost registry check instead.
     const jobsRemoved = await this.removeQueuedJobs(tenantId);
+    // Phase 9: list the tenant's external stores BEFORE the row purge
+    // deletes them — their resolver cache entries are invalidated after
+    // the purge (below). Raw SQL like the rest of this method: the purge
+    // runs without tenant context, so the Prisma proxy cannot scope it.
+    let storeRows: { id: string; kind: string; domainNormalised: string | null }[] = [];
+    try {
+      storeRows = await this.prisma.$queryRawUnsafe(
+        `SELECT id, kind, "domainNormalised" FROM "Store" WHERE tenant_id = $1::uuid`,
+        tenantId,
+      );
+    } catch (err) {
+      // A missing Store table (pre-Phase-9 DB) must not abort the purge.
+      this.logger.warn(
+        `Store listing failed during purge of ${tenantId} (continuing): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     const tableOrder = await this.tenantTableOrder();
     const deleted: Record<string, number> = {};
@@ -176,9 +201,41 @@ export class TenantDataService {
       total += count;
     }
 
+    // Phase 9: invalidate the resolver cache for the purged tenant's
+    // stores so a stale extstore: entry can never resolve a webhook for
+    // a dead tenant (the intake re-checks the Store row and would 401
+    // anyway — this is hygiene, not a security boundary). Best-effort:
+    // a cache failure must never fail the purge. The platform binding
+    // rows are deleted platform-side (tenant-lifecycle purge).
+    let cacheInvalidated = 0;
+    if (this.storeResolver) {
+      for (const store of storeRows) {
+        try {
+          // Only real providers have a domain cache key; NATIVE stores
+          // never do (domainNormalised is null for them).
+          const provider =
+            store.kind === 'WOOCOMMERCE' ||
+            store.kind === 'SHOPIFY' ||
+            store.kind === 'CUSTOM'
+              ? store.kind
+              : undefined;
+          await this.storeResolver.invalidate(store.id, {
+            provider,
+            domain: store.domainNormalised ?? undefined,
+          });
+          cacheInvalidated += 1;
+        } catch (err) {
+          this.logger.warn(
+            `Resolver cache invalidation failed for store ${store.id} during purge of ${tenantId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
+
     this.logger.log(
       `Purged tenant ${tenantId}: ${total} row(s) across ${tableOrder.length} tables, ` +
-        `${media.deletedFiles} media file(s), ${jobsRemoved} queued job(s) removed`,
+        `${media.deletedFiles} media file(s), ${jobsRemoved} queued job(s) removed` +
+        (cacheInvalidated > 0 ? `, ${cacheInvalidated} store resolver cache entr(ies) invalidated` : ''),
     );
     return {
       tenantId,
@@ -187,6 +244,7 @@ export class TenantDataService {
       mediaDeletedFiles: media.deletedFiles,
       mediaFailedFiles: media.failedFiles,
       jobsRemoved,
+      storeCacheInvalidated: cacheInvalidated,
     };
   }
 

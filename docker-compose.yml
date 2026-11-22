@@ -228,6 +228,27 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
       RUN_SEED: ${RUN_SEED:-false}
+      # Phase 9 (central-commerce) kill switches (§3.8, rulings D5/D6):
+      # ALL OFF by default at launch. The enablement flags default ON in
+      # code (only an explicit 'false' disables), so the launch-off state
+      # lives HERE as explicit 'false' values — do not delete these lines
+      # or the flags silently turn on. Effective gate = kill switch AND
+      # tenant entitlement. tracking_send_external_store_orders is
+      # fail-closed in code (explicit 'true' required). The webhook body
+      # cap defaults to 256KB (262144); NEW_SALES_CHANNEL_MODEL_ENABLED
+      # ships OFF with P8 dual-write on.
+      THIRD_PARTY_STORES_ENABLED: ${THIRD_PARTY_STORES_ENABLED:-false}
+      store_sync_enabled: ${store_sync_enabled:-false}
+      store_product_sync_enabled: ${store_product_sync_enabled:-false}
+      store_order_sync_enabled: ${store_order_sync_enabled:-false}
+      store_stock_sync_enabled: ${store_stock_sync_enabled:-false}
+      store_order_push_enabled: ${store_order_push_enabled:-false}
+      store_reconcile_enabled: ${store_reconcile_enabled:-false}
+      store_reconcile_widening_enabled: ${store_reconcile_widening_enabled:-false}
+      store_stock_audit_enabled: ${store_stock_audit_enabled:-false}
+      tracking_send_external_store_orders: ${tracking_send_external_store_orders:-false}
+      store_webhook_max_body_bytes: ${store_webhook_max_body_bytes:-262144}
+      NEW_SALES_CHANNEL_MODEL_ENABLED: ${NEW_SALES_CHANNEL_MODEL_ENABLED:-false}
       # Scale-test seeder opt-in (staging only — never set on a client
       # stack). Empty default = off. startup.sh + the script itself both
       # gate on ALLOW_SCALE_SEED=1, and the script also refuses known
