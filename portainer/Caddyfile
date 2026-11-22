@@ -7,7 +7,8 @@
 #   api.ecomate.bd   -> platform-api (control plane + webhooks)
 #   ecomate.bd       -> 301 to www.ecomate.bd (canonical marketing host)
 #   anything else    -> tenant block (:443): /api/* -> backend,
-#                       /admin/* -> admin, /pos/* -> pos, else storefront
+#                       /admin, /admin/* -> admin, /pos, /pos/* -> pos,
+#                       else storefront
 #
 # The host split is load-bearing: platform-admin's default same-origin /api
 # would hit the TENANT backend under path-only routing. On the saas. host,
@@ -113,12 +114,16 @@
 	# owns this rule for storefront paths; until an edge-side 301 is
 	# implemented (needs host→tenant lookup at the edge), alias hosts serve
 	# /admin and /pos directly with noindex headers from the apps.
-	@admin path /admin/*
+	# Caddy's path matcher does NOT match the bare path (/admin/* misses
+	# /admin) — list both, or bare /admin falls through to the storefront.
+	@admin path /admin /admin/*
 	handle @admin {
 		reverse_proxy admin:80
 	}
 
-	@pos path /pos/*
+	# Same bare-path gap as /admin (the storefront's /pos rewrite is only
+	# a fallback — edge routing is Caddy's job).
+	@pos path /pos /pos/*
 	handle @pos {
 		reverse_proxy pos:80
 	}

@@ -90,8 +90,8 @@
                                       ▼
   acme.ecomate.bd ──────▶ Ingress (Caddy/Traefik, wildcard + custom domains)
   acme.<alias-domain> ──▶   ├─ /api/*  ─▶ apps/backend (NestJS, pooled, tenant-aware)
-  custom-domain.com ────▶   ├─ /admin/* ─▶ static admin build
-                             ├─ /pos/*  ─▶ static POS build
+  custom-domain.com ────▶   ├─ /admin, /admin/* ─▶ static admin build
+                             ├─ /pos, /pos/*     ─▶ static POS build
                              └─ /*      ─▶ apps/storefront (Next.js, host-aware)
                                       │
                                       ▼
