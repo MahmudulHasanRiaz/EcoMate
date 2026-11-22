@@ -2,7 +2,7 @@
 
 ## Code Quality
 
-- Run `npx tsc --noEmit` after modifying any `.tsx` or `.ts` file
+- Run `npm run typecheck` (`tsc -b`) AND `npm run build` after modifying any `.tsx` or `.ts` file. Bare `npx tsc --noEmit` checks NOTHING here (root tsconfig has `"files": []`, always exits 0) — never use it as the gate.
 - No new TypeScript errors allowed
 - Prefer `useQuery` over `useEffect` for data fetching
 - Use `apiClient` from `@/lib/api-client` for API calls (not raw fetch)
