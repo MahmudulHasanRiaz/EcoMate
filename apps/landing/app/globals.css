@@ -938,6 +938,19 @@ html.dark body {
   font-family: var(--font-mono);
 }
 
+/* Bottom-bar links (Privacy Policy / Terms of Service) match the muted
+   footer links — without this they fall through to the browser's default
+   blue + underline. Inline (unlike .mk-foot-grid a): they sit in the
+   copyright sentence. */
+.mk-foot-base a {
+  color: var(--mk-mu);
+  text-decoration: none;
+}
+
+.mk-foot-base a:hover {
+  color: var(--mk-tx);
+}
+
 /* Article body typography (the Tailwind typography plugin is not installed,
    so the old `prose` classes were no-ops — this is the real styling). */
 .mk-prose {
