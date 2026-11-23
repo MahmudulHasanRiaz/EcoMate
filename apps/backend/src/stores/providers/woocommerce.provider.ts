@@ -576,13 +576,17 @@ export class WooCommerceProvider extends BaseCommerceProvider {
 
   /**
    * `GET /wp-json/wc/v3/products`. Woo caps per_page at 100; default status
-   * is publish,draft (private/trash are never imported — a private remote
-   * product must never land public). Incremental (`modifiedAfter`) pages in
-   * modified-asc order so a product modified mid-page appears on a later
-   * page or the next run, never skipped silently (E22). `include` fetches
-   * an explicit id set (selection import / retry, max one page per call).
-   * hasMore prefers X-WP-TotalPages when the transport reports headers,
-   * else the fetchOrders length heuristic.
+   * is publish + draft (private/trash are never imported — a private remote
+   * product must never land public). WooCommerce rejects a comma-joined
+   * `status` (`rest_invalid_param` on 11.3.1), so a multi-status list
+   * issues ONE request per status and merges + dedupes the pages: `total`
+   * is the sum of the per-status totals (only when every page reports it)
+   * and `hasMore` is true while ANY status has more pages. Incremental
+   * (`modifiedAfter`) pages in modified-asc order so a product modified
+   * mid-page appears on a later page or the next run, never skipped
+   * silently (E22). `include` fetches an explicit id set (selection import
+   * / retry, max one page per call). hasMore prefers X-WP-TotalPages when
+   * the transport reports headers, else the fetchOrders length heuristic.
    */
   override async listProducts(
     store: StoreWithSecrets,
@@ -590,24 +594,62 @@ export class WooCommerceProvider extends BaseCommerceProvider {
   ): Promise<ListProductsResult> {
     const page = Math.max(1, opts.page);
     const perPage = Math.min(Math.max(1, opts.pageSize), 100);
-    const params = new URLSearchParams({
+    const statuses = [
+      ...new Set(
+        opts.status && opts.status.length > 0 ? opts.status : ['publish', 'draft'],
+      ),
+    ];
+    const base = new URLSearchParams({
       page: String(page),
       per_page: String(perPage),
     });
-    params.set('status', (opts.status && opts.status.length > 0 ? opts.status : ['publish', 'draft']).join(','));
     if (opts.modifiedAfter) {
-      params.set('modified_after', opts.modifiedAfter.toISOString());
-      params.set('orderby', 'modified');
-      params.set('order', 'asc');
+      base.set('modified_after', opts.modifiedAfter.toISOString());
+      base.set('orderby', 'modified');
+      base.set('order', 'asc');
     }
     if (opts.include && opts.include.length > 0) {
-      for (const id of opts.include.slice(0, perPage)) params.append('include[]', String(id));
+      for (const id of opts.include.slice(0, perPage)) base.append('include[]', String(id));
     }
-    if (opts.search?.trim()) params.set('search', opts.search.trim());
-    const { data, total, totalPages } = await this.wooPage<any[]>(store, `/products?${params.toString()}`);
-    const products = (Array.isArray(data) ? data : []) as NormalizedProduct[];
-    const hasMore = totalPages !== undefined ? page < totalPages : products.length === perPage;
-    return { products, hasMore, ...(total !== undefined ? { total } : {}) };
+    if (opts.search?.trim()) base.set('search', opts.search.trim());
+    // One request per status — Woo rejects comma-joined status values.
+    // The requests are independent GETs, so they run in parallel.
+    const pages = await Promise.all(
+      statuses.map(async (status) => {
+        const params = new URLSearchParams(base);
+        params.set('status', status);
+        return this.wooPage<any[]>(store, `/products?${params.toString()}`);
+      }),
+    );
+    // Merge in status order, deduped by remote id — a product carries one
+    // status, so a duplicate can only come from a mid-page status change.
+    const seen = new Set<string>();
+    const products: NormalizedProduct[] = [];
+    for (const { data } of pages) {
+      for (const p of Array.isArray(data) ? data : []) {
+        const id = String((p as Record<string, unknown>)?.id ?? '');
+        if (id) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+        }
+        products.push(p as NormalizedProduct);
+      }
+    }
+    const totals = pages.map((p) => p.total).filter((t): t is number => t !== undefined);
+    const totalPages = pages
+      .map((p) => p.totalPages)
+      .filter((t): t is number => t !== undefined);
+    const hasMore =
+      totalPages.length === pages.length
+        ? page < Math.max(...totalPages)
+        : pages.some(({ data }) => Array.isArray(data) && data.length === perPage);
+    return {
+      products,
+      hasMore,
+      ...(totals.length === pages.length
+        ? { total: totals.reduce((a, b) => a + b, 0) }
+        : {}),
+    };
   }
 
   /**
