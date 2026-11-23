@@ -10,6 +10,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { schedulersEnabled } from '../../common/worker-mode';
 
 @Injectable()
 export class StoreOrderScheduler implements OnModuleInit {
@@ -20,6 +21,15 @@ export class StoreOrderScheduler implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // Worker split (WORKER_MODE): repeatable registration is scheduler work
+    // — the api process owns it. In `worker` mode this process only consumes
+    // jobs.
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Order reconcile scheduler skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     try {
       const repeats = await this.reconcileQ.getRepeatableJobs();
       const has = repeats.some((r) => r.name === 'order-reconcile-tick');

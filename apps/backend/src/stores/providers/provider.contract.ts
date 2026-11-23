@@ -146,6 +146,28 @@ export interface WebhookRegistrationResult {
   ok: boolean;
   topics: string[];
   reason?: string;
+  /**
+   * Webhook lifecycle (2026-11-23): what ensureWebhooks actually did, so
+   * the health scheduler + store detail can tell "already healthy" from
+   * "healed just now". All optional — older callers read ok/topics only.
+   */
+  /** Topics newly created on this call (no usable hook existed). */
+  created?: string[];
+  /** Topics deleted + recreated (mismatched URL, non-active, duplicates). */
+  recreated?: string[];
+  /** Remote hooks deleted in total (duplicates + mismatches + recreates). */
+  deleted?: number;
+  /** Topics already valid — no remote write made for them. */
+  skipped?: string[];
+}
+/** Options for `CommerceProvider.ensureWebhooks`. */
+export interface EnsureWebhooksOptions {
+  /**
+   * Delete every owned hook for the required topics and recreate them
+   * (heal-on-signature-failure, J-01 — used after a secret rotation, when
+   * the previously registered secret is no longer the one we verify with).
+   */
+  forceRecreate?: boolean;
 }
 export interface WebhookVerification {
   valid: boolean;
@@ -365,9 +387,20 @@ export interface CommerceProvider {
     store: StoreWithSecrets,
     ref: RemoteRef,
   ): Promise<{ status: string }>;
+  /**
+   * Ensure the provider's webhooks for this store exist, point at the
+   * intake route for this store, and are active — healing duplicates,
+   * stale URLs and disabled hooks (webhook lifecycle, J-02). The create
+   * payload carries the store's webhook secret wherever the provider API
+   * accepts one (WooCommerce; Shopify signs with the app secret instead
+   * and the bridge protocol has no secret field — see each adapter).
+   * `opts.forceRecreate` deletes every owned hook for the required topics
+   * and recreates them (secret rotation).
+   */
   ensureWebhooks(
     store: StoreWithSecrets,
     callbackBaseUrl: string,
+    opts?: EnsureWebhooksOptions,
   ): Promise<WebhookRegistrationResult>;
   verifyWebhook(
     store: StoreWithSecrets,

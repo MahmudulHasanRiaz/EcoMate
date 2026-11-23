@@ -13,6 +13,7 @@ import { SCHEMA_VERSION } from './tracking.constants';
 import { TrackingSnapshotPayload } from './tracking-snapshot.types';
 import { runPerTenant } from '../tenancy/tenant-job';
 import { TenantRegistryService } from '../tenancy/tenant-registry.service';
+import { schedulersEnabled } from '../common/worker-mode';
 
 /** Rows touched per loop iteration — keeps each write short and lock-scalable. */
 const BATCH_SIZE = 1000;
@@ -445,6 +446,16 @@ export class RetentionCleanupService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    // Worker split (WORKER_MODE): the retention sweep (boot run + 6h loop)
+    // is scheduler work — the api process owns it. In `worker` mode this
+    // process only consumes jobs. (The sweep is idempotent and
+    // claim-safe, so this is about single ownership, not correctness.)
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Tracking retention cleanup skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     await this.start();
     if (this.enabled) {
       await this.runCleanup().catch((err) =>

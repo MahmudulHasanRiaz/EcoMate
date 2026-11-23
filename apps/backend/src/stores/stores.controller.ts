@@ -11,7 +11,6 @@
  * rather than silently queuing nothing.
  */
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -141,15 +140,19 @@ export class StoresController {
     return this.stores.health(id);
   }
 
-  /** Provider hook registration (P4 live). */
+  /**
+   * Provider hook registration (P4 live; webhook lifecycle 2026-11-23).
+   * Delegates to the service so the manual endpoint gets the same
+   * treatment as connect/test: the webhook secret is ensured first
+   * (generated + stored when the store has none), then the provider
+   * ensure heals duplicates/disabled/mismatched hooks.
+   */
   @Post(':id/webhooks/ensure')
   @Roles('superadmin', 'admin')
   async ensureWebhooks(@Param('id', ParseUUIDPipe) id: string) {
     this.assertEnabled();
-    const store = await this.stores.detail(id);
-    const provider = this.registry.providerFor({ kind: (store as any).kind });
-    const full = await this.stores.storeWithSecrets(id);
-    return provider.ensureWebhooks(full, resolveWebhookCallbackBase());
+    await this.stores.detail(id);
+    return this.stores.ensureStoreWebhooks(id, { ensureSecret: true });
   }
 
   /**
@@ -284,18 +287,9 @@ export class StoresController {
 }
 
 /**
- * Resolve the public callback base for provider webhook registration.
- * A relative URL is doomed (Shopify 422s "address is invalid") — fail
- * loudly here instead of registering garbage. Exported for unit tests.
+ * Re-exported from the shared resolver (`webhooks/webhook-callback-base.ts`)
+ * — the historical import path for unit tests. The implementation moved so
+ * the service + heal service + scheduler can resolve the base without
+ * importing a controller (which would be a module cycle).
  */
-export function resolveWebhookCallbackBase(
-  env: Record<string, string | undefined> = process.env,
-): string {
-  const base = String(env.PUBLIC_API_BASE_URL ?? '').replace(/\/+$/, '');
-  if (!/^https:\/\//i.test(base)) {
-    throw new BadRequestException(
-      'Webhook callback base URL is not configured (PUBLIC_API_BASE_URL must be an https:// URL)',
-    );
-  }
-  return base;
-}
+export { resolveWebhookCallbackBase } from './webhooks/webhook-callback-base';

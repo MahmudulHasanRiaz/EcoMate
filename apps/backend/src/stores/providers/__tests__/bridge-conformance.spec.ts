@@ -683,7 +683,14 @@ describe('Bridge v1 conformance (P10)', () => {
     it('registers missing topics only; second call issues zero POSTs (idempotent)', async () => {
       const { provider, mock } = wired(new ReferenceBridge());
       const res = await provider.ensureWebhooks(STORE(), 'https://api.example.test');
-      expect(res).toEqual({ ok: true, topics: BRIDGE_WEBHOOK_TOPICS });
+      expect(res).toEqual({
+        ok: true,
+        topics: BRIDGE_WEBHOOK_TOPICS,
+        created: BRIDGE_WEBHOOK_TOPICS,
+        recreated: [],
+        deleted: 0,
+        skipped: [],
+      });
       const posts = mock.calls.filter((c) => c.init?.method === 'POST');
       expect(posts).toHaveLength(1);
       expect(JSON.parse(String(posts[0]?.init?.body ?? '{}'))).toMatchObject({
@@ -694,6 +701,10 @@ describe('Bridge v1 conformance (P10)', () => {
       await expect(provider.ensureWebhooks(STORE(), 'https://api.example.test/')).resolves.toEqual({
         ok: true,
         topics: BRIDGE_WEBHOOK_TOPICS,
+        created: [],
+        recreated: [],
+        deleted: 0,
+        skipped: BRIDGE_WEBHOOK_TOPICS,
       });
       expect(mock.calls.filter((c) => c.init?.method === 'POST')).toHaveLength(0);
     });

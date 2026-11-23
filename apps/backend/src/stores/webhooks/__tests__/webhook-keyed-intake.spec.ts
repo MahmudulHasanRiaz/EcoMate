@@ -64,8 +64,16 @@ function buildIntake(storeRow: any = SHOPIFY_ROW) {
       return new WooCommerceProvider();
     }),
   };
-  const runs: any = { begin: jest.fn().mockResolvedValue({ id: 'run-keyed-1' }) };
-  const queues: any = { enqueue: jest.fn().mockResolvedValue(undefined) };
+  const runs: any = {
+    begin: jest.fn().mockResolvedValue({ id: 'run-keyed-1' }),
+    finish: jest.fn().mockResolvedValue({}),
+  };
+  // Intake enqueues via `enqueueOrThrow` (G-11) — the plain `enqueue`
+  // swallow-and-log variant is never called from intake.
+  const queues: any = {
+    enqueue: jest.fn().mockResolvedValue(undefined),
+    enqueueOrThrow: jest.fn().mockResolvedValue({ id: 'job-1' }),
+  };
   const svc = new StoreWebhookService(prisma, registry, stores, runs, queues);
   return { svc, prisma, queues };
 }
@@ -78,8 +86,8 @@ describe('keyed webhook intake — Shopify (Issue 1, items 3–9)', () => {
     const d = buildShopifyDelivery(CLIENT_SECRET, payload);
     const res = await svc.intake('shopify', SHOPIFY_STORE_ID, d.headers, d.rawBody);
     expect(res).toEqual({ received: true, duplicate: false });
-    expect(queues.enqueue).toHaveBeenCalledTimes(1);
-    const [, jobName, data, jobId] = queues.enqueue.mock.calls[0];
+    expect(queues.enqueueOrThrow).toHaveBeenCalledTimes(1);
+    const [, jobName, data, jobId] = queues.enqueueOrThrow.mock.calls[0];
     expect(jobName).toBe('webhook-order');
     expect(data.storeId).toBe(SHOPIFY_STORE_ID);
     expect(jobId).toContain('webhook:');
@@ -93,7 +101,7 @@ describe('keyed webhook intake — Shopify (Issue 1, items 3–9)', () => {
     });
     const res = await svc.intake('shopify', SHOPIFY_STORE_ID, d.headers, d.rawBody);
     expect(res).toEqual({ received: true, duplicate: false });
-    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(queues.enqueueOrThrow).not.toHaveBeenCalled();
     expect(prisma.storeWebhookDelivery.seen.size).toBe(1);
   });
 
@@ -108,7 +116,7 @@ describe('keyed webhook intake — Shopify (Issue 1, items 3–9)', () => {
     await expect(svc.intake('shopify', SHOPIFY_STORE_ID, bad, rawBody)).rejects.toThrow(
       'Unauthorized',
     );
-    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(queues.enqueueOrThrow).not.toHaveBeenCalled();
   });
 
   it('(5) duplicate delivery-id deduped: duplicate:true, no second enqueue', async () => {
@@ -119,7 +127,7 @@ describe('keyed webhook intake — Shopify (Issue 1, items 3–9)', () => {
     await svc.intake('shopify', SHOPIFY_STORE_ID, d.headers, d.rawBody);
     const replay = await svc.intake('shopify', SHOPIFY_STORE_ID, d.headers, d.rawBody);
     expect(replay).toEqual({ received: true, duplicate: true });
-    expect(queues.enqueue).toHaveBeenCalledTimes(1);
+    expect(queues.enqueueOrThrow).toHaveBeenCalledTimes(1);
     expect(prisma.storeWebhookDelivery.update).toHaveBeenCalledTimes(1);
   });
 
@@ -154,6 +162,6 @@ describe('keyed webhook intake — Shopify (Issue 1, items 3–9)', () => {
     });
     const res = await svc.intake('shopify', SHOPIFY_STORE_ID, d.headers, d.rawBody);
     expect(res).toEqual({ received: true, duplicate: false });
-    expect(queues.enqueue).toHaveBeenCalledTimes(1);
+    expect(queues.enqueueOrThrow).toHaveBeenCalledTimes(1);
   });
 });

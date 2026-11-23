@@ -1188,14 +1188,33 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       const created: unknown[] = [];
       mock.setFallback((url, init) => {
         if ((init?.method ?? 'GET') === 'GET') {
-          return jsonResponse(200, { webhooks: [{ topic: 'orders/create' }] });
+          // One valid hook (correct topic + address) — it is skipped, the
+          // rest are created. (Matching is by topic AND address since the
+          // webhook lifecycle: a topic-only match would keep a hook
+          // pointing at a stale URL.)
+          return jsonResponse(200, {
+            webhooks: [
+              {
+                id: 1,
+                topic: 'orders/create',
+                address: 'https://api.example.test/api/webhooks/stores/shopify/store-shopify-1',
+              },
+            ],
+          });
         }
         created.push(JSON.parse(String(init?.body ?? '{}')));
         return jsonResponse(201, { webhook: { id: 1 } });
       });
       const res = await new ShopifyProvider(mock.fetch).ensureWebhooks(STORE(), 'https://api.example.test');
-      expect(res).toEqual({ ok: true, topics: SHOPIFY_WEBHOOK_TOPICS });
-      expect(created).toHaveLength(2);
+      expect(res).toEqual({
+        ok: true,
+        topics: SHOPIFY_WEBHOOK_TOPICS,
+        created: ['orders/updated', 'orders/delete', 'products/update'],
+        recreated: [],
+        deleted: 0,
+        skipped: ['orders/create'],
+      });
+      expect(created).toHaveLength(3);
       expect(JSON.stringify(created)).toMatch(/orders\/updated/);
       expect(JSON.stringify(created)).toMatch(/products\/update/);
       // Keyed receiver URL: the canonical public storeKey (store.id) is part

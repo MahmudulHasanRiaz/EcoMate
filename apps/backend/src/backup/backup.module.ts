@@ -5,6 +5,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { BackupService } from './backup.service';
 import { BackupJobProcessor } from './backup-job.processor';
 import { StorageService } from '../storage/storage.service';
+import { processorsEnabled } from '../common/worker-mode';
 
 /**
  * Backups are a platform/ops-only job. There is intentionally NO controller
@@ -32,7 +33,14 @@ import { StorageService } from '../storage/storage.service';
       { name: 'security-aggregate' },
     ),
   ],
-  providers: [BackupService, BackupJobProcessor, StorageService],
+  providers: [
+    BackupService,
+    // Worker split (WORKER_MODE): the processor runs only in `worker`/`all`
+    // modes. In `api` mode the queue itself (registerQueue above) stays —
+    // HTTP paths must still enqueue — but no BullMQ Worker is created.
+    ...(processorsEnabled() ? [BackupJobProcessor] : []),
+    StorageService,
+  ],
   exports: [BackupService],
 })
 export class BackupModule {}

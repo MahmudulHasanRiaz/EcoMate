@@ -24,6 +24,13 @@ export class RiskScoreService {
    * Record a rate limit violation. Returns auto-block triggered.
    * Does NOT immediately auto-block — risk score accumulates.
    * Auto-block only triggers after repeated violations above threshold.
+   *
+   * Phase 9 G-13 boundary: webhook intake paths must NEVER feed the
+   * 24h IP auto-block except for scanner probes. That boundary is
+   * enforced by the guard (it only calls this method for store_webhook
+   * traffic carrying NO webhook headers at all); this service stays
+   * policy-generic and trusts its caller. Verified webhook traffic
+   * never reaches here at all (it bypasses the limiter in the guard).
    */
   async recordViolation(
     identity: string,
@@ -36,12 +43,25 @@ export class RiskScoreService {
     }
 
     const now = Date.now();
-    const windowMs = policy.limits[policy.name === 'auth' || policy.name === 'checkout' ? 'unknown' : 'unknown']
-      ? 60000
-      : policy.riskScore.autoBlockThreshold * 60000;
+    // Score-accumulation window — FIXED 2026-11-23 (Phase 9 G-13):
+    // the old code was dead — `policy.limits[... ? 'unknown' :
+    // 'unknown']` always resolved to the UNKNOWN tier (always truthy),
+    // so `windowMs` was always 60000, and `Math.max(..., 300000)` then
+    // forced EVERY policy to a 5-minute window. The unreachable
+    // else-branch showed the intent: the window scales with the
+    // policy's own threshold (a policy that needs N violations to
+    // block gives N minutes to accumulate them). The window is now
+    // that, floored at 1 minute and capped at the old 5-minute
+    // effective ceiling — so no policy's window grows past what it
+    // was in practice, and low-threshold policies (auth 5, checkout
+    // 3, webhooks 3) get their shorter intended windows.
+    const windowMs = Math.min(
+      300000,
+      Math.max(60000, policy.riskScore.autoBlockThreshold * 60000),
+    );
     const entry = this.scores.get(identity) || { score: 0, firstViolation: now };
 
-    if (now - entry.firstViolation > Math.max(windowMs, 300000)) {
+    if (now - entry.firstViolation > windowMs) {
       entry.score = 0;
       entry.firstViolation = now;
     }

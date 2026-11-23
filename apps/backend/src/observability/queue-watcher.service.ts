@@ -14,6 +14,7 @@ import {
   resolveQueues,
   type QueueCounts,
 } from './queues';
+import { schedulersEnabled } from '../common/worker-mode';
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_DEPTH_THRESHOLD = 1000;
@@ -46,6 +47,15 @@ export class QueueWatcherService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
+    // Worker split (WORKER_MODE): the watcher is a periodic observer — the
+    // api process owns it, so ops never gets duplicate alerts from two
+    // processes polling the same queues.
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Queue watcher skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     if (process.env.QUEUE_WATCHER_ENABLED === 'false') {
       this.logger.log('Queue watcher disabled (QUEUE_WATCHER_ENABLED=false)');
       return;

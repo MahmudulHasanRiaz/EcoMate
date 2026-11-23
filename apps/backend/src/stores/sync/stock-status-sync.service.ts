@@ -54,6 +54,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { schedulersEnabled } from '../../common/worker-mode';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
 import { SyncRunService } from './sync-run.service';
@@ -272,6 +273,18 @@ export class StockStatusSyncService implements OnModuleInit {
 
   /** Daily audit repeatable `0 3 * * *` `Asia/Dhaka`, fail-closed on the flag. */
   async onModuleInit(): Promise<void> {
+    // Worker split (WORKER_MODE): repeatable registration is scheduler work
+    // — the api process owns it. In `worker` mode this process neither
+    // registers nor removes repeatables; repeatable ownership belongs to
+    // `api` alone. The guard goes BEFORE the flag-off removal branch below.
+    // The service itself STAYS registered in every mode: it is exported and
+    // used by HTTP paths (import/inventory/products/stock notifyStockChanged).
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Stock audit scheduler skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     try {
       const repeats = await this.stockQueue.getRepeatableJobs();
       const existing = repeats.filter((r) => r.name === 'stock-audit');

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePhone } from '../common/utils/phone-utils';
+import { schedulersEnabled } from '../common/worker-mode';
 
 @Injectable()
 export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
@@ -25,6 +26,16 @@ export class BlockedEntriesService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    // Worker split (WORKER_MODE): the lazy-expire sweep is scheduler work
+    // — the api process owns it. In `worker` mode this process only consumes
+    // jobs. (The sweep is idempotent, so this is about single ownership,
+    // not correctness.)
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Blocked-entry expiry sweep skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     this.expireInterval = setInterval(() => {
       this.lazyExpire().catch((err) => {
         this.logger.error(

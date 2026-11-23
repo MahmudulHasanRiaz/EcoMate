@@ -1,8 +1,14 @@
 import { Logger } from '@nestjs/common';
 import { WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
+import { DelayedError } from 'bullmq';
 import { getTenantContext, runWithTenant } from './tenant-context';
 import { TenantRegistryService } from './tenant-registry.service';
+import {
+  FAIRNESS_DEFER_DELAY_MS,
+  FAIRNESS_DEFER_JITTER_MS,
+  getFairnessLimiter,
+} from './tenant-fairness';
 
 const FALLBACK_TENANT_ID = '00000000-0000-4000-8000-000000000000';
 
@@ -92,15 +98,65 @@ export abstract class TenantWorkerHost<
       return { skipped: 'tenant-unknown-or-deleted', tenantId };
     }
 
-    return runWithTenant(
-      {
-        tenantId,
-        slug: job.data?.tenantSlug || 'queue',
-        // Tenant status is UPPERCASE everywhere (platform TenantStatus enum).
-        status: 'ACTIVE',
-      },
-      () => this.handle(job),
-    );
+    const run = () =>
+      runWithTenant(
+        {
+          tenantId,
+          slug: job.data?.tenantSlug || 'queue',
+          // Tenant status is UPPERCASE everywhere (platform TenantStatus enum).
+          status: 'ACTIVE',
+        },
+        () => this.handle(job),
+      );
+
+    // G-14 per-tenant fairness (ingest queue only): a tenant's burst
+    // must not starve other tenants on the shared queue. A job over
+    // its tenant's in-flight cap is DELAYED, never failed — it yields
+    // its worker slot (so another tenant's job runs next) and
+    // re-enters the queue ~1s later with priority and attempt count
+    // intact (`moveToDelayed` with skipAttempt + `DelayedError`, the
+    // documented BullMQ pattern — the worker skips moveToFailed for
+    // DelayedError). Fail-open: if the limiter itself throws, the job
+    // runs anyway — fairness infra must never block order intake.
+    if (job.queueName === 'store-order-ingest') {
+      const limiter = getFairnessLimiter();
+      let acquired = true;
+      try {
+        acquired = await limiter.tryAcquire('store-order-ingest', tenantId);
+      } catch (err) {
+        workerLogger.warn(
+          `fairness limiter failed open for tenant ${tenantId}: ${err}`,
+        );
+        acquired = true;
+      }
+      if (!acquired) {
+        const delayMs =
+          FAIRNESS_DEFER_DELAY_MS +
+          Math.floor(Math.random() * FAIRNESS_DEFER_JITTER_MS);
+        try {
+          await job.moveToDelayed(Date.now() + delayMs);
+        } catch (err) {
+          // The job stays active and its lock expires — BullMQ's
+          // stalled-job recovery re-queues it. Still throw
+          // DelayedError so this attempt is not marked failed.
+          workerLogger.warn(
+            `fairness defer moveToDelayed failed for job ${job.id ?? 'n/a'}: ${err}`,
+          );
+        }
+        throw new DelayedError(
+          `per-tenant ingest cap reached for tenant ${tenantId} — deferred ${delayMs}ms`,
+        );
+      }
+      try {
+        return await run();
+      } finally {
+        await limiter
+          .release('store-order-ingest', tenantId)
+          .catch(() => undefined);
+      }
+    }
+
+    return run();
   }
 
   /**

@@ -5968,6 +5968,15 @@ enum SyncRunStatus {
   CANCELLED
 }
 
+/// Webhook failure lifecycle (G-16): OPEN until an operator or a
+/// successful replay/retry resolves it; IGNORED is operator-dismissed.
+/// RESOLVED is system-set only (replay/retry verified the order exists).
+enum WebhookFailureStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
 enum SyncTriggerType {
   MANUAL
   SCHEDULED
@@ -6053,6 +6062,7 @@ model Store {
   syncRuns SyncRun[]
   issues StoreSyncIssue[]
   webhookDeliveries StoreWebhookDelivery[]
+  webhookFailures StoreWebhookFailure[]
   productMappings StoreProductMapping[]
   variantMappings StoreVariantMapping[]
   categoryMappings StoreCategoryMapping[]
@@ -6309,6 +6319,36 @@ model StoreWebhookDelivery {
   lastSeenAt  DateTime @updatedAt
 
   @@index([tenantId, storeId])
+}
+
+/// Failed webhook deliveries (G-16, J-05/J-11): one row per failure
+/// identity — upserted by `deliveryKey` where available, else by
+/// (store, reason, day bucket). `reason` is a plain String (not an enum)
+/// so new failure reasons never need a migration: SIGNATURE_MISMATCH,
+/// NO_SECRET, UNKNOWN_STORE, MISSING_DELIVERY_ID, ENQUEUE_FAILED,
+/// INGEST_FAILED, AUTO_SYNC_DISABLED. `storeId` is NULLABLE because
+/// UNKNOWN_STORE rows, by definition, have no store row to reference;
+/// the truncated store key lands in `payload.storeKey` instead.
+/// `payload` is a SANITIZED allowlist only (see
+/// `sanitizeFailurePayload` in webhooks/webhook-failures.service.ts) —
+/// never secrets, headers, raw bodies, or customer PII.
+model StoreWebhookFailure {
+  tenantId    String                @default(dbgenerated("(NULLIF(current_setting('app.tenant_id'::text, true), ''))::uuid")) @map("tenant_id") @db.Uuid
+  id          String                @id @default(uuid())
+  storeId     String?
+  store       Store?                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  deliveryKey String?               @unique
+  topic       String?
+  reason      String
+  status      WebhookFailureStatus  @default(OPEN)
+  payload     Json?
+  occurrences Int                   @default(1)
+  firstSeenAt DateTime              @default(now())
+  lastSeenAt  DateTime              @updatedAt
+  resolvedAt  DateTime?
+
+  @@index([tenantId, storeId])
+  @@index([tenantId, status, lastSeenAt])
 }
 
 model StoreProductMapping {

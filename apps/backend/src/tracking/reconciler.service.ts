@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { schedulersEnabled } from '../common/worker-mode';
 import { getRetryBackoffMs } from './outbox-relay.service';
 import { runPerTenant } from '../tenancy/tenant-job';
 import { TenantRegistryService } from '../tenancy/tenant-registry.service';
@@ -227,6 +228,16 @@ export class ReconcilerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    // Worker split (WORKER_MODE): the reconcile loop is scheduler work —
+    // the api process owns it. In `worker` mode this process only consumes
+    // jobs. (Two reconcilers would also write duplicate audit events for
+    // the same hung dispatch; start() stays directly callable.)
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Tracking reconciler not started (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     await this.start();
   }
 

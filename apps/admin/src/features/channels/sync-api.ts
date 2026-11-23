@@ -127,6 +127,45 @@ export interface FieldStateResponse {
   updatedAt: string
 }
 
+// ─── Webhook failures (Phase 9 G-12/G-16) ───────────────────────────────────
+
+export type WebhookFailureStatus = 'OPEN' | 'RESOLVED' | 'IGNORED'
+
+/** Sanitized allowlist payload (J-11) — order identity + totals only, never PII/secrets. */
+export interface WebhookFailurePayload {
+  externalOrderId?: string
+  status?: string
+  total?: number
+  currency?: string
+  itemCount?: number
+  storeKey?: string
+}
+
+export interface WebhookFailureResponse {
+  id: string
+  storeId: string | null
+  deliveryKey: string | null
+  topic: string | null
+  reason: string
+  status: WebhookFailureStatus
+  payload: WebhookFailurePayload | null
+  occurrences: number
+  firstSeenAt: string
+  lastSeenAt: string
+  resolvedAt: string | null
+}
+
+export interface WebhookFailureListResponse {
+  data: WebhookFailureResponse[]
+  meta: { page: number; limit: number; total: number; totalPages: number }
+}
+
+export interface WebhookReplayResponse {
+  replayed: boolean
+  runId: string
+  jobId: string
+}
+
 // ─── Pure helpers (unit-tested) ───────────────────────────────────────────
 
 export function runStatusTone(status: SyncRunStatus): 'success' | 'warning' | 'destructive' | 'muted' | 'info' {
@@ -177,6 +216,15 @@ export function isAttemptEligibleUi(
   return new Date(attempt.nextRetryAt).getTime() <= now.getTime()
 }
 
+/** Phase 9 G-12: mirrors backend `REPLAYABLE_FAILURE_REASONS` — only an OPEN
+ * ENQUEUE_FAILED / INGEST_FAILED row with a known external order id can be
+ * replayed (signature/unknown-store rows never had a verified payload). */
+export function isWebhookFailureReplayableUi(failure: WebhookFailureResponse): boolean {
+  if (failure.status !== 'OPEN') return false
+  if (failure.reason !== 'ENQUEUE_FAILED' && failure.reason !== 'INGEST_FAILED') return false
+  return typeof failure.payload?.externalOrderId === 'string' && failure.payload.externalOrderId.length > 0
+}
+
 // ─── API client ───────────────────────────────────────────────────────────
 
 export const syncApi = {
@@ -219,4 +267,11 @@ export const syncApi = {
     apiClient.post(`/stores/${storeId}/products/${productId}/overrides/keep`, { fields }).then((r) => r.data),
   resetAll: (storeId: string, productId: string) =>
     apiClient.post(`/stores/${storeId}/products/${productId}/overrides/reset-all`, {}).then((r) => r.data),
+  // Phase 9 G-12/G-16: failed webhook deliveries per store (paginated, newest first).
+  webhookFailures: (storeId: string, params?: Record<string, string>) =>
+    apiClient.get<WebhookFailureListResponse>(`/stores/${storeId}/webhook-failures`, { params }).then((r) => r.data),
+  replayWebhookFailure: (storeId: string, failureId: string) =>
+    apiClient.post<WebhookReplayResponse>(`/stores/${storeId}/webhook-failures/${failureId}/replay`, {}).then((r) => r.data),
+  ignoreWebhookFailure: (storeId: string, failureId: string) =>
+    apiClient.post(`/stores/${storeId}/webhook-failures/${failureId}/ignore`, {}).then((r) => r.data),
 }

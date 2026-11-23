@@ -125,15 +125,37 @@ const DEFAULT_POLICIES: Record<string, Omit<RateLimitPolicy, 'name'>> = {
    * `:storeKey` route param (webhooks) or `storeId` query param (bridge
    * contact-check) — an IP-only key would let one store's flood exhaust
    * every other store's budget.
+   *
+   * Phase 9 G-13 rework (Woo never retries a failed delivery and DISABLES
+   * the webhook after 7 consecutive failures — a 429 on a legitimate
+   * burst permanently loses orders AND kills the webhook):
+   *  - Burst-tolerant TOKEN BUCKET per store: 600/min sustained refill
+   *    with a 200-token burst allowance (env-overridable — see
+   *    `storeWebhookEnvOverlay` below). A single Woo store physically
+   *    delivers at most ~2/sec through Action Scheduler, so 600/min is
+   *    5x headroom over any legitimate burst; the 200-token bucket
+   *    absorbs a flash-sale spike instantly.
+   *  - `signedBypass`: a request carrying a webhook signature header
+   *    skips volume limiting at the edge entirely — a signed, VERIFIED
+   *    delivery is NEVER 429'd for volume. Excess verified traffic is
+   *    accepted and queued (backpressure at the queue, not rejection at
+   *    the edge). The bucket gates UNSIGNED traffic only.
+   *  - Risk score: the guard feeds `recordViolation` for this policy
+   *    ONLY for scanner probes (no webhook headers at all — see the
+   *    guard). Verified traffic never reaches the risk scorer, and an
+   *    unsigned-but-identified store (missing secret, misconfigured)
+   *    is healed, never blocked. The weight/threshold below therefore
+   *    apply to probes only.
    */
   store_webhook: {
     limits: {
-      [TrustTier.UNKNOWN]: { limit: 60, windowMs: 60000 },
-      [TrustTier.SESSION]: { limit: 60, windowMs: 60000 },
-      [TrustTier.BROWSER_TRUST]: { limit: 60, windowMs: 60000 },
-      [TrustTier.AUTHENTICATED]: { limit: 60, windowMs: 60000 },
+      [TrustTier.UNKNOWN]: { limit: 600, windowMs: 60000 },
+      [TrustTier.SESSION]: { limit: 600, windowMs: 60000 },
+      [TrustTier.BROWSER_TRUST]: { limit: 600, windowMs: 60000 },
+      [TrustTier.AUTHENTICATED]: { limit: 600, windowMs: 60000 },
     },
-    burst: { limit: 20, windowMs: 10000 },
+    tokenBucket: { capacity: 200, refillPerMinute: 600 },
+    signedBypass: true,
     riskScore: { violationWeight: 5, autoBlockThreshold: 10, autoBlockDurationMinutes: 1440 },
     trackingKey: 'store',
   },
@@ -202,6 +224,43 @@ const DEFAULT_POLICIES: Record<string, Omit<RateLimitPolicy, 'name'>> = {
   },
 };
 
+/**
+ * Phase 9 G-13 env overrides for the store_webhook token bucket.
+ * Read fresh on every get() (cheap; keeps tests deterministic without a
+ * module reload). Invalid values fall back to the defaults — a low
+ * value cannot hurt order intake: the bucket gates UNSIGNED traffic
+ * only (signed deliveries bypass it via `signedBypass`).
+ */
+export const STORE_WEBHOOK_RATE_LIMIT_DEFAULT_PER_MIN = 600;
+export const STORE_WEBHOOK_RATE_BURST_DEFAULT = 200;
+
+function envPositiveInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+function storeWebhookEnvOverlay(): Pick<RateLimitPolicy, 'limits' | 'tokenBucket'> {
+  const perMin = envPositiveInt(
+    'STORE_WEBHOOK_RATE_LIMIT_PER_MIN',
+    STORE_WEBHOOK_RATE_LIMIT_DEFAULT_PER_MIN,
+  );
+  const burst = envPositiveInt(
+    'STORE_WEBHOOK_RATE_BURST',
+    STORE_WEBHOOK_RATE_BURST_DEFAULT,
+  );
+  return {
+    limits: {
+      [TrustTier.UNKNOWN]: { limit: perMin, windowMs: 60000 },
+      [TrustTier.SESSION]: { limit: perMin, windowMs: 60000 },
+      [TrustTier.BROWSER_TRUST]: { limit: perMin, windowMs: 60000 },
+      [TrustTier.AUTHENTICATED]: { limit: perMin, windowMs: 60000 },
+    },
+    tokenBucket: { capacity: burst, refillPerMinute: perMin },
+  };
+}
+
 @Injectable()
 export class RateLimitPolicyStore {
   private readonly logger = new Logger(RateLimitPolicyStore.name);
@@ -212,10 +271,16 @@ export class RateLimitPolicyStore {
   ) {}
 
   get(policyName: string): RateLimitPolicy {
-    const defaults = DEFAULT_POLICIES[policyName];
+    let defaults = DEFAULT_POLICIES[policyName];
     if (!defaults) {
       this.logger.warn(`Unknown rate limit policy "${policyName}", falling back to api`);
       return this.get('api');
+    }
+
+    // Env overrides apply to the defaults BEFORE the settings-override
+    // merge below, so an admin settings override still wins over env.
+    if (policyName === 'store_webhook') {
+      defaults = { ...defaults, ...storeWebhookEnvOverlay() };
     }
 
     const override = this.overrides[policyName];
@@ -232,6 +297,8 @@ export class RateLimitPolicyStore {
         [TrustTier.AUTHENTICATED]: override.limits?.[TrustTier.AUTHENTICATED] ?? defaults.limits[TrustTier.AUTHENTICATED],
       },
       burst: override.burst ?? defaults.burst,
+      tokenBucket: override.tokenBucket ?? defaults.tokenBucket,
+      signedBypass: override.signedBypass ?? defaults.signedBypass,
       riskScore: override.riskScore ?? defaults.riskScore,
       trackingKey: override.trackingKey ?? defaults.trackingKey,
     };

@@ -36,8 +36,38 @@ import {
   buildStoreOrderIdentity,
   type NormalizedIngestOrder,
 } from './normalize-order';
+import { isOrderDeleteTopic, shouldImportWooEvent } from './webhook-status-gate';
 
 export type IngestTrigger = 'WEBHOOK' | 'RECONCILE' | 'MANUAL';
+
+/**
+ * Per-call ingest options. `topic` + `provider` drive the G-15 status
+ * gate (create-vs-update matters for missed creation; the gate is
+ * Woo-only); `skuContext` carries a shared J-10 batch resolution.
+ * All three are optional — callers that omit them get today's behavior
+ * (gate fails open to import; SKUs resolve per item).
+ *
+ * `bypassStatusGate` is the RECONCILE-ONLY carve-out (coordinator
+ * decision, fix-round-1): reconcile exists to recover missed real orders,
+ * so a `completed` order missed during a webhook outage must NOT be
+ * skipped as unimportable. ONLY `StoreOrderReconcileService` sets it;
+ * webhook intake/ingest (and the ingest processor) never set it and keep
+ * the gate. It bypasses ONLY the G-15 status gate — the P13 zero-stock
+ * reject, idempotency, and reconcileStatus are untouched.
+ */
+export interface IngestOptions {
+  type: IngestTrigger;
+  runId?: string;
+  actor?: string;
+  /** Webhook topic, e.g. `order.created`. Absent for reconcile/manual. */
+  topic?: string;
+  /** Provider slug (`woocommerce` | `shopify` | `custom`). */
+  provider?: string;
+  /** Shared J-10 batch SKU context (one reconcile page / burst). */
+  skuContext?: SkuResolutionContext;
+  /** Reconcile-only: skip the G-15 status gate (recover missed orders). */
+  bypassStatusGate?: boolean;
+}
 
 export interface IngestResult {
   orderId: string;
@@ -45,6 +75,31 @@ export interface IngestResult {
   status: string;
   /** True when this call changed the order status (create or transition). */
   statusChanged: boolean;
+  /** True when the G-15 status gate skipped a never-seen order (no order exists; `orderId` is ''). */
+  skipped?: boolean;
+  /** Gate reason when `skipped` (e.g. `trash-status=cancelled`). */
+  skipReason?: string;
+}
+
+/** One pre-resolved SKU → local ids (J-10 batch context). */
+export interface SkuResolution {
+  productId?: string;
+  variantId?: string;
+  resolved: boolean;
+}
+
+/**
+ * Shared batch SKU maps for a burst of orders (J-10): built once per
+ * reconcile page (or burst) by `buildSkuResolutionContext`, passed into
+ * each per-order `ingest()` via `IngestOptions.skuContext`. A SKU present
+ * in the map is authoritative for the burst (including `resolved: false`
+ * — the batch queries already proved no match exists); a SKU absent from
+ * the map falls back to the per-SKU DB path, so behavior is identical
+ * for out-of-batch SKUs. Staleness window: a mapping created mid-page
+ * is picked up by the next page/run, never the current one.
+ */
+export interface SkuResolutionContext {
+  resolutions: Map<string, SkuResolution>;
 }
 
 /**
@@ -135,12 +190,20 @@ export class StoreOrderIngestService {
    * Resolve one normalized item to local ids. Precedence: StoreSkuMapping →
    * ProductVariant.sku (unique) → Product.sku (first match). Unresolved →
    * product-less (nulls) — the caller raises UNMATCHED_SKU.
+   *
+   * J-10: when a batch context is supplied and contains the SKU, the
+   * pre-resolved answer is returned with zero queries; a SKU absent from
+   * the context falls back to the per-SKU DB path below (identical
+   * behavior for out-of-batch SKUs).
    */
   async resolveSku(
     storeId: string,
     sku: string,
+    ctx?: SkuResolutionContext,
   ): Promise<{ productId?: string; variantId?: string; resolved: boolean }> {
     if (!sku) return { resolved: false };
+    const batched = ctx?.resolutions.get(sku);
+    if (batched) return batched;
     const mapped = await this.prisma.storeSkuMapping.findUnique({
       where: { storeId_sku: { storeId, sku } },
     });
@@ -168,6 +231,60 @@ export class StoreOrderIngestService {
     });
     if (product) return { productId: product.id, resolved: true };
     return { resolved: false };
+  }
+
+  /**
+   * J-10 batch SKU resolution: resolve MANY SKUs with exactly 3 batched
+   * queries (StoreSkuMapping → ProductVariant → Product, same precedence
+   * as `resolveSku`) instead of up to 3 queries per SKU. A 50-order page
+   * with 2 items each drops from ≤300 lookups to 3. First-match
+   * semantics match `findFirst` (first row per SKU in returned order —
+   * the same order `findFirst` sees, so no behavior change).
+   */
+  async buildSkuResolutionContext(storeId: string, skus: string[]): Promise<SkuResolutionContext> {
+    const resolutions = new Map<string, SkuResolution>();
+    const unique = [...new Set((skus ?? []).filter(Boolean))];
+    if (unique.length === 0) return { resolutions };
+    const mappings = (await this.prisma.storeSkuMapping.findMany({
+      where: { storeId, sku: { in: unique } },
+    })) as any[];
+    const mappingBySku = new Map<string, any>();
+    for (const m of mappings) if (!mappingBySku.has(m.sku)) mappingBySku.set(m.sku, m);
+    const variants = (await this.prisma.productVariant.findMany({
+      where: { sku: { in: unique } },
+      select: { id: true, productId: true, sku: true },
+    })) as any[];
+    const variantBySku = new Map<string, any>();
+    for (const v of variants) if (!variantBySku.has(v.sku)) variantBySku.set(v.sku, v);
+    const products = (await this.prisma.product.findMany({
+      where: { sku: { in: unique } },
+      select: { id: true, sku: true },
+    })) as any[];
+    const productBySku = new Map<string, any>();
+    for (const p of products) if (!productBySku.has(p.sku)) productBySku.set(p.sku, p);
+    for (const sku of unique) {
+      const mapped = mappingBySku.get(sku);
+      if (mapped && (mapped.productId || mapped.variantId)) {
+        resolutions.set(sku, {
+          productId: mapped.productId ?? undefined,
+          variantId: mapped.variantId ?? undefined,
+          resolved: true,
+        });
+        continue;
+      }
+      const variant = variantBySku.get(sku);
+      if (variant) {
+        resolutions.set(sku, { productId: variant.productId, variantId: variant.id, resolved: true });
+        continue;
+      }
+      const product = productBySku.get(sku);
+      if (product) {
+        resolutions.set(sku, { productId: product.id, resolved: true });
+        continue;
+      }
+      resolutions.set(sku, { resolved: false });
+    }
+    return { resolutions };
   }
 
   /**
@@ -296,10 +413,19 @@ export class StoreOrderIngestService {
   async ingest(
     storeId: string,
     rawOrder: Record<string, unknown>,
-    trigger: { type: IngestTrigger; runId?: string; actor?: string },
+    trigger: IngestOptions,
   ): Promise<IngestResult> {
     const normalized = normalizeOrder(rawOrder);
     const { idempotencyKey, objectKey } = buildStoreOrderIdentity(storeId, normalized.externalId);
+
+    // G-15: a delete/trashed event carries the order's pre-delete status
+    // (or none — normalizeOrder then defaults to `pending`). Force the
+    // trash status so the existing-order path below reconciles to
+    // Cancelled instead of wrongly landing on Pending. The missing-order
+    // path skips delete events outright, so this only affects reconciles.
+    if (isOrderDeleteTopic(trigger.topic)) {
+      normalized.externalStatus = 'trash';
+    }
 
     // (1) Mapping lookup — existing order → status-only reconcile (BR-17:
     // totals/items never rewritten; ignored deltas recorded as a note).
@@ -309,6 +435,54 @@ export class StoreOrderIngestService {
     });
     if (existing) {
       return this.reconcileStatus(storeId, existing as any, normalized, trigger);
+    }
+
+    // G-15 status gate (J-08, keeping reconcile): new orders only — the
+    // existing path above already reconciled. A skip records a SKIPPED
+    // run item (visible in Sync Center) and returns without creating
+    // anything; it is NOT an error (no throw, no retry). The gate is
+    // Woo-only and fails open when provider/topic are unknown.
+    //
+    // RECONCILE CARVE-OUT: when `bypassStatusGate` is set (ONLY
+    // StoreOrderReconcileService sets it), the gate is skipped — reconcile
+    // recovers missed real orders, so a `completed` order missed during an
+    // outage imports instead of being skipped as unimportable. Webhook
+    // intake/ingest never set the flag and keep the gate.
+    if (trigger.bypassStatusGate) {
+      this.logger.log(
+        `ingest status gate bypassed ${objectKey} (reconcile carve-out; status ${normalized.externalStatus})`,
+      );
+    }
+    const decision = trigger.bypassStatusGate
+      ? { action: 'import' as const, reason: 'reconcile-bypass' }
+      : shouldImportWooEvent({
+          topic: trigger.topic,
+          externalStatus: normalized.externalStatus,
+          orderExists: false,
+          provider: trigger.provider,
+        });
+    if (decision.action === 'skip') {
+      this.logger.log(
+        `ingest skipped ${objectKey} (${decision.reason}; topic ${trigger.topic ?? 'none'}, status ${normalized.externalStatus})`,
+      );
+      if (trigger.runId) {
+        await this.runs.recordItem(trigger.runId, {
+          storeId,
+          objectType: 'ORDER',
+          externalObjectId: normalized.externalId,
+          status: 'SKIPPED',
+          reason: `STATUS_GATE_SKIP: ${decision.reason} (topic ${trigger.topic ?? 'none'}, status ${normalized.externalStatus})`,
+          auditLevel: 'G',
+        });
+      }
+      return {
+        orderId: '',
+        created: false,
+        status: normalized.externalStatus,
+        statusChanged: false,
+        skipped: true,
+        skipReason: decision.reason,
+      };
     }
 
     // P2002 race net (BR-12): two funnels racing past the lookup collide on
@@ -337,7 +511,7 @@ export class StoreOrderIngestService {
     normalized: NormalizedIngestOrder,
     idempotencyKey: string,
     objectKey: string,
-    trigger: { type: IngestTrigger; runId?: string; actor?: string },
+    trigger: IngestOptions,
   ): Promise<IngestResult> {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
     const storeKind = (store as any)?.kind ?? 'CUSTOM';
@@ -359,7 +533,7 @@ export class StoreOrderIngestService {
       price: number;
     }> = [];
     for (const li of normalized.items) {
-      const hit = await this.resolveSku(storeId, li.sku);
+      const hit = await this.resolveSku(storeId, li.sku, trigger.skuContext);
       if (!hit.resolved) {
         if (li.sku) unmatchedSkus.push(li.sku);
         items.push({ quantity: li.quantity, price: li.price });
@@ -515,7 +689,7 @@ export class StoreOrderIngestService {
       order: { status: { name: string }; total: unknown };
     },
     normalized: NormalizedIngestOrder,
-    trigger: { type: IngestTrigger; runId?: string; actor?: string },
+    trigger: IngestOptions,
   ): Promise<IngestResult> {
     const currentName = mapping.order?.status?.name;
     const targetName = await this.resolveStatusName(storeId, normalized.externalStatus);

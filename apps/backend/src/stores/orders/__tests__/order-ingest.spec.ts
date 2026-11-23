@@ -8,6 +8,7 @@
  */
 import { StoreOrderIngestService, ZERO_STOCK_REJECT } from '../store-order-ingest.service';
 import { StoreOrderReconcileService } from '../store-order-reconcile.service';
+import { RECONCILE_PAGE_SIZE } from '../normalize-order';
 import { FakeProvider } from '../../providers/__tests__/fake.provider';
 import { seedFakeProvider, buildOrderFixtures } from '../../providers/__tests__/fixtures';
 import { STATUS_MAP } from '../../../import/order-import.service';
@@ -167,6 +168,71 @@ describe('P6 ingest — webhook creates exactly one order (BR-12)', () => {
     expect(r2.orderId).toBe('ord-1');
     expect(r3.orderId).toBe('ord-1');
   });
+
+  // (g) Phase 9 regression proof (§2.2 Layer 2): Woo assigns a NEW
+  // delivery id per delivery attempt, so a timeout-redelivery of the
+  // same event carries a different delivery id and PASSES the intake
+  // dedupe (Layer 1). Both deliveries enqueue; both run ingest — the
+  // second must find the mapping and only reconcile, never create.
+  it('double webhook delivery of the same external order (different delivery ids) → exactly one order', async () => {
+    const prisma = mockPrisma();
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM', name: 'Bridge' });
+    seedStatusMaps(prisma);
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    // First ingest misses the mapping; the redelivery finds it (same status).
+    prisma.storeOrderMapping.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ orderId: 'ord-1', externalOrderId: 'ext-9', order: { status: { name: 'Confirmed' }, total: 250 } });
+    prisma.storeOrderMapping.create.mockResolvedValue({});
+    const { svc, orders } = buildIngest(prisma);
+    const raw = {
+      id: 'ext-9', status: 'processing', total: 250, currency: 'BDT',
+      createdAt: '2026-09-23T13:00:00.000Z',
+      items: [{ sku: 'SKU-IN-001', qty: 1, price: 250 }],
+    };
+    // Two WEBHOOK funnels, two runs — as two deliveries would arrive.
+    const r1 = await svc.ingest('s1', raw, { type: 'WEBHOOK', runId: 'run-1' });
+    const r2 = await svc.ingest('s1', raw, { type: 'WEBHOOK', runId: 'run-2' });
+    expect(r1.created).toBe(true);
+    expect(r2.created).toBe(false);
+    expect(r2.orderId).toBe('ord-1');
+    expect(orders.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('P2002 race: two ingests past the lookup collide — the loser reconciles instead of erroring', async () => {
+    const prisma = mockPrisma();
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM', name: 'Bridge' });
+    seedStatusMaps(prisma);
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    // Both lookups miss (the race); the loser's re-read finds the mapping.
+    prisma.storeOrderMapping.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ orderId: 'ord-1', externalOrderId: 'ext-9', order: { status: { name: 'Confirmed' }, total: 250 } });
+    prisma.storeOrderMapping.create.mockResolvedValue({});
+    const { svc, orders } = buildIngest(prisma);
+    const p2002: any = new Error('Unique constraint failed on the fields: (`tenantId`,`idempotencyKey`)');
+    p2002.code = 'P2002';
+    orders.create
+      .mockResolvedValueOnce({ ...CREATED_ORDER })
+      .mockRejectedValueOnce(p2002);
+    const raw = {
+      id: 'ext-9', status: 'processing', total: 250, currency: 'BDT',
+      createdAt: '2026-09-23T13:00:00.000Z',
+      items: [{ sku: 'SKU-IN-001', qty: 1, price: 250 }],
+    };
+    const r1 = await svc.ingest('s1', raw, { type: 'WEBHOOK', runId: 'run-1' });
+    // The loser does NOT throw — it reconciles the order the winner created.
+    const r2 = await svc.ingest('s1', raw, { type: 'WEBHOOK', runId: 'run-2' });
+    expect(r1.created).toBe(true);
+    expect(r2.created).toBe(false);
+    expect(r2.orderId).toBe('ord-1');
+    expect(orders.create).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('P6 ingest — unmatched SKU (BR-16 spirit: never lose the order)', () => {
@@ -308,7 +374,9 @@ describe('P6 reconcile — 3-day window + widening bounds (BR-10)', () => {
     const args = fake.calls.find((c) => c.method === 'fetchOrders')!.detail as any;
     const spanDays = (new Date(args.until).getTime() - new Date(args.since).getTime()) / 86400000;
     expect(spanDays).toBeCloseTo(3, 5);
-    expect(args.pageSize).toBeLessThanOrEqual(50);
+    // Phase 9 P2: the page size is the raised reconcile cap (100, the
+    // Woo per_page maximum) — see RECONCILE_PAGE_SIZE in normalize-order.
+    expect(args.pageSize).toBe(RECONCILE_PAGE_SIZE);
     expect(runs.finish).toHaveBeenCalledWith('run-1', expect.objectContaining({ failed: 0 }));
   });
 

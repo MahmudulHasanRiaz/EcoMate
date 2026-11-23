@@ -16,6 +16,7 @@ import { randomInt, randomUUID, createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { runPerTenant } from '../tenancy/tenant-job';
 import { TenantRegistryService } from '../tenancy/tenant-registry.service';
+import { schedulersEnabled } from '../common/worker-mode';
 import { EmailService } from '../email/email.service';
 import { baPrisma } from '../better-auth/prisma';
 import { hashPassword } from 'better-auth/crypto';
@@ -54,6 +55,16 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
+    // Worker split (WORKER_MODE): the expired-token sweep is scheduler work
+    // — the api process owns it. In `worker` mode this process only consumes
+    // jobs. (The sweep is idempotent, so this is about single ownership,
+    // not correctness.)
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Expired-token cleanup skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     await this.cleanupExpiredTokens();
     // Run cleanup every hour. The handle is kept so a hot reload / restart
     // cannot stack another sweep timer on top of a live one.

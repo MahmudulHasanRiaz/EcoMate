@@ -9,6 +9,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { schedulersEnabled } from '../common/worker-mode';
 import { TrackingSettingsService } from './tracking-settings.service';
 import { runPerTenant, tenantJobPayload } from '../tenancy/tenant-job';
 import { TenantRegistryService } from '../tenancy/tenant-registry.service';
@@ -170,6 +171,16 @@ export class OutboxRelayService implements OnModuleInit, OnModuleDestroy {
    * means exactly one relay timer per app.
    */
   async onModuleInit(): Promise<void> {
+    // Worker split (WORKER_MODE): the relay poll loop is scheduler work —
+    // the api process owns it. In `worker` mode this process only consumes
+    // jobs. (The loop itself is claim-safe, so this is about single
+    // ownership, not correctness; start() stays directly callable.)
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Outbox relay not started (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     await this.start();
   }
 

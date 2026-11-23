@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { schedulersEnabled } from '../../common/worker-mode';
 import { EventAggregatorService } from './event-aggregator.service';
 import { runPerTenant } from '../../tenancy/tenant-job';
 import { TenantRegistryService } from '../../tenancy/tenant-registry.service';
@@ -23,6 +24,16 @@ export class RetentionCleanupService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    // Worker split (WORKER_MODE): the retention cleanup sweep is scheduler
+    // work — the api process owns it. In `worker` mode this process only
+    // consumes jobs. (The sweep is idempotent, so this is about single
+    // ownership, not correctness.)
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Security retention cleanup skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     // Run first cleanup after 1 hour (gives system time to start)
     setTimeout(() => this.runCleanup(), 3600_000);
     // Then repeat every 6 hours

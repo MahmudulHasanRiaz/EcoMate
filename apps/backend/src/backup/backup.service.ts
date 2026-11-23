@@ -39,6 +39,7 @@ import { pipeline } from 'stream/promises';
 import { promisify } from 'util';
 import { createGzip, createGunzip } from 'zlib';
 import { CacheService } from '../cache/cache.service';
+import { schedulersEnabled } from '../common/worker-mode';
 import { MediaQueueService } from '../media/media-queue/media-queue.service';
 import { OpsAlertsService } from '../observability/ops-alerts.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -4028,6 +4029,15 @@ export class BackupService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
+    // Worker split (WORKER_MODE): repeatable registration + boot-time
+    // enqueueing are scheduler work — the api process owns them. In
+    // `worker` mode this process only consumes jobs.
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Backup schedulers skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     await this.reconcileLifecycleJobs();
     await this.backupQueue.add(
       'lifecycle-recovery',

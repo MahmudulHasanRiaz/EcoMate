@@ -31,6 +31,7 @@ import { BaseCommerceProvider } from './base-provider';
 import type {
   CategoryInput,
   CategoryPath,
+  EnsureWebhooksOptions,
   FieldKey,
   FieldSnapshot,
   NormalizedMedia,
@@ -1308,10 +1309,35 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
     return { status: String(raw).toUpperCase() || String(raw) };
   }
 
+  /**
+   * Webhook lifecycle (J-02 adapted to protocol §6, G-01/G-05): list the
+   * bridge's hooks, then register the missing topics. Match is by topic +
+   * URL (same ownership scope as Woo/Shopify — only hooks whose URL ends
+   * with this store's intake path count as ours).
+   *
+   * Protocol limits (documented, not gaps in this adapter):
+   * - No DELETE and no status in protocol §6 (GET + POST only), so a
+   *   stale-URL or duplicate hook CANNOT be removed from here. Mismatched
+   *   topics are re-POSTed (a bridge that upserts by topic heals; the
+   *   reference bridge ignores the re-POST for an existing topic) and
+   *   reported in `reason` for the operator to fix bridge-side.
+   * - No secret field in the §6 POST: the HMAC key is the shared webhook
+   *   secret configured out-of-band on the bridge (the connect dialog's
+   *   webhook-secret field). EcoMate never auto-generates one for Custom
+   *   stores — a generated secret the bridge was never told is
+   *   unverifiable by design, so the operator-supplied value is the only
+   *   agreement that works.
+   * - No `order.deleted` topic: the protocol's topic set is
+   *   order.created/order.updated/product.updated (manifest default).
+   * - `forceRecreate` is a no-op here (nothing to delete); the call still
+   *   re-registers missing/mismatched topics.
+   */
   override async ensureWebhooks(
     store: StoreWithSecrets,
     callbackBaseUrl: string,
+    opts?: EnsureWebhooksOptions,
   ): Promise<WebhookRegistrationResult> {
+    void opts;
     const caps = await this.resolveCapabilities(store);
     if (!caps.webhooks) {
       throw new ProviderError(
@@ -1321,22 +1347,63 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
       );
     }
     const address = `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/custom/${store.id}`;
+    const storePath = `/api/webhooks/stores/custom/${store.id}`;
     const existing = await this.bridge<{ webhooks?: any[] }>(
       store,
       'GET',
       '/bridge/v1/webhooks',
     ).catch(() => ({ webhooks: [] as any[] }));
-    const have = new Set(
-      (existing.webhooks ?? []).map((h: any) => String(h.topic)),
-    );
-    const missing = BRIDGE_WEBHOOK_TOPICS.filter((t) => !have.has(t));
-    if (missing.length > 0) {
+    const hooks = existing.webhooks ?? [];
+    const created: string[] = [];
+    const skipped: string[] = [];
+    const mismatched: string[] = [];
+    const duplicates: string[] = [];
+    const toRegister: string[] = [];
+    for (const topic of BRIDGE_WEBHOOK_TOPICS) {
+      const ours = hooks.filter(
+        (h: any) => String(h.topic) === topic && String(h.url ?? '').endsWith(storePath),
+      );
+      const valid = ours.filter((h: any) => h.url === address);
+      if (valid.length === 1 && ours.length === 1) {
+        skipped.push(topic);
+        continue;
+      }
+      if (ours.length > 1) duplicates.push(topic);
+      if (ours.length > 0 && valid.length === 0) mismatched.push(topic);
+      toRegister.push(topic);
+    }
+    if (toRegister.length > 0) {
       await this.bridge(store, 'POST', '/bridge/v1/webhooks', {
         url: address,
-        topics: missing,
+        topics: toRegister,
       });
+      // The reference bridge registers only topics it lacks; a re-POST
+      // for a mismatched topic is best-effort (see the docblock above).
+      // Report the newly-missing ones as created, mismatches separately.
+      for (const topic of toRegister) {
+        if (!mismatched.includes(topic)) created.push(topic);
+      }
     }
-    return { ok: true, topics: BRIDGE_WEBHOOK_TOPICS };
+    const notes: string[] = [];
+    if (mismatched.length > 0) {
+      notes.push(
+        `stale URL for ${mismatched.join(', ')} — bridge protocol §6 has no delete/update; re-registered best-effort, fix bridge-side if deliveries still miss`,
+      );
+    }
+    if (duplicates.length > 0) {
+      notes.push(
+        `duplicate hooks for ${duplicates.join(', ')} — bridge protocol §6 has no delete; remove extras bridge-side`,
+      );
+    }
+    return {
+      ok: true,
+      topics: BRIDGE_WEBHOOK_TOPICS,
+      ...(notes.length > 0 ? { reason: notes.join('; ') } : {}),
+      created,
+      recreated: [],
+      deleted: 0,
+      skipped,
+    };
   }
 }
 

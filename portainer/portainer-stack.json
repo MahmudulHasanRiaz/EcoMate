@@ -1,8 +1,8 @@
 {
   "version": "2",
   "name": "ecomate",
-  "description": "EcoMate SaaS Platform \u2014 multi-tenant single deployment (platform API + console + landing + tenant backend/storefront/admin/POS + Caddy edge)",
-  "note": "SaaS stack \u2014 create from the EcoMate repo at ref feat/saas-multitenant (until the branch merges to main). First deploy in the Portainer UI until green; only then wire the deploy-saas.yml webhook. GHCR images are private: register a GHCR registry (PAT with read:packages) in Portainer first. Never delete the license-data volume (holds APP_ENCRYPTION_KEY). Staging and production are two stacks from this same template, differing only in env.",
+  "description": "EcoMate SaaS Platform — multi-tenant single deployment (platform API + console + landing + tenant backend/storefront/admin/POS + Caddy edge)",
+  "note": "SaaS stack — create from the EcoMate repo at ref feat/saas-multitenant (until the branch merges to main). First deploy in the Portainer UI until green; only then wire the deploy-saas.yml webhook. GHCR images are private: register a GHCR registry (PAT with read:packages) in Portainer first. Never delete the license-data volume (holds APP_ENCRYPTION_KEY). Staging and production are two stacks from this same template, differing only in env.",
   "repository": {
     "stackfile": "docker-compose.yml",
     "url": "https://github.com/MahmudulHasanRiaz/EcoMate"
@@ -10,17 +10,17 @@
   "env": [
     {
       "default": "",
-      "label": "Legacy client domain (single-tenant fallback for URL defaults \u2014 SaaS uses SAAS_PRIMARY_DOMAIN; keep set until compose stops deriving URLs from it)",
+      "label": "Legacy client domain (single-tenant fallback for URL defaults — SaaS uses SAAS_PRIMARY_DOMAIN; keep set until compose stops deriving URLs from it)",
       "name": "CLIENT_DOMAIN"
     },
     {
       "default": "mahmudulhasanriaz",
-      "label": "\u2b50 GitHub Username/Org (for Docker Registry images)",
+      "label": "⭐ GitHub Username/Org (for Docker Registry images)",
       "name": "DOCKER_REGISTRY_OWNER"
     },
     {
       "default": "ecomate.bd",
-      "label": "\u2b50 Primary SaaS domain (tenant canonical host: {slug}.<this>)",
+      "label": "⭐ Primary SaaS domain (tenant canonical host: {slug}.<this>)",
       "name": "SAAS_PRIMARY_DOMAIN"
     },
     {
@@ -69,18 +69,23 @@
       "name": "PLATFORM_API_HOST"
     },
     {
+      "default": "",
+      "label": "Public API base URL (REQUIRED, https) — webhook callback base: provider webhooks register as {this}/api/webhooks/stores/<provider>/<storeId>. Registration fails loudly when unset. Set explicitly per environment (staging uses its own API host).",
+      "name": "PUBLIC_API_BASE_URL"
+    },
+    {
       "default": "support@ecomate.bd",
       "label": "Let's Encrypt account email for Caddy (expiry notices; Caddy rejects an empty email)",
       "name": "ACME_EMAIL"
     },
     {
       "default": "",
-      "label": "\u2b50 Platform JWT secret (strong random string; openssl rand -hex 64)",
+      "label": "⭐ Platform JWT secret (strong random string; openssl rand -hex 64)",
       "name": "PLATFORM_JWT_SECRET"
     },
     {
       "default": "",
-      "label": "\u2b50 Platform JWT refresh secret (different from PLATFORM_JWT_SECRET)",
+      "label": "⭐ Platform JWT refresh secret (different from PLATFORM_JWT_SECRET)",
       "name": "PLATFORM_JWT_REFRESH_SECRET"
     },
     {
@@ -110,22 +115,22 @@
     },
     {
       "default": "",
-      "label": "\u2b50 Internal service secret \u2014 backend\u2194platform auth + TLS ask fallback (openssl rand -hex 64; same value everywhere)",
+      "label": "⭐ Internal service secret — backend↔platform auth + TLS ask fallback (openssl rand -hex 64; same value everywhere)",
       "name": "INTERNAL_SERVICE_SECRET"
     },
     {
       "default": "",
-      "label": "Caddy on-demand TLS ask token (optional \u2014 falls back to INTERNAL_SERVICE_SECRET; set a distinct value for least privilege)",
+      "label": "Caddy on-demand TLS ask token (optional — falls back to INTERNAL_SERVICE_SECRET; set a distinct value for least privilege)",
       "name": "TLS_ASK_TOKEN"
     },
     {
       "default": "",
-      "label": "\u2b50 First platform superadmin email (seed, first deploy only)",
+      "label": "⭐ First platform superadmin email (seed, first deploy only)",
       "name": "PLATFORM_ADMIN_EMAIL"
     },
     {
       "default": "",
-      "label": "\u2b50 First platform superadmin password (seed, min 12 chars)",
+      "label": "⭐ First platform superadmin password (seed, min 12 chars)",
       "name": "PLATFORM_ADMIN_PASSWORD"
     },
     {
@@ -185,7 +190,7 @@
     },
     {
       "default": "",
-      "label": "\u2b50 SMTP host (signup verification fails closed in production without it)",
+      "label": "⭐ SMTP host (signup verification fails closed in production without it)",
       "name": "SMTP_HOST"
     },
     {
@@ -220,7 +225,7 @@
     },
     {
       "default": "",
-      "label": "\u2b50 Cloudflare Turnstile secret key (production signup fails closed without it)",
+      "label": "⭐ Cloudflare Turnstile secret key (production signup fails closed without it)",
       "name": "TURNSTILE_SECRET_KEY"
     },
     {
@@ -235,7 +240,7 @@
     },
     {
       "default": "true",
-      "label": "Billing lifecycle jobs enabled? (trial expiry, renewal invoices, grace/suspend \u2014 single instance only)",
+      "label": "Billing lifecycle jobs enabled? (trial expiry, renewal invoices, grace/suspend — single instance only)",
       "name": "BILLING_JOBS_ENABLED"
     },
     {
@@ -295,7 +300,7 @@
     },
     {
       "default": "900",
-      "label": "One-time tenant impersonation link lifetime (60\u20133600 seconds)",
+      "label": "One-time tenant impersonation link lifetime (60–3600 seconds)",
       "name": "IMPERSONATION_TTL_SECONDS"
     },
     {
@@ -310,12 +315,12 @@
     },
     {
       "default": "",
-      "label": "\u2b50 JWT Secret (strong random string)",
+      "label": "⭐ JWT Secret (strong random string)",
       "name": "JWT_SECRET"
     },
     {
       "default": "",
-      "label": "\u2b50 JWT Refresh Secret (different from JWT_SECRET)",
+      "label": "⭐ JWT Refresh Secret (different from JWT_SECRET)",
       "name": "JWT_REFRESH_SECRET"
     },
     {
@@ -330,7 +335,7 @@
     },
     {
       "default": "",
-      "label": "\u2b50 Better-Auth Secret",
+      "label": "⭐ Better-Auth Secret",
       "name": "BETTER_AUTH_SECRET"
     },
     {
@@ -340,32 +345,32 @@
     },
     {
       "default": "",
-      "label": "Internal service secret (optional \u2014 same value on backend + storefront exempts internal calls from rate limiting, and authenticates POST /api/entitlements/refresh)",
+      "label": "Internal service secret (optional — same value on backend + storefront exempts internal calls from rate limiting, and authenticates POST /api/entitlements/refresh)",
       "name": "INTERNAL_SHARED_SECRET"
     },
     {
       "default": "",
-      "label": "\u2b50 App encryption key \u2014 64 hex chars (openssl rand -hex 32; empty = generated once on the license-data/app-data volume and reused on every boot; set explicitly so a volume loss doesn't brick encrypted data)",
+      "label": "⭐ App encryption key — 64 hex chars (openssl rand -hex 32; empty = generated once on the license-data/app-data volume and reused on every boot; set explicitly so a volume loss doesn't brick encrypted data)",
       "name": "APP_ENCRYPTION_KEY"
     },
     {
       "default": "",
-      "label": "Storefront revalidation secret (optional \u2014 enables POST /api/revalidate on-demand cache invalidation; empty = endpoint disabled)",
+      "label": "Storefront revalidation secret (optional — enables POST /api/revalidate on-demand cache invalidation; empty = endpoint disabled)",
       "name": "REVALIDATION_SECRET"
     },
     {
       "default": "",
-      "label": "Cloudflare API token for the Purge all cache button (optional \u2014 Zone:Cache Purge on this tenant's zone only; empty = Cloudflare layer reports 'not configured')",
+      "label": "Cloudflare API token for the Purge all cache button (optional — Zone:Cache Purge on this tenant's zone only; empty = Cloudflare layer reports 'not configured')",
       "name": "CLOUDFLARE_API_TOKEN"
     },
     {
       "default": "",
-      "label": "Cloudflare Zone ID for this tenant's domain (optional \u2014 comma-separated if several zones; empty = Cloudflare layer reports 'not configured')",
+      "label": "Cloudflare Zone ID for this tenant's domain (optional — comma-separated if several zones; empty = Cloudflare layer reports 'not configured')",
       "name": "CLOUDFLARE_ZONE_ID"
     },
     {
       "default": "",
-      "label": "Media static server URL (optional \u2014 empty = default http://media-static:80 nginx; set http://backend:4000 to roll back to backend-served images)",
+      "label": "Media static server URL (optional — empty = default http://media-static:80 nginx; set http://backend:4000 to roll back to backend-served images)",
       "name": "UPLOADS_URL"
     },
     {
@@ -390,7 +395,7 @@
     },
     {
       "default": "",
-      "label": "\u2b50 PostgreSQL Password (strong password)",
+      "label": "⭐ PostgreSQL Password (strong password)",
       "name": "POSTGRES_PASSWORD"
     },
     {
@@ -490,13 +495,18 @@
     },
     {
       "default": "true",
-      "label": "Tracking retention sweep enabled? (true/false \u2014 false keeps raw tracking data)",
+      "label": "Tracking retention sweep enabled? (true/false — false keeps raw tracking data)",
       "name": "RETENTION_ENABLED"
     },
     {
       "default": "2048",
       "label": "Backend Node heap in MB (keep below the backend memory limit of 2560M)",
       "name": "NODE_MAX_OLD_SPACE_SIZE"
+    },
+    {
+      "default": "1536",
+      "label": "Worker Node heap in MB (queue-worker service; keep below the worker memory limit of 2048M)",
+      "name": "WORKER_MAX_OLD_SPACE_SIZE"
     },
     {
       "default": "",

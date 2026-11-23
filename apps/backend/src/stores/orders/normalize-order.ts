@@ -150,8 +150,37 @@ export function normalizeOrder(raw: Record<string, unknown>): NormalizedIngestOr
 /** P6 §8.5 widening bounds (BR-10): default window + hard max + page cap. */
 export const RECONCILE_DEFAULT_WINDOW_DAYS = 3;
 export const RECONCILE_MAX_WINDOW_DAYS = 30;
-export const RECONCILE_MAX_PAGES = 20;
-export const RECONCILE_PAGE_SIZE = 50;
+/**
+ * Phase 9 P2 — recovery-cap review. The old bound (20 pages × 50 =
+ * 1,000 orders/store/hour) cannot recover a one-hour webhook outage at
+ * lakhs/day, and it was the SOLE safety net. New bound: 50 pages ×
+ * 100 = **5,000 orders per store per run**.
+ *
+ * Why 5,000, and why not more:
+ *  - Page size 100 is the Woo `per_page` maximum (Shopify clamps to
+ *    250, the custom bridge to 100) — fewer round trips per order
+ *    than 50, no provider exceeds its own max.
+ *  - At ~200ms–1s per order of inline sequential ingest, 5,000
+ *    orders is ~15–80 minutes of worker time per store — already a
+ *    long run on a concurrency-2 reconcile processor. Raising the
+ *    cap further would let one store's recovery monopolize the
+ *    worker; instead the run SEGMENTS (see RECONCILE_SEGMENT_PAGES)
+ *    and a capped run enqueues a CONTINUATION run that resumes from
+ *    the exact page/cursor (see store-order-reconcile.service.ts),
+ *    so a large backlog drains across runs instead of truncating.
+ *  - The per-order cost above is a reasoned estimate from the query
+ *    pattern, not a measurement — the k6 load test (follow-up) may
+ *    move these numbers. They are defensible, not final.
+ */
+export const RECONCILE_MAX_PAGES = 50;
+export const RECONCILE_PAGE_SIZE = 100;
+/** Segment size for run progress: a checkpoint item is recorded on
+ *  the run every 10 pages (1,000 orders), so a long recovery is
+ *  visible in the Sync Center instead of looking stalled. */
+export const RECONCILE_SEGMENT_PAGES = 10;
+/** Orders covered by one full run at the cap (MAX_PAGES × PAGE_SIZE). */
+export const RECONCILE_MAX_ORDERS_PER_RUN =
+  RECONCILE_MAX_PAGES * RECONCILE_PAGE_SIZE;
 
 /**
  * Clamp a requested reconcile window to the BR-10 bounds. Returns the

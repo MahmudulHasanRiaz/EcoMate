@@ -2,6 +2,7 @@ import { runPerTenant } from '../tenancy/tenant-job';
 import { TenantRegistryService } from '../tenancy/tenant-registry.service';
 import { Injectable, Optional, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { schedulersEnabled } from '../common/worker-mode';
 import { WebhookAttemptOutcome, WebhookAttemptStage } from '@prisma/client';
 
 const RETENTION_DAYS = 30;
@@ -48,6 +49,16 @@ export class WebhookAttemptService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    // Worker split (WORKER_MODE): the retention cleanup sweep is scheduler
+    // work — the api process owns it. In `worker` mode this process only
+    // consumes jobs. (The sweep is idempotent, so this is about single
+    // ownership, not correctness.)
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Webhook attempt cleanup skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     // First cleanup after 1 hour (gives system time to start)
     setTimeout(() => this.runCleanup(), 3600_000);
     this.cleanupTimer = setInterval(() => this.runCleanup(), this.CLEANUP_INTERVAL_MS);

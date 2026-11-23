@@ -22,6 +22,7 @@ import { OrderSourcePolicyService } from './order-source-policy';
 import { OrderSourcePolicyController } from './order-source-policy.controller';
 import { TrackingEligibilityGate } from './tracking-eligibility-gate';
 import { PrismaModule } from '../prisma/prisma.module';
+import { processorsEnabled } from '../common/worker-mode';
 
 @Module({
   imports: [
@@ -48,7 +49,10 @@ import { PrismaModule } from '../prisma/prisma.module';
     TrackingSettingsService,
     TrackingCaptureService,
     TrackingDispatcherService,
-    TrackingDispatcherProcessor,
+    // Worker split (WORKER_MODE): the processor runs only in `worker`/`all`
+    // modes. In `api` mode the queue itself (registerQueue above) stays —
+    // HTTP paths must still enqueue — but no BullMQ Worker is created.
+    ...(processorsEnabled() ? [TrackingDispatcherProcessor] : []),
     OutboxRelayService,
     ReconcilerService,
     DlqService,

@@ -222,7 +222,7 @@ describe('store trackingKey (Phase 9 §3.3)', () => {
 });
 
 describe('store_webhook policy (real policy store)', () => {
-  it('exists with trackingKey store, 60/min all tiers, burst 20/10s', () => {
+  it('exists with trackingKey store, 600/min all tiers, token bucket 200/600', () => {
     const store = new RateLimitPolicyStore();
     const policy = store.get('store_webhook');
     expect(policy.trackingKey).toBe('store');
@@ -232,8 +232,12 @@ describe('store_webhook policy (real policy store)', () => {
       TrustTier.BROWSER_TRUST,
       TrustTier.AUTHENTICATED,
     ]) {
-      expect(policy.limits[tier]).toEqual({ limit: 60, windowMs: 60000 });
+      expect(policy.limits[tier]).toEqual({ limit: 600, windowMs: 60000 });
     }
-    expect(policy.burst).toEqual({ limit: 20, windowMs: 10000 });
+    // G-13 retune: the old fixed-window burst field is gone; the bucket
+    // (capacity 200, refill 600/min) gates UNSIGNED traffic only — signed
+    // deliveries bypass it entirely.
+    expect(policy.tokenBucket).toEqual({ capacity: 200, refillPerMinute: 600 });
+    expect(policy.signedBypass).toBe(true);
   });
 });

@@ -24,6 +24,7 @@ import { CourierSettlementCostService } from './cost-projection.service';
 import { ExpectedCodResolver } from './expected-cod.resolver';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { processorsEnabled } from '../common/worker-mode';
 import { AccountingModule } from '../accounting/accounting.module';
 import { CacheModule } from '../cache/cache.module';
 import { CustomerCreditModule } from '../customer-credit/customer-credit.module';
@@ -40,7 +41,10 @@ import { CustomerCreditModule } from '../customer-credit/customer-credit.module'
     PrismaService,
     StorageService,
     CourierSettlementImportService,
-    CourierSettlementImportProcessor,
+    // Worker split (WORKER_MODE): the processor runs only in `worker`/`all`
+    // modes. In `api` mode the queue itself (registerQueue above) stays —
+    // HTTP paths must still enqueue — but no BullMQ Worker is created.
+    ...(processorsEnabled() ? [CourierSettlementImportProcessor] : []),
     CourierSettlementMappingService,
     CourierSettlementFinalizeService,
     CourierSettlementAccountingService,

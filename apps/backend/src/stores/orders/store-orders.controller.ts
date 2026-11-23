@@ -18,6 +18,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SyncRunService } from '../sync/sync-run.service';
 import { SyncQueuesService } from '../sync/sync-queues.service';
+import { WEBHOOK_PRIORITY } from '../sync/webhook-priority';
 import { StoreOrderIngestService } from './store-order-ingest.service';
 import { orderSyncEnabled, storesEnabled } from '../store-flags';
 
@@ -88,6 +89,8 @@ export class StoreOrdersController {
         wideningReason: dto.wideningReason,
       },
       `order-reconcile:${id}:${runId}`,
+      // G-14: manual reconciliation yields to live webhooks (priority 10).
+      { priority: WEBHOOK_PRIORITY.reconciliation },
     );
     return { runId };
   }

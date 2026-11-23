@@ -31,6 +31,7 @@ import { resolveTenantHost } from './tenancy/tenant-host';
 import { tenantStorage } from './tenancy/tenant-context';
 import { setBaPrismaResolver } from './better-auth/prisma';
 import { randomUUID } from 'crypto';
+import { parseWorkerMode } from './common/worker-mode';
 
 // BA brute-force attempt log (F5): key `${ip}:${endpoint}` → attempt
 // timestamps (60s window); lockouts key → locked-until ms.
@@ -43,6 +44,19 @@ async function bootstrap() {
   config({ path: join(__dirname, '..', '..', '..', '..', '.env') }); // monorepo root
   config({ path: join(__dirname, '..', '..', '.env') }); // apps/backend/
   config(); // cwd fallback
+
+  // Worker split (WORKER_MODE): this is the HTTP entrypoint. `worker` mode
+  // has no HTTP server — it runs queue processors only via worker.main.ts.
+  // Fail fast on the mismatch instead of silently serving HTTP as a worker.
+  // (`api` mode additionally leaves the @Processor providers unregistered —
+  // see common/worker-mode.ts; `all` is today's behaviour, unchanged.)
+  const workerMode = parseWorkerMode();
+  if (workerMode === 'worker') {
+    throw new Error(
+      'WORKER_MODE=worker must be started via worker.main.ts ' +
+        '(node dist/src/worker.main) — main.ts always serves HTTP.',
+    );
+  }
 
   if (!process.env['JWT_SECRET'] || !process.env['JWT_REFRESH_SECRET']) {
     if (process.env.NODE_ENV === 'production') {
@@ -675,8 +689,24 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
 
   console.log(`Server running on http://localhost:${port}`);
+  console.log(
+    `[bootstrap] WORKER_MODE=${workerMode} — queue processors ` +
+      `${workerMode === 'api' ? 'NOT registered in this process (api mode)' : 'registered'}`,
+  );
 }
-bootstrap();
+// Worker split (WORKER_MODE): a failed bootstrap (including the
+ // mode-mismatch refusal above) must exit NON-ZERO. A bare bootstrap()
+ // leaves the rejection to the unhandledRejection handler below, which
+ // only logs — and the process then exits 0 once the event loop drains,
+ // so a swapped entrypoint (or a DB-down boot) looks like a clean exit
+ // to Docker/systemd. Handle it here instead.
+bootstrap().catch((err) => {
+  console.error(
+    '[FATAL] Bootstrap failed:',
+    err instanceof Error ? err.message : err,
+  );
+  process.exit(1);
+});
 
 // Global error handlers to prevent process crash on unhandled rejections
 process.on('unhandledRejection', (reason) => {

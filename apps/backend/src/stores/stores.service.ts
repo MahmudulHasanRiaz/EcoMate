@@ -20,7 +20,7 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { EncryptionService } from '../common/utils/encryption';
@@ -33,7 +33,14 @@ import {
 } from '../external-stores/platform-binding.client';
 import { identityFingerprint, normaliseDomain } from './store-identity';
 import { NATIVE_STORE_KIND, ProviderRegistryService } from './providers/provider-registry.service';
-import type { StoreWithSecrets, TestConnectionResult } from './providers/provider.contract';
+import type {
+  EnsureWebhooksOptions,
+  StoreWithSecrets,
+  TestConnectionResult,
+  WebhookRegistrationResult,
+} from './providers/provider.contract';
+import { resolveWebhookCallbackBase } from './webhooks/webhook-callback-base';
+import { SyncRunService } from './sync/sync-run.service';
 import {
   ProviderError,
   ProviderErrorCategory,
@@ -56,6 +63,27 @@ function sanitizeStore(store: any) {
   return rest;
 }
 
+/** Sync-issue codes for the webhook lifecycle (G-01/G-05/G-06). */
+export const WEBHOOK_ENSURE_FAILED_CODE = 'WEBHOOK_ENSURE_FAILED';
+export const WEBHOOK_HEALED_CODE = 'WEBHOOK_HEALED';
+/**
+ * Settings-JSON key carrying the last webhook-ensure outcome — surfaced by
+ * detail() with no schema change. The value is a WebhookEnsureOutcome
+ * (topics + counts + error, never secrets).
+ */
+export const WEBHOOK_ENSURE_SETTINGS_KEY = 'webhookEnsure';
+
+/** Outcome of one webhook-ensure attempt (persisted + returned inline). */
+export interface WebhookEnsureOutcome {
+  status: 'ok' | 'failed';
+  topics: string[];
+  created: string[];
+  recreated: string[];
+  deleted: number;
+  error?: string;
+  at: string;
+}
+
 @Injectable()
 export class StoresService {
   private readonly logger = new Logger(StoresService.name);
@@ -72,6 +100,10 @@ export class StoresService {
     @Optional() private readonly resolver?: ExternalStoreResolver,
     @Optional() private readonly bindingClient?: PlatformBindingClient,
     @Optional() private readonly limits?: TenantLimitsService,
+    // Webhook lifecycle (G-01): issue rows for failed ensures. Trailing
+    // @Optional like the rest — specs constructing the service manually
+    // (3 args) keep working; without it, failures are log-only.
+    @Optional() private readonly syncRuns?: SyncRunService,
   ) {}
 
   // ── Reads (never secrets) ──────────────────────────────────────────
@@ -239,8 +271,20 @@ export class StoresService {
       await this.storeCredentialRow(store.id, dto.credentials, actorId);
     }
 
+    // Webhook lifecycle (G-01/G-02): webhooks auto-create on connect, with
+    // a server-generated secret for stores that have none. Best-effort —
+    // an ensure failure must NEVER fail the connect (logged + issue row +
+    // outcome persisted into settings.webhookEnsure, surfaced below).
+    const webhookOutcome = await this.ensureStoreWebhooksBestEffort(store.id, {
+      ensureSecret: true,
+    });
+
     this.logger.log(`Store connected: ${store.id} (${store.kind})`);
-    return sanitizeStore(store);
+    const settings = {
+      ...((store.settings as Record<string, unknown> | null) ?? {}),
+      [WEBHOOK_ENSURE_SETTINGS_KEY]: webhookOutcome,
+    };
+    return sanitizeStore({ ...store, settings });
   }
 
   // ── Update (name + settings only; no delete-mode field — BR-09) ──────
@@ -293,10 +337,56 @@ export class StoresService {
   // ── Credentials: write-only rotation ────────────────────────────────
 
   async rotateCredentials(id: string, dto: RotateStoreCredentialsDto, actorId?: string) {
-    await this.requireStore(id);
-    const row = await this.storeCredentialRow(id, dto.credentials, actorId);
+    const store = await this.requireStore(id);
+    // A rotation that omits `webhookSecret` (the Woo reconnect dialog has
+    // no such field) must NOT drop the stored secret — losing it orphans
+    // every registered webhook. Carry it forward (or generate one for a
+    // Woo store that never had one).
+    const { credentials } = await this.preservedCredentials(
+      id,
+      store.kind as string,
+      dto.credentials,
+    );
+    const row = await this.storeCredentialRow(id, credentials, actorId);
     // Write-only: acknowledge rotation, never echo the payload.
     return { storeId: id, rotatedAt: row.rotatedAt, keyFingerprint: row.keyFingerprint };
+  }
+
+  /**
+   * Webhook-secret preservation across credential rotations (G-02): an
+   * explicitly supplied secret always wins; otherwise the stored secret
+   * carries forward; a Woo store with no secret anywhere gets one
+   * generated. `secretChanged` is true when the effective secret differs
+   * from the previously stored one (reconnect force-recreates hooks then).
+   * The old blob is read best-effort — a corrupt/unreadable blob must not
+   * fail the rotation (rotation is the recovery for it).
+   */
+  private async preservedCredentials(
+    storeId: string,
+    kind: string,
+    incoming: Record<string, unknown>,
+  ): Promise<{ credentials: Record<string, unknown>; secretChanged: boolean }> {
+    const incomingSecret = String((incoming as any).webhookSecret ?? '');
+    let previous = '';
+    try {
+      const current = (await this.loadSecrets(storeId)) ?? {};
+      previous = String((current as any).webhookSecret ?? '');
+    } catch {
+      previous = '';
+    }
+    if (incomingSecret) {
+      return { credentials: incoming, secretChanged: incomingSecret !== previous };
+    }
+    if (previous) {
+      return { credentials: { ...incoming, webhookSecret: previous }, secretChanged: false };
+    }
+    if (kind === 'WOOCOMMERCE') {
+      return {
+        credentials: { ...incoming, webhookSecret: randomBytes(32).toString('hex') },
+        secretChanged: true,
+      };
+    }
+    return { credentials: incoming, secretChanged: false };
   }
 
   private async storeCredentialRow(storeId: string, credentials: Record<string, unknown>, actorId?: string) {
@@ -328,6 +418,161 @@ export class StoresService {
       return JSON.parse(this.encryption.decrypt(row.credentialsEnc));
     } catch {
       throw new BadRequestException('Stored credentials cannot be decrypted');
+    }
+  }
+
+  // ── Webhook lifecycle (G-01–G-07) ───────────────────────────────────
+
+  /**
+   * Webhook secret agreement (G-02/G-03) — per-provider matrix:
+   * - WOOCOMMERCE: the secret is ours to choose (Woo signs with whatever
+   *   `secret` the create payload carries; verifyWebhook checks
+   *   `secrets.webhookSecret`). Generate `randomBytes(32).hex` when the
+   *   store has none and persist it encrypted via the existing
+   *   credential-row path, merged into the latest blob — never a bare row
+   *   that would drop the connection credentials.
+   * - CUSTOM: the bridge signs with a shared secret configured out-of-band
+   *   on the bridge; EcoMate never generates one (a secret the bridge was
+   *   never told is unverifiable by design).
+   * - SHOPIFY: HMAC uses the app secret (`webhookSecret ?? clientSecret`)
+   *   — generating a webhookSecret would switch verification to a key
+   *   Shopify never signs with and break every delivery. Never generate.
+   * Returns true when a secret was newly generated + stored.
+   */
+  async ensureWebhookSecret(storeId: string): Promise<boolean> {
+    const store = await this.requireStore(storeId);
+    return this.writeWebhookSecret(storeId, store.kind as string, false);
+  }
+
+  /** Rotate the webhook secret (heal-on-signature-failure, J-01). WooCommerce only; no-op otherwise. */
+  async rotateWebhookSecret(storeId: string): Promise<boolean> {
+    const store = await this.requireStore(storeId);
+    return this.writeWebhookSecret(storeId, store.kind as string, true);
+  }
+
+  private async writeWebhookSecret(storeId: string, kind: string, rotate: boolean): Promise<boolean> {
+    if (kind !== 'WOOCOMMERCE') return false;
+    const current = (await this.loadSecrets(storeId)) ?? {};
+    if (!rotate && String((current as any).webhookSecret ?? '')) return false;
+    await this.storeCredentialRow(storeId, {
+      ...current,
+      webhookSecret: randomBytes(32).toString('hex'),
+    });
+    return true;
+  }
+
+  /**
+   * Ensure this store's provider webhooks exist, point at the intake route
+   * and are active (delegates to the provider's ensureWebhooks, which heals
+   * duplicates/disabled/stale hooks). Throws on failure — callers that must
+   * not fail use ensureStoreWebhooksBestEffort.
+   *
+   * `ensureSecret`: generate + persist a webhook secret first when the
+   * store has none (WooCommerce only). Default false: a pure ensure never
+   * writes a credential row (testConnection probes rely on this).
+   */
+  async ensureStoreWebhooks(
+    storeId: string,
+    opts?: EnsureWebhooksOptions & { ensureSecret?: boolean },
+  ): Promise<WebhookRegistrationResult> {
+    const store = await this.requireStore(storeId);
+    if (store.kind === NATIVE_STORE_KIND) {
+      throw new BadRequestException('NATIVE store has no provider webhooks (BR-20)');
+    }
+    if (opts?.ensureSecret) {
+      await this.ensureWebhookSecret(storeId);
+    }
+    const base = resolveWebhookCallbackBase();
+    const provider = this.registry.providerFor({ kind: store.kind });
+    // Re-read the secrets AFTER the secret ensure: a concurrent ensure
+    // racing the secret write must still register with the LATEST secret
+    // (the winner's), never a stale in-memory copy.
+    const full = await this.storeWithSecrets(storeId);
+    return provider.ensureWebhooks(full, base, { forceRecreate: opts?.forceRecreate });
+  }
+
+  /**
+   * Best-effort wrapper: an ensure failure NEVER throws — it is logged, an
+   * issue row is recorded (the existing StoreSyncIssue mechanism), and the
+   * outcome is persisted into settings.webhookEnsure so store detail
+   * surfaces it. Returns the outcome for callers that want it inline.
+   */
+  async ensureStoreWebhooksBestEffort(
+    storeId: string,
+    opts?: EnsureWebhooksOptions & { ensureSecret?: boolean },
+  ): Promise<WebhookEnsureOutcome> {
+    let outcome: WebhookEnsureOutcome;
+    try {
+      const result = await this.ensureStoreWebhooks(storeId, opts);
+      outcome = {
+        status: result.ok ? 'ok' : 'failed',
+        topics: result.topics,
+        created: result.created ?? [],
+        recreated: result.recreated ?? [],
+        deleted: result.deleted ?? 0,
+        ...(result.reason ? { error: result.reason } : {}),
+        at: new Date().toISOString(),
+      };
+      if (!result.ok) {
+        this.logger.warn(`webhook ensure failed for store ${storeId}: ${result.reason ?? 'unknown'}`);
+      } else {
+        this.logger.log(
+          `webhook ensure ok for store ${storeId} (created ${outcome.created.length}, recreated ${outcome.recreated.length}, deleted ${outcome.deleted})`,
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`webhook ensure failed for store ${storeId}: ${message}`);
+      outcome = {
+        status: 'failed',
+        topics: [],
+        created: [],
+        recreated: [],
+        deleted: 0,
+        error: message,
+        at: new Date().toISOString(),
+      };
+    }
+    if (outcome.status === 'failed') {
+      await this.recordWebhookIssue(storeId, outcome.error ?? 'webhook ensure failed');
+    }
+    await this.persistWebhookEnsureOutcome(storeId, outcome);
+    return outcome;
+  }
+
+  /** Best-effort issue row for a failed webhook ensure (existing SyncIssue mechanism). */
+  private async recordWebhookIssue(storeId: string, message: string): Promise<void> {
+    if (!this.syncRuns) return;
+    try {
+      await this.syncRuns.upsertIssue({
+        storeId,
+        code: WEBHOOK_ENSURE_FAILED_CODE,
+        objectType: 'ORDER',
+        objectKey: 'webhook-ensure',
+        message: `Webhook registration failed: ${message}`.slice(0, 500),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `webhook issue row failed for store ${storeId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** Persist the last ensure outcome into settings.webhookEnsure (surfaced by detail()). */
+  private async persistWebhookEnsureOutcome(storeId: string, outcome: WebhookEnsureOutcome): Promise<void> {
+    try {
+      const store = await this.requireStore(storeId);
+      const prevSettings = ((store.settings as Record<string, unknown> | null) ?? {});
+      await this.prisma.store.update({
+        where: { id: storeId },
+        data: {
+          settings: { ...prevSettings, [WEBHOOK_ENSURE_SETTINGS_KEY]: outcome } as unknown as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `webhook outcome persist failed for store ${storeId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -390,6 +635,20 @@ export class StoresService {
         data: { status: 'CONNECTED' as any },
       });
     }
+    // Webhook lifecycle (G-01): a successful probe against the STORED
+    // credentials auto-creates/heals the webhooks. Best-effort — never
+    // fails the probe. No secret generation here: a probe never writes a
+    // credential row (the secret is generated at connect/reconnect); a
+    // secret-less store fails the ensure loudly (issue row) instead of
+    // silently registering nothing. Probes with override credentials
+    // (a non-empty dto.credentials) skip the ensure — the ensure runs
+    // against stored credentials, and testing a not-yet-saved set must
+    // have no side effects.
+    const hasCredentialOverride =
+      dto?.credentials !== undefined && Object.keys(dto.credentials).length > 0;
+    if (result.authenticated && !hasCredentialOverride) {
+      await this.ensureStoreWebhooksBestEffort(id);
+    }
     return result;
   }
 
@@ -408,7 +667,12 @@ export class StoresService {
     if (store.kind === NATIVE_STORE_KIND) {
       throw new BadRequestException('NATIVE store cannot be reconnected (BR-20)');
     }
-    await this.storeCredentialRow(id, dto.credentials, actorId);
+    const { credentials, secretChanged } = await this.preservedCredentials(
+      id,
+      store.kind as string,
+      dto.credentials,
+    );
+    await this.storeCredentialRow(id, credentials, actorId);
     const updated = await this.prisma.store.update({
       where: { id },
       data: { status: 'PENDING', lastError: null },
@@ -431,6 +695,15 @@ export class StoresService {
         provider: (store as any).kind,
         domain: (store as any).domainNormalised,
       }).catch(() => undefined);
+    }
+    // If rotation minted a NEW webhook secret (none existed, or the
+    // operator supplied a different one), the hooks registered under the
+    // old secret can no longer verify — force-recreate them under the new
+    // secret now instead of waiting for the next probe. Best-effort, never
+    // fails the reconnect. When the secret carried forward unchanged, the
+    // next testConnection ensure covers healing.
+    if (secretChanged) {
+      await this.ensureStoreWebhooksBestEffort(id, { forceRecreate: true });
     }
     this.logger.log(`Store reconnect started: ${id}`);
     return sanitizeStore(updated);

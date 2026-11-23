@@ -28,6 +28,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SyncRunService } from './sync-run.service';
 import { SyncQueuesService } from './sync-queues.service';
+import { WEBHOOK_PRIORITY } from './webhook-priority';
 import { SyncRetryService } from './sync-retry.service';
 import { StoreProductImportService } from './store-product-import.service';
 import {
@@ -118,7 +119,8 @@ export class SyncOpsController {
       const child = await this.runs.begin({ scope: (orderScope ? 'RECONCILE' : scope) as any, triggerType: 'MANUAL', storeId: store.id, initiatedById: user?.sub });
       childRunIds.push((child as any).id);
       if (orderScope) {
-        await this.queues.enqueue('store-reconcile', 'order-reconcile', { runId: (child as any).id, storeId: store.id }, `order-reconcile:${store.id}:${(child as any).id}`);
+        // G-14: manual reconciliation yields to live webhooks (priority 10).
+        await this.queues.enqueue('store-reconcile', 'order-reconcile', { runId: (child as any).id, storeId: store.id }, `order-reconcile:${store.id}:${(child as any).id}`, { priority: WEBHOOK_PRIORITY.reconciliation });
       } else {
         await this.queues.enqueue('store-product-sync', 'store-sync', { runId: (child as any).id, storeId: store.id }, `store-sync:${(child as any).id}`);
       }

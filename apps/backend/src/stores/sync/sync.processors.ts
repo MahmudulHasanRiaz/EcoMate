@@ -18,7 +18,7 @@
  */
 import { Processor } from '@nestjs/bullmq';
 import { Logger, Optional } from '@nestjs/common';
-import { Job } from 'bullmq';
+import { Job, UnrecoverableError } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantRegistryService } from '../../tenancy/tenant-registry.service';
 import { TenantWorkerHost, runPerTenant } from '../../tenancy/tenant-job';
@@ -28,9 +28,16 @@ import { SyncRunService } from './sync-run.service';
 import { SyncRetentionService } from './sync-retention.service';
 import { SyncQueuesService, fanoutConcurrency } from './sync-queues.service';
 import { StoreCircuitBreaker } from './sync-circuit';
-import { StoreOrderIngestService } from '../orders/store-order-ingest.service';
+import { StoreOrderIngestService, ZERO_STOCK_REJECT } from '../orders/store-order-ingest.service';
+import { orderSyncSkipReason, type OrderSyncSkipReason } from '../store-sync-scope';
+import { recordWebhookSkip } from '../webhooks/webhook-failure-recorder';
+import {
+  WebhookFailuresService,
+  sanitizeFailurePayload,
+} from '../webhooks/webhook-failures.service';
 import { StoreOrderReconcileService } from '../orders/store-order-reconcile.service';
 import { StoreOrderPushService } from '../orders/store-order-push.service';
+import { WebhookHealthScheduler } from '../webhooks/webhook-health.scheduler';
 import { classifyProviderError, MAX_SYNC_ATTEMPTS, RETRY_BACKOFF_MS } from '../providers/retry-classifier';
 import {
   orderPushEnabled,
@@ -251,6 +258,30 @@ export class StoreStockSyncProcessor extends TenantWorkerHost {
   }
 }
 
+/**
+ * G-12 ingest retry classification (pure, unit-tested): is this ingest
+ * failure PERMANENT — i.e. no retry within the BullMQ ladder (attempts 3,
+ * exponential backoff) can fix it? Permanent failures throw
+ * `UnrecoverableError` so BullMQ skips the remaining attempts and the
+ * failure lands in the failure table immediately; everything else
+ * rethrows as a plain error so the ladder retries it.
+ *
+ * Permanent today: the P13 zero-stock reject (stock will not reappear
+ * within seconds — recovery is the hourly reconcile or a manual replay
+ * after restock) and Prisma record/relation errors that a retry cannot
+ * repair (store or order vanished mid-flight). Unknown errors default
+ * to RETRYABLE — a transient DB/Redis blip must never be written off.
+ * (Deliberately NOT `classifyProviderError`: that helper is fail-closed
+ * toward non-retryable, which is backwards for ingest.)
+ */
+export function isPermanentIngestError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  if (msg.includes(ZERO_STOCK_REJECT)) return true;
+  const code = (err as any)?.code;
+  if (code === 'P2003' || code === 'P2025') return true;
+  return false;
+}
+
 @Processor('store-order-ingest', { concurrency: 5, limiter: { max: 20, duration: 1000 } })
 export class StoreOrderIngestProcessor extends TenantWorkerHost {
   private readonly logger = new Logger(StoreOrderIngestProcessor.name);
@@ -259,7 +290,44 @@ export class StoreOrderIngestProcessor extends TenantWorkerHost {
     private readonly queues: SyncQueuesService,
     private readonly ingest: StoreOrderIngestService,
     @Optional() tenantRegistry?: TenantRegistryService,
+    // G-08/G-09 (J-09 defense in depth): trailing @Optional so specs
+    // constructing the processor positionally (3 args) keep working; the
+    // gate is a no-op without Prisma. Production always wires it.
+    @Optional() private readonly prisma?: PrismaService,
+    // G-12/G-16: trailing @Optional so specs constructing the processor
+    // positionally keep working. Without them, replay jobs degrade to
+    // the missing-payload path and ingest failures skip the failure
+    // row (the SyncRunItem + issue rows still record them).
+    // Production always wires both.
+    @Optional() private readonly failures?: WebhookFailuresService,
+    @Optional() private readonly reconcile?: StoreOrderReconcileService,
   ) { super(tenantRegistry); }
+
+  /**
+   * G-08/G-09 second-layer check: re-read the store's auto-sync /
+   * sync-scope settings at execution time. Returns the skip reason, or
+   * null when ingest may proceed. FAILS OPEN: no Prisma, a missing
+   * store row, or a lookup error all allow ingest (a gate failure must
+   * never suppress orders — the intake layer already gated the common
+   * case, and a transient DB error here would otherwise drop the job).
+   */
+  private async orderSyncSkip(storeId: string): Promise<OrderSyncSkipReason | null> {
+    if (!this.prisma) return null;
+    try {
+      const store = await this.prisma.store.findUnique({
+        where: { id: storeId },
+        select: { autoSyncEnabled: true, settings: true },
+      });
+      return orderSyncSkipReason(store);
+    } catch (err) {
+      this.logger.warn(
+        `order ingest gate lookup failed for store ${storeId} — proceeding: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return null;
+    }
+  }
 
   /**
    * P6 ingest execution (BR-11/BR-12): webhook + reconcile funnels share one
@@ -268,13 +336,66 @@ export class StoreOrderIngestProcessor extends TenantWorkerHost {
    */
   protected async handle(job: Job): Promise<unknown> {
     // G-4: a queued job refuses to run when its kill-switch is off.
+    // G-10: the refusal MUST finish the run — the pre-fix path returned
+    // `{ refused: true }` without finishing, stranding a permanently
+    // RUNNING row (same defect class as the fixed D-3/ND-1 bugs). The
+    // run finishes as skipped:1 with a SKIPPED item carrying the
+    // refusal reason (SyncRunStatus has no REFUSED value; the item is
+    // the visible record).
+    const earlyRunId = (job.data as any)?.runId as string | undefined;
+    const earlyStoreId = (job.data as any)?.storeId as string | undefined;
     if (!orderSyncEnabled()) {
       this.logger.log(`order ingest refused (flag off): job ${job.name} ${job.id ?? ''}`);
+      if (earlyRunId) {
+        await this.runs.recordItem(earlyRunId, {
+          ...(earlyStoreId ? { storeId: earlyStoreId } : {}),
+          objectType: 'ORDER', status: 'SKIPPED', reason: 'ORDER_INGEST_REFUSED_FLAG_OFF', auditLevel: 'G',
+        });
+        await this.runs.finish(earlyRunId, { created: 0, updated: 0, skipped: 1, failed: 0 });
+      }
       return { refused: true };
     }
-    const { runId, storeId, rawOrder, deliveryKey } = (job.data ?? {}) as {
+    const { runId, storeId, rawOrder, deliveryKey, topic, provider, replayFailureId, externalOrderId, replayWindowDays } = (job.data ?? {}) as {
       runId?: string; storeId?: string; rawOrder?: Record<string, unknown>; deliveryKey?: string;
+      topic?: string; provider?: string;
+      replayFailureId?: string; externalOrderId?: string; replayWindowDays?: number;
     };
+    // G-12 manual replay (`webhook-order-retry`): no rawOrder rides the
+    // job — the order is re-fetched from the provider through the
+    // bounded reconcile path, then the failure row resolves only if the
+    // mapping exists afterwards (verified resolution, never assumed).
+    // A replay is an explicit operator act, so it runs BEFORE the
+    // G-08/G-09 auto-sync gate below (that gate governs AUTOMATIC
+    // arrival, not a manual retry) — but AFTER the G-4 kill switch
+    // above (global safety still wins). `runStore` finishes the run
+    // itself — this branch must NOT finish it again.
+    if (!rawOrder && replayFailureId && externalOrderId && storeId && runId && this.reconcile) {
+      return this.queues.serializeStore(storeId, async () => {
+        try {
+          const counts = await this.reconcile!.runStore(storeId, runId, {
+            requestedDays: replayWindowDays ?? 3,
+            wideningReason: `webhook replay ${replayFailureId}`,
+          });
+          const resolved = this.failures
+            ? await this.failures.resolveReplay(replayFailureId, storeId, externalOrderId)
+            : false;
+          return { replayed: true, resolved, ...counts };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(`webhook replay failed (failure ${replayFailureId}): ${msg}`);
+          // runStore never throws for provider failures (it records
+          // FAILED + issue and finishes the run) — a throw here is an
+          // unexpected defect, so the run still needs finishing.
+          await this.runs.finish(runId, { created: 0, updated: 0, failed: 1 }).catch(() => undefined);
+          if (deliveryKey) {
+            await this.failures?.recordFailureSafe({
+              storeId, deliveryKey, topic: topic ?? null, reason: 'INGEST_FAILED',
+            });
+          }
+          throw err;
+        }
+      });
+    }
     if (!storeId || !rawOrder) {
       if (runId) {
         await this.runs.recordItem(runId, {
@@ -288,12 +409,43 @@ export class StoreOrderIngestProcessor extends TenantWorkerHost {
       }
       return { ignored: 'missing-payload' };
     }
+    // G-08/G-09 (J-09 defense in depth): a job enqueued before the
+    // operator flipped auto-sync / scope off must not ingest. Intake
+    // already gates; this re-checks at execution time, BEFORE taking
+    // the per-store lock. A skip finishes the run as skipped (never
+    // stranded RUNNING) and records a visible IGNORED failure row.
+    const syncSkip = await this.orderSyncSkip(storeId);
+    if (syncSkip) {
+      this.logger.log(`order ingest skipped (store ${storeId}): ${syncSkip}`);
+      if (this.prisma) {
+        await recordWebhookSkip(this.prisma, {
+          tenantId: (job.data as any)?.tenantId ?? null,
+          storeId,
+          deliveryKey,
+          topic: topic ?? null,
+          reason: syncSkip,
+        });
+      }
+      if (runId) {
+        await this.runs.recordItem(runId, {
+          storeId,
+          objectType: 'ORDER',
+          status: 'SKIPPED',
+          reason: syncSkip,
+          auditLevel: 'G',
+        });
+        await this.runs.finish(runId, { created: 0, updated: 0, skipped: 1, failed: 0 });
+      }
+      return { skipped: true, reason: syncSkip, deliveryKey };
+    }
     return this.queues.serializeStore(storeId, async () => {
       try {
         const res = await this.ingest.ingest(storeId, rawOrder, {
           type: job.name === 'webhook-order' ? 'WEBHOOK' : 'RECONCILE',
           runId,
           actor: job.name === 'webhook-order' ? 'webhook' : 'reconcile',
+          topic,
+          provider,
         });
         // D-3: every other processor finishes its run; ingest never did,
         // leaving a permanently RUNNING row per webhook. A fresh order
@@ -306,6 +458,13 @@ export class StoreOrderIngestProcessor extends TenantWorkerHost {
             skipped: !res.created && !res.statusChanged ? 1 : 0,
             failed: 0,
           });
+        }
+        // G-12: a retry that finally succeeds resolves the failure row
+        // its earlier attempts recorded. Only on retries
+        // (attemptsMade > 0) — the first-attempt happy path must not pay
+        // an extra write per order.
+        if (deliveryKey && (job as any).attemptsMade > 0) {
+          await this.failures?.resolveByDeliveryKey(deliveryKey).catch(() => undefined);
         }
         return { ...res, deliveryKey };
       } catch (err) {
@@ -327,11 +486,30 @@ export class StoreOrderIngestProcessor extends TenantWorkerHost {
           objectKey: `store:${storeId}:ingest:${deliveryKey ?? 'unknown'}`,
           message: `Order ingest failed: ${msg}`,
         });
+        // G-16: record the failure row (webhook jobs only — reconcile
+        // failures already have SyncAttempt/issue rows, and a reconcile
+        // job carries no deliveryKey). The row upserts by deliveryKey,
+        // so each BullMQ retry bumps `occurrences` instead of spamming
+        // rows; a later successful retry resolves it (above).
+        if (deliveryKey) {
+          await this.failures?.recordFailureSafe({
+            storeId,
+            deliveryKey,
+            topic: topic ?? null,
+            reason: 'INGEST_FAILED',
+            payload: sanitizeFailurePayload(rawOrder),
+          });
+        }
         // D-3: finish the run as FAILED (mirrors the product processor)
         // before the rethrow marks the BullMQ job failed.
         if (runId) {
           await this.runs.finish(runId, { created: 0, updated: 0, failed: 1 });
         }
+        // G-12: permanent failures skip the remaining BullMQ attempts
+        // (UnrecoverableError) — retrying a zero-stock reject in 5s
+        // cannot help. Transient failures rethrow plainly so the
+        // attempts-3 exponential ladder retries them.
+        if (isPermanentIngestError(err)) throw new UnrecoverableError(msg);
         throw err;
       }
     });
@@ -467,6 +645,9 @@ export class StoreMaintenanceProcessor extends TenantWorkerHost {
     private readonly runs: SyncRunService,
     private readonly retention: SyncRetentionService,
     @Optional() tenantRegistry?: TenantRegistryService,
+    // Webhook lifecycle (G-05/G-06): hourly health tick. Trailing @Optional
+    // so existing manual constructions keep working.
+    @Optional() private readonly webhookHealth?: WebhookHealthScheduler,
   ) { super(tenantRegistry); }
 
   override async process(job: Job): Promise<unknown> {
@@ -485,6 +666,40 @@ export class StoreMaintenanceProcessor extends TenantWorkerHost {
       );
       return { fanOut: true, succeeded, failed };
     }
+    // Hourly webhook-health tick: no single tenant — sweep ACTIVE tenants.
+    if ((job.data as any)?.fanOut === true && job.name === 'webhook-health-tick') {
+      if (!storesEnabled()) {
+        this.logger.log('webhook health check refused (flag off)');
+        return { refused: true };
+      }
+      if (!this.webhookHealth) {
+        this.logger.warn('webhook health scheduler not wired; tick ignored');
+        return { ignored: job.name };
+      }
+      const totals = { checked: 0, healed: 0, failed: 0 };
+      const { succeeded, failed } = await runPerTenant(
+        this.tenantRegistry,
+        async () => {
+          const r = await this.webhookHealth!.checkTenantStores();
+          totals.checked += r.checked;
+          totals.healed += r.healed;
+          totals.failed += r.failed;
+        },
+        (tenantId, err) => this.logger.error(`webhook health check failed for tenant ${tenantId}: ${err}`),
+      );
+      // `failed` keeps the runPerTenant meaning (tenants whose sweep
+      // threw — same shape as the retention-purge branch); the
+      // per-store ensure failures ride as `failedStores` (TS2783: the
+      // spread of `totals` used to overwrite `failed`).
+      return {
+        fanOut: true,
+        succeeded,
+        failed,
+        checked: totals.checked,
+        healed: totals.healed,
+        failedStores: totals.failed,
+      };
+    }
     return super.process(job);
   }
 
@@ -499,6 +714,13 @@ export class StoreMaintenanceProcessor extends TenantWorkerHost {
     // predate P11). Heavy work runs here, never in the HTTP request (BR-21).
     if (job.name === 'retention-purge') {
       return this.retention.purge(new Date());
+    }
+    // Webhook lifecycle (G-05/G-06): tenant-scoped health tick (manual
+    // trigger from the console) — the scheduled fan-out tick is
+    // intercepted in process().
+    if (job.name === 'webhook-health-tick') {
+      if (!this.webhookHealth) return { ignored: job.name };
+      return this.webhookHealth.checkTenantStores();
     }
     const { runId } = (job.data ?? {}) as { runId?: string };
     if (runId) {

@@ -100,7 +100,28 @@ export class EncryptionKeyProvisioner implements OnModuleInit {
       }
 
       const generated = crypto.randomBytes(32).toString('hex');
-      this.writeStoredKey(generated);
+      try {
+        this.writeStoredKey(generated);
+      } catch (err: any) {
+        // Worker split (WORKER_MODE): the api + worker processes boot at
+        // the same time, so on a first boot with no stored key both could
+        // generate different keys and the last writer would win — leaving
+        // one process holding a key that is not on disk (rows it encrypts
+        // become unreadable). writeStoredKey uses exclusive create ('wx'),
+        // so the loser lands here and adopts the winner's key instead.
+        if (err?.code === 'EEXIST') {
+          const winner = this.readStoredKey();
+          if (winner) {
+            process.env.APP_ENCRYPTION_KEY = winner;
+            this.logger.log(
+              `[Encryption] Using the encryption key stored in ${this.keyFile} ` +
+                '(provisioned by the twin process during first boot)',
+            );
+            return;
+          }
+        }
+        throw err;
+      }
       process.env.APP_ENCRYPTION_KEY = generated;
       this.logger.log(
         `[Encryption] Generated a new encryption key and stored it in ${this.keyFile}. ` +
@@ -126,7 +147,10 @@ export class EncryptionKeyProvisioner implements OnModuleInit {
   private writeStoredKey(key: string) {
     fs.mkdirSync(path.dirname(this.keyFile), { recursive: true });
     // 0600: readable only by the container user that runs the app.
-    fs.writeFileSync(this.keyFile, key, { mode: 0o600 });
+    // 'wx' (exclusive create): never overwrite an existing key file — the
+    // api + worker twins race on first boot, and the loser must adopt the
+    // winner's key (see onModuleInit) instead of clobbering it.
+    fs.writeFileSync(this.keyFile, key, { mode: 0o600, flag: 'wx' });
     fs.chmodSync(this.keyFile, 0o600);
   }
 }

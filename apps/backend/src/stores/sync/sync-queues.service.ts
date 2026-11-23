@@ -144,40 +144,83 @@ export class SyncQueuesService {
    * whose plan no longer includes the feature silently enqueues nothing
    * (log + return, never a throw: the callers are post-commit notifies).
    * Fan-out ticks pass `opts.fanOut` and skip both (no single tenant).
+   *
+   * Callers that must know whether the job queued (webhook intake,
+   * manual replay — G-11) use `enqueueOrThrow` instead. This method's
+   * swallow-and-log behavior is load-bearing for every other caller
+   * and must not change.
+   *
+   * Phase 9 G-14: `opts.priority` overrides the queue's
+   * `defaultJobOptions.priority` for this job (see WEBHOOK_PRIORITY:
+   * manual-retry 1, webhook 5, reconciliation 10). Omitted → the
+   * queue default applies, so existing callers are unaffected.
    */
   async enqueue(
     name: SyncQueueName,
     jobName: string,
     data: Record<string, unknown>,
     jobId?: string,
-    opts?: { delay?: number; fanOut?: boolean },
+    opts?: { delay?: number; fanOut?: boolean; priority?: number },
   ): Promise<void> {
     try {
-      if (!opts?.fanOut) {
-        const key = QUEUE_FEATURE_KEY[name];
-        if (key && this.entitlements && !this.entitlements.canUse(key)) {
-          this.logger.log(
-            `enqueue ${name}/${jobName} skipped: tenant lacks feature ${key}`,
-          );
-          return;
-        }
-      }
-      // BullMQ custom ids cannot contain ':' (key separator) — sanitize so a
-      // store-scoped identity (`store:{id}:order:{ext}`) stays a valid job id
-      // without losing uniqueness (P6 live-E2E find).
-      const safeJobId = jobId?.replace(/:/g, '-');
-      const payload = opts?.fanOut
-        ? { ...data, fanOut: true }
-        : tenantJobPayload(data);
-      await this.queueFor(name).add(jobName, payload, {
-        ...(safeJobId ? { jobId: safeJobId } : {}),
-        ...(opts?.delay ? { delay: opts.delay } : {}),
-        removeOnComplete: 100,
-        removeOnFail: 50,
-      });
+      await this.enqueueInternal(name, jobName, data, jobId, opts);
     } catch (err) {
       this.logger.error(`enqueue ${name}/${jobName} failed (non-propagating): ${err}`);
     }
+  }
+
+  /**
+   * Throwing enqueue variant (G-11): same stamping, entitlement check,
+   * and job-id sanitization as `enqueue`, but a queue failure
+   * PROPAGATES so the caller can surface it (webhook intake → 503,
+   * replay → 503) instead of claiming success for a job that never
+   * queued. Returns the BullMQ job, or `null` when the entitlement
+   * check skipped the enqueue (not a failure — the caller decides
+   * what a skip means for its own run/response).
+   */
+  async enqueueOrThrow(
+    name: SyncQueueName,
+    jobName: string,
+    data: Record<string, unknown>,
+    jobId?: string,
+    opts?: { delay?: number; fanOut?: boolean; priority?: number },
+  ): Promise<unknown | null> {
+    return this.enqueueInternal(name, jobName, data, jobId, opts);
+  }
+
+  private async enqueueInternal(
+    name: SyncQueueName,
+    jobName: string,
+    data: Record<string, unknown>,
+    jobId?: string,
+    opts?: { delay?: number; fanOut?: boolean; priority?: number },
+  ): Promise<unknown | null> {
+    if (!opts?.fanOut) {
+      const key = QUEUE_FEATURE_KEY[name];
+      if (key && this.entitlements && !this.entitlements.canUse(key)) {
+        this.logger.log(
+          `enqueue ${name}/${jobName} skipped: tenant lacks feature ${key}`,
+        );
+        return null;
+      }
+    }
+    // BullMQ custom ids cannot contain ':' (key separator) — sanitize so a
+    // store-scoped identity (`store:{id}:order:{ext}`) stays a valid job id
+    // without losing uniqueness (P6 live-E2E find).
+    const safeJobId = jobId?.replace(/:/g, '-');
+    const payload = opts?.fanOut
+      ? { ...data, fanOut: true }
+      : tenantJobPayload(data);
+    return this.queueFor(name).add(jobName, payload, {
+      ...(safeJobId ? { jobId: safeJobId } : {}),
+      ...(opts?.delay ? { delay: opts.delay } : {}),
+      // G-14: an explicit priority overrides the queue default for
+      // this job (manual replay = 1 jumps ahead of live webhooks = 5).
+      // Omitted → BullMQ applies defaultJobOptions.priority.
+      ...(opts?.priority !== undefined ? { priority: opts.priority } : {}),
+      removeOnComplete: 100,
+      removeOnFail: 50,
+    });
   }
 
   /**

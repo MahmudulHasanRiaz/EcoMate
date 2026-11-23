@@ -126,10 +126,39 @@ describe('StoreOrderIngestProcessor (D-3)', () => {
     expect(runs.finish).not.toHaveBeenCalled();
   });
 
-  it('refuses with flags off (G-4): no ingest, no finish', async () => {
+  // G-10: a G-4 refuse MUST finish the run — the pre-fix path returned
+  // `{ refused: true }` without finishing, stranding a permanently
+  // RUNNING row (same defect class as the fixed D-3/ND-1 bugs). The run
+  // finishes as skipped:1 with a SKIPPED item carrying the refusal
+  // reason (SyncRunStatus has no REFUSED value; the item is the visible
+  // record).
+  it('refuses with flags off (G-4): no ingest, run FINISHED as skipped (G-10)', async () => {
     process.env.store_order_sync_enabled = 'false';
     const { processor, runs, ingest } = makeProcessor();
     const out = await (processor as any).handle(job());
+    expect(out).toEqual({ refused: true });
+    expect(ingest.ingest).not.toHaveBeenCalled();
+    expect(runs.recordItem).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({
+        objectType: 'ORDER',
+        status: 'SKIPPED',
+        reason: 'ORDER_INGEST_REFUSED_FLAG_OFF',
+      }),
+    );
+    expect(runs.finish).toHaveBeenCalledTimes(1);
+    expect(runs.finish).toHaveBeenCalledWith('run-1', {
+      created: 0,
+      updated: 0,
+      skipped: 1,
+      failed: 0,
+    });
+  });
+
+  it('refuse without a runId still returns { refused: true } (nothing to finish)', async () => {
+    process.env.store_order_sync_enabled = 'false';
+    const { processor, runs, ingest } = makeProcessor();
+    const out = await (processor as any).handle(job({ runId: undefined }));
     expect(out).toEqual({ refused: true });
     expect(ingest.ingest).not.toHaveBeenCalled();
     expect(runs.finish).not.toHaveBeenCalled();

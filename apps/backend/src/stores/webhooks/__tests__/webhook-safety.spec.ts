@@ -3,7 +3,8 @@
  *
  * - Tampered body / wrong secret / truncated signature → generic 401.
  * - Replayed delivery → duplicate:true, exactly one enqueue (BR-12).
- * - Stale timestamp (where supplied) → 401; missing delivery id → 401.
+ * - Stale timestamp (where supplied) → 401; missing delivery id → 400 +
+ *   anomaly row (J-06 — was a generic 401 before the Phase 9 fix).
  * - Disconnected / unknown / NATIVE store → the SAME generic 401.
  * - Oversized payload → 413, malformed JSON → 400, neither reaching intake.
  * - Courier / marketing / bKash verifiers unchanged (JSON.stringify-based,
@@ -60,8 +61,14 @@ function buildIntake(storeRow: any = CONNECTED) {
       return new WooCommerceProvider();
     }),
   };
-  const runs: any = { begin: jest.fn().mockResolvedValue({ id: 'run-wh-1' }), recordItem: jest.fn(), upsertIssue: jest.fn() };
-  const queues: any = { enqueue: jest.fn().mockResolvedValue(undefined), serializeStore: jest.fn((_: string, w: any) => w()) };
+  const runs: any = { begin: jest.fn().mockResolvedValue({ id: 'run-wh-1' }), recordItem: jest.fn(), upsertIssue: jest.fn(), finish: jest.fn().mockResolvedValue({}) };
+  // Intake enqueues via `enqueueOrThrow` (G-11) — the plain `enqueue`
+  // swallow-and-log variant is never called from intake.
+  const queues: any = {
+    enqueue: jest.fn().mockResolvedValue(undefined),
+    enqueueOrThrow: jest.fn().mockResolvedValue({ id: 'job-1' }),
+    serializeStore: jest.fn((_: string, w: any) => w()),
+  };
   const svc = new StoreWebhookService(prisma, registry, stores, runs, queues);
   return { svc, prisma, queues };
 }
@@ -75,8 +82,8 @@ describe('P6 webhook safety — WooCommerce', () => {
     const res = await svc.intake('woocommerce', STORE_ID, d.headers, d.rawBody);
     expect(res).toEqual({ received: true, duplicate: false });
     expect(prisma.storeWebhookDelivery.create).toHaveBeenCalledTimes(1);
-    expect(queues.enqueue).toHaveBeenCalledTimes(1);
-    const [, jobName, data, jobId] = queues.enqueue.mock.calls[0];
+    expect(queues.enqueueOrThrow).toHaveBeenCalledTimes(1);
+    const [, jobName, data, jobId] = queues.enqueueOrThrow.mock.calls[0];
     expect(jobName).toBe('webhook-order');
     expect(data.storeId).toBe(STORE_ID);
     expect(jobId).toContain('webhook:');
@@ -101,7 +108,7 @@ describe('P6 webhook safety — WooCommerce', () => {
     prisma.storeWebhookDelivery.findUnique.mockResolvedValue({ deliveryKey: 'k', occurrences: 1 });
     const replay = await svc.intake('woocommerce', STORE_ID, d.headers, d.rawBody);
     expect(replay).toEqual({ received: true, duplicate: true });
-    expect(queues.enqueue).toHaveBeenCalledTimes(1);
+    expect(queues.enqueueOrThrow).toHaveBeenCalledTimes(1);
     expect(prisma.storeWebhookDelivery.update).toHaveBeenCalledTimes(1);
   });
 
@@ -124,7 +131,7 @@ describe('P6 webhook safety — Shopify + Custom', () => {
     const d = buildShopifyDelivery('wh_shopify_secret', payload);
     const res = await svc.intake('shopify', SHOPIFY_STORE.id, d.headers, d.rawBody);
     expect(res).toEqual({ received: true, duplicate: false });
-    expect(queues.enqueue).toHaveBeenCalledTimes(1);
+    expect(queues.enqueueOrThrow).toHaveBeenCalledTimes(1);
   });
 
   it('Shopify tamper → 401', async () => {

@@ -1,4 +1,21 @@
-import { resolveWebhookCallbackBase } from './stores.controller';
+import { resolveWebhookCallbackBase, StoresController } from './stores.controller';
+
+describe('StoresController.ensureWebhooks (manual endpoint)', () => {
+  it('ensures the webhook secret first (generated + stored when the store has none)', async () => {
+    const ensureStoreWebhooks = jest.fn().mockResolvedValue({ ok: true, topics: [] });
+    const controller = new StoresController(
+      {
+        detail: jest.fn().mockResolvedValue({ id: 'store-1' }),
+        ensureStoreWebhooks,
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    await controller.ensureWebhooks('store-1');
+    expect(ensureStoreWebhooks).toHaveBeenCalledWith('store-1', { ensureSecret: true });
+  });
+});
 
 describe('resolveWebhookCallbackBase', () => {
   it('accepts an https URL and strips trailing slashes', () => {

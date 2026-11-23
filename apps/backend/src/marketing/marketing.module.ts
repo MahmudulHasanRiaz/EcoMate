@@ -30,6 +30,7 @@ import { EncryptionService } from '../common/utils/encryption';
 import { Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { processorsEnabled, schedulersEnabled } from '../common/worker-mode';
 
 @Module({
   imports: [
@@ -62,7 +63,10 @@ import { Queue } from 'bullmq';
     { provide: AD_PROVIDER_ADAPTER, useClass: MetaProviderAdapter },
     ProviderAdapterFactory,
     EncryptionService,
-    MarketingSyncProcessor,
+    // Worker split (WORKER_MODE): the processor runs only in `worker`/`all`
+    // modes. In `api` mode the queue itself (registerQueue above) stays —
+    // HTTP paths must still enqueue — but no BullMQ Worker is created.
+    ...(processorsEnabled() ? [MarketingSyncProcessor] : []),
   ],
   exports: [
     MarketingAttributionService,
@@ -84,6 +88,17 @@ export class MarketingModule implements OnApplicationBootstrap {
   async onApplicationBootstrap() {
     try {
       await this.platforms.ensureDefaults();
+
+      // Worker split (WORKER_MODE): the sync-all enqueue + repeatable are
+      // scheduler work — the api process owns them. In `worker` mode this
+      // process only consumes jobs. (ensureDefaults above stays: idempotent
+      // seeding, harmless in both processes.)
+      if (!schedulersEnabled()) {
+        this.logger.log(
+          'Marketing sync scheduling skipped (WORKER_MODE=worker — api owns scheduling)',
+        );
+        return;
+      }
 
       const setting = await this.prisma.systemSetting.findFirst({
         where: { key: SYNC_INTERVAL_SETTING },

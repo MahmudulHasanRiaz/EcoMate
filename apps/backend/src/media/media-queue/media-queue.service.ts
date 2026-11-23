@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { CacheService } from '../../cache/cache.service';
+import { schedulersEnabled } from '../../common/worker-mode';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import {
@@ -35,6 +36,17 @@ export class MediaQueueService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    // Worker split (WORKER_MODE): pause/resume + the recover repeatable +
+    // the boot backfill are scheduler work — the api process owns them.
+    // In `worker` mode this process only consumes jobs. (This also avoids
+    // the multi-replica pause/resume race the comment below warns about:
+    // with two processes, only one may decide pause vs resume.)
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Media queue scheduling skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     // Bull's queue pause is global. A second backend replica must not resume it
     // while another replica is taking a full snapshot or restoring one.
     const maintenance = await this.cache.get(BACKUP_MAINTENANCE_CACHE_KEY);

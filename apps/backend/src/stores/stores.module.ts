@@ -19,6 +19,7 @@ import { ExternalStoresModule } from '../external-stores/external-stores.module'
 // the import image processor downloads remote images via MediaService.
 import { MediaModule } from '../media/media.module';
 import { EncryptionService } from '../common/utils/encryption';
+import { processorsEnabled } from '../common/worker-mode';
 // NOTE: OrdersModule is deliberately NOT imported here. StockModule and
 // InventoryModule (both imported by OrdersModule) import StoresModule, so a
 // static StoresModule → OrdersModule edge is a file-level cycle. The ingest
@@ -75,9 +76,16 @@ import { StoreOrderScheduler } from './orders/store-order-scheduler';
 import { StoreOrdersController } from './orders/store-orders.controller';
 import { StoreWebhookService } from './webhooks/store-webhook.service';
 import { StoreWebhooksController } from './webhooks/store-webhooks.controller';
+import { WebhookFailuresService } from './webhooks/webhook-failures.service';
+import { WebhookFailuresController } from './webhooks/webhook-failures.controller';
+import { WebhookHealService } from './webhooks/webhook-heal.service';
+import { WebhookHealthScheduler } from './webhooks/webhook-health.scheduler';
+import { StoreWebhookHealthService } from './webhooks/store-webhook-health.service';
+import { StoreWebhookHealthController } from './webhooks/store-webhook-health.controller';
 import { StoreInstallController } from './webhooks/store-install.controller';
 import { StoreBridgeController } from './webhooks/store-bridge.controller';
 import { StoreWebhookRawBodyProvider } from './webhooks/store-webhook-rawbody.provider';
+import { WEBHOOK_PRIORITY } from './sync/webhook-priority';
 
 const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts: 1 };
 /** Image downloads retry (transient CDN/origin failures are common); the
@@ -87,6 +95,34 @@ const IMPORT_IMAGES_QUEUE_DEFAULTS = {
   removeOnFail: 50,
   attempts: 3,
   backoff: { type: 'exponential' as const, delay: 1000 },
+};
+/**
+ * Phase 9 G-12/G-14 ingest defaults (Builder B specs the retry ladder,
+ * Builder D implements it here): a transient ingest failure (lock
+ * timeout, transient DB error) retries 3 times with exponential
+ * backoff (5s → 10s → 20s) instead of dying on the first attempt, and
+ * live webhook jobs run at priority 5 — ahead of reconciliation (10),
+ * behind manual retries (1, set explicitly at the replay enqueue
+ * site). Exported for the queue-defaults spec.
+ */
+export const INGEST_QUEUE_DEFAULTS = {
+  removeOnComplete: 100,
+  removeOnFail: 50,
+  attempts: 3,
+  backoff: { type: 'exponential' as const, delay: 5000 },
+  priority: WEBHOOK_PRIORITY.webhook,
+};
+/**
+ * Phase 9 G-14 reconcile defaults: the recovery path yields to live
+ * webhooks (priority 10). Attempts stay 1 — the reconcile worker owns
+ * its own per-item error handling and the hourly tick re-runs, so a
+ * BullMQ-level retry would only re-run a whole store sweep.
+ */
+export const RECONCILE_QUEUE_DEFAULTS = {
+  removeOnComplete: 100,
+  removeOnFail: 50,
+  attempts: 1,
+  priority: WEBHOOK_PRIORITY.reconciliation,
 };
 
 @Module({
@@ -104,9 +140,9 @@ const IMPORT_IMAGES_QUEUE_DEFAULTS = {
     BullModule.registerQueue(
       { name: 'store-product-sync', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
       { name: 'store-stock-sync', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
-      { name: 'store-order-ingest', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
+      { name: 'store-order-ingest', defaultJobOptions: INGEST_QUEUE_DEFAULTS },
       { name: 'store-order-push', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
-      { name: 'store-reconcile', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
+      { name: 'store-reconcile', defaultJobOptions: RECONCILE_QUEUE_DEFAULTS },
       { name: 'store-maintenance', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
       { name: 'store-product-import', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
       { name: 'store-product-import-images', defaultJobOptions: IMPORT_IMAGES_QUEUE_DEFAULTS },
@@ -121,6 +157,8 @@ const IMPORT_IMAGES_QUEUE_DEFAULTS = {
     StoreOverridesController,
     StoreOrdersController,
     StoreWebhooksController,
+    WebhookFailuresController,
+    StoreWebhookHealthController,
     StoreInstallController,
     StoreBridgeController,
   ],
@@ -153,16 +191,27 @@ const IMPORT_IMAGES_QUEUE_DEFAULTS = {
     StoreOrderPushService,
     StoreOrderScheduler,
     StoreWebhookService,
+    WebhookFailuresService,
+    StoreWebhookHealthService,
+    WebhookHealService,
+    WebhookHealthScheduler,
     StoreWebhookRawBodyProvider,
     StoreProductImportService,
-    StoreProductSyncProcessor,
-    StoreStockSyncProcessor,
-    StoreOrderIngestProcessor,
-    StoreOrderPushProcessor,
-    StoreReconcileProcessor,
-    StoreMaintenanceProcessor,
-    StoreProductImportProcessor,
-    StoreProductImportImagesProcessor,
+    // Worker split (WORKER_MODE): the processors run only in `worker`/`all`
+    // modes. In `api` mode the queues themselves (registerQueue above) stay
+    // — HTTP intake must still enqueue — but no BullMQ Worker is created.
+    ...(processorsEnabled()
+      ? [
+          StoreProductSyncProcessor,
+          StoreStockSyncProcessor,
+          StoreOrderIngestProcessor,
+          StoreOrderPushProcessor,
+          StoreReconcileProcessor,
+          StoreMaintenanceProcessor,
+          StoreProductImportProcessor,
+          StoreProductImportImagesProcessor,
+        ]
+      : []),
   ],
   exports: [
     StoresService,
@@ -180,6 +229,9 @@ const IMPORT_IMAGES_QUEUE_DEFAULTS = {
     StoreOrderReconcileService,
     StoreOrderPushService,
     StoreWebhookService,
+    WebhookFailuresService,
+    StoreWebhookHealthService,
+    WebhookHealService,
     StoreProductImportService,
   ],
 })

@@ -14,6 +14,8 @@ export const SYNC_KEYS = {
   overrides: (storeId?: string) => ['sync', 'overrides', storeId ?? 'all'] as const,
   overridesHistory: (storeId?: string) => ['sync', 'overrides', 'history', storeId ?? 'all'] as const,
   productHistory: (storeId: string, productId: string) => ['sync', 'product-history', storeId, productId] as const,
+  webhookFailures: (storeId: string, status?: string, page?: number) =>
+    ['sync', 'webhook-failures', storeId, status ?? 'all', page ?? 1] as const,
 }
 
 /** History polls at 5s while any run is RUNNING, 30s otherwise (§11). */
@@ -215,6 +217,37 @@ export function useTriggerRetentionPurge() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => syncApi.triggerRetentionPurge(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
+  })
+}
+
+/** Phase 9 G-12/G-16: failed webhook deliveries for one store (paginated). */
+export function useWebhookFailures(storeId?: string, opts?: { status?: string; page?: number }) {
+  return useQuery({
+    queryKey: SYNC_KEYS.webhookFailures(storeId ?? 'none', opts?.status, opts?.page),
+    queryFn: () =>
+      syncApi.webhookFailures(storeId as string, {
+        ...(opts?.status ? { status: opts.status } : {}),
+        ...(opts?.page ? { page: String(opts.page) } : {}),
+      }),
+    enabled: !!storeId,
+  })
+}
+
+export function useReplayWebhookFailure() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ storeId, failureId }: { storeId: string; failureId: string }) =>
+      syncApi.replayWebhookFailure(storeId, failureId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
+  })
+}
+
+export function useIgnoreWebhookFailure() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ storeId, failureId }: { storeId: string; failureId: string }) =>
+      syncApi.ignoreWebhookFailure(storeId, failureId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
   })
 }

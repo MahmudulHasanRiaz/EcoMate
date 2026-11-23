@@ -10,6 +10,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { schedulersEnabled } from '../../common/worker-mode';
 
 export const RETENTION_PURGE_CRON = '30 3 * * *';
 export const RETENTION_PURGE_TZ = 'Asia/Dhaka';
@@ -21,6 +22,15 @@ export class SyncRetentionScheduler implements OnModuleInit {
   constructor(@InjectQueue('store-maintenance') private readonly maintenanceQ: Queue) {}
 
   async onModuleInit() {
+    // Worker split (WORKER_MODE): repeatable registration is scheduler work
+    // — the api process owns it. In `worker` mode this process only consumes
+    // jobs.
+    if (!schedulersEnabled()) {
+      this.logger.log(
+        'Retention purge scheduler skipped (WORKER_MODE=worker — api owns scheduling)',
+      );
+      return;
+    }
     try {
       const repeats = await this.maintenanceQ.getRepeatableJobs();
       const has = repeats.some((r) => r.name === 'retention-purge');

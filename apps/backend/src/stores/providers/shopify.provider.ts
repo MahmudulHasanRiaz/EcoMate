@@ -71,6 +71,7 @@ import { BaseCommerceProvider } from './base-provider';
 import type {
   CategoryInput,
   CategoryPath,
+  EnsureWebhooksOptions,
   FieldKey,
   FieldSnapshot,
   NormalizedMedia,
@@ -127,8 +128,12 @@ export const SHOPIFY_API_VERSION = '2026-10';
 export const SHOPIFY_REST_VARIANT_LIMIT = 100;
 export const SHOPIFY_REST_OPTION_LIMIT = 3;
 
-/** Webhook topics provisioned by ensureWebhooks (order + product update). */
-export const SHOPIFY_WEBHOOK_TOPICS = ['orders/create', 'orders/updated', 'products/update'];
+/** Webhook topics provisioned by ensureWebhooks (order CRUD + product update). */
+export const SHOPIFY_WEBHOOK_TOPICS = ['orders/create', 'orders/updated', 'orders/delete', 'products/update'];
+
+/** Webhook list pagination: REST `since_id` cursor, max 250/page, 10 pages. */
+const SHOPIFY_WEBHOOK_LIST_LIMIT = 250;
+const SHOPIFY_WEBHOOK_LIST_MAX_PAGES = 10;
 
 /** Default weight unit when EcoMate carries no unit (Shopify requires one). */
 export const SHOPIFY_DEFAULT_WEIGHT_UNIT = 'kg';
@@ -1588,20 +1593,63 @@ export class ShopifyProvider extends BaseCommerceProvider {
     return { status: String(order.fulfillment_status ?? order.financial_status ?? '') };
   }
 
-  override async ensureWebhooks(store: StoreWithSecrets, callbackBaseUrl: string): Promise<WebhookRegistrationResult> {
-    const existing = await this.rest<{ webhooks?: any[] }>(store, 'GET', '/webhooks.json?limit=250').catch(() => ({
-      webhooks: [] as any[],
-    }));
-    const have = new Set((existing.webhooks ?? []).map((h: any) => h.topic));
-    const registered: string[] = [...have].filter((t) => SHOPIFY_WEBHOOK_TOPICS.includes(t));
+  /**
+   * Webhook lifecycle (J-02 adapted, G-01/G-05/G-06): `since_id` pagination
+   * of the remote hooks, then per topic — exactly one valid hook (our
+   * address) is kept; duplicates and stale-address hooks are deleted and
+   * recreated; missing topics are created.
+   *
+   * Shopify differences from Woo (documented, not gaps):
+   * - No per-hook secret: Shopify signs every delivery with the APP secret
+   *   (`webhookSecret ?? clientSecret` in verifyWebhook), so no secret is
+   *   generated for Shopify stores and none is sent here.
+   * - No hook status: REST webhooks have no active/paused field (a webhook
+   *   exists or it does not), so there is nothing to re-enable — a missing
+   *   hook is recreated, which is the same healing.
+   * - Ownership scope is the same as Woo: a hook is OURS only when its
+   *   address ends with this store's intake path; other integrations'
+   *   hooks are never touched.
+   *
+   * Order topics carry protected customer data: without dashboard
+   * approval Shopify 403s the subscription — the topic is skipped with a
+   * reason (reconcile still covers ingestion) instead of failing the
+   * whole registration. Any other error still throws.
+   */
+  override async ensureWebhooks(
+    store: StoreWithSecrets,
+    callbackBaseUrl: string,
+    opts?: EnsureWebhooksOptions,
+  ): Promise<WebhookRegistrationResult> {
+    const base = callbackBaseUrl.replace(/\/+$/, '');
+    const address = `${base}/api/webhooks/stores/shopify/${store.id}`;
+    const storePath = `/api/webhooks/stores/shopify/${store.id}`;
+    const existing = await this.listWebhooks(store);
+    const registered: string[] = [];
+    const created: string[] = [];
+    const recreated: string[] = [];
     const skipped: string[] = [];
+    const failed: string[] = [];
+    let deleted = 0;
     for (const topic of SHOPIFY_WEBHOOK_TOPICS) {
-      if (have.has(topic)) continue;
+      const ours = existing.filter(
+        (h: any) => h.topic === topic && String(h.address ?? '').endsWith(storePath),
+      );
+      const valid = ours.filter((h: any) => h.address === address);
+      if (!opts?.forceRecreate && valid.length === 1 && ours.length === 1) {
+        registered.push(topic);
+        skipped.push(topic);
+        continue;
+      }
+      const hadOurs = ours.length > 0;
       try {
+        for (const hook of ours) {
+          await this.rest(store, 'DELETE', `/webhooks/${encodeURIComponent(String(hook.id))}.json`);
+          deleted += 1;
+        }
         await this.rest(store, 'POST', '/webhooks.json', {
           webhook: {
             topic,
-            address: `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/shopify/${store.id}`,
+            address,
             format: 'json',
             // NOTE: api_version is intentionally NOT sent — the API rejects
             // it (422). Payload version comes from the app's "Webhooks API
@@ -1610,6 +1658,8 @@ export class ShopifyProvider extends BaseCommerceProvider {
           },
         });
         registered.push(topic);
+        if (hadOurs) recreated.push(topic);
+        else created.push(topic);
       } catch (err) {
         // Order topics carry protected customer data: without dashboard
         // approval Shopify 403s the subscription. Skip the topic with a
@@ -1617,7 +1667,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
         // whole registration. Any other error still throws.
         const msg = String((err as any)?.message ?? '');
         if (/protected customer data|protected_data/i.test(msg)) {
-          skipped.push(topic);
+          failed.push(topic);
           continue;
         }
         throw err;
@@ -1627,16 +1677,49 @@ export class ShopifyProvider extends BaseCommerceProvider {
       return {
         ok: false,
         topics: [],
-        reason: `no topics registered (skipped: ${skipped.join(', ') || 'none'} — protected customer data approval required)`,
+        reason: `no topics registered (skipped: ${failed.join(', ') || 'none'} — protected customer data approval required)`,
+        created,
+        recreated,
+        deleted,
+        skipped,
       };
     }
     return {
       ok: true,
       topics: registered,
-      ...(skipped.length > 0
-        ? { reason: `skipped: ${skipped.join(', ')} — protected customer data approval required; order ingestion continues via reconcile` }
+      ...(failed.length > 0
+        ? { reason: `skipped: ${failed.join(', ')} — protected customer data approval required; order ingestion continues via reconcile` }
         : {}),
+      created,
+      recreated,
+      deleted,
+      skipped,
     };
+  }
+
+  /**
+   * Full webhook list via the REST `since_id` cursor (limit=250, up to 10
+   * pages). `rest()` drops response headers, so the Link-header cursor is
+   * unavailable — `since_id` (last id of the previous page) is the
+   * supported equivalent. Stops early on a short page. Throws on a failed
+   * page: a partial list would create duplicates for unseen hooks.
+   */
+  private async listWebhooks(store: StoreWithSecrets): Promise<any[]> {
+    const all: any[] = [];
+    let sinceId: string | undefined;
+    for (let page = 1; page <= SHOPIFY_WEBHOOK_LIST_MAX_PAGES; page++) {
+      const query =
+        `/webhooks.json?limit=${SHOPIFY_WEBHOOK_LIST_LIMIT}` +
+        (sinceId ? `&since_id=${encodeURIComponent(sinceId)}` : '');
+      const res = await this.rest<{ webhooks?: any[] }>(store, 'GET', query);
+      const hooks = Array.isArray(res.webhooks) ? res.webhooks : [];
+      all.push(...hooks);
+      if (hooks.length < SHOPIFY_WEBHOOK_LIST_LIMIT) break;
+      const last = hooks[hooks.length - 1];
+      if (last?.id === undefined || last?.id === null) break;
+      sinceId = String(last.id);
+    }
+    return all;
   }
 }
 

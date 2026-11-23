@@ -91,7 +91,16 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    # Phase 9 P2: noeviction is load-bearing — BullMQ job data, the
+    # extstore resolver cache and the per-store locks must NEVER be
+    # evicted (an evicted job vanishes; an evicted lock breaks
+    # serialization). With noeviction, writes fail when memory is full
+    # instead of silently dropping queue state — that failure is loud
+    # and monitorable, eviction is silent. NOTE: this covers fresh
+    # deploys from this compose file; a LIVE Redis needs
+    # `CONFIG SET maxmemory-policy noeviction` (+ persist to config)
+    # applied at deploy — see docs/central-commerce/PORT-RECORD.md.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
     networks:
       - ecomate-network
     volumes:
@@ -121,8 +130,15 @@ services:
       - backup-data:/app/backup-storage
       - mobile-builds-data:/app/mobile-builds
       - license-data:/app/app-data
-    environment:
+    # &backend-env: the `worker` service merges this whole env block
+    # (WORKER_MODE overridden to `worker`). One source of truth — a flag
+    # added here reaches both processes, so the worker can never run with
+    # a kill switch the API considers off (or vice versa).
+    environment: &backend-env
       NODE_ENV: production
+      # Worker split (WORKER_MODE): this service is the HTTP API — it runs
+      # schedulers but NO queue processors (see the `worker` service below).
+      WORKER_MODE: api
       CLIENT_DOMAIN: ${CLIENT_DOMAIN}
       # SaaS domain config: tenant subdomains on every base domain, canonical
       # host preference and fallback. The storefront proxy uses the same values
@@ -228,6 +244,12 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
       RUN_SEED: ${RUN_SEED:-false}
+      # Public API base URL (REQUIRED, https) — the webhook callback base
+      # for provider webhook registration (G-04). Delivery URLs are
+      # {PUBLIC_API_BASE_URL}/api/webhooks/stores/<provider>/<storeId>.
+      # Registration fails loudly when unset; the VALUE is set per
+      # environment at deploy (staging uses its own API host).
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
       # Phase 9 (central-commerce) kill switches (§3.8, rulings D5/D6):
       # ALL OFF by default at launch. The enablement flags default ON in
       # code (only an explicit 'false' disables), so the launch-off state
@@ -332,6 +354,63 @@ services:
           # --max-old-space-size to 2048, leaving ~512M for the container's
           # non-heap allocations (Prisma engine, buffers, native).
           memory: 2560M
+        reservations:
+          memory: 512M
+
+  worker:
+    # Queue worker (Phase 9 P1 "separate worker service(s)") — same backend
+    # image as `backend`, no HTTP port. Runs the BullMQ processors only
+    # (WORKER_MODE=worker); schedulers and HTTP stay on `backend`. Takes
+    # effect at the next deploy (no live topology change until then).
+    # Never runs startup.sh: migrations/seeds/role provisioning belong to
+    # `backend` alone — two processes running `prisma migrate deploy`
+    # concurrently would fight over the migration lock.
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-backend:latest
+    restart: unless-stopped
+    # Self-provision the app-data dir (a fresh license-data volume is
+    # root-owned; the encryption-key provisioner needs a 1001-writable dir),
+    # then drop to the nestjs user exactly like startup.sh does. Heap via
+    # --max-old-space-size on the node command line (no NODE_OPTIONS env:
+    # the $ would need $$ escaping in compose and the value is tunable
+    # through WORKER_MAX_OLD_SPACE_SIZE instead).
+    command: ["sh", "-c", "mkdir -p /app/app-data && chown -R 1001:1001 /app/app-data && exec su -s /bin/sh nestjs -c \"node --max-old-space-size=${WORKER_MAX_OLD_SPACE_SIZE:-1536} dist/src/worker.main\""]
+    networks:
+      - ecomate-network
+    volumes:
+      - uploads-data:/app/uploads
+      - backup-data:/app/backup-storage
+      - license-data:/app/app-data
+    environment:
+      <<: *backend-env
+      # The worker IS the queue consumer: processors only, no HTTP, no
+      # schedulers. (Overrides the backend-env WORKER_MODE=api above.)
+      WORKER_MODE: worker
+    depends_on:
+      - postgres
+      - redis
+      # Ordering only (service_started, NOT service_healthy): same
+      # reasoning as backend — the worker keeps consuming with its
+      # last-known-good registry if the platform API is briefly down.
+      - platform-api
+    healthcheck:
+      # No HTTP here — the image HEALTHCHECK (wget /api/health) would fail
+      # forever, so override it with a process-liveness probe (PID 1 is the
+      # su/node chain; if node dies the container exits and restarts).
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Same slow boot as backend (Nest bootstrap + Prisma schema load).
+      start_period: 600s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          # Same D6 basis as backend (30 cached tenant Prisma clients need
+          # ~0.75-1.2 GB on top of the ~0.7 GB base heap), minus HTTP
+          # overhead. Node heap 1536M (command line above) leaves ~512M
+          # for non-heap allocations.
+          memory: 2048M
         reservations:
           memory: 512M
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runStatusTone, syncPollInterval, failureSummary, shortHash, isAttemptEligibleUi } from './sync-api'
+import { runStatusTone, syncPollInterval, failureSummary, shortHash, isAttemptEligibleUi, isWebhookFailureReplayableUi } from './sync-api'
 
 describe('sync-api helpers (P4 Sync Center)', () => {
   it('runStatusTone maps run status to badge tones', () => {
@@ -63,5 +63,23 @@ describe('sync-api helpers (P4 Sync Center)', () => {
     expect(isAttemptEligibleUi({ status: 'DEAD' } as never, now)).toBe(false)
     expect(isAttemptEligibleUi({ status: 'SUCCESS' } as never, now)).toBe(false)
     expect(isAttemptEligibleUi({ status: 'SKIPPED' } as never, now)).toBe(false)
+  })
+
+  it('isWebhookFailureReplayableUi mirrors the backend replay gate (G-12)', () => {
+    const base = { status: 'OPEN', reason: 'ENQUEUE_FAILED', payload: { externalOrderId: 'ext-1' } } as never
+    expect(isWebhookFailureReplayableUi(base)).toBe(true)
+    expect(isWebhookFailureReplayableUi({ ...base, reason: 'INGEST_FAILED' } as never)).toBe(true)
+    // Non-replayable reasons never had a verified payload to re-fetch.
+    expect(isWebhookFailureReplayableUi({ ...base, reason: 'SIGNATURE_MISMATCH' } as never)).toBe(false)
+    expect(isWebhookFailureReplayableUi({ ...base, reason: 'UNKNOWN_STORE' } as never)).toBe(false)
+    expect(isWebhookFailureReplayableUi({ ...base, reason: 'MISSING_DELIVERY_ID' } as never)).toBe(false)
+    expect(isWebhookFailureReplayableUi({ ...base, reason: 'AUTO_SYNC_DISABLED' } as never)).toBe(false)
+    // Non-OPEN rows are done.
+    expect(isWebhookFailureReplayableUi({ ...base, status: 'RESOLVED' } as never)).toBe(false)
+    expect(isWebhookFailureReplayableUi({ ...base, status: 'IGNORED' } as never)).toBe(false)
+    // No external order id → nothing to re-fetch.
+    expect(isWebhookFailureReplayableUi({ ...base, payload: null } as never)).toBe(false)
+    expect(isWebhookFailureReplayableUi({ ...base, payload: { total: 250 } } as never)).toBe(false)
+    expect(isWebhookFailureReplayableUi({ ...base, payload: { externalOrderId: '' } } as never)).toBe(false)
   })
 })

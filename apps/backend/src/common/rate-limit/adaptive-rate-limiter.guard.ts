@@ -19,6 +19,73 @@ import { SecurityEventSource } from '../../security-dashboard/registries/source.
 
 const WHITELIST_IDENTITIES = new Set<string>();
 
+/**
+ * Phase 9 G-13 — webhook header recognition (all lowercase; Fastify
+ * normalizes incoming header names to lowercase, and the intake
+ * service's own `header()` helper matches case-insensitively).
+ *
+ * SIGNATURE headers prove the sender *claims* to be a provider webhook
+ * (verification happens downstream in intake — the edge cannot verify,
+ * it only recognizes the claim). A request carrying one bypasses volume
+ * limiting on `signedBypass` policies, so a signed, VERIFIED delivery
+ * is never 429'd for volume.
+ *
+ * IDENTITY headers mark a request as webhook-shaped at all (topic /
+ * event / delivery-id / timestamp). They draw the auto-block boundary:
+ * an unsigned request WITH identity headers is a (possibly
+ * misconfigured) store — healed, never blocked; an unsigned request
+ * with NONE of them is a scanner probe, the only webhook traffic that
+ * may still feed the risk scorer.
+ */
+export const WEBHOOK_SIGNATURE_HEADERS = [
+  'x-wc-webhook-signature',
+  'x-shopify-hmac-sha256',
+  'x-ecomate-signature',
+] as const;
+
+export const WEBHOOK_IDENTITY_HEADERS = [
+  ...WEBHOOK_SIGNATURE_HEADERS,
+  'x-wc-webhook-topic',
+  'x-wc-webhook-event',
+  'x-wc-webhook-source',
+  'x-wc-webhook-delivery-id',
+  'x-wc-webhook-timestamp',
+  'x-shopify-topic',
+  'x-shopify-shop-domain',
+  'x-shopify-webhook-id',
+  'x-shopify-timestamp',
+  'x-ecomate-delivery-id',
+  'x-ecomate-timestamp',
+] as const;
+
+function headerValue(
+  headers: Record<string, string | string[] | undefined> | undefined,
+  name: string,
+): string | undefined {
+  if (!headers) return undefined;
+  const v = headers[name] ?? headers[name.toLowerCase()];
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export function hasWebhookSignature(
+  headers: Record<string, string | string[] | undefined> | undefined,
+): boolean {
+  return WEBHOOK_SIGNATURE_HEADERS.some((h) => {
+    const v = headerValue(headers, h);
+    return typeof v === 'string' && v.length > 0;
+  });
+}
+
+export function isWebhookIdentified(
+  headers: Record<string, string | string[] | undefined> | undefined,
+): boolean {
+  return WEBHOOK_IDENTITY_HEADERS.some((h) => {
+    const v = headerValue(headers, h);
+    return typeof v === 'string' && v.length > 0;
+  });
+}
+
 export function setWhitelistedIdentity(identity: string) {
   WHITELIST_IDENTITIES.add(identity);
 }
@@ -72,6 +139,17 @@ export class AdaptiveRateLimiterGuard {
     const policyName = this.resolvePolicy(handler, controllerClass, request);
     const policy = this.policyStore.get(policyName);
 
+    // G-13: a signed webhook delivery is NEVER volume-limited at the
+    // edge. The signature is verified downstream by intake (HMAC over
+    // the raw body); the guard only recognizes the claim. Verified
+    // traffic therefore can never be 429'd — excess volume is accepted
+    // and queued, and backpressure lives at the queue, not the edge.
+    // Unsigned traffic falls through to the bucket below. No logging
+    // here: this path runs per delivery at lakhs/day.
+    if (policy.signedBypass && hasWebhookSignature(request.headers as any)) {
+      return true;
+    }
+
     // 1. Trust tier detection
     const { tier, identity } = this.tierService.determine(request);
 
@@ -109,33 +187,63 @@ export class AdaptiveRateLimiterGuard {
       ? { limit: Math.round(tierLimit.limit * 5), windowMs: tierLimit.windowMs }
       : tierLimit;
 
-    // 5. Check burst first. Store-scoped policies scope the burst by
-    // (store, IP) too; every other policy keeps its existing identity
-    // key (unchanged behaviour).
+    // 5. Token-bucket policies (store_webhook, G-13) consume ONE token
+    // from the per-(store, IP) bucket instead of the fixed-window +
+    // burst counters below. The bucket's capacity IS the burst
+    // allowance — a flash-sale spike up to `capacity` passes instantly
+    // and the refill rate bounds sustained unsigned volume. Signed
+    // traffic never reaches this branch (bypass above).
     let burstRemaining = Infinity;
-    if (policy.burst) {
-      const burstIdentity =
-        policy.trackingKey === 'store' ? trackingIdentity : identity;
-      const burstKey = this.counter.buildKey(this.tenant, policyName, `${tier}:burst`, burstIdentity);
-      const burstResult = await this.counter.increment(
-        burstKey,
-        isWhitelisted
-          ? Math.round(policy.burst.limit * 5)
-          : policy.burst.limit,
-        policy.burst.windowMs,
+    let result: { count: number; remaining: number; resetMs: number };
+    let exceeded: boolean;
+    if (policy.tokenBucket) {
+      const bucketKey = this.counter.buildKey(
+        this.tenant,
+        policyName,
+        `${tier}:bucket`,
+        trackingIdentity,
       );
-      burstRemaining = burstResult.remaining;
+      const bucket = await this.counter.consumeTokenBucket(
+        bucketKey,
+        isWhitelisted
+          ? policy.tokenBucket.capacity * 5
+          : policy.tokenBucket.capacity,
+        isWhitelisted
+          ? policy.tokenBucket.refillPerMinute * 5
+          : policy.tokenBucket.refillPerMinute,
+      );
+      exceeded = !bucket.allowed;
+      result = { count: 0, remaining: bucket.remaining, resetMs: bucket.resetMs };
+    } else {
+      // 5a. Check burst first. Store-scoped policies scope the burst by
+      // (store, IP) too; every other policy keeps its existing identity
+      // key (unchanged behaviour).
+      if (policy.burst) {
+        const burstIdentity =
+          policy.trackingKey === 'store' ? trackingIdentity : identity;
+        const burstKey = this.counter.buildKey(this.tenant, policyName, `${tier}:burst`, burstIdentity);
+        const burstResult = await this.counter.increment(
+          burstKey,
+          isWhitelisted
+            ? Math.round(policy.burst.limit * 5)
+            : policy.burst.limit,
+          policy.burst.windowMs,
+        );
+        burstRemaining = burstResult.remaining;
+      }
+
+      // 6. Main counter
+      result = await this.counter.increment(
+        trackingKey,
+        effectiveLimit.limit,
+        effectiveLimit.windowMs,
+      );
+
+      // 7. If exceeded, block unless burst is still available
+      exceeded = result.count > effectiveLimit.limit && (!policy.burst || burstRemaining <= 0);
     }
 
-    // 6. Main counter
-    const result = await this.counter.increment(
-      trackingKey,
-      effectiveLimit.limit,
-      effectiveLimit.windowMs,
-    );
-
-    // 7. If exceeded, block unless burst is still available
-    if (result.count > effectiveLimit.limit && (!policy.burst || burstRemaining <= 0)) {
+    if (exceeded) {
       await this.handleExceeded(request, reply, result, policy, identity, ip, isWhitelisted);
 
       // Fire-and-forget: emit rate-limit exceeded event (never blocks response)
@@ -169,9 +277,13 @@ export class AdaptiveRateLimiterGuard {
       });
     }
 
-    // 9. Set rate limit headers
+    // 9. Set rate limit headers (token-bucket policies report the
+    // refill rate as the limit — the sustained rate, not the burst).
     const remaining = Math.min(result.remaining, burstRemaining);
-    reply.header('X-RateLimit-Limit', effectiveLimit.limit.toString());
+    const headerLimit = policy.tokenBucket
+      ? policy.tokenBucket.refillPerMinute
+      : effectiveLimit.limit;
+    reply.header('X-RateLimit-Limit', headerLimit.toString());
     reply.header('X-RateLimit-Remaining', Math.max(0, remaining).toString());
     reply.header('X-RateLimit-Reset', (Date.now() + result.resetMs).toString());
     reply.header('X-RateLimit-Policy', policy.name);
@@ -198,8 +310,22 @@ export class AdaptiveRateLimiterGuard {
       policy: policy.name,
     });
 
-    // Risk score accumulation — not immediate auto-block
-    await this.riskScore.recordViolation(identity, ip, policy, isWhitelisted);
+    // Risk score accumulation — not immediate auto-block.
+    //
+    // G-13 auto-block boundary (pricing hard ceiling: no automated
+    // system may ever stop/throttle/degrade order intake): on
+    // `signedBypass` policies (store webhooks), a 429 feeds the risk
+    // scorer ONLY when the request carries no webhook headers at all —
+    // a scanner probe hitting the URL blindly. An unsigned request
+    // WITH webhook headers is a (possibly misconfigured) store: its
+    // failure mode is heal-on-signature-failure + the failure table,
+    // never the 24h IP block list. Verified traffic never reaches this
+    // method at all (it bypasses the limiter above).
+    const feedsRiskScore =
+      !policy.signedBypass || !isWebhookIdentified(request.headers as any);
+    if (feedsRiskScore) {
+      await this.riskScore.recordViolation(identity, ip, policy, isWhitelisted);
+    }
   }
 
   private resolvePolicy(

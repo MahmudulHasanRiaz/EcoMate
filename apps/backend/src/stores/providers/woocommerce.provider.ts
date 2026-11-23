@@ -24,6 +24,7 @@ import { BaseCommerceProvider } from './base-provider';
 import type {
   CategoryInput,
   CategoryPath,
+  EnsureWebhooksOptions,
   FieldKey,
   FieldSnapshot,
   ListProductsOpts,
@@ -154,6 +155,18 @@ export function wooProductToSnapshots(body: Record<string, unknown>, fields: Fie
   for (const f of fields) out[f] = snapshotField(derived[f]);
   return out;
 }
+
+/** Webhook topics provisioned by ensureWebhooks (order CRUD + product update). */
+export const WOOCOMMERCE_WEBHOOK_TOPICS = [
+  'order.created',
+  'order.updated',
+  'order.deleted',
+  'product.updated',
+];
+
+/** Webhook list pagination (J-02): page 1 only hid hooks on busy stores. */
+const WOO_WEBHOOK_LIST_PER_PAGE = 100;
+const WOO_WEBHOOK_LIST_MAX_PAGES = 10;
 
 @Injectable()
 export class WooCommerceProvider extends BaseCommerceProvider {
@@ -701,18 +714,105 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     return { status: String((body as any)?.status ?? '') };
   }
 
-  override async ensureWebhooks(store: StoreWithSecrets, callbackBaseUrl: string): Promise<WebhookRegistrationResult> {
-    const topics = ['order.created', 'order.updated', 'product.updated'];
-    const existing = await this.woo<any[]>(store, 'GET', '/webhooks?per_page=100').catch(() => []);
-    const have = new Set((existing as any[]).map((h) => h.topic));
-    for (const topic of topics) {
-      if (have.has(topic)) continue;
+  /**
+   * Webhook lifecycle (J-02, G-01/G-03/G-05/G-06): full pagination of the
+   * remote hooks, then per topic — exactly one valid hook (our delivery
+   * URL + status active) is kept; duplicates, stale URLs and paused /
+   * disabled hooks are deleted and recreated; missing topics are created
+   * with the store's webhook secret + `status: active`.
+   *
+   * Ownership scope: a hook is OURS only when its delivery URL ends with
+   * this store's intake path (`/api/webhooks/stores/woocommerce/:id`) —
+   * an exact-URL match, or a stale base from a previous environment (same
+   * path, different origin — deleted + recreated on the current base).
+   * Hooks pointing anywhere else belong to another integration and are
+   * NEVER touched: deleting a merchant's own Zapier hook would be
+   * destructive, not healing.
+   *
+   * Fail loud, never blind: no secret → throw (the service guarantees a
+   * secret before calling); a failed list → throw (the old code swallowed
+   * it and created duplicates sight-unseen). Callers that must not fail
+   * (connect/test) wrap this in the service's best-effort helper.
+   */
+  override async ensureWebhooks(
+    store: StoreWithSecrets,
+    callbackBaseUrl: string,
+    opts?: EnsureWebhooksOptions,
+  ): Promise<WebhookRegistrationResult> {
+    const secret = String(store.secrets?.webhookSecret ?? '');
+    if (!secret) {
+      throw new ProviderError(
+        '[woocommerce] cannot register webhooks: no webhook secret configured for this store (connect must generate one first)',
+        ProviderErrorCategory.INVALID_REQUEST,
+        'woocommerce',
+      );
+    }
+    const base = callbackBaseUrl.replace(/\/+$/, '');
+    const deliveryUrl = `${base}/api/webhooks/stores/woocommerce/${store.id}`;
+    const storePath = `/api/webhooks/stores/woocommerce/${store.id}`;
+    const existing = await this.listWebhooks(store);
+    const created: string[] = [];
+    const recreated: string[] = [];
+    const skipped: string[] = [];
+    let deleted = 0;
+    for (const topic of WOOCOMMERCE_WEBHOOK_TOPICS) {
+      const ours = existing.filter(
+        (h) => h.topic === topic && String(h.delivery_url ?? '').endsWith(storePath),
+      );
+      const valid = ours.filter(
+        (h) => h.delivery_url === deliveryUrl && h.status === 'active',
+      );
+      if (!opts?.forceRecreate && valid.length === 1 && ours.length === 1) {
+        skipped.push(topic);
+        continue;
+      }
+      for (const hook of ours) {
+        await this.woo(
+          store,
+          'DELETE',
+          `/webhooks/${encodeURIComponent(String(hook.id))}?force=true`,
+        );
+        deleted += 1;
+      }
       await this.woo(store, 'POST', '/webhooks', {
         name: `EcoMate ${topic}`,
         topic,
-        delivery_url: `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/woocommerce/${store.id}`,
+        delivery_url: deliveryUrl,
+        secret,
+        status: 'active',
       });
+      if (ours.length > 0) recreated.push(topic);
+      else created.push(topic);
     }
-    return { ok: true, topics };
+    return {
+      ok: true,
+      topics: [...WOOCOMMERCE_WEBHOOK_TOPICS],
+      created,
+      recreated,
+      deleted,
+      skipped,
+    };
+  }
+
+  /**
+   * Full webhook list with pagination (per_page=100, up to 10 pages).
+   * Stops early on a short page or when X-WP-TotalPages says done
+   * (mocked transports omit the headers — the length heuristic covers
+   * them). Throws on a failed page: a partial list would create
+   * duplicates for the hooks it cannot see.
+   */
+  private async listWebhooks(store: StoreWithSecrets): Promise<any[]> {
+    const all: any[] = [];
+    for (let page = 1; page <= WOO_WEBHOOK_LIST_MAX_PAGES; page++) {
+      const { data, totalPages } = await this.wooPage<any[]>(
+        store,
+        `/webhooks?per_page=${WOO_WEBHOOK_LIST_PER_PAGE}&page=${page}`,
+      );
+      const hooks = Array.isArray(data) ? data : [];
+      all.push(...hooks);
+      if (hooks.length < WOO_WEBHOOK_LIST_PER_PAGE) break;
+      if (totalPages !== undefined && page >= totalPages) break;
+    }
+    return all;
   }
 }

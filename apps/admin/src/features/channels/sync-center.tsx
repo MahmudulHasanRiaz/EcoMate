@@ -17,9 +17,11 @@ import {
   runStatusTone,
   failureSummary,
   isAttemptEligibleUi,
+  isWebhookFailureReplayableUi,
   syncApi,
   type SyncRunResponse,
   type SyncAttemptResponse,
+  type WebhookFailureResponse,
 } from './sync-api'
 import {
   useSyncRuns,
@@ -37,6 +39,9 @@ import {
   useIgnoreAttempt,
   useResolveIssue,
   useTriggerRetentionPurge,
+  useWebhookFailures,
+  useReplayWebhookFailure,
+  useIgnoreWebhookFailure,
 } from './sync-hooks'
 import { SyncOverrides } from './overrides'
 
@@ -118,6 +123,7 @@ export function SyncCenter() {
             <TabsTrigger value="history">History</TabsTrigger>
             <TabsTrigger value="product">Product Sync</TabsTrigger>
             <TabsTrigger value="retry">Failed &amp; Retry</TabsTrigger>
+            <TabsTrigger value="webhook-failures">Failed deliveries</TabsTrigger>
             <TabsTrigger value="issues">Issues{(issues?.length ?? 0) > 0 ? ` (${issues?.length})` : ''}</TabsTrigger>
             <TabsTrigger value="overrides">Overrides{(overrides?.length ?? 0) > 0 ? ` (${overrides?.length})` : ''}</TabsTrigger>
             <TabsTrigger value="audit">Audit</TabsTrigger>
@@ -217,6 +223,10 @@ export function SyncCenter() {
 
           <TabsContent value="retry">
             <FailedRetry onDone={() => void refetch()} />
+          </TabsContent>
+
+          <TabsContent value="webhook-failures">
+            <WebhookFailures />
           </TabsContent>
 
           <TabsContent value="issues">
@@ -414,6 +424,169 @@ function FailedRetry({ onDone }: { onDone: () => void }) {
           )
         })}
         {(attempts ?? []).length === 0 && <p className="text-sm text-muted-foreground">No attempts in the 90-day window.</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Plain-English labels for failure reasons (Phase 9 G-16). */
+const WEBHOOK_FAILURE_LABELS: Record<string, string> = {
+  SIGNATURE_MISMATCH: 'Signature mismatch',
+  NO_SECRET: 'No webhook secret',
+  UNKNOWN_STORE: 'Unknown store',
+  MISSING_DELIVERY_ID: 'Missing delivery id',
+  ENQUEUE_FAILED: 'Could not queue',
+  INGEST_FAILED: 'Ingest failed',
+  AUTO_SYNC_DISABLED: 'Auto-sync off (skipped)',
+  ORDER_SYNC_SCOPE_DISABLED: 'Order sync off (skipped)',
+}
+
+/**
+ * Failed webhook deliveries (Phase 9 G-12/G-16): per-store list of
+ * `StoreWebhookFailure` rows with manual Replay + Ignore. Replay
+ * re-enqueues the ingest job (priority 1); the row flips to RESOLVED
+ * only when the order is verified afterwards — enqueueing is not
+ * success. Only OPEN ENQUEUE_FAILED / INGEST_FAILED rows with a known
+ * external order id are replayable (signature/unknown-store rows never
+ * had a verified payload to re-fetch).
+ */
+function WebhookFailures() {
+  const { data: stores } = useStores()
+  const [storeId, setStoreId] = useState('')
+  const [status, setStatus] = useState('OPEN')
+  const [page, setPage] = useState(1)
+  const effectiveStoreId = storeId || stores?.[0]?.id || ''
+  const { data, isLoading, refetch } = useWebhookFailures(effectiveStoreId || undefined, {
+    status: status === 'ALL' ? undefined : status,
+    page,
+  })
+  const replayMut = useReplayWebhookFailure()
+  const ignoreMut = useIgnoreWebhookFailure()
+  const rows = data?.data ?? []
+  const meta = data?.meta
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="rounded border px-2 py-1 text-sm"
+            value={effectiveStoreId}
+            onChange={(e) => {
+              setStoreId(e.target.value)
+              setPage(1)
+            }}
+            aria-label="Store"
+          >
+            {(stores ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded border px-2 py-1 text-sm"
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value)
+              setPage(1)
+            }}
+            aria-label="Status"
+          >
+            <option value="OPEN">Open</option>
+            <option value="RESOLVED">Resolved</option>
+            <option value="IGNORED">Ignored</option>
+            <option value="ALL">All</option>
+          </select>
+          <Button size="sm" variant="outline" onClick={() => void refetch()}>
+            Refresh
+          </Button>
+        </div>
+        {isLoading && <p className="text-sm text-muted-foreground">Loading failed deliveries…</p>}
+        {!isLoading &&
+          rows.map((f: WebhookFailureResponse) => {
+            const replayable = isWebhookFailureReplayableUi(f)
+            return (
+              <div key={f.id} className="flex flex-wrap items-center gap-2 border-b py-2 text-sm last:border-0">
+                <Badge
+                  variant={
+                    f.status === 'OPEN' ? 'destructive' : f.status === 'RESOLVED' ? ('success' as never) : 'outline'
+                  }
+                >
+                  {f.status}
+                </Badge>
+                <span className="font-medium">{WEBHOOK_FAILURE_LABELS[f.reason] ?? f.reason}</span>
+                {f.topic && <span className="text-muted-foreground">{f.topic}</span>}
+                {f.payload?.externalOrderId && (
+                  <span className="text-muted-foreground">order {f.payload.externalOrderId}</span>
+                )}
+                {f.occurrences > 1 && <span className="text-xs text-muted-foreground">×{f.occurrences}</span>}
+                <span className="text-xs text-muted-foreground">
+                  last seen {new Date(f.lastSeenAt).toLocaleString()}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!replayable || replayMut.isPending}
+                  title={
+                    replayable
+                      ? 'Re-fetch the order and retry ingest'
+                      : 'Only open enqueue/ingest failures with a known order can be replayed'
+                  }
+                  onClick={() =>
+                    replayMut.mutate(
+                      { storeId: effectiveStoreId, failureId: f.id },
+                      {
+                        onSuccess: () => toast.success('Replay enqueued — the row resolves once the order is verified'),
+                        onError: handleServerError,
+                      },
+                    )
+                  }
+                >
+                  Retry
+                </Button>
+                {f.status === 'OPEN' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={ignoreMut.isPending}
+                    onClick={() =>
+                      ignoreMut.mutate(
+                        { storeId: effectiveStoreId, failureId: f.id },
+                        {
+                          onSuccess: () => toast.success('Failure ignored'),
+                          onError: handleServerError,
+                        },
+                      )
+                    }
+                  >
+                    Ignore
+                  </Button>
+                )}
+              </div>
+            )
+          })}
+        {!isLoading && rows.length === 0 && (
+          <p className="text-sm text-muted-foreground">No failed deliveries for this store.</p>
+        )}
+        {meta && meta.totalPages > 1 && (
+          <div className="flex items-center gap-2 text-sm">
+            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              Previous
+            </Button>
+            <span className="text-muted-foreground">
+              Page {meta.page} of {meta.totalPages} ({meta.total} total)
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page >= meta.totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

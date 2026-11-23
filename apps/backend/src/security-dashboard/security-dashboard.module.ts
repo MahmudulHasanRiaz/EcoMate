@@ -8,6 +8,7 @@ import { EventAggregatorService } from './services/event-aggregator.service';
 import { RetentionCleanupService } from './services/retention-cleanup.service';
 import { SecurityEventProcessor } from './processors/security-event.processor';
 import { SecurityAggregateProcessor } from './processors/security-aggregate.processor';
+import { processorsEnabled } from '../common/worker-mode';
 
 @Module({
   imports: [
@@ -23,8 +24,12 @@ import { SecurityAggregateProcessor } from './processors/security-aggregate.proc
     DashboardQueryService,
     EventAggregatorService,
     RetentionCleanupService,
-    SecurityEventProcessor,
-    SecurityAggregateProcessor,
+    // Worker split (WORKER_MODE): the processors run only in `worker`/`all`
+    // modes. In `api` mode the queues themselves (registerQueue above)
+    // stay — HTTP paths must still enqueue — but no BullMQ Worker is created.
+    ...(processorsEnabled()
+      ? [SecurityEventProcessor, SecurityAggregateProcessor]
+      : []),
   ],
   exports: [SecurityEventEmitterService, DashboardQueryService],
 })

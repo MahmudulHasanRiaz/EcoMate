@@ -74,8 +74,16 @@ function buildIntake(opts: {
   const registry: any = {
     providerFor: jest.fn().mockReturnValue(new ShopifyProvider()),
   };
-  const runs: any = { begin: jest.fn().mockResolvedValue({ id: 'run-resolver-1' }) };
-  const queues: any = { enqueue: jest.fn().mockResolvedValue(undefined) };
+  const runs: any = {
+    begin: jest.fn().mockResolvedValue({ id: 'run-resolver-1' }),
+    finish: jest.fn().mockResolvedValue({}),
+  };
+  // Intake enqueues via `enqueueOrThrow` (G-11) — the plain `enqueue`
+  // swallow-and-log variant is never called from intake.
+  const queues: any = {
+    enqueue: jest.fn().mockResolvedValue(undefined),
+    enqueueOrThrow: jest.fn().mockResolvedValue({ id: 'job-1' }),
+  };
   const resolver: any = {
     resolveStore: jest.fn().mockResolvedValue(
       opts.resolveResult === undefined
@@ -110,7 +118,7 @@ describe('resolver-first webhook intake (SaaS §3.3)', () => {
     expect(resolver.resolveStore).toHaveBeenCalledWith(STORE_ID);
     expect(resolver.resolveStore).toHaveBeenCalledTimes(1);
     expect(prisma.store.findUnique).toHaveBeenCalledWith({ where: { id: STORE_ID } });
-    expect(queues.enqueue).toHaveBeenCalledTimes(1);
+    expect(queues.enqueueOrThrow).toHaveBeenCalledTimes(1);
   });
 
   it('unknown/unbound store: generic 401 and NO Prisma query at all', async () => {
@@ -124,7 +132,7 @@ describe('resolver-first webhook intake (SaaS §3.3)', () => {
     // not touch a tenant table for a store it cannot resolve.
     expect(prisma.store.findUnique).not.toHaveBeenCalled();
     expect(prisma.storeWebhookDelivery.findUnique).not.toHaveBeenCalled();
-    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(queues.enqueueOrThrow).not.toHaveBeenCalled();
   });
 
   it('NATIVE store resolved by the platform is still rejected in-tenant (defence in depth)', async () => {
@@ -135,7 +143,7 @@ describe('resolver-first webhook intake (SaaS §3.3)', () => {
     await expect(svc.intake('shopify', STORE_ID, d.headers, d.rawBody)).rejects.toThrow(
       'Unauthorized',
     );
-    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(queues.enqueueOrThrow).not.toHaveBeenCalled();
   });
 
   it('downgraded tenant (plan lacks store_order_sync): 200 WITHOUT ingest, audited', async () => {
@@ -144,7 +152,7 @@ describe('resolver-first webhook intake (SaaS §3.3)', () => {
     const res = await svc.intake('shopify', STORE_ID, d.headers, d.rawBody);
     // Identical body to the success case — no entitlement oracle.
     expect(res).toEqual({ received: true, duplicate: false });
-    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(queues.enqueueOrThrow).not.toHaveBeenCalled();
     expect(runs.begin).not.toHaveBeenCalled();
     // The delivery row is the audit: it WAS recorded.
     expect(prisma.storeWebhookDelivery.create).toHaveBeenCalledTimes(1);
@@ -156,7 +164,7 @@ describe('resolver-first webhook intake (SaaS §3.3)', () => {
     const d = buildShopifyDelivery(CLIENT_SECRET, payload);
     const res = await svc.intake('shopify', STORE_ID, d.headers, d.rawBody);
     expect(res).toEqual({ received: true, duplicate: false });
-    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(queues.enqueueOrThrow).not.toHaveBeenCalled();
     expect(runs.begin).not.toHaveBeenCalled();
     expect(prisma.storeWebhookDelivery.create).toHaveBeenCalledTimes(1);
   });
@@ -171,6 +179,6 @@ describe('resolver-first webhook intake (SaaS §3.3)', () => {
     expect(res).toEqual({ received: true, duplicate: false });
     expect(entitlements.canUse).toHaveBeenCalledWith('store_order_sync');
     expect(runs.begin).toHaveBeenCalledTimes(1);
-    expect(queues.enqueue).toHaveBeenCalledTimes(1);
+    expect(queues.enqueueOrThrow).toHaveBeenCalledTimes(1);
   });
 });

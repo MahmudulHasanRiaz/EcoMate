@@ -10,8 +10,10 @@
  *
  * Vectors (MockFetch): (1) the registered URL contains the correct
  * storeKey; (2) it resolves to the receiver route shape
- * `/api/webhooks/stores/<slug>/:storeKey`. Nothing else in registration
- * changes: topics, `format: 'json'` and the `api_version` pin stay.
+ * `/api/webhooks/stores/<slug>/:storeKey`. The webhook lifecycle
+ * (2026-11-23) added `order.deleted` / `orders/delete` to the topic sets
+ * and the create payload carries the Woo secret + active status; the
+ * keyed-URL contract itself is unchanged.
  */
 import {
   BRIDGE_WEBHOOK_TOPICS,
@@ -22,7 +24,10 @@ import {
   SHOPIFY_WEBHOOK_TOPICS,
   ShopifyProvider,
 } from '../shopify.provider';
-import { WooCommerceProvider } from '../woocommerce.provider';
+import {
+  WOOCOMMERCE_WEBHOOK_TOPICS,
+  WooCommerceProvider,
+} from '../woocommerce.provider';
 import {
   MockFetch,
   buildStoreUnit,
@@ -51,12 +56,20 @@ describe('keyed webhook registration (Issue 1)', () => {
     const res = await new WooCommerceProvider(mock.fetch).ensureWebhooks(store, `${BASE}/`);
     expect(res).toEqual({
       ok: true,
-      topics: ['order.created', 'order.updated', 'product.updated'],
+      topics: WOOCOMMERCE_WEBHOOK_TOPICS,
+      created: WOOCOMMERCE_WEBHOOK_TOPICS,
+      recreated: [],
+      deleted: 0,
+      skipped: [],
     });
-    expect(posted).toHaveLength(3);
+    expect(posted).toHaveLength(WOOCOMMERCE_WEBHOOK_TOPICS.length);
     for (const body of posted) {
       expect(body).toMatchObject({
         delivery_url: `${BASE}${receiverShape('woocommerce', store.id)}`,
+        // Webhook lifecycle (G-03): the create payload carries the agreed
+        // secret + active status, or verification can never pass.
+        secret: 'wh_woo_secret',
+        status: 'active',
       });
     }
   });
@@ -74,7 +87,14 @@ describe('keyed webhook registration (Issue 1)', () => {
     });
     const store = buildStoreUnit('SHOPIFY');
     const res = await new ShopifyProvider(mock.fetch).ensureWebhooks(store, BASE);
-    expect(res).toEqual({ ok: true, topics: SHOPIFY_WEBHOOK_TOPICS });
+    expect(res).toEqual({
+      ok: true,
+      topics: SHOPIFY_WEBHOOK_TOPICS,
+      created: SHOPIFY_WEBHOOK_TOPICS,
+      recreated: [],
+      deleted: 0,
+      skipped: [],
+    });
     expect(created).toHaveLength(SHOPIFY_WEBHOOK_TOPICS.length);
     const topics = (created as any[]).map((b) => b.webhook.topic).sort();
     expect(topics).toEqual([...SHOPIFY_WEBHOOK_TOPICS].sort());
@@ -95,7 +115,14 @@ describe('keyed webhook registration (Issue 1)', () => {
     mock.onPrefix(bridge.baseUrl, bridge.handle);
     const store = buildStoreUnit('CUSTOM');
     const res = await new CustomBridgeProvider(mock.fetch).ensureWebhooks(store, `${BASE}/`);
-    expect(res).toEqual({ ok: true, topics: BRIDGE_WEBHOOK_TOPICS });
+    expect(res).toEqual({
+      ok: true,
+      topics: BRIDGE_WEBHOOK_TOPICS,
+      created: BRIDGE_WEBHOOK_TOPICS,
+      recreated: [],
+      deleted: 0,
+      skipped: [],
+    });
     expect(bridge.webhooks.map((w) => w.topic).sort()).toEqual(
       [...BRIDGE_WEBHOOK_TOPICS].sort(),
     );
