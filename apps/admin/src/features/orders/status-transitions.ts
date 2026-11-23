@@ -19,7 +19,10 @@ export const ORDER_TRANSITIONS: Record<string, string[]> = {
   'Recall': ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'No Response', 'Confirmed', 'Cancelled'],
   'No Response': ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'Recall', 'Confirmed', 'Cancelled'],
   'Hold': ['Pending', 'Recall', 'No Response', 'Confirmed', 'Cancelled'],
-  'Confirmed': ['Packed', 'Packing Hold', 'Cancelled'],
+  // Boss directive (2026-11-23): Confirmed → Delivered is a legal edge, and
+  // Confirmed → Hold exists in the authoritative backend map — the admin
+  // copy must offer both so staff see what the backend allows.
+  'Confirmed': ['Hold', 'Packed', 'Packing Hold', 'Cancelled', 'Delivered'],
   'Packed': ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
   'Shipping': ['Delivered', 'Partial', 'Return Pending'],

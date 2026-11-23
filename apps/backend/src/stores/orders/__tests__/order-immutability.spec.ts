@@ -78,19 +78,29 @@ describe('P6 BR-17 — totals/items/prices immutable from the store side', () =>
   it('a disallowed store-side transition fails closed (SKIPPED + issue, no throw)', async () => {
     const { svc, orders, runs } = buildIngest(mockPrisma());
     const prisma = (svc as any).prisma;
-    prisma.storeOrderMapping.findUnique.mockResolvedValue({ ...MAPPING });
-    prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Delivered' });
-    prisma.orderStatus.findFirst.mockResolvedValue({ id: 'st-del', name: 'Delivered' });
+    // Delivered → Confirmed is genuinely dead: no forward path exists
+    // (Delivered only goes to Return Pending), so the walk finds nothing
+    // and the fail-closed SKIP + issue is the whole outcome. (This test
+    // used to pin Confirmed → Delivered as the dead case — that edge is
+    // now legal per the 2026-11-23 Boss directive, see
+    // order-status-walk.spec.ts for its landing proof.)
+    prisma.storeOrderMapping.findUnique.mockResolvedValue({
+      ...MAPPING,
+      order: { status: { name: 'Delivered' }, total: 500 },
+    });
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Confirmed' });
+    prisma.orderStatus.findFirst.mockResolvedValue({ id: 'st-conf', name: 'Confirmed' });
     (orders.updateStatus as jest.Mock).mockRejectedValue(
-      new Error('Cannot transition from "Confirmed" to "Delivered". Allowed: Hold, Packed'),
+      new Error('Cannot transition from "Delivered" to "Confirmed". Allowed: Return Pending'),
     );
 
     const res = await svc.ingest('s1', {
-      id: 'ext-2', status: 'completed', total: 500, currency: 'BDT',
+      id: 'ext-2', status: 'processing', total: 500, currency: 'BDT',
       createdAt: '2026-09-21T11:00:00.000Z', items: [],
     }, { type: 'RECONCILE', runId: 'run-1' });
 
-    expect(res).toMatchObject({ created: false, status: 'Confirmed', statusChanged: false });
+    expect(res).toMatchObject({ created: false, status: 'Delivered', statusChanged: false });
+    expect(orders.updateStatus).toHaveBeenCalledTimes(1); // direct attempt only — no walk exists
     expect(runs.upsertIssue).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'ORDER_STATUS_RECONCILE_FAILED' }),
     );

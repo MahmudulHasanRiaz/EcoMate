@@ -12,8 +12,8 @@
  * (totals/items never rewritten, ignored deltas noted); (2) normalizeOrder();
  * (3) SKU resolution via StoreSkuMapping → variant SKU → product SKU →
  * product-less + UNMATCHED_SKU issue + one-click map action; (4) external
- * status → internal status via StoreOrderStatusMap (seeded from the CSV
- * importer's STATUS_MAP); (5) ordersService.create(dto, undefined,
+ * status → internal status via StoreOrderStatusMap (seeded from the
+ * store-effective STORE_STATUS_MAP); (5) ordersService.create(dto, undefined,
  * undefined, undefined, internal); (6) mapping + provenance + ingestFlags
  * + SyncRunItem.
  *
@@ -30,6 +30,7 @@ import { SyncRunService } from '../sync/sync-run.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
 import { StoresService } from '../stores.service';
 import { STATUS_MAP } from '../../import/order-import.service';
+import { findOrderTransitionPath } from '../../orders/order-transitions';
 import { normalizePhone } from '../../common/utils/phone-utils';
 import {
   normalizeOrder,
@@ -126,6 +127,29 @@ export interface SkuResolutionContext {
  */
 export const ZERO_STOCK_REJECT = 'ZERO_STOCK_REJECT';
 
+/**
+ * Store-layer status overrides (Boss decision 2026-11-23, Woo-only): a Woo
+ * refund/return is a CANCEL, never a Return. The CSV importer's STATUS_MAP
+ * keeps `refunded → Returned` for CSV rows — that constant is SHARED with
+ * the CSV importer and must NOT change — so the store layer overrides it
+ * here. `returned` (literal string, custom-status Woo installs) is unmapped
+ * in STATUS_MAP and maps here too.
+ *
+ * Consulted by resolveStatusName BEFORE the STATUS_MAP fallback, and the
+ * seed source for ensureStatusMaps — so a seeded row can never re-introduce
+ * the old mapping. Per-store DB rows still win (operator edits).
+ */
+export const STORE_STATUS_OVERRIDES: Record<string, string> = {
+  refunded: 'Cancelled',
+  returned: 'Cancelled',
+};
+
+/** Effective external→internal map for store ingest: STATUS_MAP + overrides. */
+export const STORE_STATUS_MAP: Record<string, string> = {
+  ...STATUS_MAP,
+  ...STORE_STATUS_OVERRIDES,
+};
+
 /** ERP authoritative stock for one ordered item (null = unresolvable). */
 export interface ErpStockLevel {
   qty: number;
@@ -157,12 +181,13 @@ export class StoreOrderIngestService {
   }
 
   /**
-   * Seed per-store status rows from the CSV importer's STATUS_MAP (§8.5 step
-   * 4). Existing rows are never overwritten — operator edits win.
+   * Seed per-store status rows from the store-effective STORE_STATUS_MAP
+   * (STATUS_MAP + the Woo refund/return → Cancelled overrides, §8.5 step 4).
+   * Existing rows are never overwritten — operator edits win.
    */
   async ensureStatusMaps(storeId: string): Promise<number> {
     let seeded = 0;
-    for (const [externalStatus, internalStatusName] of Object.entries(STATUS_MAP)) {
+    for (const [externalStatus, internalStatusName] of Object.entries(STORE_STATUS_MAP)) {
       const existing = await this.prisma.storeOrderStatusMap.findUnique({
         where: { storeId_externalStatus: { storeId, externalStatus } },
       });
@@ -182,7 +207,7 @@ export class StoreOrderIngestService {
     });
     if (row) return row.internalStatusName;
     const lower = (externalStatus ?? '').toLowerCase();
-    if (STATUS_MAP[lower]) return STATUS_MAP[lower];
+    if (STORE_STATUS_MAP[lower]) return STORE_STATUS_MAP[lower];
     return null;
   }
 
@@ -708,7 +733,25 @@ export class StoreOrderIngestService {
       },
     });
 
-    if (!targetName || targetName === currentName) {
+    if (!targetName) {
+      // Unmapped external status (draft / custom slug): there is nothing to
+      // move to. Say so — the old code reported this as `already "X"`,
+      // which lied about the cause.
+      if (trigger.runId) {
+        await this.runs.recordItem(trigger.runId, {
+          storeId,
+          objectType: 'ORDER',
+          externalObjectId: normalized.externalId,
+          status: 'SKIPPED',
+          reason: `STATUS_ONLY_RECONCILE: unmapped external status "${normalized.externalStatus}" — kept "${currentName}"; totals/items untouched (BR-17).${deltaNote}`,
+          auditLevel: 'G',
+        });
+      }
+      if (deltaNote) await this.appendTimelineNote(mapping.orderId, currentName, `Reconcile note:${deltaNote}`);
+      return { orderId: mapping.orderId, created: false, status: currentName, statusChanged: false };
+    }
+
+    if (targetName === currentName) {
       if (trigger.runId) {
         await this.runs.recordItem(trigger.runId, {
           storeId,
@@ -760,12 +803,36 @@ export class StoreOrderIngestService {
       return { orderId: mapping.orderId, created: false, status: targetName, statusChanged: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // Direct step failed (usually the transition guard): try a forward
+      // walk through legal transitions (e.g. Packed → Shipping → Delivered
+      // when Woo completed an order EcoMate still has Packed). Same pattern
+      // as courier sync's advanceOrderStatusFromSync; driven by the
+      // authoritative ORDER_TRANSITIONS, not the dispatch SYNC_ copy.
+      const walked = await this.walkStatusForward(mapping.orderId, currentName, targetName, actor, target as any);
+      if (walked.ok) {
+        if (deltaNote) await this.appendTimelineNote(mapping.orderId, targetName, `Reconcile note:${deltaNote}`);
+        if (trigger.runId) {
+          await this.runs.recordItem(trigger.runId, {
+            storeId,
+            objectType: 'ORDER',
+            externalObjectId: normalized.externalId,
+            status: 'SUCCESS',
+            reason: `STATUS_ONLY_RECONCILE: "${currentName}" → "${targetName}" via ${trigger.type} (walked ${[currentName, ...walked.path].join(' → ')}).${deltaNote}`,
+            auditLevel: 'G',
+          });
+        }
+        return { orderId: mapping.orderId, created: false, status: targetName, statusChanged: true };
+      }
+      // Fail closed as before (SKIPPED + issue, no throw) — but say where a
+      // partial walk stopped, so the run item never claims the order is
+      // still at the old status when it actually advanced a hop.
+      const walkedNote = walked.reached !== currentName ? ` (walked to "${walked.reached}" before failing)` : '';
       await this.runs.upsertIssue({
         storeId,
         code: 'ORDER_STATUS_RECONCILE_FAILED',
         objectType: 'ORDER',
         objectKey: `store:${storeId}:order:${normalized.externalId}`,
-        message: `Status reconcile "${currentName}" → "${targetName}" failed: ${msg}`,
+        message: `Status reconcile "${currentName}" → "${targetName}" failed: ${msg}${walkedNote}`,
       });
       if (trigger.runId) {
         await this.runs.recordItem(trigger.runId, {
@@ -773,12 +840,67 @@ export class StoreOrderIngestService {
           objectType: 'ORDER',
           externalObjectId: normalized.externalId,
           status: 'SKIPPED',
-          reason: `STATUS_ONLY_RECONCILE failed ("${currentName}" → "${targetName}"): ${msg}`,
+          reason: `STATUS_ONLY_RECONCILE failed ("${currentName}" → "${targetName}"): ${msg}${walkedNote}`,
           auditLevel: 'G',
         });
       }
-      return { orderId: mapping.orderId, created: false, status: currentName, statusChanged: false };
+      return { orderId: mapping.orderId, created: false, status: walked.reached, statusChanged: walked.reached !== currentName };
     }
+  }
+
+  /**
+   * Forward multi-step walk (store-sync counterpart of courier sync's
+   * advanceOrderStatusFromSync): BFS a path through ORDER_TRANSITIONS and
+   * step it one updateStatus per hop, stopping at the first failed hop.
+   * Each hop runs the full updateStatus side effects for its target.
+   *
+   * Safety rules (same as the dispatch path):
+   * - No walk when the path is one hop — the direct attempt already failed,
+   *   retrying the identical call is pointless.
+   * - Never step THROUGH Delivered or Cancelled as an intermediate: a
+   *   returned parcel must never be briefly marked delivered (Delivered
+   *   side effects), and a cancel-then-revive walk is not a transition.
+   * - Never walk TOWARD Cancelled: the only multi-hop Cancelled path runs
+   *   through Shipping (Packed → Shipping → Cancelled), and cancelling
+   *   must never advance fulfilment. Cancel stays direct-or-not-at-all.
+   */
+  private async walkStatusForward(
+    orderId: string,
+    fromName: string,
+    targetName: string,
+    actor: string,
+    target: { id: string },
+  ): Promise<{ ok: boolean; path: string[]; reached: string }> {
+    const path = findOrderTransitionPath(fromName, targetName);
+    if (path.length < 2) return { ok: false, path, reached: fromName };
+    if (targetName === 'Cancelled') return { ok: false, path, reached: fromName };
+    const intermediates = path.slice(0, -1);
+    if (intermediates.includes('Delivered') || intermediates.includes('Cancelled')) {
+      return { ok: false, path, reached: fromName };
+    }
+    let reached = fromName;
+    for (const step of path) {
+      const stepStatus =
+        step === targetName
+          ? target
+          : await this.prisma.orderStatus.findFirst({ where: { name: step } });
+      if (!stepStatus) return { ok: false, path, reached };
+      try {
+        await this.ordersSvc().updateStatus(
+          orderId,
+          { statusId: (stepStatus as any).id } as any,
+          actor,
+          'store-sync',
+        );
+        reached = step;
+      } catch (e) {
+        this.logger.warn(
+          `Status walk ${fromName} → ${targetName} stopped at "${reached}" (step "${step}" failed): ${(e as Error).message}`,
+        );
+        return { ok: false, path, reached };
+      }
+    }
+    return { ok: true, path, reached: targetName };
   }
 
   private async appendTimelineNote(orderId: string, statusName: string, note: string): Promise<void> {

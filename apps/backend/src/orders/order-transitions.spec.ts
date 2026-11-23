@@ -1,4 +1,4 @@
-import { ORDER_TRANSITIONS } from './order-transitions';
+import { ORDER_TRANSITIONS, findOrderTransitionPath } from './order-transitions';
 
 /**
  * E (owner-locked): Recall / No Response — the call-center PRE-CONFIRMATION
@@ -97,5 +97,41 @@ describe('ORDER_TRANSITIONS — Recall / No Response (E)', () => {
         expect(from).not.toBe(to);
       }
     }
+  });
+});
+
+describe('ORDER_TRANSITIONS — Confirmed → Delivered (Boss directive 2026-11-23)', () => {
+  it('Confirmed can step directly to Delivered (Woo Completed)', () => {
+    expect(ORDER_TRANSITIONS['Confirmed']).toContain('Delivered');
+  });
+
+  it('Confirmed keeps Hold (Woo on-hold regression)', () => {
+    expect(ORDER_TRANSITIONS['Confirmed']).toContain('Hold');
+  });
+
+  it('Partial → Delivered stays removed (owner-locked 15.4)', () => {
+    expect(ORDER_TRANSITIONS['Partial']).not.toContain('Delivered');
+  });
+});
+
+describe('findOrderTransitionPath', () => {
+  it('direct edge returns one hop', () => {
+    expect(findOrderTransitionPath('Confirmed', 'Delivered')).toEqual(['Delivered']);
+    expect(findOrderTransitionPath('Confirmed', 'Hold')).toEqual(['Hold']);
+  });
+
+  it('multi-hop paths walk forward', () => {
+    expect(findOrderTransitionPath('Packed', 'Delivered')).toEqual(['Shipping', 'Delivered']);
+    expect(findOrderTransitionPath('Hold', 'Delivered')).toEqual(['Confirmed', 'Delivered']);
+    expect(findOrderTransitionPath('Pending', 'Delivered')).toEqual(['Confirmed', 'Delivered']);
+    expect(findOrderTransitionPath('Packing Hold', 'Delivered')).toEqual(['Packed', 'Shipping', 'Delivered']);
+    expect(findOrderTransitionPath('Confirmed', 'Shipping')).toEqual(['Packed', 'Shipping']);
+  });
+
+  it('no path returns [] (backward / dead / same)', () => {
+    expect(findOrderTransitionPath('Delivered', 'Confirmed')).toEqual([]);
+    expect(findOrderTransitionPath('Partial', 'Delivered')).toEqual([]);
+    expect(findOrderTransitionPath('Damaged', 'Delivered')).toEqual([]);
+    expect(findOrderTransitionPath('Confirmed', 'Confirmed')).toEqual([]);
   });
 });

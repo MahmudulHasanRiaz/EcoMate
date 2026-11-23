@@ -11,7 +11,7 @@ import { StoreOrderReconcileService } from '../store-order-reconcile.service';
 import { RECONCILE_PAGE_SIZE } from '../normalize-order';
 import { FakeProvider } from '../../providers/__tests__/fake.provider';
 import { seedFakeProvider, buildOrderFixtures } from '../../providers/__tests__/fixtures';
-import { STATUS_MAP } from '../../../import/order-import.service';
+import { STORE_STATUS_MAP } from '../store-order-ingest.service';
 
 function mockPrisma() {
   // SaaS: ProductVariant.sku is NOT unique, so resolveSku uses findFirst
@@ -328,22 +328,30 @@ describe('P6 status-only reconcile (BR-17)', () => {
   });
 });
 
-describe('P6 status map seeding (import STATUS_MAP)', () => {
-  it('seeds every STATUS_MAP entry once; never overwrites operator edits', async () => {
+describe('P6 status map seeding (store-effective STORE_STATUS_MAP)', () => {
+  it('seeds every STORE_STATUS_MAP entry once; never overwrites operator edits', async () => {
     const prisma = mockPrisma();
     prisma.storeOrderStatusMap.findUnique.mockResolvedValue(null);
     prisma.storeOrderStatusMap.create.mockResolvedValue({});
     const { svc } = buildIngest(prisma);
     const seeded = await svc.ensureStatusMaps('s1');
-    expect(seeded).toBe(Object.keys(STATUS_MAP).length);
+    expect(seeded).toBe(Object.keys(STORE_STATUS_MAP).length);
     expect(prisma.storeOrderStatusMap.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ externalStatus: 'processing', internalStatusName: 'Confirmed' }) }),
+    );
+    // Woo overrides ride the seed too — a seeded row must never
+    // re-introduce the old refunded → Returned mapping.
+    expect(prisma.storeOrderStatusMap.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ externalStatus: 'refunded', internalStatusName: 'Cancelled' }) }),
+    );
+    expect(prisma.storeOrderStatusMap.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ externalStatus: 'returned', internalStatusName: 'Cancelled' }) }),
     );
 
     prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Custom' });
     const reseeded = await svc.ensureStatusMaps('s1');
     expect(reseeded).toBe(0);
-    expect(prisma.storeOrderStatusMap.create).toHaveBeenCalledTimes(Object.keys(STATUS_MAP).length);
+    expect(prisma.storeOrderStatusMap.create).toHaveBeenCalledTimes(Object.keys(STORE_STATUS_MAP).length);
   });
 });
 

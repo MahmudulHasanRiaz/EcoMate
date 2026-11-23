@@ -98,7 +98,10 @@ const SYNC_ORDER_TRANSITIONS: Record<string, string[]> = {
   'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
   'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
   Hold: ['Pending', 'Confirmed', 'Cancelled'],
-  Confirmed: ['Packed', 'Packing Hold', 'Cancelled'],
+  // Boss directive (2026-11-23): Confirmed → Delivered is a legal edge, and
+  // Confirmed → Hold exists in the authoritative map — the SYNC copy must
+  // offer both so courier-sync BFS can use the shorter path.
+  Confirmed: ['Hold', 'Packed', 'Packing Hold', 'Cancelled', 'Delivered'],
   Packed: ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
   // Task A (F11): Shipping → Return Pending is DIRECT (mirrors the webhook
