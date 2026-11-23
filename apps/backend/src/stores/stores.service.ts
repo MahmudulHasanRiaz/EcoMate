@@ -469,7 +469,11 @@ export class StoresService {
    *
    * `ensureSecret`: generate + persist a webhook secret first when the
    * store has none (WooCommerce only). Default false: a pure ensure never
-   * writes a credential row (testConnection probes rely on this).
+   * writes a credential row. Every production ensure path passes true
+   * (connect, testConnection, heal, health sweep, manual endpoint) —
+   * a pre-lifecycle store with no secret gets one backfilled, never
+   * regenerated (reconnect guarantees the secret separately, via
+   * preservedCredentials).
    */
   async ensureStoreWebhooks(
     storeId: string,
@@ -637,17 +641,19 @@ export class StoresService {
     }
     // Webhook lifecycle (G-01): a successful probe against the STORED
     // credentials auto-creates/heals the webhooks. Best-effort — never
-    // fails the probe. No secret generation here: a probe never writes a
-    // credential row (the secret is generated at connect/reconnect); a
-    // secret-less store fails the ensure loudly (issue row) instead of
-    // silently registering nothing. Probes with override credentials
-    // (a non-empty dto.credentials) skip the ensure — the ensure runs
-    // against stored credentials, and testing a not-yet-saved set must
-    // have no side effects.
+    // fails the probe. The ensure BACKFILLS a missing secret
+    // (ensureSecret: true): a store connected before the lifecycle work
+    // has no secret, and without the backfill its ensure fails loudly
+    // forever (WEBHOOK_ENSURE_FAILED) while Woo's webhook list stays
+    // empty. The backfill only writes when no secret exists — an existing
+    // secret is never regenerated (that would break live signatures).
+    // Probes with override credentials (a non-empty dto.credentials) skip
+    // the ensure — the ensure runs against stored credentials, and testing
+    // a not-yet-saved set must have no side effects.
     const hasCredentialOverride =
       dto?.credentials !== undefined && Object.keys(dto.credentials).length > 0;
     if (result.authenticated && !hasCredentialOverride) {
-      await this.ensureStoreWebhooksBestEffort(id);
+      await this.ensureStoreWebhooksBestEffort(id, { ensureSecret: true });
     }
     return result;
   }

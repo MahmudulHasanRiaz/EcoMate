@@ -50,6 +50,7 @@ describe('WebhookHealService.maybeHealOnSignatureFailure', () => {
     expect(stores.rotateWebhookSecret).toHaveBeenCalledWith('store-1');
     expect(stores.ensureStoreWebhooksBestEffort).toHaveBeenCalledWith('store-1', {
       forceRecreate: true,
+      ensureSecret: true,
     });
   });
 

@@ -331,7 +331,8 @@ describe('P9 secret-leak audit', () => {
       expect(res).toEqual(probeResult);
       expect(secretKeysPresent(res)).toEqual([]);
       expect(serializedLeak(res)).toBeNull();
-      // A probe never writes a credential row.
+      // A probe with override credentials never writes a credential row
+      // (the ensure is skipped for unsaved credentials).
       expect(prisma.storeCredential.create).not.toHaveBeenCalled();
     });
 
@@ -368,7 +369,12 @@ describe('P9 secret-leak audit', () => {
           findUnique: jest.fn().mockResolvedValue(baseStore({ status: 'PENDING' })),
           update: jest.fn().mockResolvedValue(baseStore({ status: 'CONNECTED' })),
         },
-        storeCredential: { findFirst: jest.fn().mockResolvedValue(null) },
+        // create: the probe backfills a missing secret (ensureSecret) —
+        // the mock must offer it or the best-effort ensure warns.
+        storeCredential: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          create: jest.fn().mockResolvedValue({ id: 'cred-1', rotatedAt: new Date() }),
+        },
         storeHealthCheck: { create: jest.fn().mockResolvedValue({}) },
       };
       const { svc } = buildService(prisma, mockProvider);

@@ -253,15 +253,40 @@ describe('webhook lifecycle: StoresService', () => {
   });
 
   describe('testConnection ensures webhooks', () => {
-    it('authenticated probe against stored credentials ensures (no credential row written)', async () => {
+    it('authenticated probe against stored credentials backfills a missing secret and ensures with it', async () => {
       const prisma = buildPrisma({ id: 'store-1', kind: 'WOOCOMMERCE', status: 'PENDING', settings: {} });
       const provider = mockProvider();
       const { svc } = buildService(prisma, provider);
       const res = await svc.testConnection('store-1', undefined);
       expect((res as any).authenticated).toBe(true);
       expect(provider.ensureWebhooks).toHaveBeenCalledTimes(1);
-      // A probe never writes a credential row (no secret generation here).
-      expect(prisma.storeCredential.create).not.toHaveBeenCalled();
+      // Backfill (live staging 2026-11-23: a pre-lifecycle store has no
+      // secret — the probe mints + persists one, then registers with it).
+      expect(prisma.credRows).toHaveLength(1);
+      const merged = decryptRow(prisma.credRows[0]);
+      expect(merged.webhookSecret).toMatch(/^[0-9a-f]{64}$/);
+      const [withSecrets, base] = provider.ensureWebhooks.mock.calls[0];
+      expect(base).toBe(BASE);
+      expect((withSecrets as any).secrets.webhookSecret).toBe(merged.webhookSecret);
+    });
+
+    it('authenticated probe on a store that already has a secret writes no credential row (secret untouched)', async () => {
+      const prisma = buildPrisma({ id: 'store-1', kind: 'WOOCOMMERCE', status: 'CONNECTED', settings: {} });
+      prisma.credRows.push({
+        id: 'cred-0',
+        rotatedAt: new Date(),
+        credentialsEnc: `enc:${JSON.stringify({ consumerKey: 'k1', consumerSecret: 's1', webhookSecret: 'wh_existing_secret' })}`,
+      });
+      const provider = mockProvider();
+      const { svc } = buildService(prisma, provider);
+      await svc.testConnection('store-1', undefined);
+      expect(provider.ensureWebhooks).toHaveBeenCalledTimes(1);
+      // No backfill row: an existing secret is never regenerated (that
+      // would break the signatures of already-registered webhooks).
+      expect(prisma.credRows).toHaveLength(1);
+      expect(decryptRow(prisma.credRows[0]).webhookSecret).toBe('wh_existing_secret');
+      const [withSecrets] = provider.ensureWebhooks.mock.calls[0];
+      expect((withSecrets as any).secrets.webhookSecret).toBe('wh_existing_secret');
     });
 
     it('probe with override credentials skips the ensure (no side effects)', async () => {

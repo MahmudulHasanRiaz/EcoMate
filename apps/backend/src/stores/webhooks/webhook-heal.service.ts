@@ -107,8 +107,14 @@ export class WebhookHealService {
 
   private async heal(storeId: string, reason: string): Promise<void> {
     const rotated = await this.stores.rotateWebhookSecret(storeId);
+    // ensureSecret: true — the rotation above already minted a secret for
+    // a Woo store that had none, but the ensure must not depend on that:
+    // a secret-less store heals (backfill + register) even if rotation
+    // was a no-op (non-Woo kinds never generate; the ensure is a no-op
+    // for the secret there too).
     const outcome = await this.stores.ensureStoreWebhooksBestEffort(storeId, {
       forceRecreate: true,
+      ensureSecret: true,
     });
     if (outcome.status === 'ok') {
       this.logger.log(
