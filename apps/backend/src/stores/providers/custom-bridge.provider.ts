@@ -922,17 +922,34 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
         typeof rec.__externalVariantId === 'string'
           ? rec.__externalVariantId
           : undefined;
-      const match = existingId ? { id: existingId } : bySku.get(sku);
-      if (match?.id !== undefined) {
-        const updated = await this.bridge<{ variant?: any }>(
-          store,
-          'PUT',
-          `/bridge/v1/variants/${encodeURIComponent(String(match.id))}`,
-          payload,
-        );
-        out.set(sku, { providerId: String(updated.variant?.id ?? match.id) });
-        continue;
+      // Update candidates in order: the mapped id first, then the
+      // SKU-matched remote variant. A stale mapped id (variation deleted
+      // out-of-band) 404s and falls through to the next candidate, then
+      // to create below — never a duplicate, never a dead-end failure.
+      const candidates: string[] = [];
+      if (existingId) candidates.push(existingId);
+      const skuMatch = bySku.get(sku);
+      if (skuMatch?.id !== undefined && String(skuMatch.id) !== existingId) {
+        candidates.push(String(skuMatch.id));
       }
+      let updated = false;
+      for (const id of candidates) {
+        try {
+          const res = await this.bridge<{ variant?: any }>(
+            store,
+            'PUT',
+            `/bridge/v1/variants/${encodeURIComponent(id)}`,
+            payload,
+          );
+          out.set(sku, { providerId: String(res.variant?.id ?? id) });
+          updated = true;
+          break;
+        } catch (err) {
+          if (!(err instanceof ProviderError) || err.category !== ProviderErrorCategory.REMOTE_NOT_FOUND) throw err;
+          // Stale id — try the next candidate, else create below.
+        }
+      }
+      if (updated) continue;
       const created = await this.bridge<{ variant?: any }>(
         store,
         'POST',

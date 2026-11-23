@@ -1185,25 +1185,40 @@ export class ShopifyProvider extends BaseCommerceProvider {
       const sku = String(rec.sku ?? '');
       const payload = shopifyVariantToPayload(rec);
       const existingId = typeof rec.__externalVariantId === 'string' ? rec.__externalVariantId : undefined;
-      const match = existingId
-        ? { id: existingId }
-        : bySku.get(sku);
-      if (match?.id !== undefined) {
-        const updated = await this.rest<{ variant?: any }>(
-          store,
-          'PUT',
-          `/variants/${encodeURIComponent(String(match.id))}.json`,
-          { variant: { id: match.id, ...payload } },
-        );
-        out.set(sku, { providerId: String(updated.variant?.id ?? match.id) });
-        // Cost follows the variant (push-only, BR-23).
-        if (rec.costPrice !== undefined && rec.costPrice !== null && updated.variant?.inventory_item_id) {
-          await this.rest(store, 'PUT', `/inventory_items/${encodeURIComponent(String(updated.variant.inventory_item_id))}.json`, {
-            inventory_item: { id: updated.variant.inventory_item_id, cost: String(rec.costPrice) },
-          }).catch(() => null);
-        }
-        continue;
+      // Update candidates in order: the mapped id first, then the
+      // SKU-matched remote variant. A stale mapped id (variation deleted
+      // out-of-band) 404s and falls through to the next candidate, then
+      // to create below — never a duplicate, never a dead-end failure.
+      const candidates: string[] = [];
+      if (existingId) candidates.push(existingId);
+      const skuMatch = bySku.get(sku);
+      if (skuMatch?.id !== undefined && String(skuMatch.id) !== existingId) {
+        candidates.push(String(skuMatch.id));
       }
+      let updated = false;
+      for (const id of candidates) {
+        try {
+          const res = await this.rest<{ variant?: any }>(
+            store,
+            'PUT',
+            `/variants/${encodeURIComponent(id)}.json`,
+            { variant: { id, ...payload } },
+          );
+          out.set(sku, { providerId: String(res.variant?.id ?? id) });
+          // Cost follows the variant (push-only, BR-23).
+          if (rec.costPrice !== undefined && rec.costPrice !== null && res.variant?.inventory_item_id) {
+            await this.rest(store, 'PUT', `/inventory_items/${encodeURIComponent(String(res.variant.inventory_item_id))}.json`, {
+              inventory_item: { id: res.variant.inventory_item_id, cost: String(rec.costPrice) },
+            }).catch(() => null);
+          }
+          updated = true;
+          break;
+        } catch (err) {
+          if (!(err instanceof ProviderError) || err.category !== ProviderErrorCategory.REMOTE_NOT_FOUND) throw err;
+          // Stale id — try the next candidate, else create below.
+        }
+      }
+      if (updated) continue;
       const created = await this.rest<{ variant?: any }>(
         store,
         'POST',

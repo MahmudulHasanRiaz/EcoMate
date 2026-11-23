@@ -355,11 +355,19 @@ export class WooCommerceProvider extends BaseCommerceProvider {
       if (rec.isActive !== undefined) payload.status = rec.isActive ? 'publish' : 'private';
       const existingId = typeof rec.__externalVariantId === 'string' ? rec.__externalVariantId : undefined;
       if (existingId) {
-        const updated = await this.woo<{ id?: number | string }>(
-          store, 'PUT', `/products/${encodeURIComponent(ref.providerId)}/variations/${encodeURIComponent(existingId)}`, payload,
-        );
-        out.set(String(rec.sku), { providerId: String((updated as any).id ?? existingId) });
-        continue;
+        try {
+          const updated = await this.woo<{ id?: number | string }>(
+            store, 'PUT', `/products/${encodeURIComponent(ref.providerId)}/variations/${encodeURIComponent(existingId)}`, payload,
+          );
+          out.set(String(rec.sku), { providerId: String((updated as any).id ?? existingId) });
+          continue;
+        } catch (err) {
+          // Stale mapping (variation deleted out-of-band in Woo): fall
+          // through to create below instead of failing the whole sync —
+          // the caller re-points the mapping at the new variation.
+          // Any other failure still propagates.
+          if (!(err instanceof ProviderError) || err.category !== ProviderErrorCategory.REMOTE_NOT_FOUND) throw err;
+        }
       }
       const created = await this.woo<{ id?: number | string }>(
         store, 'POST', `/products/${encodeURIComponent(ref.providerId)}/variations`, payload,

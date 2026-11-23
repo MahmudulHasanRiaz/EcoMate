@@ -635,6 +635,19 @@ export class ProductSyncService {
     const variants = product.variants ?? [];
     if (product.type !== 'variable' || variants.length === 0 || !mapping) return;
     if (provider.declaredCapabilities.variations !== true) return;
+    // V1 (Phase 1): re-attach the remote variation id for already-mapped
+    // variants so the provider UPDATES (PUT) instead of POSTing a duplicate
+    // variation on every push. Woo's upsertVariants has no SKU fallback —
+    // without __externalVariantId each push creates a NEW remote variation
+    // and the mapping upsert below overwrites the mapping with the
+    // duplicate's id. Shopify/Custom prefer the id too (their SKU match is
+    // the fallback). Only genuinely-unmapped variants are created.
+    const existing = await this.prisma.storeVariantMapping.findMany({
+      where: { storeId, variantId: { in: variants.map((v: any) => v.id) } },
+    });
+    const externalByVariantId = new Map(
+      (existing as any[]).map((m: any) => [m.variantId, m.externalId]),
+    );
     const payload = await this.withVariantAttributeNames(
       product,
       variants.map((v: any) => ({
@@ -642,6 +655,9 @@ export class ProductSyncService {
         price: v.price !== null && v.price !== undefined ? String(v.price) : undefined,
         salePrice: v.salePrice !== null && v.salePrice !== undefined ? String(v.salePrice) : undefined,
         isActive: v.isActive,
+        ...(externalByVariantId.get(v.id)
+          ? { __externalVariantId: externalByVariantId.get(v.id) }
+          : {}),
       })),
     );
     const refs = await provider.upsertVariants(storeWithSecrets, { providerId: mapping.externalId }, payload);

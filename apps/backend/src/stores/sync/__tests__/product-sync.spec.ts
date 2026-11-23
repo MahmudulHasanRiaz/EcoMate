@@ -105,6 +105,15 @@ function mockPrisma() {
       }),
     },
     storeVariantMapping: {
+      findMany: jest.fn(async ({ where }: any) => {
+        const all = [...variantMappings.values()];
+        const ids = where?.variantId?.in as string[] | undefined;
+        return all.filter(
+          (m) =>
+            (!where?.storeId || m.storeId === where.storeId) &&
+            (!ids || ids.includes(m.variantId)),
+        );
+      }),
       upsert: jest.fn(async ({ create, update }: any) => {
         const row = { id: `var-${variantMappings.size + 1}`, ...create, ...update };
         variantMappings.set(`${create.storeId}:${create.variantId}`, row);
