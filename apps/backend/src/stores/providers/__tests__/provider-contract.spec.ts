@@ -1055,6 +1055,25 @@ describe('provider contract suite (P2 §13)', () => {
       });
     });
 
+    it('treats TimeoutError/AbortError as retryable (§11.2 — the woo() 30s timeout)', () => {
+      // AbortSignal.timeout() rejects with a DOMException named
+      // TimeoutError; a manual abort rejects with AbortError. Both are
+      // transient (a slow Woo server, not a wrong request) and must retry.
+      const timeout = new DOMException('The operation timed out.', 'TimeoutError');
+      expect(classifyProviderError(timeout)).toMatchObject({
+        retryable: true,
+        category: ProviderErrorCategory.TEMPORARY_FAILURE,
+      });
+      const abort = new DOMException('The operation was aborted.', 'AbortError');
+      expect(classifyProviderError(abort)).toMatchObject({
+        retryable: true,
+        category: ProviderErrorCategory.TEMPORARY_FAILURE,
+      });
+      // Name-based match (non-DOMException runtimes surface the same name).
+      const named = Object.assign(new Error('timed out'), { name: 'TimeoutError' });
+      expect(classifyProviderError(named)).toMatchObject({ retryable: true });
+    });
+
     it('locks the §8.1 backoff ladder and attempt cap', () => {
       expect(RETRY_BACKOFF_MS).toEqual([30_000, 120_000, 600_000, 3_600_000, 21_600_000]);
       expect(MAX_SYNC_ATTEMPTS).toBe(5);

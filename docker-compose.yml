@@ -240,6 +240,7 @@ services:
       THIRD_PARTY_STORES_ENABLED: ${THIRD_PARTY_STORES_ENABLED:-false}
       store_sync_enabled: ${store_sync_enabled:-false}
       store_product_sync_enabled: ${store_product_sync_enabled:-false}
+      store_product_import_enabled: ${store_product_import_enabled:-false}
       store_order_sync_enabled: ${store_order_sync_enabled:-false}
       store_stock_sync_enabled: ${store_stock_sync_enabled:-false}
       store_order_push_enabled: ${store_order_push_enabled:-false}

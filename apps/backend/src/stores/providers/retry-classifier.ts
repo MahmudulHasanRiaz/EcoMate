@@ -36,6 +36,10 @@ const TRANSIENT_CODES = new Set([
 function isNetworkLike(err: any): boolean {
   if (!err || typeof err !== 'object') return false;
   if (typeof err.code === 'string' && TRANSIENT_CODES.has(err.code)) return true;
+  // Import §11.2: AbortSignal.timeout() yields a DOMException named
+  // TimeoutError (or AbortError) — a hung Woo server must retry through
+  // the ladder instead of failing the item immediately.
+  if (typeof err.name === 'string' && (err.name === 'TimeoutError' || err.name === 'AbortError')) return true;
   // Undici / native fetch surface network failures as TypeError.
   if (err instanceof TypeError && typeof err.message === 'string') {
     return /fetch failed|network|socket|timeout|econn|enotfound|eai_again/i.test(

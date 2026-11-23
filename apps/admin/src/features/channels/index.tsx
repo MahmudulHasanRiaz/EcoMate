@@ -15,6 +15,7 @@ export { StoreConnectDialog, StoreConnectPage } from './store-connect-dialog'
 export { ProductAvailability } from './product-availability'
 export { AvailabilityRules } from './availability-rules'
 export { SyncCenter, SyncRunDetail } from './sync-center'
+export { ChannelStoreImport } from './import-wizard'
 export { SyncOverrides } from './overrides'
 
 /**

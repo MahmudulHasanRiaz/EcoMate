@@ -33,6 +33,8 @@ export const SYNC_QUEUE_NAMES = [
   'store-order-push',
   'store-reconcile',
   'store-maintenance',
+  'store-product-import',
+  'store-product-import-images',
 ] as const;
 
 export type SyncQueueName = (typeof SYNC_QUEUE_NAMES)[number];
@@ -47,6 +49,10 @@ const QUEUE_FEATURE_KEY: Record<SyncQueueName, string | null> = {
   // re-verification sweep inside is a safety net, not a product sync).
   'store-reconcile': 'store_order_sync',
   'store-maintenance': null,
+  // Import is product sync, inbound direction (D2) — same key, and the
+  // image queue inherits it (images are part of the import, never standalone).
+  'store-product-import': 'store_product_sync',
+  'store-product-import-images': 'store_product_sync',
 };
 
 /** How long a job waits for another job on the same store before failing (the engine retry ladder re-enqueues). */
@@ -74,6 +80,12 @@ export class SyncQueuesService {
     @InjectQueue('store-reconcile') private readonly reconcileQ: Queue,
     @InjectQueue('store-maintenance') private readonly maintenanceQ: Queue,
     private readonly runs: SyncRunService,
+    // @Optional so specs constructing the service manually with the six
+    // legacy queues keep working; production always wires both. Trailing
+    // (after the required `runs`) — TS forbids required params after
+    // optional ones.
+    @Optional() @InjectQueue('store-product-import') private readonly importQ?: Queue,
+    @Optional() @InjectQueue('store-product-import-images') private readonly importImagesQ?: Queue,
     // Trailing @Optional so specs constructing the service manually keep
     // working; production always wires both via StoresModule.
     @Optional() private readonly cache?: CacheService,
@@ -88,6 +100,12 @@ export class SyncQueuesService {
       case 'store-order-push': return this.pushQ;
       case 'store-reconcile': return this.reconcileQ;
       case 'store-maintenance': return this.maintenanceQ;
+      case 'store-product-import':
+        if (!this.importQ) throw new Error('store-product-import queue is not wired');
+        return this.importQ;
+      case 'store-product-import-images':
+        if (!this.importImagesQ) throw new Error('store-product-import-images queue is not wired');
+        return this.importImagesQ;
     }
   }
 

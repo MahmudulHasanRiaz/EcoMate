@@ -5946,6 +5946,18 @@ enum SyncRunScope {
   RECONCILE
   MAINTENANCE
   PUBLISH
+  PRODUCT_IMPORT
+}
+
+/// Provenance of a store↔product/variant mapping (import §14.2 gap 2).
+/// Drives the remote-delete rule (§18.4): PUSH-origin products are
+/// re-created by push when the remote is gone; IMPORT-origin products are
+/// unlinked (local product survives). Existing rows backfill to PUSH —
+/// import did not exist before, so every pre-existing mapping is push-made.
+enum MappingOrigin {
+  PUSH
+  IMPORT_CREATE
+  IMPORT_LINK
 }
 
 enum SyncRunStatus {
@@ -6049,6 +6061,7 @@ model Store {
   orderStatusMaps StoreOrderStatusMap[]
   orders Order[]
   mediaMappings StoreMediaMapping[]
+  importSkips StoreProductImportSkip[]
 
   // §8.10: duplicate protection — one row per logical store.
   // Global uniques stay global per §3.12.5 (storeId is globally unique);
@@ -6190,6 +6203,15 @@ model SyncRun {
   totalCount     Int            @default(0)
   correlationId  String?
   errorCategory  String?
+  /// Import fan-out (§10.3): a page job's child run points at its batch
+  /// run. NULL for every non-import run (and for the batch run itself).
+  parentRunId    String?
+  /// Import batch runs store their run options + decisions here as JSON
+  /// (`{ import: { publishMode, categoryMode, categoryId, bringStock,
+  /// skipImages, idempotencyKey, pageCount, imageJobsTotal, decisions } }`)
+  /// so retry can re-run FAILED items only (§10.5) and the idempotency key
+  /// can dedup a double confirm. NULL for every non-import run.
+  metadata       Json?
   startedAt      DateTime       @default(now())
   finishedAt     DateTime?
   createdAt      DateTime       @default(now())
@@ -6200,6 +6222,7 @@ model SyncRun {
   @@index([tenantId, storeId, startedAt])
   @@index([tenantId, scope, status])
   @@index([tenantId, startedAt])
+  @@index([tenantId, parentRunId])
 }
 
 model SyncRunItem {
@@ -6296,11 +6319,13 @@ model StoreProductMapping {
   productId              String
   externalId             String
   externalUrl            String?
+  origin                 MappingOrigin @default(PUSH)
   lastEvaluatedVersion   String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
   @@unique([storeId, productId])
+  @@unique([storeId, externalId])
   @@index([tenantId, storeId, externalId])
   @@index([tenantId, productId])
 }
@@ -6313,6 +6338,7 @@ model StoreVariantMapping {
   productId            String
   variantId            String
   externalId           String
+  origin               MappingOrigin @default(PUSH)
   /// P5 stock-status monotonic guard: max stock-row updatedAt + ledger
   /// timestamp last evaluated for this variant (lexicographic version).
   lastEvaluatedVersion String?
@@ -6320,6 +6346,7 @@ model StoreVariantMapping {
   updatedAt            DateTime @updatedAt
 
   @@unique([storeId, variantId])
+  @@unique([storeId, externalId])
   @@index([tenantId, storeId, productId])
   @@index([tenantId, productId])
 }
@@ -6365,6 +6392,27 @@ model StoreMediaMapping {
   createdAt  DateTime @default(now())
 
   @@unique([storeId, mediaKey])
+  @@index([tenantId, storeId])
+}
+
+/// Persisted per-(store, remote product) SKIP decision (import §3.4).
+/// A skipped product has NO mapping — that is the point — so the skip is
+/// its own row, not a flag on the mapping. Skipped products are hidden
+/// from the review table by default until unskipped (delete the row).
+model StoreProductImportSkip {
+  tenantId   String   @default(dbgenerated("(NULLIF(current_setting('app.tenant_id'::text, true), ''))::uuid")) @map("tenant_id") @db.Uuid
+  id         String   @id @default(uuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  externalId String
+  note       String?  @db.Text
+  skippedBy  String?
+  skippedAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([storeId, externalId])
+  @@index([tenantId])
   @@index([tenantId, storeId])
 }
 

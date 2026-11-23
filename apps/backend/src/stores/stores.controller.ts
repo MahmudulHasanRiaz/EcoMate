@@ -21,15 +21,18 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { BillingArea } from '../tenancy/billing-area.decorator';
 import { RequiresLimit } from '../entitlements/requires-limit.decorator';
 import { StoresService } from './stores.service';
 import { SyncQueuesService } from './sync/sync-queues.service';
 import { ProviderRegistryService } from './providers/provider-registry.service';
+import { StoreProductImportService } from './sync/store-product-import.service';
 import { productSyncEnabled, storesEnabled } from './store-flags';
 import {
   CreateStoreDto,
@@ -37,6 +40,11 @@ import {
   TestConnectionDto,
   UpdateStoreDto,
 } from './dto/stores.dto';
+import {
+  CreateImportSkipDto,
+  ImportCatalogQueryDto,
+  StartImportDto,
+} from './dto/import.dto';
 
 @Roles('superadmin', 'admin', 'employee')
 @Controller('stores')
@@ -46,6 +54,7 @@ export class StoresController {
     private readonly stores: StoresService,
     private readonly queues: SyncQueuesService,
     private readonly registry: ProviderRegistryService,
+    private readonly imports: StoreProductImportService,
   ) {}
 
   private assertEnabled(): void {
@@ -171,6 +180,106 @@ export class StoresController {
     await this.stores.detail(id);
     const scope = (body.scope ?? 'PRODUCT') as 'PRODUCT' | 'PUBLISH';
     return this.queues.triggerStoreSync(id, scope, user?.sub);
+  }
+
+  // ── WooCommerce product import (§7.1) ────────────────────────────────
+  //
+  // Guards (R8/D13): `@RequiresFeature('store_product_sync')` (method-level,
+  // same D11 replacement note as triggerSync) + the named grantable
+  // permission `import_products_external_stores`. Superadmin/admin hold all
+  // permissions by default; employees need the grant via an HR preset
+  // (PermissionsGuard has no role bypass).
+
+  /** Review catalog: remote products + match suggestions + linked/skip/new flags. */
+  @Get(':id/import-catalog')
+  @RequiresFeature('store_product_sync')
+  @Permissions('import_products_external_stores')
+  importCatalog(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ImportCatalogQueryDto,
+  ) {
+    this.assertEnabled();
+    return this.imports.fetchCatalog(id, query);
+  }
+
+  /** Confirm the review: returns `{ runId, deduped }` immediately (BR-21). */
+  @Post(':id/import')
+  @RequiresFeature('store_product_sync')
+  @Permissions('import_products_external_stores')
+  startImport(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: StartImportDto,
+    @CurrentUser() user?: any,
+  ) {
+    this.assertEnabled();
+    return this.imports.startImport(id, dto, user?.sub);
+  }
+
+  /** Retry a finished batch's FAILED items only (§10.5). */
+  @Post(':id/import/runs/:runId/retry')
+  @RequiresFeature('store_product_sync')
+  @Permissions('import_products_external_stores')
+  retryImport(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @CurrentUser() user?: any,
+  ) {
+    this.assertEnabled();
+    return this.imports.retryFailedImport(runId, user?.sub, id);
+  }
+
+  /** Background image progress for a batch (R5). */
+  @Get(':id/import/runs/:runId/image-status')
+  @RequiresFeature('store_product_sync')
+  @Permissions('import_products_external_stores')
+  importImageStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('runId', ParseUUIDPipe) runId: string,
+  ) {
+    this.assertEnabled();
+    return this.imports.imageStatus(runId, id);
+  }
+
+  /** Skipped remote products for this store (review screen + management). */
+  @Get(':id/import-skips')
+  @RequiresFeature('store_product_sync')
+  @Permissions('import_products_external_stores')
+  listImportSkips(@Param('id', ParseUUIDPipe) id: string) {
+    this.assertEnabled();
+    return this.imports.listSkips(id);
+  }
+
+  @Post(':id/import-skips')
+  @RequiresFeature('store_product_sync')
+  @Permissions('import_products_external_stores')
+  createImportSkip(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateImportSkipDto,
+    @CurrentUser() user?: any,
+  ) {
+    this.assertEnabled();
+    return this.imports.createSkip(id, dto.remoteId, dto.note, user?.sub);
+  }
+
+  /** Un-skip one remote product (it reappears as importable). */
+  @Delete(':id/import-skips/:remoteId')
+  @RequiresFeature('store_product_sync')
+  @Permissions('import_products_external_stores')
+  deleteImportSkip(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('remoteId') remoteId: string,
+  ) {
+    this.assertEnabled();
+    return this.imports.deleteSkip(id, remoteId);
+  }
+
+  /** Clear all skips for this store. */
+  @Delete(':id/import-skips')
+  @RequiresFeature('store_product_sync')
+  @Permissions('import_products_external_stores')
+  clearImportSkips(@Param('id', ParseUUIDPipe) id: string) {
+    this.assertEnabled();
+    return this.imports.clearSkips(id);
   }
 }
 

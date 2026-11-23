@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
-import { Link } from '@tanstack/react-router'
+import { Link, useSearch } from '@tanstack/react-router'
 import { Plus, Upload, Trash2, CheckCircle, XCircle, Loader2, Package, Printer, Rocket, FileEdit, Search as SearchIcon, X } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -48,8 +48,21 @@ export function Products() {
   const [adjustmentProductId, setAdjustmentProductId] = useState<string | undefined>()
   const [priceLabelModalOpen, setPriceLabelModalOpen] = useState(false)
   const [duplicateSourceRow, setDuplicateSourceRow] = useState<ProductResponse | undefined>()
-  const [listStatus, setListStatus] = useState<'active' | 'draft'>('active')
+  // ?status=draft deep-link (import result screen, R6): open the Drafts tab
+  // directly. Absent = Active tab (unchanged default).
+  const { status: statusParam } = useSearch({ from: '/_authenticated/op/products/' })
+  const [listStatus, setListStatus] = useState<'active' | 'draft'>(statusParam ?? 'active')
   const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    if (statusParam && statusParam !== listStatus) {
+      setListStatus(statusParam)
+      setPagination((p) => ({ ...p, pageIndex: 0 }))
+    }
+    // Only the URL param drives this sync — a manual tab switch must not
+    // bounce back. (listStatus intentionally excluded from deps.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusParam])
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
 

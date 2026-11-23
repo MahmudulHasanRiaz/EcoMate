@@ -18,6 +18,8 @@ import type {
   CommerceProvider,
   FieldKey,
   FieldSnapshot,
+  ListProductsOpts,
+  ListProductsResult,
   NormalizedMedia,
   NormalizedOrder,
   NormalizedProduct,
@@ -64,6 +66,8 @@ export interface ProbeHttpInit {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
+  /** Abort signal — the Woo adapter applies AbortSignal.timeout(30_000). */
+  signal?: AbortSignal;
 }
 
 /** Injected HTTP seam — P2 contract tests pass a MockFetch; P4/P9/P10 reuse. */
@@ -373,6 +377,40 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
     void store;
     void opts;
     return this.stub('fetchOrders');
+  }
+
+  /**
+   * Product import (§6.2): Woo-only in v1. Shopify/Custom inherit these
+   * loud stubs until their import adapters land — a call is a named
+   * rejection, never a silent empty catalog.
+   */
+  listProducts(
+    store: StoreWithSecrets,
+    opts: ListProductsOpts,
+  ): Promise<ListProductsResult> {
+    void store;
+    void opts;
+    return this.stub('listProducts');
+  }
+
+  listVariations(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+    opts: { page: number; pageSize: number; cursor?: string },
+  ): Promise<{ variations: NormalizedVariant[]; hasMore: boolean; nextCursor?: string }> {
+    void store;
+    void ref;
+    void opts;
+    return this.stub('listVariations');
+  }
+
+  fetchProduct(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<NormalizedProduct> {
+    void store;
+    void ref;
+    return this.stub('fetchProduct');
   }
 
   pushOrderStatus(

@@ -504,7 +504,9 @@ export function SyncRunDetail({ runId }: { runId: string }) {
         <p className="break-all text-xs text-muted-foreground">correlation {run.correlationId}</p>
       )}
       <div className="grid grid-cols-4 gap-2 text-center">
-        {([['Created', run.createdCount], ['Updated', run.updatedCount], ['Skipped', run.skippedCount], ['Failed', run.failedCount]] as const).map(([label, n]) => (
+        {((run.scope === 'PRODUCT_IMPORT'
+          ? [['Created', run.createdCount], ['Linked', run.updatedCount], ['Skipped', run.skippedCount], ['Failed', run.failedCount]]
+          : [['Created', run.createdCount], ['Updated', run.updatedCount], ['Skipped', run.skippedCount], ['Failed', run.failedCount]]) as [string, number][]).map(([label, n]) => (
           <Card key={label}><CardContent className="pt-3"><div className="text-xl font-semibold">{n}</div><div className="text-xs text-muted-foreground">{label}</div></CardContent></Card>
         ))}
       </div>

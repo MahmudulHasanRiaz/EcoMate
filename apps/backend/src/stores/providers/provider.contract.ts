@@ -154,6 +154,30 @@ export interface WebhookVerification {
   reason?: string;
 }
 
+/** Options for `CommerceProvider.listProducts` (§6.2). */
+export interface ListProductsOpts {
+  page: number;
+  pageSize: number;
+  /** Opaque provider cursor (Shopify page_info). Absent = first page. */
+  cursor?: string;
+  /** Incremental import: only products modified after this instant. */
+  modifiedAfter?: Date;
+  /** Remote statuses to include (provider vocabulary, e.g. ['publish','draft']). */
+  status?: string[];
+  /** Explicit remote ids (selection import). Max one page worth per call. */
+  include?: string[];
+  /** Free-text search (name/SKU) — provider-side when supported (Woo `search`). */
+  search?: string;
+}
+
+export interface ListProductsResult {
+  products: NormalizedProduct[];
+  hasMore: boolean;
+  nextCursor?: string;
+  /** Total matching products when the provider reports it (Woo X-WP-Total). */
+  total?: number;
+}
+
 export interface CommerceProvider {
   readonly slug: ProviderSlug;
   readonly declaredCapabilities: ProviderCapabilities;
@@ -281,6 +305,50 @@ export interface CommerceProvider {
       cursor?: string;
     },
   ): Promise<{ orders: NormalizedOrder[]; hasMore: boolean; nextCursor?: string }>;
+  /**
+   * Product import (§6.2): list remote products for the review screen.
+   * Woo-only in v1 — Shopify/Custom inherit the loud base stub until their
+   * import adapters land. `total` is present when the provider reports it
+   * (Woo X-WP-Total); `modifiedAfter` powers the incremental "New only"
+   * filter; `include` fetches an explicit id set (max one page per call).
+   */
+  listProducts(
+    store: StoreWithSecrets,
+    opts: ListProductsOpts,
+  ): Promise<ListProductsResult>;
+  /**
+   * Product import (§6.2): list a variable product's variations (Woo child
+   * resource — the list payload carries only variation ids). One call per
+   * variable product per 100 variations.
+   */
+  listVariations(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+    opts: { page: number; pageSize: number; cursor?: string },
+  ): Promise<{ variations: NormalizedVariant[]; hasMore: boolean; nextCursor?: string }>;
+  /**
+   * Product import (§6.2, R10): single-product read. Scoped in v1 to
+   * remote-delete detection — a 404 on a mapped product during re-import
+   * means the remote is gone (§18.4). NOT a refresh path (R2: Woo never
+   * changes an existing EcoMate product).
+   */
+  fetchProduct(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<NormalizedProduct>;
+  /**
+   * Derive field snapshots from an ALREADY-FETCHED product body (the same
+   * opaque shape `listProducts`/`fetchProduct` return), without another
+   * provider call. Optional: providers that cannot derive snapshots from a
+   * body omit it and callers fall back to `readProductFields`. The import
+   * service uses this for baseline seeding on CREATE — the remote body is
+   * already in hand, so a second GET per product would double provider
+   * traffic for no new information.
+   */
+  snapshotsFromProductBody?(
+    body: NormalizedProduct,
+    fields: FieldKey[],
+  ): Record<FieldKey, FieldSnapshot>;
   pushOrderStatus(
     store: StoreWithSecrets,
     ref: RemoteRef,

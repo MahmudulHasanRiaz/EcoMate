@@ -101,6 +101,13 @@ export const CATALOGUE_MODULES: CatalogueModule[] = [
       { verb: 'post_journal', label: 'Post Journal Entries' },
     ] },
   { key: 'commissions', label: 'Commissions', group: 'SALES', feature: 'admin_commissions', crud: true },
+  // External stores (central-commerce P9 + WooCommerce product import):
+  // action-only module — the store CRUD surface is governed by role +
+  // the admin_stores feature gate, while import is a named grantable
+  // capability (R8/D13: superadmin+admin by default, grantable to other
+  // roles via HR presets). Generated key: import_products_external_stores.
+  { key: 'external_stores', label: 'External Stores', group: 'SALES', feature: 'admin_stores', crud: false,
+    extras: [{ verb: 'import_products', label: 'Import Products from External Stores' }] },
 
   // ── HR ─────────────────────────────────────────────────────────────────
   { key: 'hr', label: 'HR Dashboard', group: 'HR', feature: 'admin_hr', crud: false,

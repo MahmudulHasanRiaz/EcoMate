@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from '@tanstack/react-router'
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { History, Loader2, Play, RefreshCw } from 'lucide-react'
 import { keepPreviousData, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -9,7 +9,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { healthTone, storesApi } from './api'
+import { healthTone, storesApi, type StoreResponse } from './api'
 import { useStoreDetail, useStoreHealth, STORES_KEYS } from './hooks'
 import { CapabilityNotice } from './components/capability-notice'
 import { Header } from '@/components/layout/header'
@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { handleServerError } from '@/lib/handle-server-error'
 import { apiClient } from '@/lib/api-client'
 import { productsApi, type ProductResponse } from '@/features/products/api'
@@ -56,13 +57,52 @@ const TABS = ['Overview', 'Products', 'Orders', 'Synchronization', 'Settings', '
  * Products/Orders/Synchronization/Activity are live server-backed surfaces
  * over the verified P4/P6/P11 contracts (no backend changes here).
  */
+/** Import entry button (§1.1): disabled unless the store is WOOCOMMERCE,
+ * CONNECTED and not in error health, with a tooltip explaining why.
+ * Outline variant — it sits alongside the outline sync triggers. */
+function ImportProductsButton({ storeId, store }: { storeId: string; store: StoreResponse }) {
+  const canImport = store.kind === 'WOOCOMMERCE' && store.status === 'CONNECTED' && store.healthState !== 'ERROR'
+  if (canImport) {
+    return (
+      <Link to="/op/channels/stores/$id/import" params={{ id: storeId }}>
+        <Button size="sm" variant="outline">Import products</Button>
+      </Link>
+    )
+  }
+  const reason = store.kind !== 'WOOCOMMERCE'
+    ? 'Product import is available for WooCommerce stores in v1.'
+    : store.status !== 'CONNECTED'
+      ? 'Connect the store first — import needs a healthy connection.'
+      : 'The store is in error health — reconnect it first.'
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button size="sm" variant="outline" disabled>Import products</Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{reason}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 export function ChannelStoreDetail() {
   const { id } = useParams({ strict: false }) as { id: string }
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [tab, setTab] = useState<(typeof TABS)[number]>('Overview')
+  // One-time post-connect offer (§1.2): the connect wizard lands here with
+  // ?justConnected=1; the Products tab opens with the import callout.
+  const { justConnected } = useSearch({ from: '/_authenticated/op/channels/stores/$id/' })
+  const [tab, setTab] = useState<(typeof TABS)[number]>(justConnected ? 'Products' : 'Overview')
   const [rotateOpen, setRotateOpen] = useState(false)
   const { data: store, isLoading } = useStoreDetail(id)
   const { data: health } = useStoreHealth(id)
+
+  const dismissCallout = () => {
+    navigate({ to: '/op/channels/stores/$id', params: { id }, search: {}, replace: true })
+  }
 
   async function handleProbe() {
     try {
@@ -100,6 +140,13 @@ export function ChannelStoreDetail() {
                 <RefreshCw className="mr-2 h-3 w-3" /> Test Connection
               </Button>
             </div>
+            {justConnected && store.kind === 'WOOCOMMERCE' && (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm">
+                <span>Store connected. This store has products on WooCommerce that aren&apos;t in EcoMate yet.</span>
+                <ImportProductsButton storeId={id} store={store} />
+                <Button size="sm" variant="ghost" onClick={dismissCallout}>Dismiss</Button>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               {TABS.map((t) => (
                 <Button key={t} variant={tab === t ? 'default' : 'ghost'} size="sm" onClick={() => setTab(t)}>
@@ -138,9 +185,9 @@ export function ChannelStoreDetail() {
                 </Card>
               </div>
             )}
-            {tab === 'Products' && <StoreProductsTab storeId={id} />}
+            {tab === 'Products' && <StoreProductsTab storeId={id} store={store} />}
             {tab === 'Orders' && <StoreOrdersTab storeId={id} />}
-            {tab === 'Synchronization' && <StoreSyncTab storeId={id} />}
+            {tab === 'Synchronization' && <StoreSyncTab storeId={id} store={store} />}
             {tab === 'Activity' && <StoreActivityTab storeId={id} />}
             {tab === 'Settings' && (
               <Card>
@@ -171,7 +218,7 @@ interface ProductAvailabilityCell {
   loading: boolean
 }
 
-function StoreProductsTab({ storeId }: { storeId: string }) {
+function StoreProductsTab({ storeId, store }: { storeId: string; store: StoreResponse }) {
   const queryClient = useQueryClient()
   void queryClient
   const [page, setPage] = useState(1)
@@ -316,6 +363,7 @@ function StoreProductsTab({ storeId }: { storeId: string }) {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <ImportProductsButton storeId={storeId} store={store} />
             <Input
               placeholder="Search products…"
               value={search}
@@ -664,7 +712,7 @@ function formatDuration(run: SyncRunResponse): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-function StoreSyncTab({ storeId }: { storeId: string }) {
+function StoreSyncTab({ storeId, store }: { storeId: string; store: StoreResponse }) {
   const queryClient = useQueryClient()
   const { data: runs, isLoading } = useStoreSyncRuns(storeId)
   const [detailId, setDetailId] = useState<string | null>(null)
@@ -811,6 +859,7 @@ function StoreSyncTab({ storeId }: { storeId: string }) {
               {(pending === 'STOCK' || stockRunning) && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
               Sync stock only
             </Button>
+            <ImportProductsButton storeId={storeId} store={store} />
             <Link to="/op/channels/sync-center">
               <Button size="sm" variant="ghost">Open Sync Center</Button>
             </Link>

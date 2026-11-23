@@ -189,7 +189,10 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
       toast.success('Sync configuration saved — store setup complete')
       onCreated?.(id)
       onOpenChange(false)
-      navigate({ to: '/op/channels/stores/$id', params: { id } })
+      // ?justConnected=1 shows the one-time "Import products" offer callout
+      // on the store detail Products tab (§1.2). This navigate runs after
+      // onCreated's (StoreConnectPage), so the flag survives.
+      navigate({ to: '/op/channels/stores/$id', params: { id }, search: { justConnected: '1' } })
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Saving sync configuration failed')
     } finally {

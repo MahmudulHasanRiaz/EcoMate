@@ -32,6 +32,22 @@ describe('sync-api helpers (P4 Sync Center)', () => {
     expect(failed.action).toBe('Reconnect Store')
   })
 
+  it('failureSummary names PRODUCT_IMPORT runs as imports, not syncs', () => {
+    const partial = failureSummary(
+      { status: 'PARTIAL', scope: 'PRODUCT_IMPORT', failedCount: 2, totalCount: 10 } as never,
+      'Woo Store',
+    )
+    expect(partial.sentence).toMatch(/Woo Store.*import partially failed/)
+    expect(partial.action).toBe('Review failed items')
+    const failed = failureSummary({ status: 'FAILED', scope: 'PRODUCT_IMPORT' } as never)
+    expect(failed.sentence).toMatch(/import failed/)
+    expect(failed.action).toBe('Review import')
+    // Non-import runs keep the sync wording.
+    const syncFailed = failureSummary({ status: 'FAILED', scope: 'PRODUCT' } as never)
+    expect(syncFailed.sentence).toMatch(/product sync failed/)
+    expect(syncFailed.action).toBe('Reconnect Store')
+  })
+
   it('shortHash truncates 64-hex baselines, passes through short values', () => {
     expect(shortHash(null)).toBe('—')
     expect(shortHash('abc')).toBe('abc')

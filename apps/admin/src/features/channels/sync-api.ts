@@ -3,7 +3,7 @@ import { apiClient } from '@/lib/api-client'
 // ─── Sync Center shapes (§10 sync operations) ─────────────────────────────
 
 export type SyncRunStatus = 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'CANCELLED'
-export type SyncScope = 'PRODUCT' | 'STOCK' | 'ORDER_INGEST' | 'ORDER_PUSH' | 'RECONCILE' | 'MAINTENANCE' | 'PUBLISH'
+export type SyncScope = 'PRODUCT' | 'STOCK' | 'ORDER_INGEST' | 'ORDER_PUSH' | 'RECONCILE' | 'MAINTENANCE' | 'PUBLISH' | 'PRODUCT_IMPORT'
 export type SyncItemStatus = 'PENDING' | 'SUCCESS' | 'SKIPPED' | 'FAILED' | 'DEAD'
 export type SyncIssueStatus = 'OPEN' | 'RESOLVED' | 'IGNORED'
 export type FieldOwnership = 'ECOMATE' | 'EXTERNAL' | 'CONFLICT'
@@ -148,6 +148,14 @@ export function syncPollInterval(runs: SyncRunResponse[] | undefined): number {
 /** Business-first failure sentence with a primary action (§11 UX contract). */
 export function failureSummary(run: SyncRunResponse, storeName?: string): { sentence: string; action: string } {
   const store = storeName ?? 'A store'
+  // Import runs (§5.1) are SyncRuns too — but "product sync failed" would
+  // misname an import failure, so they get their own sentences.
+  if (run.scope === 'PRODUCT_IMPORT') {
+    if (run.status === 'PARTIAL') {
+      return { sentence: `${store} product import partially failed (${run.failedCount} of ${run.totalCount} items).`, action: 'Review failed items' }
+    }
+    return { sentence: `${store} product import failed before any item succeeded.`, action: 'Review import' }
+  }
   if (run.status === 'PARTIAL') {
     return { sentence: `${store} product sync partially failed (${run.failedCount} of ${run.totalCount} items).`, action: 'Review failed items' }
   }

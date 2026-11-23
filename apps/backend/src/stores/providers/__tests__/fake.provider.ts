@@ -21,6 +21,8 @@ import type {
   CommerceProvider,
   FieldKey,
   FieldSnapshot,
+  ListProductsOpts,
+  ListProductsResult,
   NormalizedMedia,
   NormalizedOrder,
   NormalizedProduct,
@@ -35,6 +37,7 @@ import type {
   WebhookVerification,
 } from '../provider.contract';
 import { snapshotField } from '../field-snapshot';
+import { wooProductToSnapshots } from '../woocommerce.provider';
 import {
   getHeader,
   isTimestampFresh,
@@ -356,6 +359,18 @@ export class FakeProvider implements CommerceProvider {
     return out;
   }
 
+  /**
+   * Baseline snapshots from an already-fetched body. The fake renders
+   * Woo-shaped bodies (renderRemoteProduct), so the Woo snapshot mapper
+   * applies directly.
+   */
+  snapshotsFromProductBody(
+    body: NormalizedProduct,
+    fields: FieldKey[],
+  ): Record<FieldKey, FieldSnapshot> {
+    return wooProductToSnapshots(body, fields);
+  }
+
   async upsertProduct(
     store: StoreWithSecrets,
     input: NormalizedProduct,
@@ -667,6 +682,183 @@ export class FakeProvider implements CommerceProvider {
   }
 
   // ── Contract: orders ────────────────────────────────────────────────
+
+  /**
+   * Product import (§6.2): in-memory list over seeded products, rendered
+   * in Woo raw-body shape (id/name/slug/sku/type/status/prices/stock/
+   * images/categories/attributes/variations ids). `page` is 1-based (P2
+   * fixture contract); `total` is always reported (the fake knows its
+   * size, like Woo's X-WP-Total). Products without a date_modified are
+   * included by a modifiedAfter filter (the fake cannot prove them old).
+   */
+  async listProducts(
+    store: StoreWithSecrets,
+    opts: ListProductsOpts,
+  ): Promise<ListProductsResult> {
+    void store;
+    this.maybeFail('listProducts');
+    const all = [...this.products.values()]
+      .map((p) => this.renderRemoteProduct(p))
+      .filter((p) => {
+        if (opts.include && opts.include.length > 0) {
+          return opts.include.includes(String(p.id));
+        }
+        return true;
+      })
+      .filter((p) => {
+        if (opts.status && opts.status.length > 0) {
+          return opts.status.includes(String(p.status));
+        }
+        return true;
+      })
+      .filter((p) => {
+        if (!opts.modifiedAfter) return true;
+        const modified = (p as Record<string, unknown>).date_modified;
+        if (typeof modified !== 'string' || !modified) return true;
+        return new Date(modified).getTime() > opts.modifiedAfter.getTime();
+      })
+      .filter((p) => {
+        if (!opts.search?.trim()) return true;
+        const q = opts.search.trim().toLowerCase();
+        const hay = `${String((p as Record<string, unknown>).name ?? '')} ${String((p as Record<string, unknown>).sku ?? '')}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const page = Math.max(1, opts.page);
+    const pageSize = Math.max(1, opts.pageSize);
+    const start = (page - 1) * pageSize;
+    const slice = all.slice(start, start + pageSize);
+    this.log('listProducts', {
+      page,
+      pageSize,
+      status: opts.status,
+      include: opts.include,
+      returned: slice.length,
+      total: all.length,
+    });
+    return {
+      products: slice.map((p) => ({ ...(p as Record<string, unknown>) })),
+      hasMore: start + pageSize < all.length,
+      total: all.length,
+    };
+  }
+
+  async listVariations(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+    opts: { page: number; pageSize: number; cursor?: string },
+  ): Promise<{ variations: NormalizedVariant[]; hasMore: boolean; nextCursor?: string }> {
+    void store;
+    void opts.cursor;
+    this.maybeFail('listVariations');
+    const product = this.products.get(ref.providerId);
+    if (!product) {
+      throw new ProviderError(
+        `[fake] unknown product ${ref.providerId}`,
+        ProviderErrorCategory.REMOTE_NOT_FOUND,
+        this.slug,
+      );
+    }
+    // Rendered as Woo variation rows (the import normalizer reads the Woo
+    // shape: regular_price/sale_price, manage_stock/stock_quantity,
+    // attributes as [{name, option}]). FixtureVariantInput carries the
+    // short form (price/salePrice/attributes record) — mapped here.
+    const all = [...product.variants.values()].map((v) => {
+      const d = v.data as Record<string, unknown>;
+      const attrs = d['attributes'];
+      const attrList = Array.isArray(attrs)
+        ? attrs
+        : attrs && typeof attrs === 'object'
+          ? Object.entries(attrs as Record<string, string>).map(([name, option]) => ({ name, option }))
+          : [];
+      return {
+        id: v.ref.providerId,
+        sku: d['sku'] ?? '',
+        regular_price:
+          d['regular_price'] ?? (d['price'] !== undefined ? String(d['price']) : ''),
+        sale_price:
+          d['sale_price'] ?? (d['salePrice'] !== undefined ? String(d['salePrice']) : ''),
+        manage_stock: d['manage_stock'] ?? true,
+        stock_quantity: d['stock_quantity'] ?? 0,
+        stock_status: d['stock_status'] ?? 'instock',
+        status: d['status'] ?? 'publish',
+        attributes: attrList,
+        image: d['image'] ?? null,
+      };
+    });
+    const page = Math.max(1, opts.page);
+    const pageSize = Math.max(1, opts.pageSize);
+    const start = (page - 1) * pageSize;
+    const slice = all.slice(start, start + pageSize);
+    this.log('listVariations', { ref, page, pageSize, returned: slice.length });
+    return {
+      variations: slice.map((v) => ({ ...(v as Record<string, unknown>) })),
+      hasMore: start + pageSize < all.length,
+    };
+  }
+
+  async fetchProduct(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<NormalizedProduct> {
+    void store;
+    this.maybeFail('fetchProduct');
+    const product = this.products.get(ref.providerId);
+    if (!product) {
+      throw new ProviderError(
+        `[fake] unknown product ${ref.providerId}`,
+        ProviderErrorCategory.REMOTE_NOT_FOUND,
+        this.slug,
+      );
+    }
+    this.log('fetchProduct', { ref });
+    return { ...(this.renderRemoteProduct(product) as Record<string, unknown>) };
+  }
+
+  /** Test seam: remove a seeded product (remote-delete detection). */
+  directDelete(providerId: string): void {
+    const record = this.products.get(providerId);
+    if (record) {
+      const sku = record.fields['sku'];
+      if (typeof sku === 'string') this.productsBySku.delete(sku);
+    }
+    this.products.delete(providerId);
+  }
+
+  /** Render one seeded product as a Woo raw product body. */
+  private renderRemoteProduct(p: FakeRemoteProduct): NormalizedProduct {
+    const f = p.fields as Record<string, unknown>;
+    const variationIds = [...p.variants.values()].map((v) => v.ref.providerId);
+    const stockQuantity =
+      typeof f['stock_quantity'] === 'number'
+        ? (f['stock_quantity'] as number)
+        : (p.stockQuantity ?? 0);
+    return {
+      id: p.ref.providerId,
+      name: f['name'] ?? '',
+      slug: f['slug'] ?? `product-${p.ref.providerId}`,
+      sku: f['sku'] ?? '',
+      type: variationIds.length > 0 ? 'variable' : ((f['type'] as string) ?? 'simple'),
+      status: p.publication === 'published' ? 'publish' : 'draft',
+      regular_price: f['regular_price'] ?? (f['price'] !== undefined ? String(f['price']) : ''),
+      sale_price: f['sale_price'] ?? (f['salePrice'] !== undefined ? String(f['salePrice']) : ''),
+      description: f['description'] ?? f['fullDescription'] ?? '',
+      short_description: f['short_description'] ?? f['shortDescription'] ?? '',
+      categories: f['categories'] ?? [],
+      tags: f['tags'] ?? [],
+      images: f['images'] ?? [],
+      attributes: f['attributes'] ?? [],
+      variations: variationIds,
+      stock_quantity: stockQuantity,
+      stock_status: p.stockState === 'IN_STOCK' ? 'instock' : 'outofstock',
+      manage_stock: f['manage_stock'] ?? true,
+      weight: f['weight'] ?? '',
+      dimensions: f['dimensions'] ?? { length: '', width: '', height: '' },
+      permalink: f['permalink'] ?? `https://fake.test/product/${p.ref.providerId}`,
+      date_created: f['date_created'] ?? null,
+      date_modified: f['date_modified'] ?? f['date_created'] ?? null,
+    };
+  }
 
   async fetchOrders(
     store: StoreWithSecrets,

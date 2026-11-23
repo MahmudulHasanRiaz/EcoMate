@@ -21,7 +21,8 @@ import { isRedirect } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
 import { Route as OpChannelsRoute } from '../routes/_authenticated/op/channels/index'
 import { Route as OpChannelsStoresRoute } from '../routes/_authenticated/op/channels/stores/index'
-import { Route as OpChannelsStoresIdRoute } from '../routes/_authenticated/op/channels/stores/$id'
+import { Route as OpChannelsStoresIdRoute } from '../routes/_authenticated/op/channels/stores/$id/index'
+import { Route as OpChannelsStoresIdImportRoute } from '../routes/_authenticated/op/channels/stores/$id/import'
 import { Route as OpChannelsStoresNewRoute } from '../routes/_authenticated/op/channels/stores/new/index'
 import { Route as OpChannelsSyncCenterRoute } from '../routes/_authenticated/op/channels/sync-center'
 import { Route as OpProductsStoreAvailabilityRoute } from '../routes/_authenticated/op/products/store-availability'
@@ -30,6 +31,7 @@ import {
   ChannelsOverview,
   ChannelsStores,
   ChannelStoreDetail,
+  ChannelStoreImport,
   StoreConnectPage,
 } from '../features/channels'
 import { SyncCenter } from '../features/channels/sync-center'
@@ -175,6 +177,7 @@ describe('Phase 9 central-commerce routes (channels UI)', () => {
     ['channels overview', OpChannelsRoute, ChannelsOverview, 'admin_stores'],
     ['channels stores list', OpChannelsStoresRoute, ChannelsStores, 'admin_stores'],
     ['channels store detail', OpChannelsStoresIdRoute, ChannelStoreDetail, 'admin_stores'],
+    ['channels store import', OpChannelsStoresIdImportRoute, ChannelStoreImport, 'admin_stores'],
     ['channels store connect', OpChannelsStoresNewRoute, StoreConnectPage, 'admin_stores'],
     ['product store availability', OpProductsStoreAvailabilityRoute, ProductAvailability, 'admin_stores'],
     ['settings store availability rules', MonSettingsStoreAvailabilityRoute, AvailabilityRules, 'admin_stores'],
@@ -194,6 +197,17 @@ describe('Phase 9 central-commerce routes (channels UI)', () => {
   it.each(storeRoutes)('%s beforeLoad lets an entitled tenant through', (_label, route) => {
     setEntitlements(['admin_stores'])
     expect(route.options.beforeLoad!({} as any)).toBeUndefined()
+  })
+
+  it('store import renders the wizard, never the store detail (nested-outlet regression)', () => {
+    // $id/import.tsx sits beside $id/index.tsx under the $id/route.tsx
+    // layout (which renders only <Outlet/>). If import were nested under
+    // the detail route instead, ChannelStoreDetail — which renders no
+    // <Outlet/> — would swallow the wizard and the URL would show the
+    // store detail. Distinct sibling modules with distinct components pin
+    // the fix; the layout file documents the trap.
+    expect(OpChannelsStoresIdImportRoute.options.component).toBe(ChannelStoreImport)
+    expect(OpChannelsStoresIdImportRoute.options.component).not.toBe(ChannelStoreDetail)
   })
 
   it('sync-center renders SyncCenter', () => {

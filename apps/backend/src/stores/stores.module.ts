@@ -15,6 +15,9 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { CacheModule } from '../cache/cache.module';
 import { EntitlementsModule } from '../entitlements/entitlements.module';
 import { ExternalStoresModule } from '../external-stores/external-stores.module';
+// MediaModule has no imports of its own — safe to import here (no cycle);
+// the import image processor downloads remote images via MediaService.
+import { MediaModule } from '../media/media.module';
 import { EncryptionService } from '../common/utils/encryption';
 // NOTE: OrdersModule is deliberately NOT imported here. StockModule and
 // InventoryModule (both imported by OrdersModule) import StoresModule, so a
@@ -41,6 +44,11 @@ import {
   StoreAvailabilityRulesController,
 } from './distribution/distribution.controller';
 import { SyncRunService } from './sync/sync-run.service';
+import { StoreProductImportService } from './sync/store-product-import.service';
+import {
+  StoreProductImportImagesProcessor,
+  StoreProductImportProcessor,
+} from './sync/store-product-import.processor';
 import { SyncNotifyService } from './sync/sync-notify.service';
 import { SyncRetentionService } from './sync/sync-retention.service';
 import { SyncRetentionScheduler } from './sync/sync-retention.scheduler';
@@ -72,6 +80,14 @@ import { StoreBridgeController } from './webhooks/store-bridge.controller';
 import { StoreWebhookRawBodyProvider } from './webhooks/store-webhook-rawbody.provider';
 
 const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts: 1 };
+/** Image downloads retry (transient CDN/origin failures are common); the
+ *  processor records IMAGE_DOWNLOAD_FAILED only on the final attempt. */
+const IMPORT_IMAGES_QUEUE_DEFAULTS = {
+  removeOnComplete: 100,
+  removeOnFail: 50,
+  attempts: 3,
+  backoff: { type: 'exponential' as const, delay: 1000 },
+};
 
 @Module({
   imports: [
@@ -84,6 +100,7 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     ExternalStoresModule,
     BlockedEntriesModule,
     CustomersModule,
+    MediaModule,
     BullModule.registerQueue(
       { name: 'store-product-sync', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
       { name: 'store-stock-sync', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
@@ -91,6 +108,8 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
       { name: 'store-order-push', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
       { name: 'store-reconcile', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
       { name: 'store-maintenance', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
+      { name: 'store-product-import', defaultJobOptions: SYNC_QUEUE_DEFAULTS },
+      { name: 'store-product-import-images', defaultJobOptions: IMPORT_IMAGES_QUEUE_DEFAULTS },
     ),
   ],
   controllers: [
@@ -135,12 +154,15 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     StoreOrderScheduler,
     StoreWebhookService,
     StoreWebhookRawBodyProvider,
+    StoreProductImportService,
     StoreProductSyncProcessor,
     StoreStockSyncProcessor,
     StoreOrderIngestProcessor,
     StoreOrderPushProcessor,
     StoreReconcileProcessor,
     StoreMaintenanceProcessor,
+    StoreProductImportProcessor,
+    StoreProductImportImagesProcessor,
   ],
   exports: [
     StoresService,
@@ -158,6 +180,7 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     StoreOrderReconcileService,
     StoreOrderPushService,
     StoreWebhookService,
+    StoreProductImportService,
   ],
 })
 export class StoresModule {}

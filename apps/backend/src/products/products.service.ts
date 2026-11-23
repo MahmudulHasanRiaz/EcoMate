@@ -29,6 +29,7 @@ import {
 import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { StockService } from '../stock/stock.service';
+import { computeEffectivePrice } from './product-pricing';
 
 function slugify(text: string): string {
   return text
@@ -37,34 +38,10 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, '');
 }
 
-/**
- * The price a product card sorts/displays by (PLP scale round) — the
- * EXACT semantics the retired in-memory sort in findAll computed per
- * request, now persisted on Product.effectivePrice and maintained on
- * every price-affecting write:
- *   - variable product with at least one priced variant: the minimum
- *     over ALL variants (no isActive filter — the old read had none) of
- *     (salePrice ?? price), counting only variants whose coalesced
- *     price is a number > 0;
- *   - otherwise (simple product, or no priced variant exists):
- *     salePrice ?? basePrice, with a non-numeric result collapsing to 0.
- * The migration backfill (20261105120000_product_effective_price)
- * mirrors this in SQL; the two must never drift apart.
- */
-export function computeEffectivePrice(
-  product: { type?: string | null; basePrice?: unknown; salePrice?: unknown },
-  variants?: Array<{ price?: unknown; salePrice?: unknown }> | null,
-): number {
-  if (product.type === 'variable' && variants && variants.length > 0) {
-    const prices = variants
-      .map((v) => Number(v.salePrice ?? v.price))
-      .filter((price) => !isNaN(price) && price > 0);
-    if (prices.length > 0) {
-      return Math.min(...prices);
-    }
-  }
-  return Number(product.salePrice ?? product.basePrice) || 0;
-}
+// computeEffectivePrice lives in ./product-pricing (pure, shared with the
+// WooCommerce product import); re-exported here so existing importers
+// (incl. products.service.spec.ts) keep working unchanged.
+export { computeEffectivePrice } from './product-pricing';
 
 @Injectable()
 export class ProductsService {

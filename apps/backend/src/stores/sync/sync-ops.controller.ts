@@ -15,6 +15,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Logger,
   Param,
   ParseUUIDPipe,
   Post,
@@ -28,6 +29,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SyncRunService } from './sync-run.service';
 import { SyncQueuesService } from './sync-queues.service';
 import { SyncRetryService } from './sync-retry.service';
+import { StoreProductImportService } from './store-product-import.service';
 import {
   HEALTH_CHECK_RETENTION_DAYS,
   SYNC_ATTEMPT_RETENTION_DAYS,
@@ -83,11 +85,14 @@ function gate(): void {
 @Controller()
 @RequiresFeature('admin_sync_center')
 export class SyncOpsController {
+  private readonly logger = new Logger(SyncOpsController.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly runs: SyncRunService,
     private readonly queues: SyncQueuesService,
     private readonly retry: SyncRetryService,
+    private readonly imports: StoreProductImportService,
   ) {}
 
   // SaaS §5.1: product-sync triggers are gated by `store_product_sync`
@@ -200,6 +205,18 @@ export class SyncOpsController {
       include: { items: { take: 200, orderBy: { createdAt: 'desc' } }, store: { select: { id: true, kind: true, name: true } } },
     });
     if (!run) return null;
+    // Import batches (PRODUCT_IMPORT, no parent) carry the second-row
+    // result counts for the import result screen. Best-effort: a failed
+    // enrichment must not fail the detail read — the UI stays honest
+    // without importSummary.
+    let importSummary: unknown;
+    if ((run as any).scope === 'PRODUCT_IMPORT' && (run as any).parentRunId == null) {
+      try {
+        importSummary = await this.imports.importSummary(id);
+      } catch (err) {
+        this.logger.warn(`importSummary failed for run ${id}: ${(err as Error)?.message ?? err}`);
+      }
+    }
     return {
       ...run,
       provider: (run as any).store?.kind ?? null,
@@ -207,6 +224,7 @@ export class SyncOpsController {
         (run as any).windowDays != null
           ? { days: (run as any).windowDays, reason: (run as any).wideningReason ?? null }
           : null,
+      ...(importSummary !== undefined ? { importSummary } : {}),
     };
   }
 
@@ -228,6 +246,19 @@ export class SyncOpsController {
   async cancelRun(@Param('id', ParseUUIDPipe) id: string) {
     gate();
     return this.runs.cancel(id);
+  }
+
+  /**
+   * Exact per-reason-prefix counts for a run AND its children (§10.4).
+   * The run detail (200 items) and run items (500) endpoints cap their
+   * payloads, so exact Linked/Created/Skipped/Failed totals come from
+   * this server-side groupBy — the import result screen reads it, not the
+   * item lists.
+   */
+  @Get('sync/runs/:id/reason-counts')
+  async runReasonCounts(@Param('id', ParseUUIDPipe) id: string) {
+    gate();
+    return this.imports.reasonCounts(id);
   }
 
   @Get('sync/issues')

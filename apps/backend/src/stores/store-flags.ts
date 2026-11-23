@@ -23,6 +23,7 @@ export const STORE_RUNTIME_FLAGS = [
   'THIRD_PARTY_STORES_ENABLED',
   'store_sync_enabled',
   'store_product_sync_enabled',
+  'store_product_import_enabled',
   'store_order_sync_enabled',
   'store_stock_sync_enabled',
   'store_order_push_enabled',
@@ -62,6 +63,21 @@ export function productSyncEnabled(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
   return storesEnabled(env) && isFlagOn(env, 'store_product_sync_enabled');
+}
+
+/**
+ * Product-import kill switch (§10.2, §13.5). Nested under
+ * productSyncEnabled — import is product sync, inbound direction, so a
+ * disabled product sync disables import too. Unlike the enablement flags
+ * it is FAIL-CLOSED (explicit 'true' required, like
+ * tracking_send_external_store_orders): import creates catalog data and
+ * binds products, so it must never turn on by accident or by a missing
+ * env var. Default OFF until proven on staging.
+ */
+export function productImportEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return productSyncEnabled(env) && env['store_product_import_enabled'] === 'true';
 }
 
 export function orderSyncEnabled(

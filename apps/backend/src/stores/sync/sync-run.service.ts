@@ -27,7 +27,7 @@ const SYNC_REPORT_ERROR_MAX = 950;
 /** A specific issue reported within this window wins over finish()'s count-based message. */
 const RECENT_ISSUE_WINDOW_MS = 10 * 60_000;
 
-export type SyncScope = 'PRODUCT' | 'STOCK' | 'ORDER_INGEST' | 'ORDER_PUSH' | 'RECONCILE' | 'MAINTENANCE' | 'PUBLISH';
+export type SyncScope = 'PRODUCT' | 'STOCK' | 'ORDER_INGEST' | 'ORDER_PUSH' | 'RECONCILE' | 'MAINTENANCE' | 'PUBLISH' | 'PRODUCT_IMPORT';
 export type TriggerType = 'MANUAL' | 'SCHEDULED' | 'WEBHOOK' | 'RETRY' | 'SYSTEM';
 
 @Injectable()
@@ -54,6 +54,10 @@ export class SyncRunService {
     windowDays?: number;
     wideningReason?: string;
     correlationId?: string;
+    /** Import fan-out (§10.3): a page job's child run points at its batch run. */
+    parentRunId?: string;
+    /** Import batch runs store run options + decisions here (§10.5). */
+    metadata?: Record<string, unknown>;
   }) {
     // P11 §10/§12: ambient request correlation id when the caller passes none.
     const correlationId = opts.correlationId ?? currentCorrelationId() ?? randomUUID();
@@ -66,6 +70,8 @@ export class SyncRunService {
         windowDays: opts.windowDays,
         wideningReason: opts.wideningReason,
         correlationId,
+        parentRunId: opts.parentRunId,
+        metadata: opts.metadata as any,
         status: 'RUNNING' as any,
       },
     });
@@ -327,5 +333,33 @@ export class SyncRunService {
 
   async countAttempts(storeId: string, objectKey: string): Promise<number> {
     return this.prisma.syncAttempt.count({ where: { storeId, objectKey } });
+  }
+
+  /**
+   * Import §10.4: server-side count-by-reason over a batch run AND its
+   * child runs. The run-items endpoint caps at 500, so the UI must never
+   * count Linked/Created/Skipped/Failed by paging items — this groupBy is
+   * exact at any import size. Returns one row per distinct reason string
+   * (NULL reasons collapse to the empty key).
+   */
+  async countItemsByReason(runIds: string[]): Promise<Array<{ reason: string; count: number }>> {
+    if (runIds.length === 0) return [];
+    const rows = await this.prisma.syncRunItem.groupBy({
+      by: ['reason'],
+      where: { runId: { in: runIds } },
+      _count: { _all: true },
+    });
+    return (rows as Array<{ reason: string | null; _count: { _all: number } }>).map((r) => ({
+      reason: r.reason ?? '',
+      count: r._count._all,
+    }));
+  }
+
+  /** Import §10.3: the child runs of one batch run (completion sweep). */
+  async childRuns(batchRunId: string) {
+    return this.prisma.syncRun.findMany({
+      where: { parentRunId: batchRunId },
+      orderBy: { startedAt: 'asc' },
+    });
   }
 }

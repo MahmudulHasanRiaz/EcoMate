@@ -26,6 +26,8 @@ import type {
   CategoryPath,
   FieldKey,
   FieldSnapshot,
+  ListProductsOpts,
+  ListProductsResult,
   NormalizedMedia,
   NormalizedOrder,
   NormalizedProduct,
@@ -210,10 +212,15 @@ export class WooCommerceProvider extends BaseCommerceProvider {
 
   private async woo<T>(store: StoreWithSecrets, method: string, path: string, body?: unknown): Promise<T> {
     const ctx = ctxOf(store);
+    // Import §6.3: a hung Woo server must not hang the calling job — every
+    // call carries a 30s timeout. The classifier treats the resulting
+    // TimeoutError/AbortError as retryable (§11.2), so a timeout retries
+    // instead of failing the item immediately.
     const res = await this.fetchFn(`${ctx.baseUrl}/wp-json/wc/v3${path}`, {
       method,
       headers: { Authorization: ctx.authHeader, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
     });
     let parsed: unknown = null;
     try {
@@ -223,6 +230,38 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     }
     if (!res.ok) throw toProviderError(this.slug, res.status, parsed, `${method} ${path}`);
     return parsed as T;
+  }
+
+  /**
+   * Header-aware list helper (import §6.3): `woo()` drops response
+   * headers, but Woo sends X-WP-Total / X-WP-TotalPages on every list
+   * response — the import review screen needs the total for progress.
+   * Headers absent (mocked transports) → total/totalPages undefined and
+   * callers fall back to the length heuristic.
+   */
+  private async wooPage<T>(store: StoreWithSecrets, path: string): Promise<{ data: T; total?: number; totalPages?: number }> {
+    const ctx = ctxOf(store);
+    const res = await this.fetchFn(`${ctx.baseUrl}/wp-json/wc/v3${path}`, {
+      method: 'GET',
+      headers: { Authorization: ctx.authHeader, 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(30_000),
+    });
+    let parsed: unknown = null;
+    try {
+      parsed = await res.json();
+    } catch {
+      parsed = null;
+    }
+    if (!res.ok) throw toProviderError(this.slug, res.status, parsed, `GET ${path}`);
+    const totalRaw = res.headers?.get('X-WP-Total');
+    const pagesRaw = res.headers?.get('X-WP-TotalPages');
+    const total = totalRaw !== null && totalRaw !== undefined ? Number(totalRaw) : NaN;
+    const totalPages = pagesRaw !== null && pagesRaw !== undefined ? Number(pagesRaw) : NaN;
+    return {
+      data: parsed as T,
+      ...(Number.isFinite(total) ? { total } : {}),
+      ...(Number.isFinite(totalPages) ? { totalPages } : {}),
+    };
   }
 
   /** P2 probe: `GET {baseUrl}/wp-json/wc/v3/system_status` (Basic auth). */
@@ -320,6 +359,14 @@ export class WooCommerceProvider extends BaseCommerceProvider {
 
   override async readProductFields(store: StoreWithSecrets, ref: RemoteRef, fields: FieldKey[]): Promise<Record<FieldKey, FieldSnapshot>> {
     const body = await this.woo<Record<string, unknown>>(store, 'GET', `/products/${encodeURIComponent(ref.providerId)}`);
+    return wooProductToSnapshots(body, fields);
+  }
+
+  /** Baseline snapshots from an already-fetched body — no extra GET (§17.1). */
+  snapshotsFromProductBody(
+    body: Record<string, unknown>,
+    fields: FieldKey[],
+  ): Record<FieldKey, FieldSnapshot> {
     return wooProductToSnapshots(body, fields);
   }
 
@@ -523,6 +570,78 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     const orders = await this.woo<any[]>(store, 'GET', `/orders?${params.toString()}`);
     const pageSize = opts.pageSize;
     return { orders: orders as NormalizedOrder[], hasMore: orders.length === pageSize };
+  }
+
+  // ── Product import (§6.3, Woo-only v1) ───────────────────────────────
+
+  /**
+   * `GET /wp-json/wc/v3/products`. Woo caps per_page at 100; default status
+   * is publish,draft (private/trash are never imported — a private remote
+   * product must never land public). Incremental (`modifiedAfter`) pages in
+   * modified-asc order so a product modified mid-page appears on a later
+   * page or the next run, never skipped silently (E22). `include` fetches
+   * an explicit id set (selection import / retry, max one page per call).
+   * hasMore prefers X-WP-TotalPages when the transport reports headers,
+   * else the fetchOrders length heuristic.
+   */
+  override async listProducts(
+    store: StoreWithSecrets,
+    opts: ListProductsOpts,
+  ): Promise<ListProductsResult> {
+    const page = Math.max(1, opts.page);
+    const perPage = Math.min(Math.max(1, opts.pageSize), 100);
+    const params = new URLSearchParams({
+      page: String(page),
+      per_page: String(perPage),
+    });
+    params.set('status', (opts.status && opts.status.length > 0 ? opts.status : ['publish', 'draft']).join(','));
+    if (opts.modifiedAfter) {
+      params.set('modified_after', opts.modifiedAfter.toISOString());
+      params.set('orderby', 'modified');
+      params.set('order', 'asc');
+    }
+    if (opts.include && opts.include.length > 0) {
+      for (const id of opts.include.slice(0, perPage)) params.append('include[]', String(id));
+    }
+    if (opts.search?.trim()) params.set('search', opts.search.trim());
+    const { data, total, totalPages } = await this.wooPage<any[]>(store, `/products?${params.toString()}`);
+    const products = (Array.isArray(data) ? data : []) as NormalizedProduct[];
+    const hasMore = totalPages !== undefined ? page < totalPages : products.length === perPage;
+    return { products, hasMore, ...(total !== undefined ? { total } : {}) };
+  }
+
+  /**
+   * `GET /wp-json/wc/v3/products/{id}/variations` — the list payload for a
+   * variable product carries only variation ids; full variation rows (SKU,
+   * price, stock, image, attribute values) live only behind this child
+   * endpoint. One call per variable product per 100 variations.
+   */
+  override async listVariations(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+    opts: { page: number; pageSize: number; cursor?: string },
+  ): Promise<{ variations: NormalizedVariant[]; hasMore: boolean; nextCursor?: string }> {
+    void opts.cursor;
+    const page = Math.max(1, opts.page);
+    const perPage = Math.min(Math.max(1, opts.pageSize), 100);
+    const { data, totalPages } = await this.wooPage<any[]>(
+      store,
+      `/products/${encodeURIComponent(ref.providerId)}/variations?page=${page}&per_page=${perPage}`,
+    );
+    const variations = (Array.isArray(data) ? data : []) as NormalizedVariant[];
+    return { variations, hasMore: totalPages !== undefined ? page < totalPages : variations.length === perPage };
+  }
+
+  /**
+   * `GET /wp-json/wc/v3/products/{id}` — the same call readProductFields
+   * makes, returning the raw body. V1 scope is remote-delete detection
+   * only (R10): a 404 here during re-import means the remote is gone.
+   */
+  override async fetchProduct(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<NormalizedProduct> {
+    return this.woo<Record<string, unknown>>(store, 'GET', `/products/${encodeURIComponent(ref.providerId)}`);
   }
 
   override async pushOrderStatus(store: StoreWithSecrets, ref: RemoteRef, target: 'cancelled' | 'completed'): Promise<PushResult> {
