@@ -451,7 +451,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
     contactCheckExposure: true, // via bridge / app proxy
     categoryModel: 'collection',
     seoModel: 'native',
-    mediaModel: 'binary-upload',
+    mediaModel: 'url-fetch', // G-5 fix: imagesOf() sends {src} URLs — never a binary upload.
     combos: false, // BR-22
     externalEditsDetectable: 'inferred',
   };

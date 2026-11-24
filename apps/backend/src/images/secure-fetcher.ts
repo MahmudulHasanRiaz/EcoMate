@@ -194,6 +194,7 @@ export function buildRequestOptions(
   deadline: AbortController,
   userAgent: string,
   accept: string,
+  method: 'GET' | 'HEAD' = 'GET',
 ): [http.RequestOptions, 'http:' | 'https:'] {
   const isHttps = parsed.protocol === 'https:';
   const port = parsed.port ? parseInt(parsed.port, 10) : isHttps ? 443 : 80;
@@ -204,7 +205,7 @@ export function buildRequestOptions(
     hostname,
     port,
     path: parsed.pathname + parsed.search,
-    method: 'GET',
+    method,
     lookup: lookupFn,
     rejectUnauthorized: isHttps,
     servername: isHttps ? hostname : undefined,
@@ -301,6 +302,52 @@ export class SecureFetcher {
     }
   }
 
+  /**
+   * DNS-pinned HEAD request — same TOCTOU-proof core as fetchRaw()
+   * (resolve + pin per hop, connected-address match, redirects re-pin
+   * and never downgrade https → http), but no body is read: the
+   * response is destroyed as soon as the 2xx status lands. Used by the
+   * outbound product push (PushMediaService) to prove an image URL is
+   * reachable before sending it to Woo/Shopify as a src.
+   *
+   * Throws on any failure (DNS/transport error, timeout, non-2xx) —
+   * callers treat every throw as "unreachable".
+   */
+  async head(
+    url: string,
+    opts: SecureFetchRawOptions = {},
+  ): Promise<{ statusCode: number; contentType: string; finalUrl: string }> {
+    const totalTimeoutMs = opts.totalTimeoutMs ?? 15_000;
+    const maxRedirects = opts.maxRedirects ?? 5;
+
+    const deadline = new AbortController();
+    const deadlineTimer = setTimeout(
+      () => deadline.abort(new Error('Fetch deadline exceeded')),
+      totalTimeoutMs,
+    );
+
+    try {
+      const raw = await this.fetchRawWithRedirects(
+        url,
+        0,
+        maxRedirects,
+        0, // maxBytes is meaningless for HEAD — no body is ever read.
+        opts.userAgent ?? DEFAULT_USER_AGENT,
+        opts.accept ?? DEFAULT_ACCEPT,
+        deadline,
+        'HEAD',
+      );
+      return {
+        statusCode: raw.statusCode,
+        contentType: raw.contentType,
+        finalUrl: raw.finalUrl,
+      };
+    } finally {
+      clearTimeout(deadlineTimer);
+      try { deadline.abort(); } catch { /* ignore */ }
+    }
+  }
+
   private async fetchRawWithRedirects(
     url: string,
     depth: number,
@@ -309,6 +356,7 @@ export class SecureFetcher {
     userAgent: string,
     accept: string,
     deadline: AbortController,
+    method: 'GET' | 'HEAD' = 'GET',
   ): Promise<SecureFetchRawResult> {
     if (depth > maxRedirects) throw new Error('Too many redirects');
     if (deadline.signal.aborted) throw new Error('Fetch deadline exceeded');
@@ -332,6 +380,7 @@ export class SecureFetcher {
       deadline,
       userAgent,
       accept,
+      method,
     );
 
     const { response, connectedAddress } = await raceSignal(
@@ -387,6 +436,7 @@ export class SecureFetcher {
         userAgent,
         accept,
         deadline,
+        method,
       );
     }
 
@@ -394,6 +444,19 @@ export class SecureFetcher {
     if (statusCode < 200 || statusCode >= 300) {
       response.destroy();
       throw new Error(`Remote server responded ${statusCode}`);
+    }
+
+    // HEAD: the 2xx status IS the answer — no body exists to read.
+    // Destroy the response and return before the Content-Length/body
+    // handling (a HEAD Content-Length describes the GET body, so the
+    // maxBytes cap must never apply here).
+    if (method === 'HEAD') {
+      response.destroy();
+      const contentType =
+        typeof response.headers['content-type'] === 'string'
+          ? response.headers['content-type']
+          : 'application/octet-stream';
+      return { buffer: Buffer.alloc(0), contentType, statusCode, finalUrl: url };
     }
 
     // Check Content-Length before streaming if present

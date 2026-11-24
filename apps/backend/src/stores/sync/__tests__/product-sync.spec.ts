@@ -20,10 +20,21 @@ import { DistributionService } from '../../distribution/distribution.service';
 import { SyncRunService } from '../sync-run.service';
 import { CategorySyncService } from '../category-sync.service';
 import { ProductSyncService } from '../product-sync.service';
+import { PushMediaService } from '../push-media.service';
+import { TenantRegistryService } from '../../../tenancy/tenant-registry.service';
 import { hashFieldValue } from '../../providers/field-snapshot';
 
 const STORE_ID = 'store-1';
 const PRODUCT_ID = 'prod-1';
+const TENANT_ID = 'tenant-1';
+const TENANT_SLUG = 'features-test-store';
+const MEDIA_DOMAIN_CONFIG = {
+  primaryDomain: 'staging.faah.net',
+  baseDomains: ['staging.faah.net', 'staging.ecomate.bd'],
+  customDomainCname: 'cname.staging.faah.net',
+  allowExternalFallback: false,
+};
+const absMedia = (path: string) => `https://${TENANT_SLUG}.staging.faah.net${path}`;
 
 function mockPrisma() {
   const fieldStates = new Map<string, any>();
@@ -192,6 +203,52 @@ function setup(ecoOverrides: Record<string, unknown> = {}, seedRemote: Record<st
   }
   const upsertsBefore = () => fake.calls.filter((c) => c.method === 'upsertProduct').length;
   return { prisma, fake, svc, runId, fieldStates, productMappings, issues, items, upsertsBefore };
+}
+
+/** setup() + PushMediaService wired (9th ctor arg), store carrying its
+ * tenant id, registry seeded with the tenant's slug. */
+function setupWithMedia(
+  ecoOverrides: Record<string, unknown> = {},
+  seedRemote: Record<string, unknown> | null = null,
+  opts: { headOk?: (url: string) => boolean; seedRegistry?: boolean } = {},
+) {
+  const { prisma, fieldStates, productMappings, issues, items, attempts } = mockPrisma();
+  const fake = new FakeProvider();
+  (prisma.product.findUnique as jest.Mock).mockResolvedValue(ecoProduct(ecoOverrides));
+  (prisma.store.findUnique as jest.Mock).mockResolvedValue({
+    id: STORE_ID, kind: 'WOOCOMMERCE', name: 'Woo', settings: {}, tenantId: TENANT_ID,
+  });
+  const registry = new TenantRegistryService();
+  registry.setDomainConfig(MEDIA_DOMAIN_CONFIG);
+  if (opts.seedRegistry !== false) {
+    registry.replace([
+      { id: TENANT_ID, slug: TENANT_SLUG, status: 'ACTIVE', hosts: [`${TENANT_SLUG}.staging.faah.net`] },
+    ]);
+  }
+  const head = jest.fn(async (url: string) => {
+    if (opts.headOk && !opts.headOk(url)) throw new Error('Remote server responded 404');
+    return { statusCode: 200, contentType: 'image/jpeg', finalUrl: url };
+  });
+  const runs = new SyncRunService(prisma);
+  const pushMedia = new PushMediaService(registry, runs, { head } as any);
+  const registrySvc: any = { providerFor: () => fake };
+  const svc = new ProductSyncService(
+    prisma,
+    registrySvc,
+    new FieldOwnershipService(),
+    new DistributionService(prisma, new StoreAvailabilityService()),
+    runs,
+    new CategorySyncService(prisma, runs),
+    undefined,
+    undefined,
+    pushMedia,
+  );
+  const runId = 'run-1';
+  if (seedRemote) {
+    fake.directSeed('remote-1', { sku: 'ECO-TEE-1', ...(seedRemote as Record<string, unknown>) }, 'IN_STOCK', 'draft');
+    productMappings.set(`${STORE_ID}:${PRODUCT_ID}`, { id: 'map-1', storeId: STORE_ID, productId: PRODUCT_ID, externalId: 'remote-1' });
+  }
+  return { prisma, fake, svc, runId, fieldStates, productMappings, issues, items, attempts, head };
 }
 
 describe('product sync engine (P4)', () => {
@@ -418,5 +475,101 @@ describe('product sync engine (P4)', () => {
     const out = await svc.resetAll(STORE_ID, PRODUCT_ID, 'actor-1');
     expect(out.results.some((r) => r.field === 'name' && r.ok)).toBe(true);
     expect(fake.getProduct('remote-1')!.fields.name).toBe('Eco Tee');
+  });
+});
+
+describe('push media (P0)', () => {
+  it('relative images push as absolute faah.net URLs, baselines + ensureMedia too', async () => {
+    const { svc, runId, fake, fieldStates, head } = setupWithMedia(
+      { images: ['/uploads/a.jpg', '/uploads/b.jpg'] },
+      null,
+    );
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    const created = fake.findBySku('ECO-TEE-1');
+    expect(created?.fields.primaryImage).toBe(absMedia('/uploads/a.jpg'));
+    expect(created?.fields.galleryImages).toEqual([absMedia('/uploads/b.jpg')]);
+    // Baselines are computed from the transformed (absolute) values.
+    expect(fieldStates.get(`${STORE_ID}:${PRODUCT_ID}:primaryImage`)?.baselineHash)
+      .toBe(hashFieldValue(absMedia('/uploads/a.jpg')));
+    // ensureMedia received absolute srcs, never the raw relative paths.
+    const mediaCalls = fake.calls.filter((c) => c.method === 'ensureMedia');
+    expect(mediaCalls).toHaveLength(1);
+    expect((mediaCalls[0].detail as any).srcs).toEqual([
+      absMedia('/uploads/a.jpg'),
+      absMedia('/uploads/b.jpg'),
+    ]);
+    expect(head).toHaveBeenCalledWith(absMedia('/uploads/a.jpg'), expect.anything());
+    expect(head).toHaveBeenCalledWith(absMedia('/uploads/b.jpg'), expect.anything());
+  });
+
+  it('absolute R2 URLs pass through untouched', async () => {
+    const r2 = 'https://bucket.r2.dev/x.jpg';
+    const { svc, runId, fake, head } = setupWithMedia({ images: [r2] }, null);
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(fake.findBySku('ECO-TEE-1')?.fields.primaryImage).toBe(r2);
+    expect(head).toHaveBeenCalledWith(r2, expect.anything());
+  });
+
+  it('HEAD-fail image → MEDIA_UNREACHABLE issue + product still pushes, imageless', async () => {
+    const { svc, runId, fake, issues, items } = setupWithMedia(
+      { images: ['/uploads/a.jpg'] },
+      null,
+      { headOk: () => false },
+    );
+    const res = await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(fake.productCount()).toBe(1);
+    expect(res.pushed).toContain('name');
+    const created = fake.findBySku('ECO-TEE-1');
+    expect(created?.fields.primaryImage).toBeNull();
+    expect(created?.fields.galleryImages).toEqual([]);
+    expect(issues.some((i) => i.code === 'MEDIA_UNREACHABLE')).toBe(true);
+    const skipped = items.find(
+      (i: any) => i.objectType === 'MEDIA' && i.status === 'SKIPPED' && String(i.reason).includes('MEDIA_UNREACHABLE'),
+    );
+    expect(skipped).toBeDefined();
+  });
+
+  it('unparseable entry dropped with MEDIA_URL_INVALID; the valid image still pushes', async () => {
+    const { svc, runId, fake, issues } = setupWithMedia(
+      { images: ['not-a-url', '/uploads/ok.jpg'] },
+      null,
+    );
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(fake.findBySku('ECO-TEE-1')?.fields.primaryImage).toBe(absMedia('/uploads/ok.jpg'));
+    expect(issues.some((i) => i.code === 'MEDIA_URL_INVALID')).toBe(true);
+  });
+
+  it('no canonical domain → relative dropped + MEDIA_ORIGIN_UNRESOLVED, absolute still pushed', async () => {
+    const cdn = 'https://cdn.example.com/b.jpg';
+    const { svc, runId, fake, issues, head } = setupWithMedia(
+      { images: ['/uploads/a.jpg', cdn] },
+      null,
+      { seedRegistry: false },
+    );
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    // The relative entry is gone, so the absolute one becomes primary.
+    expect(fake.findBySku('ECO-TEE-1')?.fields.primaryImage).toBe(cdn);
+    expect(issues.some((i) => i.code === 'MEDIA_ORIGIN_UNRESOLVED')).toBe(true);
+    expect(head).toHaveBeenCalledTimes(1);
+    expect(head).toHaveBeenCalledWith(cdn, expect.anything());
+  });
+
+  it('Force EcoMate Value on primaryImage pushes the absolute URL (override path)', async () => {
+    const { svc, fake } = setupWithMedia(
+      { images: ['/uploads/a.jpg'] },
+      { name: 'Eco Tee' },
+    );
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-0'); // quiet baselines
+    const out = await svc.forceEcoMateValue(STORE_ID, PRODUCT_ID, ['primaryImage'], 'actor-1');
+    expect(out.results).toEqual([{ field: 'primaryImage', ok: true }]);
+    expect(fake.getProduct('remote-1')!.fields.primaryImage).toBe(absMedia('/uploads/a.jpg'));
+  });
+
+  it('media capability off → no HEAD calls, no image fields pushed', async () => {
+    const { svc, runId, fake, head } = setupWithMedia({ images: ['/uploads/a.jpg'] }, null);
+    (fake as any).declaredCapabilities = { ...fake.declaredCapabilities, media: false };
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(head).not.toHaveBeenCalled();
+    expect(fake.findBySku('ECO-TEE-1')?.fields.primaryImage).toBeUndefined();
   });
 });

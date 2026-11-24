@@ -25,6 +25,7 @@ import { FIELD_MATRIX, matrixRowFor, readEcoMateFields, assertSyncedFieldsSubset
 import { classifyProviderError, RETRY_BACKOFF_MS, MAX_SYNC_ATTEMPTS } from '../providers/retry-classifier';
 import { SyncRunService } from './sync-run.service';
 import { CategorySyncService } from './category-sync.service';
+import { PushMediaService } from './push-media.service';
 import type { FieldSnapshot } from '../providers/provider.contract';
 
 export const SYNC_FANOUT_CONCURRENCY_DEFAULT = 5;
@@ -50,6 +51,10 @@ export class ProductSyncService {
     // evaluates (debounced, non-propagating, R-2 safe). @Optional for
     // manual construction in specs.
     @Optional() private readonly stockStatus?: StockStatusSyncService,
+    // P0 push media: absolutize + HEAD-verify images before the providers
+    // see them. @Optional for manual construction in specs — when absent,
+    // images flow as today (relative URLs, unverified).
+    @Optional() private readonly pushMedia?: PushMediaService,
   ) {}
 
   // ── Single-product sync (the ownership engine) ──────────────────────
@@ -115,6 +120,27 @@ export class ProductSyncService {
     const ecoFields = readEcoMateFields(product);
     const fieldKeys = FIELD_MATRIX.filter((r) => this.capabilityAllows(caps, r.capability, r.key)).map((r) => r.key);
 
+    // P0 push media: absolutize + HEAD-verify images BEFORE any field
+    // evaluation — adopt baselines and the push payload are computed
+    // from the TRANSFORMED (absolute) values, the honest "what was
+    // actually pushed" semantic. Gated on the media capability (no
+    // media fields → no HEAD calls) and on the product having images.
+    let pushImages: string[] = Array.isArray(product.images)
+      ? (product.images as string[])
+      : [];
+    if (this.pushMedia && caps.media === true && pushImages.length > 0) {
+      const prepared = await this.pushMedia.preparePushImages({
+        storeId,
+        tenantId: store.tenantId ?? null,
+        productId,
+        images: pushImages,
+        runId,
+      });
+      pushImages = prepared.images;
+      ecoFields.primaryImage = pushImages[0] ?? null;
+      ecoFields.galleryImages = pushImages.slice(1);
+    }
+
     if (!mapping) {
       const preexisting = await this.findPreexistingBySku(provider, storeWithSecrets, product.sku as string).catch(() => null);
       if (preexisting) {
@@ -153,7 +179,9 @@ export class ProductSyncService {
     }
 
     // Media: ingest + hash/id reuse, never re-upload mapped (§8.11 rows 7-8).
-    await this.syncMedia(storeId, provider, storeWithSecrets, product, runId, productId);
+    // Receives the PREPARED (absolute, HEAD-verified) images — raw
+    // product.images never reaches the provider in the P0 path.
+    await this.syncMedia(storeId, provider, storeWithSecrets, pushImages, runId, productId);
 
     const states = await this.prisma.productStoreFieldState.findMany({ where: { storeId, productId } });
     const stateByField = new Map(states.map((s: any) => [s.field, s]));
@@ -363,6 +391,27 @@ export class ProductSyncService {
     });
     if (!mapping) throw new NotFoundException('Product is not mapped to this store');
     const ecoFields = readEcoMateFields(product);
+    // P0 push media: a Force EcoMate Value override on an image field
+    // pushes the same prepared (absolute, HEAD-verified) values as a
+    // normal sync — no runId here, so issues record without run items.
+    // 'keep' mode pushes nothing, so it never prepares media.
+    if (
+      mode === 'reset' &&
+      this.pushMedia &&
+      provider.declaredCapabilities.media === true &&
+      fields.some((f) => f === 'primaryImage' || f === 'galleryImages') &&
+      Array.isArray(product.images) &&
+      (product.images as unknown[]).length > 0
+    ) {
+      const prepared = await this.pushMedia.preparePushImages({
+        storeId,
+        tenantId: store.tenantId ?? null,
+        productId,
+        images: product.images as unknown[],
+      });
+      ecoFields.primaryImage = prepared.images[0] ?? null;
+      ecoFields.galleryImages = prepared.images.slice(1);
+    }
     const results: { field: string; ok: boolean; reason?: string }[] = [];
     // Batched external read for audit (prev external recorded per field).
     const external = await provider
@@ -600,11 +649,10 @@ export class ProductSyncService {
 
   private async syncMedia(
     storeId: string, provider: any, storeWithSecrets: any,
-    product: any, runId: string, productId: string,
+    images: string[], runId: string, productId: string,
   ) {
     if (provider.declaredCapabilities.media !== true) return;
-    const images: string[] = Array.isArray(product.images) ? product.images : [];
-    if (images.length === 0) return;
+    if (!Array.isArray(images) || images.length === 0) return;
     const unmapped: { src: string; hash: string }[] = [];
     for (const src of images) {
       const existing = await this.prisma.storeMediaMapping.findUnique({

@@ -383,6 +383,115 @@ describe('SecureFetcher.fetch (image validation still applies)', () => {
   });
 });
 
+describe('SecureFetcher.head', () => {
+  it('sends method HEAD and returns status/content-type/final URL', async () => {
+    const seenMethods: string[] = [];
+    const transport = fakeTransport((options: any) => {
+      seenMethods.push(options.method);
+      return {
+        response: fakeResponse({
+          headers: { 'content-type': 'image/jpeg' },
+        }),
+        connectedAddress: PUBLIC_IP,
+      };
+    });
+    const fetcher = new SecureFetcher(fakeDns(), transport as any);
+
+    const result = await fetcher.head('https://cdn.example.com/x.jpg');
+
+    expect(seenMethods).toEqual(['HEAD']);
+    expect(result).toEqual({
+      statusCode: 200,
+      contentType: 'image/jpeg',
+      finalUrl: 'https://cdn.example.com/x.jpg',
+    });
+  });
+
+  it('never reads the body — the response iterator is not pulled', async () => {
+    const pullBody = jest.fn(async function* () {
+      yield Buffer.from('must-not-be-read');
+    });
+    const response: any = {
+      statusCode: 200,
+      headers: { 'content-type': 'image/png' },
+      destroy: jest.fn(),
+      [Symbol.asyncIterator]: pullBody,
+    };
+    const transport = fakeTransport(() => ({
+      response,
+      connectedAddress: PUBLIC_IP,
+    }));
+    const fetcher = new SecureFetcher(fakeDns(), transport as any);
+
+    await fetcher.head('https://cdn.example.com/x.png');
+
+    expect(pullBody).not.toHaveBeenCalled();
+    expect(response.destroy).toHaveBeenCalled();
+  });
+
+  it('follows redirects with HEAD and reports the final URL', async () => {
+    const seen: Array<{ method: string; path: string }> = [];
+    const transport = fakeTransport((options: any) => {
+      seen.push({ method: options.method, path: options.path });
+      if (options.path === '/old.jpg') {
+        return {
+          response: fakeResponse({
+            statusCode: 302,
+            headers: { location: 'https://cdn.example.com/new.jpg' },
+          }),
+          connectedAddress: PUBLIC_IP,
+        };
+      }
+      return {
+        response: fakeResponse({ headers: { 'content-type': 'image/jpeg' } }),
+        connectedAddress: PUBLIC_IP,
+      };
+    });
+    const fetcher = new SecureFetcher(fakeDns(), transport as any);
+
+    const result = await fetcher.head('https://cdn.example.com/old.jpg');
+
+    expect(seen).toEqual([
+      { method: 'HEAD', path: '/old.jpg' },
+      { method: 'HEAD', path: '/new.jpg' },
+    ]);
+    expect(result.finalUrl).toBe('https://cdn.example.com/new.jpg');
+  });
+
+  it('rejects on non-2xx (a dead src)', async () => {
+    const transport = fakeTransport(() => ({
+      response: fakeResponse({ statusCode: 404 }),
+      connectedAddress: PUBLIC_IP,
+    }));
+    const fetcher = new SecureFetcher(fakeDns(), transport as any);
+
+    await expect(fetcher.head('https://cdn.example.com/gone.jpg')).rejects.toThrow(
+      'Remote server responded 404',
+    );
+  });
+
+  it('pins the connection exactly like GET (blocked connected IP fails)', async () => {
+    const transport = fakeTransport(() => ({
+      response: fakeResponse({}),
+      connectedAddress: '10.0.0.5',
+    }));
+    const fetcher = new SecureFetcher(fakeDns(), transport as any);
+
+    await expect(fetcher.head('https://cdn.example.com/x.png')).rejects.toThrow(
+      'Connected to a blocked IP address',
+    );
+  });
+
+  it('buildRequestOptions defaults to GET and accepts HEAD', () => {
+    const parsed = new URL('https://cdn.example.com/x.jpg');
+    const deadline = new AbortController();
+    const [getOpts] = buildRequestOptions('cdn.example.com', PUBLIC_IP, parsed, deadline, 'ua', '*/*');
+    expect(getOpts.method).toBe('GET');
+    const [headOpts] = buildRequestOptions('cdn.example.com', PUBLIC_IP, parsed, deadline, 'ua', '*/*', 'HEAD');
+    expect(headOpts.method).toBe('HEAD');
+  });
+});
+
 describe('defaultHttpTransport', () => {
   it('is the production transport (smoke: exports a request function)', () => {
     expect(typeof defaultHttpTransport.request).toBe('function');

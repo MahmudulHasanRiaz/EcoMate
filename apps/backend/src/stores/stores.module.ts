@@ -56,6 +56,7 @@ import { SyncRetentionScheduler } from './sync/sync-retention.scheduler';
 import { SyncRetryService } from './sync/sync-retry.service';
 import { CategorySyncService } from './sync/category-sync.service';
 import { ProductSyncService } from './sync/product-sync.service';
+import { PushMediaService } from './sync/push-media.service';
 import { StockStatusSyncService } from './sync/stock-status-sync.service';
 import { SyncQueuesService } from './sync/sync-queues.service';
 import { StoreCircuitBreaker } from './sync/sync-circuit';
@@ -183,6 +184,7 @@ export const RECONCILE_QUEUE_DEFAULTS = {
     SyncRetryService,
     CategorySyncService,
     ProductSyncService,
+    PushMediaService,
     StockStatusSyncService,
     SyncQueuesService,
     StoreCircuitBreaker,
