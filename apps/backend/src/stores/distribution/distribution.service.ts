@@ -21,6 +21,13 @@ import { StoreAvailabilityService } from './store-availability.service';
 
 export const BULK_BG_THRESHOLD = 50;
 export const DISABLE_ALL_CONFIRM = 'DISABLE';
+/**
+ * D-4 candidate window: rule matching scans at most this many globally
+ * active products per sweep (ordered oldest-first). The sweep itself is
+ * capped at 500 products, so a 1000-row window covers the common case;
+ * full-scale pagination past the window is G-8 follow-up work.
+ */
+export const RULE_MATCH_CANDIDATE_TAKE = 1000;
 
 export interface StoreAvailabilityRow {
   storeId: string;
@@ -123,6 +130,81 @@ export class DistributionService {
   }
 
   // ── Overrides ────────────────────────────────────────────────────
+
+  /**
+   * D-2 auto-assign on push: create the assignment row (MANUAL, available)
+   * ONLY when none exists. An existing row — even available=false — is
+   * left untouched: a push never flips an operator's explicit OFF (the
+   * push still proceeds; syncPublication drafts the remote product).
+   * Race-safe: a concurrent create surfaces P2002 and is treated as
+   * already-exists. Missing product/store → 404, NATIVE store → 400.
+   */
+  async ensureAssignment(productId: string, storeId: string): Promise<{ created: boolean }> {
+    await this.requireExternalStore(storeId);
+    await this.requireProduct(productId);
+    const existing = await this.prisma.productStoreAssignment.findUnique({
+      where: { storeId_productId: { storeId, productId } },
+    });
+    if (existing) return { created: false };
+    try {
+      await this.prisma.productStoreAssignment.create({
+        data: { storeId, productId, source: 'MANUAL', available: true },
+      });
+      return { created: true };
+    } catch (err) {
+      if ((err as any)?.code === 'P2002') return { created: false };
+      throw err;
+    }
+  }
+
+  /**
+   * D-4: ids of globally active products whose effective availability for
+   * this store is true VIA A RULE — no assignment row at all (an
+   * override, even OFF, governs over the rule, so a rowed product is
+   * never "via a rule") and the nearest category rule resolves ON.
+   * Reuses the pure resolver (resolveRuleForCategories) — no second
+   * resolution semantics. The sweep unions these with assignment-row
+   * ids; nothing here materializes assignment rows.
+   *
+   * Fail-soft by design (this is a sweep helper, not a user-facing
+   * read): a missing or NATIVE store, or a store with no rules, matches
+   * nothing instead of throwing.
+   */
+  async ruleMatchedProductIds(storeId: string, limit: number): Promise<string[]> {
+    if (limit <= 0) return [];
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    if (!store || (store as any).kind === 'NATIVE') return [];
+    const rules = await this.prisma.storeAvailabilityRule.findMany({ where: { storeId } });
+    if (rules.length === 0) return [];
+    const ruleRecords: RuleRecord[] = (rules as any[]).map((r) => ({
+      categoryId: r.categoryId,
+      available: r.available,
+      inheritFromParent: r.inheritFromParent,
+    }));
+    const parentOf = await this.categoryParentMap();
+    const candidates = await this.prisma.product.findMany({
+      where: {
+        status: 'active',
+        isActive: true,
+        storeAssignments: { none: { storeId } },
+      },
+      select: {
+        id: true,
+        categoryId: true,
+        productCategories: { select: { categoryId: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: RULE_MATCH_CANDIDATE_TAKE,
+    });
+    const out: string[] = [];
+    for (const p of candidates as any[]) {
+      if (this.resolveRuleForCategories(this.directCategories(p), ruleRecords, parentOf) === true) {
+        out.push(p.id);
+        if (out.length >= limit) break;
+      }
+    }
+    return out;
+  }
 
   async setOverride(productId: string, storeId: string, available: boolean | null) {
     const store = await this.requireExternalStore(storeId);

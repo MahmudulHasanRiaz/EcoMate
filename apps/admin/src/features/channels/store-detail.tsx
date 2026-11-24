@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { History, Loader2, Play, RefreshCw } from 'lucide-react'
+import { History, Loader2, Play, RefreshCw, Send } from 'lucide-react'
 import { keepPreviousData, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   type ColumnDef,
@@ -48,6 +48,7 @@ import {
 } from './sync-hooks'
 import { SyncRunDetail } from './sync-center'
 import { StoreReconnectDialog } from './store-reconnect-dialog'
+import { PushToStoreDialog } from './push-to-store-dialog'
 
 const TABS = ['Overview', 'Products', 'Orders', 'Synchronization', 'Settings', 'Activity'] as const
 
@@ -206,10 +207,11 @@ export function ChannelStoreDetail() {
 // ─── Products: assigned-products table for this store ───────────────────────
 // Server paginates products; per-row availability resolves through the
 // verified GET /products/:id/store-availability contract (one row of that
-// matrix belongs to this store). There is no per-product sync endpoint, so
-// the per-row action is the verified product-history Sheet (mapping + field
-// states + recent sync items) plus a link to the product. Global-only NATIVE
-// rows resolve through the same matrix (BR-20).
+// matrix belongs to this store). The per-row Push action opens the shared
+// push dialog (POST /stores/:id/sync-product, auto-assigns — D-2) with this
+// store pre-selected; History is the verified product-history Sheet
+// (mapping + field states + recent sync items) plus a link to the product.
+// Global-only NATIVE rows resolve through the same matrix (BR-20).
 
 interface ProductAvailabilityCell {
   effective: boolean
@@ -226,6 +228,7 @@ function StoreProductsTab({ storeId, store }: { storeId: string; store: StoreRes
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')
   const [historyProduct, setHistoryProduct] = useState<ProductResponse | null>(null)
+  const [pushProduct, setPushProduct] = useState<ProductResponse | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => { setDebounced(search); setPage(1) }, 350)
@@ -323,6 +326,11 @@ function StoreProductsTab({ storeId, store }: { storeId: string; store: StoreRes
       header: () => <div className="text-right">Actions</div>,
       cell: ({ row }) => (
         <div className="flex justify-end gap-2">
+          {store.kind !== 'NATIVE' && (
+            <Button size="sm" variant="outline" onClick={() => setPushProduct(row.original)}>
+              <Send className="mr-1 h-3 w-3" /> Push
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setHistoryProduct(row.original)}>
             <History className="mr-1 h-3 w-3" /> History
           </Button>
@@ -332,7 +340,7 @@ function StoreProductsTab({ storeId, store }: { storeId: string; store: StoreRes
         </div>
       ),
     },
-  ], [cellByProduct])
+  ], [cellByProduct, store.kind])
 
   const table = useReactTable({
     data: products,
@@ -439,6 +447,13 @@ function StoreProductsTab({ storeId, store }: { storeId: string; store: StoreRes
           {historyProduct && <ProductHistoryBody storeId={storeId} productId={historyProduct.id} />}
         </SheetContent>
       </Sheet>
+
+      <PushToStoreDialog
+        product={pushProduct}
+        open={pushProduct !== null}
+        onOpenChange={(v) => { if (!v) setPushProduct(null) }}
+        preselectedStoreId={storeId}
+      />
     </>
   )
 }

@@ -24,6 +24,12 @@ vi.mock('@/lib/api-client', () => ({
   },
 }))
 
+// The P2 "Publish to stores" step renders after a successful save and links
+// to the stores page — the real Link needs router context the harness lacks.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, ...rest }: { children?: React.ReactNode }) => <a href='#' {...rest}>{children}</a>,
+}))
+
 vi.mock('@/features/inventory/hooks/use-inventory-management', () => ({
   useInventoryManagement: () => ({ data: false }),
 }))

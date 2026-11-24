@@ -7,6 +7,7 @@ import { appHref } from '@/lib/app-href'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
 import { CustomizationEditor } from './customization-editor'
+import { PublishToStoresStep } from '@/features/channels/publish-to-stores-step'
 import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { productOverrideApi } from '@/features/gateways/api'
 import { MediaPicker } from '@/components/media-picker'
@@ -53,6 +54,10 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [tab, setTab] = useState('general')
   const [createdProductId, setCreatedProductId] = useState<string | null>(null)
   const [serverDraftId, setServerDraftId] = useState<string | null>(null)
+  // P2 "Publish to stores" step: set (instead of closing) after a successful
+  // create / update / draft-publish. Never set after draft saves, and never
+  // on the variable-with-attrs create path (that stays on the variants tab).
+  const [pushStepProduct, setPushStepProduct] = useState<ProductResponse | null>(null)
 
   const { data: fullProduct, isError: fullProductError } = useQuery({
     queryKey: ['product', currentRow?.id || createdProductId],
@@ -651,6 +656,40 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     toast.error(msg)
   }
 
+  // P2: offer the push step instead of closing after a successful save.
+  // The form is marked clean (the save succeeded) so the step never trips
+  // the unsaved-changes guard or the beforeunload warning. The saved
+  // product is rebuilt from form state — the save payload just persisted
+  // exactly these values.
+  const enterPublishStep = (id: string) => {
+    openStateRef.current = snapshotOf()
+    setPushStepProduct({
+      id,
+      name,
+      slug,
+      type,
+      sku: sku || null,
+      basePrice: parseFloat(basePrice) || 0,
+      salePrice: salePrice ? parseFloat(salePrice) : null,
+      images,
+      isActive: true,
+      isFeatured,
+      manageStock: true,
+      managedStockQuantity: 0,
+      tags: [],
+      seoMeta: null,
+      status: 'active',
+      createdAt: '',
+      updatedAt: '',
+      variants: [],
+    } as ProductResponse)
+  }
+  const finishPublishStep = () => {
+    setPushStepProduct(null)
+    onOpenChange(false)
+    reset()
+  }
+
   const createMut = useMutation({
     mutationFn: productsApi.create,
     onSuccess: (res: any) => {
@@ -668,6 +707,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         setCreatedProductId(createdId);
         setTab('variants');
         toast.success('Product created. Now configure variants.');
+      } else if (createdId) {
+        enterPublishStep(createdId);
+        toast.success('Product created');
       } else {
         onOpenChange(false);
         reset();
@@ -682,7 +724,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
-      onOpenChange(false)
+      enterPublishStep(variables.id)
       toast.success('Product updated')
     },
     onError: handleBackendError,
@@ -693,7 +735,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['product', variables.id] })
-      onOpenChange(false)
+      enterPublishStep(variables.id)
       toast.success('Draft published')
     },
     onError: handleBackendError,
@@ -1262,7 +1304,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
   return (
     <>
-    <Dialog open={open} onOpenChange={(v) => { if (!v) { if (hasSubOverlay) return; requestClose() } }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { if (hasSubOverlay) return; if (pushStepProduct) { finishPublishStep(); return } requestClose() } }}>
       <DialogContent
         className='!max-w-[92vw] max-w-[1400px] max-h-[95vh] overflow-hidden flex flex-col p-0'
         onInteractOutside={(e) => { if (hasSubOverlay) e.preventDefault(); }}
@@ -1270,9 +1312,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         onEscapeKeyDown={(e) => { if (hasSubOverlay) e.preventDefault(); }}
       >
         <DialogHeader className='px-6 pt-6 pb-2'>
-          <DialogTitle>{isDraftEdit ? `Edit Draft: ${currentRow?.name || 'Untitled Draft'}` : isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
+          <DialogTitle>{pushStepProduct ? 'Publish to stores' : isDraftEdit ? `Edit Draft: ${currentRow?.name || 'Untitled Draft'}` : isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
         </DialogHeader>
 
+        {pushStepProduct ? (
+          <PublishToStoresStep product={pushStepProduct} onClose={finishPublishStep} />
+        ) : (
+        <>
         {isEdit && !fullProductReady && (
           <div className='px-6 py-2 text-xs text-muted-foreground flex items-center gap-2 border-b bg-muted/30' data-testid='product-loading-banner'>
             <Loader2 className='h-3.5 w-3.5 animate-spin' />
@@ -2082,6 +2128,8 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
             {isDraftEdit ? 'Publish' : isEdit ? 'Update Product' : createdProductId ? 'Update Product' : 'Create Product'}
           </Button>
         </div>
+        </>
+        )}
       </DialogContent>
     </Dialog>
 

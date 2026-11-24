@@ -19,6 +19,7 @@ import {
   isAttemptEligibleUi,
   isWebhookFailureReplayableUi,
   syncApi,
+  syncItemReasonLabel,
   type SyncRunResponse,
   type SyncAttemptResponse,
   type WebhookFailureResponse,
@@ -690,7 +691,10 @@ export function SyncRunDetail({ runId }: { runId: string }) {
               <Badge variant="outline" className="mr-2">{item.status}</Badge>
               {item.objectType}{item.field ? ` · ${item.field}` : ''}
             </summary>
-            <p className="mt-1 text-muted-foreground">{item.reason ?? '—'}</p>
+            {/* Item reasons surface verbatim — EMPTY_SWEEP renders as the
+                plain-English explanation, so an empty sweep never reads as
+                a bare success with 0 counts. */}
+            <p className="mt-1 text-muted-foreground">{syncItemReasonLabel(item.reason)}</p>
           </details>
         ))}
         {(run.items ?? []).length === 0 && <p className="text-sm text-muted-foreground">No items recorded.</p>}

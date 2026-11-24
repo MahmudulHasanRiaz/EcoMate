@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { ArrowLeft, Package, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { ArrowLeft, Package, Pencil, Send, Trash2, Loader2 } from 'lucide-react'
 import { productsApi, type ProductResponse } from '../api'
 import { mediaUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProductForm } from './product-form'
+import { PushToStoreDialog } from '@/features/channels/push-to-store-dialog'
 import { apiClient } from '@/lib/api-client'
 import { UserBadge } from '@/components/user-badge'
 import DOMPurify from 'dompurify'
@@ -43,6 +44,7 @@ export function ProductDetail() {
   const queryClient = useQueryClient()
   const [formOpen, setFormOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [pushOpen, setPushOpen] = useState(false)
 
   const { data: product, isLoading } = useQuery({
     queryKey: ['product', id],
@@ -126,6 +128,9 @@ export function ProductDetail() {
           <div className='flex gap-2 w-full sm:w-auto'>
             <Button variant='outline' size='sm' className='flex-1 sm:flex-none' onClick={() => setFormOpen(true)}>
               <Pencil className='h-4 w-4 mr-1' /> Edit
+            </Button>
+            <Button variant='outline' size='sm' className='flex-1 sm:flex-none' onClick={() => setPushOpen(true)}>
+              <Send className='h-4 w-4 mr-1' /> Push to store
             </Button>
             <Button variant='destructive' size='sm' className='flex-1 sm:flex-none' onClick={() => setDeleteOpen(true)}>
               <Trash2 className='h-4 w-4 mr-1' /> Delete
@@ -323,6 +328,12 @@ export function ProductDetail() {
         </div>
 
         <ProductForm open={formOpen} onOpenChange={setFormOpen} currentRow={product as any} mode='edit' />
+        <PushToStoreDialog
+          product={product}
+          open={pushOpen}
+          onOpenChange={setPushOpen}
+          onEditProduct={() => { setPushOpen(false); setFormOpen(true) }}
+        />
         <ConfirmDialog
           open={deleteOpen}
           onOpenChange={setDeleteOpen}

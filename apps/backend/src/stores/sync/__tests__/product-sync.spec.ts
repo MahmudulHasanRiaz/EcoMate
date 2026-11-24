@@ -573,3 +573,79 @@ describe('push media (P0)', () => {
     expect(fake.findBySku('ECO-TEE-1')?.fields.primaryImage).toBeUndefined();
   });
 });
+
+describe('findRemoteBySku (P1 SKU probe, G-9)', () => {
+  // The Fake's own findBySku is an introspection helper with a different
+  // signature (sku) → FakeRemoteProduct, so the probe tests override it
+  // with the real provider-contract shape (store, sku) → { providerId }.
+  function probeProvider(found: { providerId: string } | null) {
+    return jest.fn(async (_store: unknown, _sku: string) => found);
+  }
+
+  it('returns exists:true + externalId when the remote holds the SKU', async () => {
+    const { svc, fake } = setup({}, null);
+    (fake as any).findBySku = probeProvider({ providerId: 'woo-15' });
+    await expect(svc.findRemoteBySku(STORE_ID, 'ECO-TEE-1')).resolves.toEqual({
+      exists: true,
+      externalId: 'woo-15',
+    });
+    expect((fake as any).findBySku).toHaveBeenCalledWith(
+      expect.objectContaining({ id: STORE_ID }),
+      'ECO-TEE-1',
+    );
+  });
+
+  it('returns exists:false when the provider returns null', async () => {
+    const { svc, fake } = setup({}, null);
+    (fake as any).findBySku = probeProvider(null);
+    await expect(svc.findRemoteBySku(STORE_ID, 'ECO-TEE-1')).resolves.toEqual({
+      exists: false,
+    });
+  });
+
+  it('returns exists:false when the provider has no findBySku', async () => {
+    const { svc, fake } = setup({}, null);
+    (fake as any).findBySku = undefined;
+    await expect(svc.findRemoteBySku(STORE_ID, 'ECO-TEE-1')).resolves.toEqual({
+      exists: false,
+    });
+  });
+
+  it('returns exists:false (no throw) when the probe fails', async () => {
+    const { svc, fake } = setup({}, null);
+    (fake as any).findBySku = jest.fn(async () => {
+      throw new Error('provider 500');
+    });
+    await expect(svc.findRemoteBySku(STORE_ID, 'ECO-TEE-1')).resolves.toEqual({
+      exists: false,
+    });
+  });
+
+  it('returns exists:false for a non-{providerId} shape (Fake introspection helper)', async () => {
+    const { svc, fake } = setup({}, null);
+    // Untouched Fake: findBySku('ECO-TEE-1') returns a FakeRemoteProduct
+    // ({ ref, fields, ... }) — no top-level providerId, so it must not
+    // count as a remote hit.
+    fake.directSeed('remote-9', { sku: 'ECO-TEE-1', name: 'Eco Tee' }, 'IN_STOCK', 'draft');
+    await expect(svc.findRemoteBySku(STORE_ID, 'ECO-TEE-1')).resolves.toEqual({
+      exists: false,
+    });
+  });
+
+  it('still throws for a missing store (404) or a NATIVE store (400)', async () => {
+    const { svc, prisma } = setup({}, null);
+    (prisma.store.findUnique as jest.Mock).mockResolvedValue(null);
+    await expect(svc.findRemoteBySku(STORE_ID, 'ECO-TEE-1')).rejects.toThrow(
+      'Store not found',
+    );
+    (prisma.store.findUnique as jest.Mock).mockResolvedValue({
+      id: STORE_ID,
+      kind: 'NATIVE',
+      name: 'Native',
+      settings: {},
+    });
+    await expect(svc.findRemoteBySku(STORE_ID, 'ECO-TEE-1')).rejects.toThrow(
+      'NATIVE is never a sync target',
+    );
+  });
+});

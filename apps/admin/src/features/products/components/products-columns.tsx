@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { Pencil, Trash2, Copy, Package, Rocket } from 'lucide-react'
+import { Pencil, Trash2, Copy, Package, Rocket, Send } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { mediaUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
@@ -18,6 +18,7 @@ export function productsColumns(
   onDuplicate?: (row: ProductResponse) => void,
   imEnabled?: boolean,
   onPublish?: (row: ProductResponse) => void,
+  onPush?: (row: ProductResponse) => void,
 ): ColumnDef<ProductResponse>[] {
   return [
     {
@@ -193,6 +194,11 @@ export function productsColumns(
                 <Copy className='h-3.5 w-3.5 text-muted-foreground hover:text-foreground' />
               </Button>
             )}
+          {row.original.status !== 'draft' && onPush && (
+            <Button variant='ghost' size='icon' className='h-8 w-8 rounded-lg hover:bg-muted/60 dark:hover:bg-muted/30' onClick={() => onPush(row.original)} title='Push to store'>
+              <Send className='h-3.5 w-3.5 text-muted-foreground hover:text-foreground' />
+            </Button>
+          )}
           <Button variant='ghost' size='icon' className='h-8 w-8 rounded-lg hover:bg-destructive/10 text-destructive' onClick={() => onDelete(row.original)} title='Delete product'>
             <Trash2 className='h-3.5 w-3.5' />
           </Button>

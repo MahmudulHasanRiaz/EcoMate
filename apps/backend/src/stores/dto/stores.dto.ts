@@ -13,6 +13,7 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   MaxLength,
 } from 'class-validator';
 
@@ -94,4 +95,18 @@ export class TestConnectionDto {
   @IsOptional()
   @IsObject()
   credentials?: Record<string, unknown>;
+}
+
+/** P1 per-product push body: the EcoMate product to push to this store. */
+export class SyncProductDto {
+  @IsUUID()
+  productId!: string;
+}
+
+/** P1 SKU probe query (G-9 adopt warning): the SKU to look up on the remote store. */
+export class RemoteProductQueryDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  sku!: string;
 }

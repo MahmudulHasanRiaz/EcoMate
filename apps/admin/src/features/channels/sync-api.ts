@@ -127,6 +127,24 @@ export interface FieldStateResponse {
   updatedAt: string
 }
 
+/** GET /sync/product-history — mapping + field states + recent items for one
+ * product on one store. `mapping.externalUrl` is the "View in store" link
+ * after a push (StoreProductMapping.externalUrl, nullable until mapped). */
+export interface ProductHistoryResponse {
+  storeId: string
+  productId: string
+  mapping?: { externalId?: string | null; externalUrl?: string | null } | null
+  states?: { field: string; ownership: string; evidence?: string | null; lastPushedAt?: string | null }[]
+  items?: { id: string; status: string; objectType: string; field?: string | null; reason?: string | null; createdAt: string }[]
+}
+
+/** GET /stores/:id/remote-product?sku= — SKU-exists probe for the adopt
+ * warning (BR-05): a same-SKU remote product is linked, not re-created. */
+export interface RemoteSkuProbeResponse {
+  exists: boolean
+  externalId?: string
+}
+
 // ─── Webhook failures (Phase 9 G-12/G-16) ───────────────────────────────────
 
 export type WebhookFailureStatus = 'OPEN' | 'RESOLVED' | 'IGNORED'
@@ -225,11 +243,35 @@ export function isWebhookFailureReplayableUi(failure: WebhookFailureResponse): b
   return typeof failure.payload?.externalOrderId === 'string' && failure.payload.externalOrderId.length > 0
 }
 
+/** Plain-English labels for sync-item reasons. Unknown reasons pass through
+ * verbatim so a new backend reason is never hidden. EMPTY_SWEEP is the
+ * backend's SKIPPED item when a sweep finds nothing to push — without the
+ * label the run detail would show a bare success with 0 counts and a cryptic
+ * code, so the explanation must be visible here. */
+const SYNC_ITEM_REASON_LABELS: Record<string, string> = {
+  EMPTY_SWEEP: 'Nothing to push — no products were assigned to this store when the sweep ran.',
+}
+
+export function syncItemReasonLabel(reason: string | null | undefined): string {
+  if (!reason) return '—'
+  // Backend reason codes ride as a `CODE: detail` prefix (the EMPTY_SWEEP
+  // item carries the full sentence) — match on the code before the colon.
+  const code = reason.split(':')[0]
+  return SYNC_ITEM_REASON_LABELS[code] ?? SYNC_ITEM_REASON_LABELS[reason] ?? reason
+}
+
 // ─── API client ───────────────────────────────────────────────────────────
 
 export const syncApi = {
   triggerStoreSync: (storeId: string, scope = 'PRODUCT') =>
     apiClient.post<{ runId: string }>(`/stores/${storeId}/sync`, { scope }).then((r) => r.data),
+  /** Per-product push (P1): auto-assigns the product to the store (D-2) and
+   * returns immediately — the run is async, poll runDetail for the result. */
+  pushProductToStore: (storeId: string, productId: string) =>
+    apiClient.post<{ runId: string }>(`/stores/${storeId}/sync-product`, { productId }).then((r) => r.data),
+  /** SKU-exists probe for the adopt warning (BR-05 / G-9). */
+  probeRemoteSku: (storeId: string, sku: string) =>
+    apiClient.get<RemoteSkuProbeResponse>(`/stores/${storeId}/remote-product`, { params: { sku } }).then((r) => r.data),
   reconcileOrders: (storeId: string) =>
     apiClient.post<{ runId: string }>(`/stores/${storeId}/reconcile-orders`, {}).then((r) => r.data),
   stockSync: (storeId: string) =>
@@ -257,7 +299,7 @@ export const syncApi = {
   resolveIssue: (id: string, note?: string) => apiClient.post(`/sync/issues/${id}/resolve`, { note }).then((r) => r.data),
   ignoreIssue: (id: string, note?: string) => apiClient.post(`/sync/issues/${id}/ignore`, { note }).then((r) => r.data),
   productHistory: (storeId: string, productId: string) =>
-    apiClient.get(`/sync/product-history`, { params: { storeId, productId } }).then((r) => r.data),
+    apiClient.get<ProductHistoryResponse>(`/sync/product-history`, { params: { storeId, productId } }).then((r) => r.data),
   overrides: (storeId?: string) =>
     apiClient.get<FieldStateResponse[]>('/sync/overrides', { params: storeId ? { storeId } : {} }).then((r) => r.data),
   retryOverrides: (overrideIds: string[]) => apiClient.post('/sync/overrides/retry', { overrideIds }).then((r) => r.data),

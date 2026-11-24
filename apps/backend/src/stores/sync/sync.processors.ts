@@ -23,6 +23,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TenantRegistryService } from '../../tenancy/tenant-registry.service';
 import { TenantWorkerHost, runPerTenant } from '../../tenancy/tenant-job';
 import { ProductSyncService, SYNC_FANOUT_CONCURRENCY_DEFAULT } from './product-sync.service';
+import { DistributionService } from '../distribution/distribution.service';
 import { StockStatusSyncService } from './stock-status-sync.service';
 import { SyncRunService } from './sync-run.service';
 import { SyncRetentionService } from './sync-retention.service';
@@ -62,6 +63,46 @@ async function boundedMap<T, R>(items: T[], limit: number, fn: (t: T) => Promise
   return out;
 }
 
+/**
+ * G-8 empty-sweep wording: an empty sweep used to report bare success
+ * with 0 counts and no explanation. The SKIPPED item says what happened
+ * and why (push is outbound-only — it never imports).
+ */
+export const EMPTY_SWEEP_REASON =
+  'EMPTY_SWEEP: 0 products assigned — nothing to push; product sync pushes EcoMate products out, it does not import';
+
+/**
+ * D-4 sweep list, shared by the manual store sweep and the reconcile
+ * product safety net: assignment rows first (the sweep's historical
+ * product list), then rule-matched products fill the remainder up to
+ * `cap`. Deduped — a product with both an assignment row and a matching
+ * rule syncs exactly once. Rule matches are NEVER materialized into
+ * assignment rows (no writes here). Without a DistributionService
+ * (legacy manual constructions) the list is assignments-only.
+ */
+export async function sweepProductIds(
+  prisma: PrismaService,
+  distribution: DistributionService | undefined,
+  storeId: string,
+  cap: number,
+): Promise<string[]> {
+  const assignments = await prisma.productStoreAssignment.findMany({
+    where: { storeId }, select: { productId: true }, take: cap,
+  });
+  const ids = (assignments as any[]).map((a) => a.productId as string);
+  if (distribution && ids.length < cap) {
+    const ruleIds = await distribution.ruleMatchedProductIds(storeId, cap - ids.length);
+    const seen = new Set(ids);
+    for (const id of ruleIds) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    }
+  }
+  return ids;
+}
+
 @Processor('store-product-sync', { concurrency: 5, limiter: { max: 20, duration: 1000 } })
 export class StoreProductSyncProcessor extends TenantWorkerHost {
   private readonly logger = new Logger(StoreProductSyncProcessor.name);
@@ -72,6 +113,10 @@ export class StoreProductSyncProcessor extends TenantWorkerHost {
     private readonly queues: SyncQueuesService,
     private readonly breaker: StoreCircuitBreaker,
     @Optional() tenantRegistry?: TenantRegistryService,
+    // D-4 rule-matched sweep. Trailing @Optional so specs constructing
+    // the processor positionally keep working; production always wires
+    // it via StoresModule. Without it the sweep is assignments-only.
+    @Optional() private readonly distribution?: DistributionService,
   ) {
     super(tenantRegistry);
   }
@@ -103,11 +148,18 @@ export class StoreProductSyncProcessor extends TenantWorkerHost {
           counts.updated += r.pushed.length;
           counts.skipped += r.skipped.length;
         } else {
-          // Store sweep: assigned + globally active products, bounded.
-          const assignments = await this.prisma.productStoreAssignment.findMany({
-            where: { storeId }, select: { productId: true }, take: 500,
-          });
-          const ids = assignments.map((a: any) => a.productId);
+          // Store sweep (D-4): assignment rows + rule-matched products,
+          // deduped, capped at 500 total (assignments first).
+          const ids = await sweepProductIds(this.prisma, this.distribution, storeId, 500);
+          if (ids.length === 0) {
+            // G-8: an empty sweep says so — one SKIPPED item, skipped: 1,
+            // status stays SUCCESS (finish() maps failed:0 → SUCCESS).
+            await this.runs.recordItem(runId, {
+              storeId, objectType: 'PRODUCT', status: 'SKIPPED',
+              reason: EMPTY_SWEEP_REASON, auditLevel: 'G',
+            });
+            counts.skipped += 1;
+          }
           const limit = fanoutConcurrency();
           const results = await boundedMap(ids, limit, async (pid: string) => {
             try {
@@ -568,6 +620,9 @@ export class StoreReconcileProcessor extends TenantWorkerHost {
     private readonly queues: SyncQueuesService,
     private readonly orderReconcile: StoreOrderReconcileService,
     @Optional() tenantRegistry?: TenantRegistryService,
+    // D-4 rule-matched safety net (same helper as the manual sweep).
+    // Trailing @Optional — see StoreProductSyncProcessor.
+    @Optional() private readonly distribution?: DistributionService,
   ) { super(tenantRegistry); }
 
   override async process(job: Job): Promise<unknown> {
@@ -618,14 +673,15 @@ export class StoreReconcileProcessor extends TenantWorkerHost {
     };
     void windowDays; void wideningReason;
     return this.queues.serializeStore(storeId, async () => {
-      const assignments = await this.prisma.productStoreAssignment.findMany({
-        where: { storeId }, select: { productId: true }, take: 200,
-      });
+      // D-4: same assignment + rule-matched union as the manual sweep
+      // (cap 200). No EMPTY_SWEEP item here — the safety net runs
+      // unattended and an empty net is the normal idle state.
+      const ids = await sweepProductIds(this.prisma, this.distribution, storeId, 200);
       let failed = 0;
       let updated = 0;
-      for (const a of assignments as any[]) {
+      for (const pid of ids) {
         try {
-          const r = await this.products.syncProduct(storeId, a.productId, runId);
+          const r = await this.products.syncProduct(storeId, pid, runId);
           updated += r.pushed.length;
         } catch (err) {
           failed += 1;

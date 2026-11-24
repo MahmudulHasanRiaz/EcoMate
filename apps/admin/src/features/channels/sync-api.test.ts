@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runStatusTone, syncPollInterval, failureSummary, shortHash, isAttemptEligibleUi, isWebhookFailureReplayableUi } from './sync-api'
+import { runStatusTone, syncPollInterval, failureSummary, shortHash, isAttemptEligibleUi, isWebhookFailureReplayableUi, syncItemReasonLabel } from './sync-api'
 
 describe('sync-api helpers (P4 Sync Center)', () => {
   it('runStatusTone maps run status to badge tones', () => {
@@ -8,6 +8,23 @@ describe('sync-api helpers (P4 Sync Center)', () => {
     expect(runStatusTone('FAILED')).toBe('destructive')
     expect(runStatusTone('RUNNING')).toBe('info')
     expect(runStatusTone('CANCELLED')).toBe('muted')
+  })
+
+  it('syncItemReasonLabel explains EMPTY_SWEEP in plain English, passes other reasons through', () => {
+    expect(syncItemReasonLabel('EMPTY_SWEEP')).toBe(
+      'Nothing to push — no products were assigned to this store when the sweep ran.',
+    )
+    // The backend item carries the full `CODE: detail` reason — the label
+    // matches on the code prefix, not the bare key.
+    expect(syncItemReasonLabel('EMPTY_SWEEP: 0 products assigned — nothing to push; product sync pushes EcoMate products out, it does not import')).toBe(
+      'Nothing to push — no products were assigned to this store when the sweep ran.',
+    )
+    expect(syncItemReasonLabel('MISSING_SKU')).toBe('MISSING_SKU')
+    expect(syncItemReasonLabel('MISSING_SKU: a product without an SKU cannot be distributed')).toBe(
+      'MISSING_SKU: a product without an SKU cannot be distributed',
+    )
+    expect(syncItemReasonLabel(null)).toBe('—')
+    expect(syncItemReasonLabel(undefined)).toBe('—')
   })
 
   it('syncPollInterval is 5s while a run is RUNNING, 30s otherwise', () => {

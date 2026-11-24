@@ -267,6 +267,19 @@ export class SyncQueuesService {
     return { runId };
   }
 
+  /**
+   * P1 per-product push: same run pattern as triggerStoreSync, but the
+   * job carries `productId` — the processor's per-product branch then
+   * syncs only that product through syncProduct (P0 media path).
+   */
+  async triggerProductSync(storeId: string, productId: string, initiatedById?: string): Promise<{ runId: string }> {
+    const run = await this.runs.begin({ scope: 'PRODUCT' as any, triggerType: 'MANUAL', storeId, initiatedById });
+    const runId = (run as any).id as string;
+    // Post-commit enqueue that cannot throw (R-2): fire-and-forget.
+    void this.enqueue('store-product-sync', 'store-sync', { runId, storeId, productId }, `store-sync:${runId}`).catch(() => undefined);
+    return { runId };
+  }
+
   async triggerSyncAll(scope: 'PRODUCT' | 'PUBLISH' = 'PRODUCT', initiatedById?: string): Promise<{ batchRunId: string; childRunIds: string[]; excludedNativeCount: number }> {
     const batch = await this.runs.begin({ scope: scope as any, triggerType: 'MANUAL', initiatedById });
     const batchRunId = (batch as any).id as string;

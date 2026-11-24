@@ -538,6 +538,35 @@ export class ProductSyncService {
     return { deleted: false, reason: res.reason ?? 'failed' };
   }
 
+  /**
+   * P1 SKU probe (G-9 adopt warning): does the remote store already hold
+   * a product with this SKU? Reuses the first-contact adopt probe
+   * (findPreexistingBySku — store load + NATIVE reject + provider +
+   * secrets), so the probe and the push agree on what "exists" means.
+   * Never throws for a probe failure: a provider error (or a provider
+   * without findBySku) reads as "not found" — the push itself still
+   * adopts safely at sync time. Store validation still throws (404/400).
+   */
+  async findRemoteBySku(storeId: string, sku: string): Promise<{ exists: boolean; externalId?: string }> {
+    const store = await this.requireStore(storeId);
+    if (store.kind === 'NATIVE') throw new BadRequestException('NATIVE is never a sync target (BR-20)');
+    const provider = this.registry.providerFor(store);
+    const storeWithSecrets = await this.storeWithSecrets(store);
+    let found: { providerId: string } | null = null;
+    try {
+      found = await this.findPreexistingBySku(provider, storeWithSecrets, sku);
+    } catch (err) {
+      // Defense in depth (findPreexistingBySku already swallows provider
+      // errors): a probe failure must never fail the dialog.
+      this.logger.warn(
+        `SKU probe failed for store ${storeId} sku ${sku} — treating as not found: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { exists: false };
+    }
+    if (!found) return { exists: false };
+    return { exists: true, externalId: found.providerId };
+  }
+
   // ── Internals ─────────────────────────────────────────────────────
 
   private capabilityAllows(caps: any, capability: string, fieldKey: string): boolean {

@@ -16,6 +16,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  Optional,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -32,10 +33,14 @@ import { StoresService } from './stores.service';
 import { SyncQueuesService } from './sync/sync-queues.service';
 import { ProviderRegistryService } from './providers/provider-registry.service';
 import { StoreProductImportService } from './sync/store-product-import.service';
+import { DistributionService } from './distribution/distribution.service';
+import { ProductSyncService } from './sync/product-sync.service';
 import { productSyncEnabled, storesEnabled } from './store-flags';
 import {
   CreateStoreDto,
+  RemoteProductQueryDto,
   RotateStoreCredentialsDto,
+  SyncProductDto,
   TestConnectionDto,
   UpdateStoreDto,
 } from './dto/stores.dto';
@@ -54,6 +59,11 @@ export class StoresController {
     private readonly queues: SyncQueuesService,
     private readonly registry: ProviderRegistryService,
     private readonly imports: StoreProductImportService,
+    // P1 per-product push + SKU probe. Trailing @Optional so specs
+    // constructing the controller manually (4 args) keep working;
+    // production always wires both via StoresModule.
+    @Optional() private readonly distribution?: DistributionService,
+    @Optional() private readonly productSync?: ProductSyncService,
   ) {}
 
   private assertEnabled(): void {
@@ -183,6 +193,53 @@ export class StoresController {
     await this.stores.detail(id);
     const scope = (body.scope ?? 'PRODUCT') as 'PRODUCT' | 'PUBLISH';
     return this.queues.triggerStoreSync(id, scope, user?.sub);
+  }
+
+  /**
+   * P1 per-product push (`{ productId } → { runId }`, BR-21: returns now).
+   * Guards exactly like triggerSync. D-2: the push auto-assigns the
+   * product to the store first (a push is an explicit "this product lives
+   * on this store" act, so later sweeps keep it updated) — never flips an
+   * existing OFF row. The push itself then runs through the normal
+   * syncProduct path (P0 media absolutization included).
+   */
+  @Post(':id/sync-product')
+  @Roles('superadmin', 'admin')
+  @RequiresFeature('store_product_sync')
+  async syncProduct(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SyncProductDto,
+    @CurrentUser() user?: any,
+  ) {
+    this.assertEnabled();
+    if (!productSyncEnabled()) {
+      throw new ForbiddenException('Product sync is disabled');
+    }
+    await this.stores.detail(id);
+    await this.distribution!.ensureAssignment(dto.productId, id);
+    return this.queues.triggerProductSync(id, dto.productId, user?.sub);
+  }
+
+  /**
+   * P1 SKU probe (G-9 adopt warning): does the remote store already hold
+   * a product with this SKU? `{ exists, externalId? }`. Same guards as
+   * the push endpoints. Never throws for a probe failure — a provider
+   * error reads as `{ exists: false }` (the push still adopts safely at
+   * sync time).
+   */
+  @Get(':id/remote-product')
+  @Roles('superadmin', 'admin')
+  @RequiresFeature('store_product_sync')
+  async remoteProduct(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: RemoteProductQueryDto,
+  ) {
+    this.assertEnabled();
+    if (!productSyncEnabled()) {
+      throw new ForbiddenException('Product sync is disabled');
+    }
+    await this.stores.detail(id);
+    return this.productSync!.findRemoteBySku(id, query.sku);
   }
 
   // ── WooCommerce product import (§7.1) ────────────────────────────────

@@ -14,11 +14,12 @@ type Props = {
   onToggleActive?: (row: ProductResponse, active: boolean) => void;
   onDuplicate?: (row: ProductResponse) => void;
   onPublish?: (row: ProductResponse) => void;
+  onPush?: (row: ProductResponse) => void;
   selectedIds: string[]; onSelectionChange: (ids: string[]) => void;
   pageSizeOptions?: number[];
 }
 
-export function ProductsTable({ data, pageCount, totalCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, onDuplicate, onPublish, selectedIds, onSelectionChange, pageSizeOptions }: Props) {
+export function ProductsTable({ data, pageCount, totalCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, onDuplicate, onPublish, onPush, selectedIds, onSelectionChange, pageSizeOptions }: Props) {
   const { data: imEnabled = true } = useInventoryManagement()
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility] = useState<VisibilityState>({})
@@ -34,7 +35,7 @@ export function ProductsTable({ data, pageCount, totalCount, pagination, onPagin
     setRowSelection(sel);
   }, [selectedIds]);
 
-  const columns = productsColumns(onEdit, onDelete, onToggleActive, onDuplicate, imEnabled, onPublish)
+  const columns = productsColumns(onEdit, onDelete, onToggleActive, onDuplicate, imEnabled, onPublish, onPush)
 
   const table = useReactTable({
     data, columns, pageCount, state: { sorting, pagination, columnVisibility, rowSelection },

@@ -21,6 +21,7 @@ import { type ProductResponse } from './api'
 import { categoriesApi } from '@/features/categories/api'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 import { ManagedStockAdjustmentModal } from './components/managed-stock-adjustment-modal'
+import { PushToStoreDialog } from '@/features/channels/push-to-store-dialog'
 import { isManagedAdjustableProduct } from './lib/managed-stock'
 import { PriceLabelOptionsModal } from '@/features/print/components/price-label-options-modal'
 
@@ -41,6 +42,7 @@ export function Products() {
   const [formMode, setFormMode] = useState<'add' | 'edit' | 'duplicate'>('add')
   const [editRow, setEditRow] = useState<ProductResponse | undefined>()
   const [deleteTarget, setDeleteTarget] = useState<ProductResponse | null>(null)
+  const [pushRow, setPushRow] = useState<ProductResponse | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [bulkAction, setBulkAction] = useState<'delete' | 'activate' | 'deactivate' | null>(null)
   const [filterCategoryId, setFilterCategoryId] = useState<string[]>([])
@@ -497,6 +499,7 @@ export function Products() {
           onToggleActive={(row, active) => toggleActiveMut.mutate({ id: row.id, isActive: active })}
           onDuplicate={handleDuplicate}
           onPublish={(row) => publishMut.mutate(row)}
+          onPush={(row) => setPushRow(row)}
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
         />
@@ -539,6 +542,13 @@ export function Products() {
         open={adjustmentModalOpen}
         onOpenChange={setAdjustmentModalOpen}
         initialProductId={adjustmentProductId}
+      />
+
+      <PushToStoreDialog
+        product={pushRow}
+        open={pushRow !== null}
+        onOpenChange={(v) => { if (!v) setPushRow(null) }}
+        onEditProduct={(row) => { setPushRow(null); setEditRow(row); setFormMode('edit'); setFormOpen(true); }}
       />
 
       <PriceLabelOptionsModal
