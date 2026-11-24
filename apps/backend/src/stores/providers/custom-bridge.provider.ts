@@ -71,7 +71,7 @@ export const BRIDGE_WEBHOOK_TOPICS = [
 ];
 
 /** Canonical order-status vocabulary (protocol §7; manifest intersects). */
-export const BRIDGE_STATUS_TARGETS = ['cancelled', 'completed'] as const;
+export const BRIDGE_STATUS_TARGETS = ['cancelled', 'completed', 'on-hold'] as const;
 
 interface BridgeContext {
   baseUrl: string;
@@ -1272,7 +1272,7 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
   override async pushOrderStatus(
     store: StoreWithSecrets,
     ref: RemoteRef,
-    target: 'cancelled' | 'completed',
+    target: 'cancelled' | 'completed' | 'on-hold',
   ): Promise<PushResult> {
     const caps = await this.resolveCapabilities(store);
     if (!caps.orderStatusUpdate || !caps.orderStatusUpdateTargets.includes(target)) {

@@ -188,7 +188,7 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     orders: true,
     webhooks: true,
     orderStatusUpdate: true,
-    orderStatusUpdateTargets: ['cancelled', 'completed'],
+    orderStatusUpdateTargets: ['cancelled', 'completed', 'on-hold'],
     stockStatusFidelity: 'faithful',
     stockQuantity: true, // P13: exact qty in the 1–5 band; status-only above
     contactCheckExposure: true,
@@ -699,7 +699,9 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     return this.woo<Record<string, unknown>>(store, 'GET', `/products/${encodeURIComponent(ref.providerId)}`);
   }
 
-  override async pushOrderStatus(store: StoreWithSecrets, ref: RemoteRef, target: 'cancelled' | 'completed'): Promise<PushResult> {
+  override async pushOrderStatus(store: StoreWithSecrets, ref: RemoteRef, target: 'cancelled' | 'completed' | 'on-hold'): Promise<PushResult> {
+    // Generic PUT — Woo accepts any of its native order statuses, so
+    // 'on-hold' (ingest-time Hold push) needs no special-casing here.
     await this.woo(store, 'PUT', `/orders/${encodeURIComponent(ref.providerId)}`, { status: target });
     return { ok: true, ref };
   }

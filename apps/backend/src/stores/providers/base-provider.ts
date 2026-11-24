@@ -416,7 +416,7 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
   pushOrderStatus(
     store: StoreWithSecrets,
     ref: RemoteRef,
-    target: 'cancelled' | 'completed',
+    target: 'cancelled' | 'completed' | 'on-hold',
   ): Promise<PushResult> {
     void store;
     void ref;

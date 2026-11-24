@@ -1094,6 +1094,24 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       expect(api()[1]?.init?.method).toBe('POST');
     });
 
+    it('pushOrderStatus: on-hold throws ORDER_STATUS_TARGET_UNSUPPORTED (no order-level hold in Shopify)', async () => {
+      // Shopify has no order-level hold state (fulfilment holds are
+      // FulfilmentOrder objects and never surface in order-level
+      // read-back), so the adapter fails loud instead of pushing a
+      // wrong-status fulfilment. The worker's capability gate skips
+      // on-hold for Shopify before it ever reaches here; this throw is
+      // defence-in-depth.
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.onAll(() => jsonResponse(200, {}));
+      const shopify = new ShopifyProvider(mock.fetch);
+      await expect(
+        shopify.pushOrderStatus(STORE(), { providerId: '5001' }, 'on-hold'),
+      ).rejects.toThrow(/ORDER_STATUS_TARGET_UNSUPPORTED/);
+      const api = () => mock.calls.filter((c) => !c.url.includes('/oauth/access_token'));
+      expect(api()).toHaveLength(0); // zero writes attempted
+    });
+
     it('push → read-back round-trip (CANCELLED then FULFILLED)', async () => {
       let remote: any = { id: 5001, financial_status: 'pending', fulfillment_status: null, cancelled_at: null };
       const mock = new MockFetch();

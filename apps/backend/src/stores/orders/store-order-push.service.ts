@@ -4,16 +4,21 @@
  * EcoMate → store direction for orders that have a `StoreOrderMapping`:
  * triggered post-commit from the order cancel/return/Delivered hooks
  * (`OrdersService` calls `notifyOrderStatusChanged`, which only enqueues —
- * never throws into the order path, R-2). The worker:
+ * never throws into the order path, R-2), plus the ingest-time Hold push
+ * (`notifyIngestedOrder`, Boss decision 2026-11-24: a newly ingested
+ * Confirmed order is put on hold remotely so the channel never
+ * double-fulfils it; an order that lands already Hold is skipped). The
+ * worker:
  *
  *  - re-reads mapping + live order status (never trusts the payload, so a
  *    stale enqueue after a re-hold is a `STATUS_SUPERSEDED` skip, not a push);
  *  - resolves the provider target through
  *    `capabilities.orderStatusUpdateTargets` (case-insensitive; core branches
  *    on capabilities, never on a provider slug): Cancelled → `cancelled`,
- *    Delivered → `completed`. `Returned` has no phase-1 target on any
- *    provider → explicit `NO_PUSH_TARGET_FOR_RETURNED` skip (never silent,
- *    never a wrong-status push);
+ *    Delivered → `completed`, Returned → `cancelled` (Boss 2026-11-24 — a
+ *    return cancels the remote order; the old NO_PUSH_TARGET_FOR_RETURNED
+ *    skip is gone). An explicit-target job (ingest Hold push) carries its
+ *    own target (`on-hold`) and a live-status precondition instead;
  *  - is idempotent via `StoreOrderMapping.lastPushedStatus`: a repeat run
  *    with the same canonical target no-ops with zero provider calls;
  *  - verifies every push by read-back (`provider.readOrderStatus`): mismatch
@@ -25,6 +30,12 @@
  * BR-17: only status travels outward; totals/items/prices are never read,
  * never written. Shopify/Custom adapters stay stubbed until P9/P10 — the
  * stub throw is classified (permanent) and recorded, never swallowed.
+ *
+ * Direction note (Boss decision 2026-11-24): EcoMate is the source of
+ * truth for order status. Status flows EcoMate → store ONLY — the store
+ * side never moves an EcoMate order's status (see
+ * StoreOrderIngestService.recordExistingOrder). There is NO order-create
+ * push: orders never go TO a store (Boss 2026-11-23).
  */
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -44,7 +55,7 @@ import type {
   RemoteRef,
 } from '../providers/provider.contract';
 
-export type OrderPushTarget = 'cancelled' | 'completed';
+export type OrderPushTarget = 'cancelled' | 'completed' | 'on-hold';
 
 /** EcoMate statuses that enqueue a push job (cancel/return/Delivered hooks). */
 export const PUSHABLE_ECO_STATUSES = ['Cancelled', 'Delivered', 'Returned'] as const;
@@ -53,9 +64,9 @@ export const PUSHABLE_ECO_STATUSES = ['Cancelled', 'Delivered', 'Returned'] as c
 export const ECO_STATUS_TO_CANONICAL_TARGET: Record<string, OrderPushTarget | null> = {
   Cancelled: 'cancelled',
   Delivered: 'completed',
-  // Phase-1 providers express cancel/fulfil only — a return is an explicit
-  // skip, never a wrong-status push.
-  Returned: null,
+  // Boss decision 2026-11-24: a Returned order cancels the remote order
+  // (Woo has no return state — `cancelled` is the faithful target).
+  Returned: 'cancelled',
 };
 
 export type TargetResolution =
@@ -72,6 +83,9 @@ export type TargetResolution =
 export const TARGET_SYNONYMS: Record<OrderPushTarget, string[]> = {
   cancelled: ['cancelled'],
   completed: ['completed', 'fulfilled'],
+  // Woo native `on-hold`; Shopify declares no equivalent (its targets are
+  // CANCELLED/FULFILLED), so a hold push to Shopify skips explicitly.
+  'on-hold': ['on-hold'],
 };
 
 /**
@@ -86,9 +100,20 @@ export function targetForEcoStatus(
 ): TargetResolution {
   const canonical = ECO_STATUS_TO_CANONICAL_TARGET[ecoStatus] ?? null;
   if (!canonical) {
-    if (ecoStatus === 'Returned') return { skipped: 'NO_PUSH_TARGET_FOR_RETURNED' };
     return { skipped: `NOT_PUSHABLE_STATUS:${ecoStatus}` };
   }
+  return targetForExplicitTarget(canonical, targets);
+}
+
+/**
+ * Pure: an explicit canonical target (carried on the job — today only the
+ * ingest-time Hold push) + capability targets → the target or an explicit
+ * skip reason. Same synonym/case rules as `targetForEcoStatus`.
+ */
+export function targetForExplicitTarget(
+  canonical: OrderPushTarget,
+  targets: string[],
+): TargetResolution {
   const lowered = new Set((targets ?? []).map((t) => String(t).toLowerCase()));
   const accepted = TARGET_SYNONYMS[canonical].some((syn) => lowered.has(syn));
   if (!accepted) {
@@ -102,6 +127,16 @@ export interface OrderPushJob {
   orderId: string;
   ecoStatus: string;
   attemptNo?: number;
+  /**
+   * Explicit canonical target, carried only by the ingest-time Hold push
+   * (`notifyIngestedOrder` → `'on-hold'`). When present the worker pushes
+   * THIS target (after its live-status precondition + capability gate)
+   * instead of deriving one from the live EcoMate status — the ingest
+   * rule is "Confirmed → hold remotely", and no EcoMate status maps to
+   * `on-hold` in the general derivation. Retries keep the target (the
+   * retry re-enqueue spreads the whole job).
+   */
+  target?: OrderPushTarget;
 }
 
 export interface OrderPushOutcome {
@@ -159,6 +194,47 @@ export class StoreOrderPushService {
     }
   }
 
+  /**
+   * Ingest-time Hold push (Boss decision 2026-11-24) — called by the
+   * ingest service right after a new order + its mapping are created.
+   * Rule: the order landed Confirmed → enqueue a push of `on-hold` to
+   * the store (the channel must not fulfil an order EcoMate now owns);
+   * the order landed already Hold (ingested from Woo `on-hold`) → SKIP,
+   * the remote order is already on hold; any other landed status
+   * (Delivered/Cancelled/…) → SKIP, the remote order already reflects
+   * it (the ingest status CAME from the store). Non-mapped orders
+   * return silently (never pushed). Never throws (R-2) — a push
+   * enqueue failure must never fail the ingest; the worker records
+   * the push outcome (SUCCESS/SKIPPED/FAILED + issue) visibly.
+   */
+  async notifyIngestedOrder(orderId: string): Promise<void> {
+    try {
+      if (!orderPushEnabled()) return;
+      if (!orderId) return;
+      const mapping = await this.prisma.storeOrderMapping.findUnique({
+        where: { orderId },
+      });
+      // Non-mapped (native/manual/POS) orders are never pushed.
+      if (!mapping) return;
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: { status: true },
+      });
+      const statusName = (order as any)?.status?.name;
+      // Only a Confirmed landing earns a hold push — Hold (already held
+      // remotely) and every other status are skipped, never pushed.
+      if (statusName !== 'Confirmed') return;
+      await this.queues.enqueue(
+        'store-order-push',
+        'order-status-push',
+        { storeId: mapping.storeId, orderId, ecoStatus: statusName, target: 'on-hold' as const },
+        `order-push:${mapping.storeId}:${orderId}:ingest-hold:${Date.now()}`,
+      );
+    } catch {
+      // Non-propagating by contract (R-2).
+    }
+  }
+
   // ── Worker ────────────────────────────────────────────────────────────
 
   async handlePush(job: OrderPushJob): Promise<OrderPushOutcome> {
@@ -198,7 +274,24 @@ export class StoreOrderPushService {
       });
       const liveStatus = (order as any)?.status?.name;
       if (!order || (order as any).trashedAt) return skip('ORDER_GONE: order missing or trashed');
-      if (!(PUSHABLE_ECO_STATUSES as readonly string[]).includes(liveStatus)) {
+      // Explicit-target jobs (ingest-time Hold push) carry their own
+      // live-status precondition instead of the PUSHABLE list: the hold
+      // is owed only while the order is still Confirmed. Already Hold →
+      // the remote order is already held (or the operator held it here),
+      // so the push is skipped, never re-sent; any other status means
+      // the order moved on and the enqueue is stale.
+      if (job.target) {
+        if (job.target === 'on-hold') {
+          if (liveStatus === 'Hold') {
+            return skip('ALREADY_HOLD: order is Hold — no hold push (Boss 2026-11-24: already hold → skip)');
+          }
+          if (liveStatus !== 'Confirmed') {
+            return skip(`STATUS_SUPERSEDED:${liveStatus ?? 'unknown'}: enqueue was for an ingest-time hold push — no push`);
+          }
+        } else {
+          return skip(`UNSUPPORTED_EXPLICIT_TARGET:${job.target}: no explicit-target job exists for this target`);
+        }
+      } else if (!(PUSHABLE_ECO_STATUSES as readonly string[]).includes(liveStatus)) {
         return skip(`STATUS_SUPERSEDED:${liveStatus ?? 'unknown'}: enqueue was for "${job.ecoStatus}" — no push`);
       }
 
@@ -226,13 +319,17 @@ export class StoreOrderPushService {
 
       // (4) Capability gate: orderStatusUpdate off, or the canonical target
       // absent → explicit SKIPPED with reason (never a silent no-op).
+      // Explicit-target jobs resolve their carried target; derived jobs
+      // resolve from the live EcoMate status.
       if (!capabilities.orderStatusUpdate) {
         return skip('ORDER_STATUS_UPDATE_UNSUPPORTED: provider cannot receive status — no writes attempted');
       }
-      const resolution = targetForEcoStatus(
-        liveStatus,
-        capabilities.orderStatusUpdateTargets ?? [],
-      );
+      const resolution = job.target
+        ? targetForExplicitTarget(job.target, capabilities.orderStatusUpdateTargets ?? [])
+        : targetForEcoStatus(
+            liveStatus,
+            capabilities.orderStatusUpdateTargets ?? [],
+          );
       if ('skipped' in resolution) return skip(`${resolution.skipped}: status "${liveStatus}" not pushed`);
       const target = resolution.target;
 

@@ -8,19 +8,26 @@
  * `StoreOrderMapping @@unique([storeId, externalOrderId])` +
  * `Order.idempotencyKey @unique`.
  *
- * Ingest worker steps (§8.5): (1) mapping lookup → status-only reconcile
- * (totals/items never rewritten, ignored deltas noted); (2) normalizeOrder();
+ * Ingest worker steps (§8.5): (1) mapping lookup → metadata refresh only
+ * (the external status is mirrored on the mapping; the EcoMate order's
+ * status is NEVER applied from the store side — EcoMate is the source of
+ * truth, Boss decision 2026-11-24; the old reconcileStatus application
+ * was removed, not flagged off); (2) normalizeOrder();
  * (3) SKU resolution via StoreSkuMapping → variant SKU → product SKU →
  * product-less + UNMATCHED_SKU issue + one-click map action; (4) external
  * status → internal status via StoreOrderStatusMap (seeded from the
- * store-effective STORE_STATUS_MAP); (5) ordersService.create(dto, undefined,
+ * store-effective STORE_STATUS_MAP) — creation only; (5) ordersService.create(dto, undefined,
  * undefined, undefined, internal); (6) mapping + provenance + ingestFlags
- * + SyncRunItem.
+ * + SyncRunItem; (7) ingest-time Hold push (best-effort, never fails the
+ * ingest): a newly ingested Confirmed order is put on hold remotely.
  *
  * BR-13 absolute: no blockedPolicy / reject switch exists anywhere in this
  * file — blocking is evaluated read-only inside create() for flagging only.
- * BR-16: allowStockShortfall — shortfalls flagged, never thrown. BR-17:
- * after ingest only status + storeMetadata are mutable from the store side.
+ * BR-16: allowStockShortfall — shortfalls flagged, never thrown. BR-17
+ * (as amended by the Boss 2026-11-24 direction): after ingest, NOTHING
+ * about the order is mutable from the store side — status flows EcoMate →
+ * store only (push service); the store side may only refresh the mapping's
+ * external-status mirror (lastExternalStatus) and note ignored deltas.
  */
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
@@ -30,8 +37,8 @@ import { SyncRunService } from '../sync/sync-run.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
 import { StoresService } from '../stores.service';
 import { STATUS_MAP } from '../../import/order-import.service';
-import { findOrderTransitionPath } from '../../orders/order-transitions';
 import { normalizePhone } from '../../common/utils/phone-utils';
+import { StoreOrderPushService } from './store-order-push.service';
 import {
   normalizeOrder,
   buildStoreOrderIdentity,
@@ -54,7 +61,8 @@ export type IngestTrigger = 'WEBHOOK' | 'RECONCILE' | 'MANUAL';
  * skipped as unimportable. ONLY `StoreOrderReconcileService` sets it;
  * webhook intake/ingest (and the ingest processor) never set it and keep
  * the gate. It bypasses ONLY the G-15 status gate — the P13 zero-stock
- * reject, idempotency, and reconcileStatus are untouched.
+ * reject, idempotency, and the existing-order metadata refresh are
+ * untouched.
  */
 export interface IngestOptions {
   type: IngestTrigger;
@@ -170,6 +178,13 @@ export class StoreOrderIngestService {
     private readonly registry: ProviderRegistryService,
     private readonly stores: StoresService,
     @Optional() private readonly moduleRef?: ModuleRef,
+    // Ingest-time Hold push (Boss decision 2026-11-24) — trailing
+    // @Optional so specs constructing the service positionally (5 args)
+    // keep working; without it, no hold push is attempted (log-only).
+    // Production always wires it via StoresModule. One-directional
+    // (ingest → push); the push service never injects ingest, so no
+    // DI cycle.
+    @Optional() private readonly push?: StoreOrderPushService,
   ) {}
 
   private ordersSvc(): OrdersService {
@@ -445,25 +460,29 @@ export class StoreOrderIngestService {
 
     // G-15: a delete/trashed event carries the order's pre-delete status
     // (or none — normalizeOrder then defaults to `pending`). Force the
-    // trash status so the existing-order path below reconciles to
-    // Cancelled instead of wrongly landing on Pending. The missing-order
-    // path skips delete events outright, so this only affects reconciles.
+    // trash status so the mapping mirror records the deletion truthfully
+    // (`lastExternalStatus: 'trash'`). The EcoMate order's status is
+    // NEVER changed by this (EcoMate is the source of truth — a remote
+    // delete does not cancel the local order). The missing-order path
+    // skips delete events outright, so this only affects the mirror.
     if (isOrderDeleteTopic(trigger.topic)) {
       normalized.externalStatus = 'trash';
     }
 
-    // (1) Mapping lookup — existing order → status-only reconcile (BR-17:
-    // totals/items never rewritten; ignored deltas recorded as a note).
+    // (1) Mapping lookup — existing order → metadata refresh only (BR-17
+    // as amended 2026-11-24: totals/items never rewritten, ignored deltas
+    // recorded as a note, and the status is NEVER applied from the store
+    // side — EcoMate is the source of truth).
     const existing = await this.prisma.storeOrderMapping.findUnique({
       where: { storeId_externalOrderId: { storeId, externalOrderId: normalized.externalId } },
       include: { order: { include: { status: true } } },
     });
     if (existing) {
-      return this.reconcileStatus(storeId, existing as any, normalized, trigger);
+      return this.recordExistingOrder(storeId, existing as any, normalized, trigger);
     }
 
     // G-15 status gate (J-08, keeping reconcile): new orders only — the
-    // existing path above already reconciled. A skip records a SKIPPED
+    // existing path above already refreshed the metadata. A skip records a SKIPPED
     // run item (visible in Sync Center) and returns without creating
     // anything; it is NOT an error (no throw, no retry). The gate is
     // Woo-only and fails open when provider/topic are unknown.
@@ -524,8 +543,8 @@ export class StoreOrderIngestService {
         include: { order: { include: { status: true } } },
       });
       if (!raced) throw err;
-      this.logger.warn(`ingest race on ${objectKey} — reconciling existing order`);
-      return this.reconcileStatus(storeId, raced as any, normalized, trigger);
+      this.logger.warn(`ingest race on ${objectKey} — refreshing metadata for the existing order`);
+      return this.recordExistingOrder(storeId, raced as any, normalized, trigger);
     }
   }
 
@@ -703,10 +722,47 @@ export class StoreOrderIngestService {
         auditLevel: 'G',
       });
     }
+    // (7) Ingest-time Hold push (Boss decision 2026-11-24) — best-effort,
+    // AFTER the mapping exists (the push service requires it). A push
+    // enqueue failure must NEVER fail the ingest: the notify never
+    // throws (R-2), and this catch is defence-in-depth for a push
+    // service that misbehaves. The push outcome itself (pushed /
+    // skipped / failed) is recorded visibly by the ORDER_PUSH worker.
+    if (this.push) {
+      try {
+        await this.push.notifyIngestedOrder((order as any).id);
+      } catch (err) {
+        this.logger.warn(
+          `ingest-time hold push failed for ${objectKey} (order ingested, push skipped): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
     return { orderId: (order as any).id, created: true, status: (order as any)?.status?.name ?? initialStatusName ?? 'Pending', statusChanged: true };
   }
 
-  private async reconcileStatus(
+  /**
+   * Existing-order path (Boss decision 2026-11-24: EcoMate is the source
+   * of truth for order status). This REPLACES the old `reconcileStatus`,
+   * which applied the store's status to the EcoMate order — that
+   * direction was never requested and is now REMOVED, not flagged off
+   * (the old method's only duty was the status application, so removal
+   * strands nothing; the walk helper went with it). What this path
+   * still does:
+   *
+   * - refreshes the mapping's external-status mirror
+   *   (`lastExternalStatus` / `externalUpdatedAt`) — write-only
+   *   bookkeeping, no reader decides on it;
+   * - notes an ignored totals/items delta on the timeline (BR-17);
+   * - records an honest SKIPPED run item naming the kept status.
+   *
+   * What it NEVER does: call `updateStatus`, resolve the external
+   * status to an internal one, or record a failure issue — a status
+   * difference between Woo and EcoMate is now NORMAL (EcoMate leads,
+   * the push service carries changes outward), not a reconcile
+   * failure. Both funnels (webhook + reconcile/manual) share this
+   * path, so the turn-off covers both.
+   */
+  private async recordExistingOrder(
     storeId: string,
     mapping: {
       orderId: string;
@@ -717,11 +773,12 @@ export class StoreOrderIngestService {
     trigger: IngestOptions,
   ): Promise<IngestResult> {
     const currentName = mapping.order?.status?.name;
-    const targetName = await this.resolveStatusName(storeId, normalized.externalStatus);
 
     // Totals/items are NEVER rewritten (BR-17) — a delta is only noted.
+    // (No status gate here: the delta note is about totals, and it
+    // fires whenever the totals differ, whatever the remote status.)
     const deltaNote =
-      targetName && Number(normalized.externalTotal) !== Number((mapping.order as any)?.total)
+      Number(normalized.externalTotal) !== Number((mapping.order as any)?.total)
         ? ` external total ${normalized.externalTotal} differs from ingested ${(mapping.order as any)?.total} — kept ingested values (BR-17).`
         : '';
 
@@ -733,174 +790,18 @@ export class StoreOrderIngestService {
       },
     });
 
-    if (!targetName) {
-      // Unmapped external status (draft / custom slug): there is nothing to
-      // move to. Say so — the old code reported this as `already "X"`,
-      // which lied about the cause.
-      if (trigger.runId) {
-        await this.runs.recordItem(trigger.runId, {
-          storeId,
-          objectType: 'ORDER',
-          externalObjectId: normalized.externalId,
-          status: 'SKIPPED',
-          reason: `STATUS_ONLY_RECONCILE: unmapped external status "${normalized.externalStatus}" — kept "${currentName}"; totals/items untouched (BR-17).${deltaNote}`,
-          auditLevel: 'G',
-        });
-      }
-      if (deltaNote) await this.appendTimelineNote(mapping.orderId, currentName, `Reconcile note:${deltaNote}`);
-      return { orderId: mapping.orderId, created: false, status: currentName, statusChanged: false };
-    }
-
-    if (targetName === currentName) {
-      if (trigger.runId) {
-        await this.runs.recordItem(trigger.runId, {
-          storeId,
-          objectType: 'ORDER',
-          externalObjectId: normalized.externalId,
-          status: 'SKIPPED',
-          reason: `STATUS_ONLY_RECONCILE: already "${currentName}"; totals/items untouched (BR-17).${deltaNote}`,
-          auditLevel: 'G',
-        });
-      }
-      if (deltaNote) await this.appendTimelineNote(mapping.orderId, currentName, `Reconcile note:${deltaNote}`);
-      return { orderId: mapping.orderId, created: false, status: currentName, statusChanged: false };
-    }
-
-    const target = await this.prisma.orderStatus.findFirst({ where: { name: targetName } });
-    if (!target) {
-      if (trigger.runId) {
-        await this.runs.recordItem(trigger.runId, {
-          storeId,
-          objectType: 'ORDER',
-          externalObjectId: normalized.externalId,
-          status: 'SKIPPED',
-          reason: `STATUS_ONLY_RECONCILE: unknown internal status "${targetName}" — kept "${currentName}".${deltaNote}`,
-          auditLevel: 'G',
-        });
-      }
-      return { orderId: mapping.orderId, created: false, status: currentName, statusChanged: false };
-    }
-
-    const actor = trigger.actor ?? (trigger.type === 'WEBHOOK' ? 'webhook' : 'reconcile');
-    try {
-      await this.ordersSvc().updateStatus(
-        mapping.orderId,
-        { statusId: (target as any).id } as any,
-        actor,
-        'store-sync',
-      );
-      if (deltaNote) await this.appendTimelineNote(mapping.orderId, targetName, `Reconcile note:${deltaNote}`);
-      if (trigger.runId) {
-        await this.runs.recordItem(trigger.runId, {
-          storeId,
-          objectType: 'ORDER',
-          externalObjectId: normalized.externalId,
-          status: 'SUCCESS',
-          reason: `STATUS_ONLY_RECONCILE: "${currentName}" → "${targetName}" via ${trigger.type}.${deltaNote}`,
-          auditLevel: 'G',
-        });
-      }
-      return { orderId: mapping.orderId, created: false, status: targetName, statusChanged: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // Direct step failed (usually the transition guard): try a forward
-      // walk through legal transitions (e.g. Packed → Shipping → Delivered
-      // when Woo completed an order EcoMate still has Packed). Same pattern
-      // as courier sync's advanceOrderStatusFromSync; driven by the
-      // authoritative ORDER_TRANSITIONS, not the dispatch SYNC_ copy.
-      const walked = await this.walkStatusForward(mapping.orderId, currentName, targetName, actor, target as any);
-      if (walked.ok) {
-        if (deltaNote) await this.appendTimelineNote(mapping.orderId, targetName, `Reconcile note:${deltaNote}`);
-        if (trigger.runId) {
-          await this.runs.recordItem(trigger.runId, {
-            storeId,
-            objectType: 'ORDER',
-            externalObjectId: normalized.externalId,
-            status: 'SUCCESS',
-            reason: `STATUS_ONLY_RECONCILE: "${currentName}" → "${targetName}" via ${trigger.type} (walked ${[currentName, ...walked.path].join(' → ')}).${deltaNote}`,
-            auditLevel: 'G',
-          });
-        }
-        return { orderId: mapping.orderId, created: false, status: targetName, statusChanged: true };
-      }
-      // Fail closed as before (SKIPPED + issue, no throw) — but say where a
-      // partial walk stopped, so the run item never claims the order is
-      // still at the old status when it actually advanced a hop.
-      const walkedNote = walked.reached !== currentName ? ` (walked to "${walked.reached}" before failing)` : '';
-      await this.runs.upsertIssue({
+    if (deltaNote) await this.appendTimelineNote(mapping.orderId, currentName, `Reconcile note:${deltaNote}`);
+    if (trigger.runId) {
+      await this.runs.recordItem(trigger.runId, {
         storeId,
-        code: 'ORDER_STATUS_RECONCILE_FAILED',
         objectType: 'ORDER',
-        objectKey: `store:${storeId}:order:${normalized.externalId}`,
-        message: `Status reconcile "${currentName}" → "${targetName}" failed: ${msg}${walkedNote}`,
+        externalObjectId: normalized.externalId,
+        status: 'SKIPPED',
+        reason: `STATUS_ONLY_RECONCILE: store-side status updates are disabled — EcoMate is the source of truth (Boss 2026-11-24); kept "${currentName}"; totals/items untouched (BR-17).${deltaNote}`,
+        auditLevel: 'G',
       });
-      if (trigger.runId) {
-        await this.runs.recordItem(trigger.runId, {
-          storeId,
-          objectType: 'ORDER',
-          externalObjectId: normalized.externalId,
-          status: 'SKIPPED',
-          reason: `STATUS_ONLY_RECONCILE failed ("${currentName}" → "${targetName}"): ${msg}${walkedNote}`,
-          auditLevel: 'G',
-        });
-      }
-      return { orderId: mapping.orderId, created: false, status: walked.reached, statusChanged: walked.reached !== currentName };
     }
-  }
-
-  /**
-   * Forward multi-step walk (store-sync counterpart of courier sync's
-   * advanceOrderStatusFromSync): BFS a path through ORDER_TRANSITIONS and
-   * step it one updateStatus per hop, stopping at the first failed hop.
-   * Each hop runs the full updateStatus side effects for its target.
-   *
-   * Safety rules (same as the dispatch path):
-   * - No walk when the path is one hop — the direct attempt already failed,
-   *   retrying the identical call is pointless.
-   * - Never step THROUGH Delivered or Cancelled as an intermediate: a
-   *   returned parcel must never be briefly marked delivered (Delivered
-   *   side effects), and a cancel-then-revive walk is not a transition.
-   * - Never walk TOWARD Cancelled: the only multi-hop Cancelled path runs
-   *   through Shipping (Packed → Shipping → Cancelled), and cancelling
-   *   must never advance fulfilment. Cancel stays direct-or-not-at-all.
-   */
-  private async walkStatusForward(
-    orderId: string,
-    fromName: string,
-    targetName: string,
-    actor: string,
-    target: { id: string },
-  ): Promise<{ ok: boolean; path: string[]; reached: string }> {
-    const path = findOrderTransitionPath(fromName, targetName);
-    if (path.length < 2) return { ok: false, path, reached: fromName };
-    if (targetName === 'Cancelled') return { ok: false, path, reached: fromName };
-    const intermediates = path.slice(0, -1);
-    if (intermediates.includes('Delivered') || intermediates.includes('Cancelled')) {
-      return { ok: false, path, reached: fromName };
-    }
-    let reached = fromName;
-    for (const step of path) {
-      const stepStatus =
-        step === targetName
-          ? target
-          : await this.prisma.orderStatus.findFirst({ where: { name: step } });
-      if (!stepStatus) return { ok: false, path, reached };
-      try {
-        await this.ordersSvc().updateStatus(
-          orderId,
-          { statusId: (stepStatus as any).id } as any,
-          actor,
-          'store-sync',
-        );
-        reached = step;
-      } catch (e) {
-        this.logger.warn(
-          `Status walk ${fromName} → ${targetName} stopped at "${reached}" (step "${step}" failed): ${(e as Error).message}`,
-        );
-        return { ok: false, path, reached };
-      }
-    }
-    return { ok: true, path, reached: targetName };
+    return { orderId: mapping.orderId, created: false, status: currentName, statusChanged: false };
   }
 
   private async appendTimelineNote(orderId: string, statusName: string, note: string): Promise<void> {

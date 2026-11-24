@@ -26,13 +26,17 @@ export const ORDER_TRANSITIONS: Record<string, string[]> = {
   Recall: ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'No Response', 'Confirmed', 'Cancelled'],
   'No Response': ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'Recall', 'Confirmed', 'Cancelled'],
   Hold: ['Pending', 'Recall', 'No Response', 'Confirmed', 'Cancelled'],
-  // Boss directive (2026-11-23): Woo Completed = EcoMate Delivered, and the
-  // Confirmed → Delivered transition MUST be allowed — a Woo order completes
-  // on courier handover while EcoMate may still have it Confirmed. Direct
-  // jump is safe: updateStatus side effects key on the TARGET, not the path
-  // (no Packed-/Shipping-specific branches), so the jump runs the full
-  // Delivered side effects (COD verification + final stock deduction) and
-  // skips nothing a walked transition would have done.
+  // Boss directive (2026-11-23): the Confirmed → Delivered transition MUST
+  // be allowed — staff must be able to mark a Confirmed order Delivered
+  // directly (e.g. channel-fulfilled orders, or orders fulfilled outside
+  // the packing flow). Direct jump is safe: updateStatus side effects key
+  // on the TARGET, not the path (no Packed-/Shipping-specific branches),
+  // so the jump runs the full Delivered side effects (COD verification +
+  // final stock deduction) and skips nothing a walked transition would
+  // have done. (The store-sync walk that once used this edge was removed
+  // 2026-11-24 — EcoMate is the source of truth for order status, and
+  // the store side never moves an order's status — but the edge stays
+  // for manual EcoMate transitions.)
   Confirmed: ['Hold', 'Packed', 'Packing Hold', 'Cancelled', 'Delivered'],
   Packed: ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
@@ -49,31 +53,6 @@ export const ORDER_TRANSITIONS: Record<string, string[]> = {
   Cancelled: ['Hold', 'Confirmed'],
   Damaged: [],
 };
-
-/**
- * Shortest forward path from one status to another through ORDER_TRANSITIONS
- * (BFS). Returns the steps AFTER `from` (e.g. `['Shipping', 'Delivered']`
- * for Packed → Delivered), or `[]` when no path exists (including
- * from === to). Pure — the store-sync walk shares this instead of
- * re-implementing BFS against a stale copy (dispatch keeps its own private
- * copy driven by SYNC_ORDER_TRANSITIONS for now).
- */
-export function findOrderTransitionPath(from: string, to: string): string[] {
-  if (from === to) return [];
-  const visited = new Set<string>([from]);
-  const queue: { status: string; path: string[] }[] = [{ status: from, path: [] }];
-  while (queue.length > 0) {
-    const { status, path } = queue.shift()!;
-    for (const next of ORDER_TRANSITIONS[status] ?? []) {
-      if (next === to) return [...path, next];
-      if (!visited.has(next)) {
-        visited.add(next);
-        queue.push({ status: next, path: [...path, next] });
-      }
-    }
-  }
-  return [];
-}
 
 /**
  * Statuses in which an order's LINE ITEMS may no longer be added, changed or

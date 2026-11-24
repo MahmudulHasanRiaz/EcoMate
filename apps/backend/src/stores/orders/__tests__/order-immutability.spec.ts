@@ -1,7 +1,10 @@
 /**
- * P6 immutability suite (BR-17): external-store order data is not an
- * operational source of truth. After ingest, only status and store metadata
- * are mutable from the store side; totals, items and prices are immutable.
+ * P6 immutability suite (BR-17, as amended Boss 2026-11-24): external-store
+ * order data is not an operational source of truth. After ingest, NOTHING
+ * about the order is mutable from the store side — totals, items, prices
+ * AND status; status flows EcoMate → store only (push service). The
+ * store side may only refresh the mapping's external-status mirror and
+ * note ignored deltas.
  */
 import { StoreOrderIngestService } from '../store-order-ingest.service';
 
@@ -75,15 +78,14 @@ describe('P6 BR-17 — totals/items/prices immutable from the store side', () =>
     expect(noted).toBe(true);
   });
 
-  it('a disallowed store-side transition fails closed (SKIPPED + issue, no throw)', async () => {
+  it('a store-side status change is ignored outright (no transition attempt, no issue)', async () => {
     const { svc, orders, runs } = buildIngest(mockPrisma());
     const prisma = (svc as any).prisma;
-    // Delivered → Confirmed is genuinely dead: no forward path exists
-    // (Delivered only goes to Return Pending), so the walk finds nothing
-    // and the fail-closed SKIP + issue is the whole outcome. (This test
-    // used to pin Confirmed → Delivered as the dead case — that edge is
-    // now legal per the 2026-11-23 Boss directive, see
-    // order-status-walk.spec.ts for its landing proof.)
+    // Delivered + processing: the old code ATTEMPTED the transition and
+    // failed closed (SKIPPED + ORDER_STATUS_RECONCILE_FAILED issue). The
+    // turn-off (Boss 2026-11-24) removes the attempt entirely — a status
+    // difference is normal now (EcoMate leads), not a failure, so no
+    // issue is recorded and updateStatus is never called.
     prisma.storeOrderMapping.findUnique.mockResolvedValue({
       ...MAPPING,
       order: { status: { name: 'Delivered' }, total: 500 },
@@ -100,13 +102,14 @@ describe('P6 BR-17 — totals/items/prices immutable from the store side', () =>
     }, { type: 'RECONCILE', runId: 'run-1' });
 
     expect(res).toMatchObject({ created: false, status: 'Delivered', statusChanged: false });
-    expect(orders.updateStatus).toHaveBeenCalledTimes(1); // direct attempt only — no walk exists
-    expect(runs.upsertIssue).toHaveBeenCalledWith(
-      expect.objectContaining({ code: 'ORDER_STATUS_RECONCILE_FAILED' }),
-    );
+    expect(orders.updateStatus).not.toHaveBeenCalled();
+    expect(runs.upsertIssue).not.toHaveBeenCalled();
     expect(runs.recordItem).toHaveBeenCalledWith(
       'run-1',
-      expect.objectContaining({ status: 'SKIPPED' }),
+      expect.objectContaining({
+        status: 'SKIPPED',
+        reason: expect.stringContaining('store-side status updates are disabled'),
+      }),
     );
   });
 

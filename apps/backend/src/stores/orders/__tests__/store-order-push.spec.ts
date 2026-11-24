@@ -8,13 +8,15 @@
  * GET /orders/{id}) is proven in woo-live.spec.ts.
  *
  * Vectors: pure target resolution (incl. Shopify-style uppercase targets);
- * cancel→cancelled + Delivered→completed read-back-verified; idempotent
- * second run (zero provider calls); unsupported target / update-disabled /
- * Returned explicit skips; non-mapped orders never pushed; stale payload
- * superseded; transient → retry scheduled; permanent → DEAD + issue;
- * verify-mismatch → exactly one repair push then failure.
+ * cancel→cancelled + Delivered→completed + Returned→cancelled
+ * read-back-verified; idempotent second run (zero provider calls);
+ * unsupported target / update-disabled explicit skips; non-mapped orders
+ * never pushed; stale payload superseded; transient → retry scheduled;
+ * permanent → DEAD + issue; verify-mismatch → exactly one repair push
+ * then failure; ingest-time Hold push (explicit on-hold target,
+ * ALREADY_HOLD + supersede skips, target survives retries).
  */
-import { StoreOrderPushService, targetForEcoStatus } from '../store-order-push.service';
+import { StoreOrderPushService, targetForEcoStatus, targetForExplicitTarget } from '../store-order-push.service';
 import { FakeProvider } from '../../providers/__tests__/fake.provider';
 import { ProviderErrorCategory } from '../../../marketing/ad-provider.adapter';
 
@@ -104,15 +106,19 @@ describe('P7 target resolution (pure, capability-driven — never slug-branched)
     expect(targetForEcoStatus('Delivered', ['CANCELLED', 'FULFILLED'])).toEqual({ target: 'completed' });
   });
 
-  it('Returned has no phase-1 target → explicit skip (never a wrong-status push)', () => {
-    expect(targetForEcoStatus('Returned', ['cancelled', 'completed'])).toEqual({
-      skipped: 'NO_PUSH_TARGET_FOR_RETURNED',
-    });
+  it('Returned → cancelled (Boss 2026-11-24: a return cancels the remote order)', () => {
+    expect(targetForEcoStatus('Returned', ['cancelled', 'completed'])).toEqual({ target: 'cancelled' });
   });
 
   it('absent target → UNSUPPORTED_TARGET; non-pushable status → NOT_PUSHABLE_STATUS', () => {
     expect(targetForEcoStatus('Cancelled', ['completed'])).toEqual({ skipped: 'UNSUPPORTED_TARGET:cancelled' });
     expect(targetForEcoStatus('Hold', ['cancelled', 'completed'])).toEqual({ skipped: 'NOT_PUSHABLE_STATUS:Hold' });
+  });
+
+  it('explicit target: on-hold resolves on Woo-style targets, skips on Shopify-style targets', () => {
+    expect(targetForExplicitTarget('on-hold', ['cancelled', 'completed', 'on-hold'])).toEqual({ target: 'on-hold' });
+    expect(targetForExplicitTarget('on-hold', ['CANCELLED', 'FULFILLED'])).toEqual({ skipped: 'UNSUPPORTED_TARGET:on-hold' });
+    expect(targetForExplicitTarget('cancelled', ['cancelled'])).toEqual({ target: 'cancelled' });
   });
 });
 
@@ -268,7 +274,7 @@ describe('P7 worker — explicit skips (never silent)', () => {
     expect(provider.pushOrderStatus).not.toHaveBeenCalled();
   });
 
-  it('Returned → SKIPPED NO_PUSH_TARGET_FOR_RETURNED, zero provider writes', async () => {
+  it('Returned → cancelled, read-back-verified (no more NO_PUSH_TARGET_FOR_RETURNED skip)', async () => {
     const prisma = mockPrisma();
     seedPushable(prisma, 'Returned');
     const fake = new FakeProvider();
@@ -276,10 +282,12 @@ describe('P7 worker — explicit skips (never silent)', () => {
 
     const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Returned' });
 
-    expect(out.status).toBe('SKIPPED');
-    expect(out.reason).toMatch(/NO_PUSH_TARGET_FOR_RETURNED/);
-    expect(fake.calls.filter((c) => c.method !== 'resolveCapabilities')).toHaveLength(0);
-    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ status: 'SUCCESS', reason: 'PUSHED:cancelled' });
+    expect(fake.remoteOrderStatus('ext-1')).toBe('cancelled');
+    expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith({
+      where: { id: 'map-1' },
+      data: { lastPushedStatus: 'cancelled' },
+    });
   });
 
   it('non-mapped order → SKIPPED MAPPING_GONE, provider never resolved', async () => {
@@ -398,5 +406,190 @@ describe('P7 worker — standard retry classification', () => {
     expect(runs.recordAttempt).toHaveBeenCalledWith(expect.objectContaining({
       errorMessage: expect.stringContaining('ORDER_PUSH_VERIFY_FAILED'),
     }));
+  });
+});
+
+describe('ingest-time Hold push — notifyIngestedOrder (Boss 2026-11-24)', () => {
+  it('Confirmed landing → enqueues an explicit on-hold push job', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(MAPPING());
+    prisma.order.findUnique.mockResolvedValue(ORDER('Confirmed'));
+    const { svc, queues } = buildPush(prisma, new FakeProvider());
+    await svc.notifyIngestedOrder('o1');
+    expect(queues.enqueue).toHaveBeenCalledTimes(1);
+    expect(queues.enqueue).toHaveBeenCalledWith(
+      'store-order-push',
+      'order-status-push',
+      expect.objectContaining({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed', target: 'on-hold' }),
+      expect.stringMatching(/^order-push:s1:o1:ingest-hold:/),
+    );
+  });
+
+  it('already-Hold landing → NO enqueue (the remote order is already on hold)', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(MAPPING());
+    prisma.order.findUnique.mockResolvedValue(ORDER('Hold'));
+    const { svc, queues } = buildPush(prisma, new FakeProvider());
+    await svc.notifyIngestedOrder('o1');
+    expect(queues.enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each(['Delivered', 'Cancelled', 'Returned', 'Pending', 'Packed'])(
+    '%s landing → NO enqueue (the remote order already reflects it)',
+    async (status) => {
+      const prisma = mockPrisma();
+      prisma.storeOrderMapping.findUnique.mockResolvedValue(MAPPING());
+      prisma.order.findUnique.mockResolvedValue(ORDER(status));
+      const { svc, queues } = buildPush(prisma, new FakeProvider());
+      await svc.notifyIngestedOrder('o1');
+      expect(queues.enqueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it('non-mapped order → NO enqueue, never pushed', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(null);
+    const { svc, queues } = buildPush(prisma, new FakeProvider());
+    await svc.notifyIngestedOrder('o-native');
+    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(prisma.order.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('flag off → NO enqueue, no throw', async () => {
+    process.env.store_order_push_enabled = 'false';
+    const prisma = mockPrisma();
+    const { svc, queues } = buildPush(prisma, new FakeProvider());
+    await expect(svc.notifyIngestedOrder('o1')).resolves.toBeUndefined();
+    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(prisma.storeOrderMapping.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('enqueue failure never throws (R-2: the ingest must not fail on the push)', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(MAPPING());
+    prisma.order.findUnique.mockResolvedValue(ORDER('Confirmed'));
+    const queues = mockQueues();
+    queues.enqueue.mockRejectedValue(new Error('queue down'));
+    const { svc } = buildPush(prisma, new FakeProvider(), queues);
+    await expect(svc.notifyIngestedOrder('o1')).resolves.toBeUndefined();
+  });
+});
+
+describe('ingest-time Hold push — worker (explicit-target jobs)', () => {
+  /** FakeProvider with Woo-style targets incl. on-hold. */
+  function holdCapableFake() {
+    const fake = new FakeProvider();
+    fake.declaredCapabilities.orderStatusUpdateTargets = ['cancelled', 'completed', 'on-hold'];
+    return fake;
+  }
+
+  it('Confirmed + explicit on-hold → PUSHED:on-hold, read-back-verified, mapping updated', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Confirmed');
+    const fake = holdCapableFake();
+    const { svc, runs } = buildPush(prisma, fake);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed', target: 'on-hold' });
+
+    expect(out).toMatchObject({ status: 'SUCCESS', reason: 'PUSHED:on-hold' });
+    expect(fake.calls.filter((c) => c.method === 'pushOrderStatus')).toHaveLength(1);
+    expect(fake.calls.find((c) => c.method === 'pushOrderStatus')?.detail).toMatchObject({
+      ref: { providerId: 'ext-1' }, target: 'on-hold',
+    });
+    expect(fake.remoteOrderStatus('ext-1')).toBe('on-hold');
+    expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith({
+      where: { id: 'map-1' },
+      data: { lastPushedStatus: 'on-hold' },
+    });
+    expect(runs.recordItem).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'SUCCESS', reason: expect.stringContaining('read-back verified') }),
+    );
+  });
+
+  it('idempotent: hold already pushed → ALREADY_PUSHED, zero provider calls', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Confirmed', { lastPushedStatus: 'on-hold' });
+    const fake = holdCapableFake();
+    const { svc } = buildPush(prisma, fake);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed', target: 'on-hold' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/ALREADY_PUSHED:on-hold/);
+    expect(fake.calls.filter((c) => c.method !== 'resolveCapabilities')).toHaveLength(0);
+    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+  });
+
+  it('live status moved to Hold before the worker ran → ALREADY_HOLD skip, no push', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Hold');
+    const fake = holdCapableFake();
+    const { svc } = buildPush(prisma, fake);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed', target: 'on-hold' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/ALREADY_HOLD/);
+    expect(fake.calls).toHaveLength(0);
+    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+  });
+
+  it('live status moved on (Packed) → STATUS_SUPERSEDED skip, no push', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Packed');
+    const fake = holdCapableFake();
+    const { svc } = buildPush(prisma, fake);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed', target: 'on-hold' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/STATUS_SUPERSEDED:Packed/);
+    expect(fake.calls).toHaveLength(0);
+    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+  });
+
+  it('provider without on-hold (Shopify-style targets) → UNSUPPORTED_TARGET skip, zero writes', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Confirmed');
+    const provider = {
+      slug: 'shopify',
+      declaredCapabilities: { orderStatusUpdate: true, orderStatusUpdateTargets: ['CANCELLED', 'FULFILLED'] },
+      resolveCapabilities: jest.fn().mockResolvedValue({
+        orderStatusUpdate: true, orderStatusUpdateTargets: ['CANCELLED', 'FULFILLED'],
+      }),
+      pushOrderStatus: jest.fn().mockResolvedValue({ ok: true }),
+      readOrderStatus: jest.fn().mockResolvedValue({ status: 'on-hold' }),
+    } as any;
+    const { svc } = buildPush(prisma, provider);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed', target: 'on-hold' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/UNSUPPORTED_TARGET:on-hold/);
+    expect(provider.pushOrderStatus).not.toHaveBeenCalled();
+    expect(provider.readOrderStatus).not.toHaveBeenCalled();
+    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+  });
+
+  it('explicit target survives the retry re-enqueue (transient failure → retry keeps on-hold)', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Confirmed');
+    const fake = holdCapableFake();
+    fake.injectFailure({
+      method: 'pushOrderStatus', times: 1, category: ProviderErrorCategory.TEMPORARY_FAILURE,
+    });
+    const { svc, queues } = buildPush(prisma, fake);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed', target: 'on-hold' });
+
+    expect(out.status).toBe('FAILED');
+    expect(out.reason).toMatch(/RETRY_SCHEDULED:1:/);
+    expect(queues.enqueue).toHaveBeenCalledWith(
+      'store-order-push', 'order-status-push',
+      expect.objectContaining({ orderId: 'o1', target: 'on-hold', attemptNo: 1 }),
+      expect.stringContaining(':retry:1'),
+      expect.objectContaining({ delay: 30_000 }),
+    );
   });
 });

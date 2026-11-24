@@ -56,7 +56,7 @@ export interface ProviderCapabilities {
   orders: boolean;
   webhooks: boolean;
   orderStatusUpdate: boolean;
-  orderStatusUpdateTargets: string[]; // e.g. ['cancelled','completed']
+  orderStatusUpdateTargets: string[]; // e.g. ['cancelled','completed','on-hold']
   stockStatusFidelity: StockStatusFidelity; // drives P13 projection / BR-08
   /**
    * P13: exact-quantity push support in the 1–5 band (and the capped band
@@ -371,10 +371,20 @@ export interface CommerceProvider {
     body: NormalizedProduct,
     fields: FieldKey[],
   ): Record<FieldKey, FieldSnapshot>;
+  /**
+   * P7 (§8.6): push an order's status to the remote store. Canonical
+   * targets: `cancelled` (EcoMate Cancelled/Returned), `completed`
+   * (EcoMate Delivered), `on-hold` (ingest-time Hold push — Boss
+   * decision 2026-11-24: a newly ingested Confirmed order is put on
+   * hold remotely so the channel never double-fulfils it). Adapters
+   * render the canonical target remotely (Shopify P9:
+   * CANCELLED/FULFILLED); an adapter with no equivalent for a target
+   * must reject it loudly, never silently map it to another status.
+   */
   pushOrderStatus(
     store: StoreWithSecrets,
     ref: RemoteRef,
-    target: 'cancelled' | 'completed',
+    target: 'cancelled' | 'completed' | 'on-hold',
   ): Promise<PushResult>;
   /**
    * P7 (§8.6): read the remote order's current status for read-back

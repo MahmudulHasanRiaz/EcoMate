@@ -1,12 +1,16 @@
 /**
- * Status-gap fix suite (Boss directive 2026-11-23): Woo Completed =
- * Delivered (Confirmed → Delivered allowed), Woo refunded/returned =
- * Cancelled (Woo-only override — the shared STATUS_MAP is untouched).
+ * Status-direction suite (Boss directives 2026-11-23 + 2026-11-24):
  *
- * The updateStatus fake enforces the REAL ORDER_TRANSITIONS map instead
- * of succeeding blindly: a blindly-succeeding mock is exactly what hid
- * this bug (order-ingest.spec.ts asserted Confirmed → Delivered lands
- * while production SKIPPED it).
+ * - Ingest MAPPING (creation only, still live): Woo Completed =
+ *   Delivered, Woo refunded/returned = Cancelled (Woo-only override —
+ *   the shared STATUS_MAP is untouched, CSV import byte-identical).
+ * - Turn-off (2026-11-24): EcoMate is the source of truth — a Woo
+ *   status change on an EXISTING order NEVER moves the EcoMate order.
+ *   The old reconcileStatus application + multi-step walk were REMOVED
+ *   (not flagged off); the existing-order path now refreshes the
+ *   mapping mirror only and records an honest SKIPPED item. The
+ *   real-guard walk tests that pinned the old direction were replaced
+ *   by turn-off proofs below (updateStatus is never called at all).
  */
 import {
   StoreOrderIngestService,
@@ -14,7 +18,6 @@ import {
   STORE_STATUS_OVERRIDES,
 } from '../store-order-ingest.service';
 import { STATUS_MAP } from '../../../import/order-import.service';
-import { ORDER_TRANSITIONS } from '../../../orders/order-transitions';
 
 function mockPrisma() {
   const variantFind = jest.fn();
@@ -39,32 +42,6 @@ function mockRuns() {
     upsertIssue: jest.fn().mockResolvedValue({}),
     finish: jest.fn().mockResolvedValue({}),
   } as any;
-}
-
-/**
- * updateStatus fake that enforces the REAL ORDER_TRANSITIONS guard: it
- * throws the production guard message for disallowed moves and tracks
- * the order's current status across calls, so a multi-hop walk is
- * verified hop by hop. `failOn` injects a non-guard failure for one
- * target (e.g. an open-Return Delivered block).
- *
- * In these tests the OrderStatus id IS the name (see statusRows below),
- * so the fake reads the target straight from dto.statusId.
- */
-function realGuardUpdateStatus(initial: string, failOn?: Set<string>) {
-  let current = initial;
-  const fn = jest.fn(async (_orderId: string, dto: { statusId: string }) => {
-    const to = dto.statusId;
-    if (failOn?.has(to)) throw new Error(`boom: ${to} refused by a non-guard rule`);
-    if (!(ORDER_TRANSITIONS[current] ?? []).includes(to)) {
-      throw new Error(
-        `Cannot transition from "${current}" to "${to}". Allowed: ${(ORDER_TRANSITIONS[current] ?? []).join(', ') || 'none'}`,
-      );
-    }
-    current = to;
-    return {};
-  });
-  return { fn, current: () => current };
 }
 
 /** orderStatus.findFirst resolves by name; the id IS the name (see above). */
@@ -183,175 +160,81 @@ describe('CSV importer mapping unchanged (STATUS_MAP is shared — do NOT change
   });
 });
 
-describe('reconcileStatus — real-guard walk (updateStatus enforces ORDER_TRANSITIONS)', () => {
-  it('(a) Confirmed + completed → Delivered, direct, exactly one call', async () => {
+describe('existing orders — store-side status updates are OFF (Boss 2026-11-24)', () => {
+  it.each([
+    ['RECONCILE' as const, 'completed'],
+    ['WEBHOOK' as const, 'completed'],
+  ])('Confirmed + completed via %s → stays Confirmed, updateStatus NEVER called', async (type, status) => {
     const prisma = mockPrisma();
     seedExisting(prisma, 'Confirmed');
-    const guard = realGuardUpdateStatus('Confirmed');
-    const { svc, orders, runs } = buildIngest(prisma, guard.fn);
+    const { svc, orders, runs } = buildIngest(prisma, jest.fn().mockResolvedValue({}));
 
-    const res = await svc.ingest('s1', rawOrder('completed'), { type: 'RECONCILE', runId: 'run-1' });
-
-    expect(res).toMatchObject({ created: false, status: 'Delivered', statusChanged: true });
-    expect(orders.updateStatus).toHaveBeenCalledTimes(1);
-    expect(orders.updateStatus).toHaveBeenCalledWith('ord-1', { statusId: 'Delivered' }, 'reconcile', 'store-sync');
-    expect(runs.recordItem).toHaveBeenCalledWith(
-      'run-1',
-      expect.objectContaining({ status: 'SUCCESS', reason: expect.stringContaining('"Confirmed" → "Delivered"') }),
-    );
-  });
-
-  it('Packed + completed → walks Shipping → Delivered', async () => {
-    const prisma = mockPrisma();
-    seedExisting(prisma, 'Packed');
-    const guard = realGuardUpdateStatus('Packed');
-    const { svc, orders, runs } = buildIngest(prisma, guard.fn);
-
-    const res = await svc.ingest('s1', rawOrder('completed'), { type: 'RECONCILE', runId: 'run-1' });
-
-    expect(res).toMatchObject({ created: false, status: 'Delivered', statusChanged: true });
-    expect(orders.updateStatus).toHaveBeenCalledTimes(3);
-    // Direct attempt first (guard rejects Packed → Delivered), then the walk.
-    expect(orders.updateStatus.mock.calls.map((c: any[]) => c[1].statusId)).toEqual(['Delivered', 'Shipping', 'Delivered']);
-    expect(guard.current()).toBe('Delivered');
-    expect(runs.recordItem).toHaveBeenCalledWith(
-      'run-1',
-      expect.objectContaining({ status: 'SUCCESS', reason: expect.stringContaining('walked Packed → Shipping → Delivered') }),
-    );
-  });
-
-  it('Hold + completed → walks Confirmed → Delivered (via the new edge)', async () => {
-    const prisma = mockPrisma();
-    seedExisting(prisma, 'Hold');
-    const guard = realGuardUpdateStatus('Hold');
-    const { svc, orders } = buildIngest(prisma, guard.fn);
-
-    const res = await svc.ingest('s1', rawOrder('completed'), { type: 'RECONCILE', runId: 'run-1' });
-
-    expect(res).toMatchObject({ created: false, status: 'Delivered', statusChanged: true });
-    // Direct attempt first (guard rejects Hold → Delivered), then the walk.
-    expect(orders.updateStatus.mock.calls.map((c: any[]) => c[1].statusId)).toEqual(['Delivered', 'Confirmed', 'Delivered']);
-  });
-
-  it('(b) Confirmed + refunded → Cancelled via the Woo override', async () => {
-    const prisma = mockPrisma();
-    seedExisting(prisma, 'Confirmed');
-    const guard = realGuardUpdateStatus('Confirmed');
-    const { svc, orders } = buildIngest(prisma, guard.fn);
-
-    const res = await svc.ingest('s1', rawOrder('refunded'), { type: 'WEBHOOK', runId: 'run-1' });
-
-    expect(res).toMatchObject({ created: false, status: 'Cancelled', statusChanged: true });
-    expect(orders.updateStatus).toHaveBeenCalledWith('ord-1', { statusId: 'Cancelled' }, 'webhook', 'store-sync');
-  });
-
-  it('(b) Confirmed + returned (literal) → Cancelled via the Woo override', async () => {
-    const prisma = mockPrisma();
-    seedExisting(prisma, 'Confirmed');
-    const guard = realGuardUpdateStatus('Confirmed');
-    const { svc, orders } = buildIngest(prisma, guard.fn);
-
-    const res = await svc.ingest('s1', rawOrder('returned'), { type: 'WEBHOOK', runId: 'run-1' });
-
-    expect(res).toMatchObject({ created: false, status: 'Cancelled', statusChanged: true });
-    expect(orders.updateStatus).toHaveBeenCalledWith('ord-1', { statusId: 'Cancelled' }, 'webhook', 'store-sync');
-  });
-
-  it('(d) Confirmed + on-hold → Hold still works (regression)', async () => {
-    const prisma = mockPrisma();
-    seedExisting(prisma, 'Confirmed');
-    const guard = realGuardUpdateStatus('Confirmed');
-    const { svc, orders } = buildIngest(prisma, guard.fn);
-
-    const res = await svc.ingest('s1', rawOrder('on-hold'), { type: 'WEBHOOK', runId: 'run-1' });
-
-    expect(res).toMatchObject({ created: false, status: 'Hold', statusChanged: true });
-    expect(orders.updateStatus).toHaveBeenCalledTimes(1);
-  });
-
-  it('Delivered + processing → no path → fail-closed SKIPPED + issue (no walk)', async () => {
-    const prisma = mockPrisma();
-    seedExisting(prisma, 'Delivered');
-    const guard = realGuardUpdateStatus('Delivered');
-    const { svc, orders, runs } = buildIngest(prisma, guard.fn);
-
-    const res = await svc.ingest('s1', rawOrder('processing'), { type: 'RECONCILE', runId: 'run-1' });
-
-    expect(res).toMatchObject({ created: false, status: 'Delivered', statusChanged: false });
-    expect(orders.updateStatus).toHaveBeenCalledTimes(1); // direct attempt only — no path exists
-    expect(runs.upsertIssue).toHaveBeenCalledWith(
-      expect.objectContaining({ code: 'ORDER_STATUS_RECONCILE_FAILED' }),
-    );
-    expect(runs.recordItem).toHaveBeenCalledWith(
-      'run-1',
-      expect.objectContaining({ status: 'SKIPPED' }),
-    );
-  });
-
-  it('Packed + cancelled → walk REFUSED for Cancelled (never steps via Shipping)', async () => {
-    const prisma = mockPrisma();
-    seedExisting(prisma, 'Packed');
-    const guard = realGuardUpdateStatus('Packed');
-    const { svc, orders, runs } = buildIngest(prisma, guard.fn);
-
-    const res = await svc.ingest('s1', rawOrder('cancelled'), { type: 'RECONCILE', runId: 'run-1' });
-
-    // Packed has no Cancelled edge; the only multi-hop route runs through
-    // Shipping, and cancelling must never advance fulfilment.
-    expect(res).toMatchObject({ created: false, status: 'Packed', statusChanged: false });
-    expect(orders.updateStatus).toHaveBeenCalledTimes(1);
-    expect(orders.updateStatus.mock.calls[0][1]).toEqual({ statusId: 'Cancelled' });
-    expect(guard.current()).toBe('Packed');
-    expect(runs.recordItem).toHaveBeenCalledWith(
-      'run-1',
-      expect.objectContaining({ status: 'SKIPPED' }),
-    );
-  });
-
-  it('one-hop path is not retried when the direct step fails for a non-guard reason', async () => {
-    const prisma = mockPrisma();
-    seedExisting(prisma, 'Confirmed');
-    const throwing = jest.fn().mockRejectedValue(new Error('boom: Delivered refused by a non-guard rule'));
-    const { svc, orders, runs } = buildIngest(prisma, throwing);
-
-    const res = await svc.ingest('s1', rawOrder('completed'), { type: 'RECONCILE', runId: 'run-1' });
+    const res = await svc.ingest('s1', rawOrder(status), { type, runId: 'run-1' });
 
     expect(res).toMatchObject({ created: false, status: 'Confirmed', statusChanged: false });
-    expect(orders.updateStatus).toHaveBeenCalledTimes(1); // no pointless retry of the identical call
-    expect(runs.upsertIssue).toHaveBeenCalledWith(
-      expect.objectContaining({ code: 'ORDER_STATUS_RECONCILE_FAILED' }),
-    );
-  });
-
-  it('partial walk fails closed honestly: reason names the status actually reached', async () => {
-    const prisma = mockPrisma();
-    seedExisting(prisma, 'Packed');
-    // Shipping hop succeeds; the Delivered hop throws (e.g. open-Return block).
-    const guard = realGuardUpdateStatus('Packed', new Set(['Delivered']));
-    const { svc, orders, runs } = buildIngest(prisma, guard.fn);
-
-    const res = await svc.ingest('s1', rawOrder('completed'), { type: 'RECONCILE', runId: 'run-1' });
-
-    expect(res).toMatchObject({ created: false, status: 'Shipping', statusChanged: true });
-    expect(orders.updateStatus.mock.calls.map((c: any[]) => c[1].statusId)).toEqual([
-      'Delivered', // direct attempt (guard rejects Packed → Delivered)
-      'Shipping', // walk hop 1 (lands)
-      'Delivered', // walk hop 2 (refused)
-    ]);
+    expect(orders.updateStatus).not.toHaveBeenCalled();
+    expect(runs.upsertIssue).not.toHaveBeenCalled(); // a difference is normal now, not a failure
     expect(runs.recordItem).toHaveBeenCalledWith(
       'run-1',
       expect.objectContaining({
         status: 'SKIPPED',
-        reason: expect.stringContaining('walked to "Shipping" before failing'),
+        reason: expect.stringContaining('store-side status updates are disabled'),
+      }),
+    );
+    // The mapping mirror still refreshes (write-only bookkeeping).
+    expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { storeId_externalOrderId: { storeId: 's1', externalOrderId: 'ext-2' } },
+        data: expect.objectContaining({ lastExternalStatus: 'completed' }),
       }),
     );
   });
 
-  it('unmapped external status → SKIPPED with an honest reason (not "already")', async () => {
+  it.each(['refunded', 'cancelled', 'on-hold', 'processing'])(
+    'Confirmed + %s → stays Confirmed (the Woo override moves only NEW orders now)',
+    async (status) => {
+      const prisma = mockPrisma();
+      seedExisting(prisma, 'Confirmed');
+      const { svc, orders } = buildIngest(prisma, jest.fn().mockResolvedValue({}));
+
+      const res = await svc.ingest('s1', rawOrder(status), { type: 'WEBHOOK', runId: 'run-1' });
+
+      expect(res).toMatchObject({ created: false, status: 'Confirmed', statusChanged: false });
+      expect(orders.updateStatus).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['Packed', 'Hold', 'Delivered', 'Shipping'])(
+    '%s + completed → stays %s (no walk, no transition, no issue)',
+    async (current) => {
+      const prisma = mockPrisma();
+      seedExisting(prisma, current);
+      const { svc, orders, runs } = buildIngest(prisma, jest.fn().mockResolvedValue({}));
+
+      const res = await svc.ingest('s1', rawOrder('completed'), { type: 'RECONCILE', runId: 'run-1' });
+
+      expect(res).toMatchObject({ created: false, status: current, statusChanged: false });
+      expect(orders.updateStatus).not.toHaveBeenCalled();
+      expect(runs.upsertIssue).not.toHaveBeenCalled();
+    },
+  );
+
+  it('Delivered + processing → stays Delivered, no issue (backward moves are normal, not failures)', async () => {
+    const prisma = mockPrisma();
+    seedExisting(prisma, 'Delivered');
+    const { svc, orders, runs } = buildIngest(prisma, jest.fn().mockResolvedValue({}));
+
+    const res = await svc.ingest('s1', rawOrder('processing'), { type: 'RECONCILE', runId: 'run-1' });
+
+    expect(res).toMatchObject({ created: false, status: 'Delivered', statusChanged: false });
+    expect(orders.updateStatus).not.toHaveBeenCalled();
+    expect(runs.upsertIssue).not.toHaveBeenCalled();
+  });
+
+  it('unmapped external status (draft) → stays, SKIPPED item, no transition attempt', async () => {
     const prisma = mockPrisma();
     seedExisting(prisma, 'Confirmed');
-    const guard = realGuardUpdateStatus('Confirmed');
-    const { svc, orders, runs } = buildIngest(prisma, guard.fn);
+    const { svc, orders, runs } = buildIngest(prisma, jest.fn().mockResolvedValue({}));
 
     const res = await svc.ingest('s1', rawOrder('draft'), { type: 'RECONCILE', runId: 'run-1' });
 
@@ -359,10 +242,48 @@ describe('reconcileStatus — real-guard walk (updateStatus enforces ORDER_TRANS
     expect(orders.updateStatus).not.toHaveBeenCalled();
     expect(runs.recordItem).toHaveBeenCalledWith(
       'run-1',
-      expect.objectContaining({
-        status: 'SKIPPED',
-        reason: expect.stringContaining('unmapped external status "draft"'),
-      }),
+      expect.objectContaining({ status: 'SKIPPED' }),
+    );
+  });
+
+  it('totals delta is still noted on the timeline (BR-17) while the status stays', async () => {
+    const prisma = mockPrisma();
+    seedExisting(prisma, 'Confirmed', 500);
+    prisma.order.findUnique.mockResolvedValue({ timeline: [] });
+    const { svc, orders } = buildIngest(prisma, jest.fn().mockResolvedValue({}));
+
+    const res = await svc.ingest(
+      's1',
+      { ...rawOrder('completed'), total: 999 },
+      { type: 'WEBHOOK', runId: 'run-1' },
+    );
+
+    expect(res).toMatchObject({ created: false, status: 'Confirmed', statusChanged: false });
+    expect(orders.updateStatus).not.toHaveBeenCalled();
+    const noted = prisma.order.update.mock.calls.some((c: any[]) =>
+      JSON.stringify(c[0].data?.timeline ?? '').includes('BR-17'),
+    );
+    expect(noted).toBe(true);
+  });
+
+  it('order.deleted + existing → stays Confirmed, mirror records the deletion (trash)', async () => {
+    const prisma = mockPrisma();
+    seedExisting(prisma, 'Confirmed');
+    const { svc, orders } = buildIngest(prisma, jest.fn().mockResolvedValue({}));
+
+    const res = await svc.ingest('s1', rawOrder('processing'), {
+      type: 'WEBHOOK',
+      topic: 'order.deleted',
+      provider: 'woocommerce',
+      runId: 'run-1',
+    });
+
+    // A remote delete does NOT cancel the local order (EcoMate is the
+    // source of truth) — only the mirror notes the deletion.
+    expect(res).toMatchObject({ created: false, status: 'Confirmed', statusChanged: false });
+    expect(orders.updateStatus).not.toHaveBeenCalled();
+    expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ lastExternalStatus: 'trash' }) }),
     );
   });
 });

@@ -106,6 +106,25 @@ describe('Bridge v1 conformance (P10)', () => {
       expect(caps.stockQuantity).toBe(true);
     });
 
+    it('on-hold survives the manifest intersection when the peer declares it (opt-in hold push)', () => {
+      const caps = bridgeManifestToCapabilities(
+        {
+          storeId: 'x',
+          capabilities: { orderStatusUpdateTargets: ['cancelled', 'completed', 'on-hold'] },
+        },
+        new CustomBridgeProvider().declaredCapabilities,
+      );
+      expect(caps.orderStatusUpdateTargets).toEqual(['cancelled', 'completed', 'on-hold']);
+    });
+
+    it('on-hold is NOT in the default targets (peers opt in via manifest)', () => {
+      const caps = bridgeManifestToCapabilities(
+        { storeId: 'x', capabilities: {} },
+        new CustomBridgeProvider().declaredCapabilities,
+      );
+      expect(caps.orderStatusUpdateTargets).toEqual(['cancelled', 'completed']);
+    });
+
     it('stockQuantity defaults to status-only when undeclared (P13)', () => {
       const caps = bridgeManifestToCapabilities(
         { storeId: 'x', capabilities: {} },

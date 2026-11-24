@@ -11,11 +11,16 @@
  * - trash: cancelled, refunded, failed, trash
  *
  * Decision matrix (new order = no `StoreOrderMapping` yet):
- * - Existing order + ANY status + ANY topic → RECONCILE. This is where
- *   jannat is wrong (D-01: its existing-order webhook path is a no-op;
- *   D-07: its route-level trash skip fires before the existence check).
- *   Our `reconcileStatus` is superior and is KEPT — a Woo cancellation
- *   must move the EcoMate order to Cancelled, never vanish.
+ * - Existing order + ANY status + ANY topic → RECONCILE — the
+ *   existing-order path (mapping mirror refresh + honest SKIPPED item).
+ *   NOTE (Boss decision 2026-11-24): reconcile NO LONGER applies the
+ *   store's status to the EcoMate order — EcoMate is the source of
+ *   truth, status flows EcoMate → store only (push service). A Woo
+ *   cancellation does NOT move the EcoMate order to Cancelled; the
+ *   old "reconcileStatus applies it" paragraph was removed with the
+ *   turn-off, not merely reworded. (D-01/D-07 still hold in the
+ *   routing sense: an existing order is never skipped at the gate —
+ *   it always reaches the existing-order path.)
  * - New order + `order.deleted`/`order.trashed` → SKIP (nothing to
  *   reconcile; the order never existed here). Provider-agnostic.
  * - New order + create event (`order.created`) → IMPORT whatever status
@@ -124,9 +129,11 @@ export function shouldImportWooEvent(input: ShouldImportWooEventInput): WooImpor
   const s = String(input.externalStatus ?? '').toLowerCase().trim();
   const kind = wooTopicKind(input.topic);
 
-  // D-01/D-07: an existing order is NEVER skipped — any status change
-  // reconciles via reconcileStatus. This branch is provider-agnostic:
-  // it is today's behavior for every provider, preserved exactly.
+  // D-01/D-07: an existing order is NEVER skipped — it always routes to
+  // the existing-order path (mapping mirror refresh + SKIPPED item; the
+  // store's status is NOT applied — EcoMate is the source of truth,
+  // Boss 2026-11-24). This branch is provider-agnostic: it is today's
+  // behavior for every provider, preserved exactly.
   if (input.orderExists) {
     return { action: 'reconcile', reason: `existing-${s || 'unknown'}` };
   }

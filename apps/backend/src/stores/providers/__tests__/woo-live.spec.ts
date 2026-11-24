@@ -176,4 +176,31 @@ describe('WooCommerceProvider live HTTP (P4)', () => {
     expect(JSON.parse(String(puts[0]?.init?.body))).toEqual({ status: 'cancelled' });
     expect(JSON.parse(String(puts[1]?.init?.body))).toEqual({ status: 'completed' });
   });
+
+  it('P7: push→read-back round-trip for on-hold (ingest-time Hold push, Boss 2026-11-24)', async () => {
+    let remote = 'processing';
+    const mock = new MockFetch();
+    mock.setFallback((url, init) => {
+      if (String(init?.method) === 'PUT') {
+        remote = String(JSON.parse(String(init?.body))?.status ?? remote);
+        return jsonResponse(200, { id: 5001, status: remote });
+      }
+      return jsonResponse(200, { id: 5001, status: remote });
+    });
+    const woo = new WooCommerceProvider(mock.fetch);
+    await woo.pushOrderStatus(STORE(), { providerId: '5001' }, 'on-hold');
+    await expect(woo.readOrderStatus(STORE(), { providerId: '5001' })).resolves.toEqual({ status: 'on-hold' });
+    const puts = mock.calls.filter((c) => c.init?.method === 'PUT');
+    expect(puts).toHaveLength(1);
+    expect(JSON.parse(String(puts[0]?.init?.body))).toEqual({ status: 'on-hold' });
+    expect(puts[0]?.url).toMatch(/\/orders\/5001$/);
+  });
+
+  it('resolveCapabilities advertises on-hold as a pushable target', async () => {
+    const mock = new MockFetch();
+    const woo = new WooCommerceProvider(mock.fetch);
+    const caps = await woo.resolveCapabilities(STORE());
+    expect(caps.orderStatusUpdate).toBe(true);
+    expect(caps.orderStatusUpdateTargets).toEqual(['cancelled', 'completed', 'on-hold']);
+  });
 });

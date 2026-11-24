@@ -5,9 +5,11 @@
  * - New + trash + updated (Woo) → SKIP: no create, no mapping, SKIPPED
  *   run item, `skipped: true` result (not an error, no retry).
  * - New + trash + created (Woo) → IMPORT (missed-creation exception).
- * - Existing + any status → reconcileStatus (D-01/D-07: never skip).
- * - order.deleted + existing → reconcile to Cancelled (status forced to
- *   `trash` before the map lookup); + missing → skip.
+ * - Existing + any status → existing-order path (D-01/D-07: never skip).
+ *   NOTE (Boss 2026-11-24): the path refreshes the mapping mirror only —
+ *   the store's status is NEVER applied (EcoMate is the source of truth).
+ * - order.deleted + existing → status UNCHANGED, mirror forced to
+ *   `trash`; + missing → skip.
  * - Non-Woo / unknown provider → gate does not apply (fail open).
  * - P13 ZERO_STOCK_REJECT is UNCHANGED by the gate (separate rule).
  * - Reconcile carve-out (fix-round-1): `bypassStatusGate` (set ONLY by
@@ -156,7 +158,7 @@ describe('ingest G-15 gate — existing orders always reconcile (D-01/D-07)', ()
   }
 
   it.each(['cancelled', 'refunded', 'failed', 'trash'])(
-    'existing + order.updated + trash %s → reconcileStatus (never skip)',
+    'existing + order.updated + trash %s → status stays Confirmed, mirror refreshes (never skip, never apply)',
     async (status) => {
       const prisma = mockPrisma();
       seedExisting(prisma);
@@ -165,36 +167,41 @@ describe('ingest G-15 gate — existing orders always reconcile (D-01/D-07)', ()
       prisma.order.findUnique.mockResolvedValue({ timeline: [] });
       const { svc, orders } = buildIngest(prisma);
       const res = await svc.ingest('s1', rawOrder(status), { ...WOO, topic: 'order.updated' });
-      expect(res).toMatchObject({ created: false, status: 'Cancelled', statusChanged: true });
+      expect(res).toMatchObject({ created: false, status: 'Confirmed', statusChanged: false });
       expect(res.skipped).toBeUndefined();
       expect(orders.create).not.toHaveBeenCalled();
-      expect(orders.updateStatus).toHaveBeenCalledWith(
-        'ord-1', { statusId: 'st-cancelled' }, 'webhook', 'store-sync',
+      expect(orders.updateStatus).not.toHaveBeenCalled();
+      expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ lastExternalStatus: status }),
+        }),
       );
     },
   );
 
-  it('order.deleted + existing → reconcile to Cancelled (status forced to trash)', async () => {
+  it('order.deleted + existing → status stays Confirmed, mirror forced to trash', async () => {
     const prisma = mockPrisma();
     seedExisting(prisma);
     // The deleted payload carries the PRE-delete status (processing) — the
-    // gate must force `trash` before the status-map lookup, or the order
-    // would wrongly reconcile to Confirmed/Pending.
-    prisma.storeOrderStatusMap.findUnique.mockImplementation(async ({ where }: any) => {
-      expect(where.storeId_externalStatus.externalStatus).toBe('trash');
-      return { internalStatusName: 'Cancelled' };
-    });
+    // ingest forces `trash` before the mirror update, so the mapping
+    // truthfully records the deletion instead of the pre-delete status.
+    // The EcoMate order's status is NOT changed (EcoMate is the source of
+    // truth — a remote delete does not cancel the local order).
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Cancelled' });
     prisma.orderStatus.findFirst.mockResolvedValue({ id: 'st-cancelled', name: 'Cancelled' });
     prisma.order.findUnique.mockResolvedValue({ timeline: [] });
     const { svc, orders } = buildIngest(prisma);
     const res = await svc.ingest('s1', rawOrder('processing'), { ...WOO, topic: 'order.deleted' });
-    expect(res).toMatchObject({ created: false, status: 'Cancelled', statusChanged: true });
-    expect(orders.updateStatus).toHaveBeenCalledWith(
-      'ord-1', { statusId: 'st-cancelled' }, 'webhook', 'store-sync',
+    expect(res).toMatchObject({ created: false, status: 'Confirmed', statusChanged: false });
+    expect(orders.updateStatus).not.toHaveBeenCalled();
+    expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ lastExternalStatus: 'trash' }),
+      }),
     );
   });
 
-  it('order.deleted + existing + no status in payload → still reconciles to Cancelled', async () => {
+  it('order.deleted + existing + no status in payload → still stays Confirmed, mirror forced to trash', async () => {
     const prisma = mockPrisma();
     seedExisting(prisma);
     prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Cancelled' });
@@ -204,8 +211,13 @@ describe('ingest G-15 gate — existing orders always reconcile (D-01/D-07)', ()
     const { status, ...noStatus } = rawOrder('processing');
     void status;
     const res = await svc.ingest('s1', noStatus, { ...WOO, topic: 'order.deleted' });
-    expect(res).toMatchObject({ status: 'Cancelled', statusChanged: true });
-    expect(orders.updateStatus).toHaveBeenCalledTimes(1);
+    expect(res).toMatchObject({ status: 'Confirmed', statusChanged: false });
+    expect(orders.updateStatus).not.toHaveBeenCalled();
+    expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ lastExternalStatus: 'trash' }),
+      }),
+    );
   });
 });
 

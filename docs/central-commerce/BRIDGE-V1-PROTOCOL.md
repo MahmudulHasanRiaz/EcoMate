@@ -108,9 +108,12 @@ conformance):
    manifest claims `true`: combos are skipped with an explicit reason and
    never fabricated (BR-22).
 5. `orderStatusUpdateTargets` is intersected with the canonical
-   `["cancelled", "completed"]`; unknown targets are ignored. A push to an
-   unlisted target fails loud (`ORDER_STATUS_TARGET_UNSUPPORTED`), never a
-   silent no-op (§8.6).
+   `["cancelled", "completed", "on-hold"]`; unknown targets are ignored.
+   A push to an unlisted target fails loud
+   (`ORDER_STATUS_TARGET_UNSUPPORTED`), never a silent no-op (§8.6).
+   `on-hold` (ingest-time Hold push, Boss 2026-11-24) is opt-in: a peer
+   must declare it in its manifest — the default targets stay
+   `["cancelled", "completed"]`.
 6. `stockStatusFidelity` is `"faithful"` or `"unsupported"`.
    `"faithful"` means the bridge expresses IN/OUT faithfully via §4
    (status-only, **recommended default**). `"unsupported"` means EcoMate
@@ -319,8 +322,9 @@ POST /bridge/v1/orders/{id}/status   {"target": "cancelled"}   → {"ok": true, 
 GET  /bridge/v1/orders/{id}          → the §5 order object (read-back verification, read-only)
 ```
 
-`target` ∈ `cancelled|completed` intersected with the manifest's
-`orderStatusUpdateTargets`. Unsupported targets fail loud, idempotent via
+`target` ∈ `cancelled|completed|on-hold` intersected with the manifest's
+`orderStatusUpdateTargets` (`on-hold` requires the peer to declare it —
+see rule 5). Unsupported targets fail loud, idempotent via
 `lastPushedStatus`, verified by read-back (§8.6).
 
 ## 8. Contact-check (exposure, never enforcement — BR-14)

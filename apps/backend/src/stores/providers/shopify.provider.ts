@@ -1566,15 +1566,28 @@ export class ShopifyProvider extends BaseCommerceProvider {
     };
   }
 
-  override async pushOrderStatus(store: StoreWithSecrets, ref: RemoteRef, target: 'cancelled' | 'completed'): Promise<PushResult> {
+  override async pushOrderStatus(store: StoreWithSecrets, ref: RemoteRef, target: 'cancelled' | 'completed' | 'on-hold'): Promise<PushResult> {
     if (target === 'cancelled') {
       await this.rest(store, 'POST', `/orders/${encodeURIComponent(ref.providerId)}/cancel.json`, {});
       return { ok: true, ref };
     }
-    await this.rest(store, 'POST', `/orders/${encodeURIComponent(ref.providerId)}/fulfillments.json`, {
-      fulfillment: {},
-    });
-    return { ok: true, ref };
+    if (target === 'completed') {
+      await this.rest(store, 'POST', `/orders/${encodeURIComponent(ref.providerId)}/fulfillments.json`, {
+        fulfillment: {},
+      });
+      return { ok: true, ref };
+    }
+    // Shopify has no order-level hold state in its Admin API (fulfilment
+    // holds are FulfilmentOrder objects and never surface in the
+    // order-level read-back) — reject loudly instead of falling through
+    // to a fulfilment, which would be a wrong-status push. The worker's
+    // capability gate (targets CANCELLED/FULFILLED) skips 'on-hold'
+    // before reaching here; this is defence-in-depth.
+    throw new ProviderError(
+      `[shopify] ORDER_STATUS_TARGET_UNSUPPORTED: no hold equivalent for target '${target}' (§8.6: explicit skip, never silent)`,
+      ProviderErrorCategory.INVALID_REQUEST,
+      'shopify',
+    );
   }
 
   /**
