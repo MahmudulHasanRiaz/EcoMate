@@ -1,7 +1,15 @@
-import { SecureFetcher, defaultHttpTransport } from './secure-fetcher';
+import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import {
+  SecureFetcher,
+  buildPinnedLookup,
+  buildRequestOptions,
+  defaultHttpTransport,
+} from './secure-fetcher';
 import type { DnsResolver } from './ip-classifier';
 
 const PUBLIC_IP = '93.184.216.34';
+const PUBLIC_IPV6 = '2606:4700:4700::1111';
 
 function fakeDns(v4: string[] = [PUBLIC_IP], v6: string[] = []): DnsResolver {
   return {
@@ -209,6 +217,155 @@ describe('SecureFetcher.fetchRaw', () => {
       }),
       'https:',
     );
+  });
+
+  it('fails honestly when DNS returns no addresses (no crash, cause recorded)', async () => {
+    const transport = fakeTransport(() => ({
+      response: fakeResponse({}),
+      connectedAddress: PUBLIC_IP,
+    }));
+    const fetcher = new SecureFetcher(fakeDns([], []), transport as any);
+
+    await expect(
+      fetcher.fetchRaw('https://cdn.example.com/x.png'),
+    ).rejects.toThrow('DNS resolution returned no addresses');
+    expect(transport.request).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the first IPv6 address when no A record exists', async () => {
+    let seenLookup: any = null;
+    const transport = fakeTransport((options) => {
+      seenLookup = options.lookup;
+      return {
+        response: fakeResponse({}),
+        connectedAddress: PUBLIC_IPV6,
+      };
+    });
+    const fetcher = new SecureFetcher(fakeDns([], [PUBLIC_IPV6]), transport as any);
+
+    const result = await fetcher.fetchRaw('https://cdn.example.com/x.png');
+    expect(result.statusCode).toBe(200);
+    expect(typeof seenLookup).toBe('function');
+    // The pinned lookup answers with the v6 address (family 6).
+    const args: any[] = await new Promise((resolve) => {
+      seenLookup('cdn.example.com', {}, (...a: any[]) => resolve(a));
+    });
+    expect(args[1]).toBe(PUBLIC_IPV6);
+    expect(args[2]).toBe(6);
+  });
+});
+
+describe('pinned lookup (Node 20+ autoSelectFamily contract)', () => {
+  function callLookup(
+    lookup: (host: string, opts: unknown, cb: (...a: any[]) => void) => void,
+    opts: unknown,
+  ): Promise<any[]> {
+    return new Promise((resolve) => {
+      lookup('cdn.example.com', opts, (...a: any[]) => resolve(a));
+    });
+  }
+
+  it('answers the array form when Node asks with { all: true }', async () => {
+    const lookup = buildPinnedLookup(PUBLIC_IP);
+    const args = await callLookup(lookup as any, { all: true });
+    expect(args[0]).toBeNull();
+    expect(args[1]).toEqual([{ address: PUBLIC_IP, family: 4 }]);
+  });
+
+  it('answers the single form otherwise', async () => {
+    const lookup = buildPinnedLookup(PUBLIC_IP);
+    const args = await callLookup(lookup as any, {});
+    expect(args).toEqual([null, PUBLIC_IP, 4]);
+  });
+
+  it('pins IPv6 with family 6 in both forms', async () => {
+    const lookup = buildPinnedLookup(PUBLIC_IPV6);
+    // Array form: family 6 in the element AND as the third callback arg
+    // (Node's callback signature is (err, address, family) in both modes).
+    expect(await callLookup(lookup as any, { all: true })).toEqual([
+      null,
+      [{ address: PUBLIC_IPV6, family: 6 }],
+      6,
+    ]);
+    expect(await callLookup(lookup as any, {})).toEqual([null, PUBLIC_IPV6, 6]);
+  });
+
+  it('throws an honest error for a non-IP pinned address (never hands Node garbage)', () => {
+    expect(() => buildPinnedLookup('not-an-ip')).toThrow(
+      'Pinned address is not a valid IP: not-an-ip',
+    );
+    expect(() => buildPinnedLookup(undefined as any)).toThrow(
+      'Pinned address is not a valid IP: undefined',
+    );
+  });
+
+  it('real transport: Node 20+ accepts the pinned lookup (regression: ERR_INVALID_IP_ADDRESS)', async () => {
+    // Live staging 2026-11-23: every SecureFetcher fetch failed with
+    // "Invalid IP address: undefined" — the old single-form lookup
+    // answered a { all: true } query with a bare string. This test runs
+    // the REAL defaultHttpTransport against a local server: on the old
+    // code it rejects with ERR_INVALID_IP_ADDRESS; on the fix it
+    // connects to the pinned address and reads the response.
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'image/png' });
+      res.end('png-bytes');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const deadline = new AbortController();
+      const [options, protocol] = buildRequestOptions(
+        'localhost',
+        '127.0.0.1',
+        new URL(`http://localhost:${port}/x.png`),
+        deadline,
+        'TestAgent/1.0',
+        'image/*',
+      );
+      expect(protocol).toBe('http:');
+      const { response, connectedAddress } = await defaultHttpTransport.request(
+        options,
+        protocol,
+      );
+      expect(response.statusCode).toBe(200);
+      expect(connectedAddress).toBe('127.0.0.1');
+      response.destroy();
+    } finally {
+      server.closeAllConnections?.();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('documents the bug: the old single-form lookup fails on Node 20+ (autoSelectFamily)', async () => {
+    // Pins the mechanism, not the fix: if anyone "simplifies" the lookup
+    // back to the single form, this test (and the real-transport test
+    // above) explains exactly what breaks and why.
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'image/png' });
+      res.end('png-bytes');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const oldLookup = (_host: string, _opts: any, cb: any) =>
+        cb(null, '127.0.0.1', 4);
+      await expect(
+        defaultHttpTransport.request(
+          {
+            hostname: 'localhost',
+            port,
+            path: '/x.png',
+            method: 'GET',
+            lookup: oldLookup,
+            agent: false,
+          } as any,
+          'http:',
+        ),
+      ).rejects.toThrow('Invalid IP address: undefined');
+    } finally {
+      server.closeAllConnections?.();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 

@@ -5,6 +5,7 @@ import {
   defaultRowDecision,
   deriveResultTarget,
   detectProblems,
+  failureMessageFor,
   formatVariablePriceRange,
   importRunProgress,
   isRowDisabled,
@@ -242,8 +243,21 @@ describe('parseRunItemReason (§10.4 reason-prefix contract)', () => {
     ['SKIPPED:IMAGE_LIMIT', 'SKIPPED_IMAGE_LIMIT', 'IMAGE_LIMIT'],
     ['FAILED:VARIANT_SKU_COLLISION', 'FAILED', 'VARIANT_SKU_COLLISION'],
     ['FAILED:QUOTA', 'FAILED', 'QUOTA'],
+    // Image rows: backend IMAGES_FAILED:n maps to the purpose-built
+    // IMAGE_DOWNLOAD message (was: OTHER → generic 'Import failed.').
+    ['IMAGES_FAILED:1', 'FAILED', 'IMAGE_DOWNLOAD'],
+    ['IMAGES_FAILED:3', 'FAILED', 'IMAGE_DOWNLOAD'],
   ])('%s → %s', (reason, kind, code) => {
     expect(parseRunItemReason(reason)).toEqual({ kind, code })
+  })
+
+  it('IMAGES_FAILED rows surface the purpose-built image message (not the generic fallback)', () => {
+    const { code } = parseRunItemReason('IMAGES_FAILED:1')
+    expect(code).toBe('IMAGE_DOWNLOAD')
+    const { message, fix } = failureMessageFor(code)
+    expect(message).toMatch(/images failed to download/)
+    expect(message).toMatch(/product was still created/)
+    expect(fix).toMatch(/re-upload manually/)
   })
 
   it('unknown and empty reasons are OTHER', () => {

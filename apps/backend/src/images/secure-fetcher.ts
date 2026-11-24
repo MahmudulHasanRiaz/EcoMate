@@ -2,6 +2,7 @@ import { URL } from 'node:url';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import { Socket, isIP } from 'node:net';
+import type { LookupAddress, LookupOptions } from 'node:dns';
 import * as ipaddr from 'ipaddr.js';
 import { validateImageUrl, resolveAndPin, isBlockedIP, DnsResolver } from './ip-classifier';
 
@@ -123,11 +124,70 @@ export async function validateImageBuffer(
 }
 
 /**
+ * Pinned-lookup builder for the DNS-pinned connect: the returned function
+ * answers every lookup with ONLY the validated pinned address (TOCTOU
+ * proof — no second resolution ever happens).
+ *
+ * Node 20+ defaults `autoSelectFamily: true`, so `net.connect` calls a
+ * custom lookup with `{ all: true }` and expects the ARRAY form —
+ * `cb(null, [{ address, family }])`. The old single-address form
+ * (`cb(null, ip, family)`) made Node treat the IP string as an array of
+ * characters, find no valid address, and fail EVERY fetch with
+ * `ERR_INVALID_IP_ADDRESS: Invalid IP address: undefined` (live staging
+ * 2026-11-23 — DNS was fine; the connect step was broken). Honor both
+ * forms: array when `all` is set, single otherwise.
+ *
+ * Exported for the regression tests (the lookup contract is only
+ * observable through real `net.connect`, which the mocked transports in
+ * the fetchRaw tests never touch).
+ */
+// The returned function matches Node's LookupFunction shape exactly
+// (net.d.ts declares it module-local, so it can't be imported — the
+// signature below mirrors it: hostname, LookupOptions, callback taking
+// string | LookupAddress[]). A looser callback type (addr: unknown) fails
+// `nest build` with TS2322 at the RequestOptions.lookup assignment.
+export function buildPinnedLookup(
+  pinnedAddr: string,
+): (
+  hostname: string,
+  options: LookupOptions,
+  callback: (
+    err: NodeJS.ErrnoException | null,
+    address: string | LookupAddress[],
+    family?: number,
+  ) => void,
+) => void {
+  const ipVer = isIP(pinnedAddr); // returns 4 or 6, or 0 for invalid
+  if (ipVer !== 4 && ipVer !== 6) {
+    throw new Error(`Pinned address is not a valid IP: ${String(pinnedAddr)}`);
+  }
+  return (
+    _hostname: string,
+    options: LookupOptions,
+    callback: (
+      err: NodeJS.ErrnoException | null,
+      address: string | LookupAddress[],
+      family?: number,
+    ) => void,
+  ) => {
+    if (options && options.all === true) {
+      callback(null, [{ address: pinnedAddr, family: ipVer }], ipVer);
+      return;
+    }
+    callback(null, pinnedAddr, ipVer);
+  };
+}
+
+/**
  * Connect to the resolved pinned address while preserving Host header.
  * Sends the original hostname for TLS SNI and Host, but uses the
  * custom lookup that returns only the validated pinned IP.
+ *
+ * Exported for the regression tests: the lookup contract + transport
+ * wiring is only observable through a real `net.connect` (the mocked
+ * transports in the fetchRaw tests never touch it).
  */
-function buildRequestOptions(
+export function buildRequestOptions(
   hostname: string,
   pinnedAddr: string,
   parsed: URL,
@@ -138,16 +198,7 @@ function buildRequestOptions(
   const isHttps = parsed.protocol === 'https:';
   const port = parsed.port ? parseInt(parsed.port, 10) : isHttps ? 443 : 80;
 
-  // Family from the pinned address
-  const ipVer = isIP(pinnedAddr); // returns 4 or 6, or 0 for invalid
-
-  const lookupFn = (
-    _host: string,
-    _opts: any,
-    cb: (err: Error | null, addr: string, family?: number) => void,
-  ) => {
-    cb(null, pinnedAddr, ipVer);
-  };
+  const lookupFn = buildPinnedLookup(pinnedAddr);
 
   const options: http.RequestOptions & { servername?: string; rejectUnauthorized?: boolean } = {
     hostname,

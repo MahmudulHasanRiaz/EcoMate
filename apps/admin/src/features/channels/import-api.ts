@@ -413,6 +413,11 @@ export function parseRunItemReason(reason?: string | null): { kind: RunItemReaso
     }
   }
   if (reason.startsWith('FAILED:')) return { kind: 'FAILED', code: reason.slice('FAILED:'.length) }
+  // Image rows: the backend records IMAGES_FAILED:n (counts-encoded, no
+  // FAILED: prefix) — map it to the purpose-built IMAGE_DOWNLOAD message
+  // so the error log shows the real reason instead of 'Import failed.'.
+  // IMAGES_OK / IMAGES_PARTIAL are SUCCESS rows and never reach the log.
+  if (reason.startsWith('IMAGES_FAILED:')) return { kind: 'FAILED', code: 'IMAGE_DOWNLOAD' }
   return { kind: 'OTHER' }
 }
 
