@@ -14,7 +14,10 @@
  * never pushed; stale payload superseded; transient → retry scheduled;
  * permanent → DEAD + issue; verify-mismatch → exactly one repair push
  * then failure; ingest-time Hold push (explicit on-hold target,
- * ALREADY_HOLD + supersede skips, target survives retries).
+ * ALREADY_HOLD + supersede skips, target survives retries); confirm-time
+ * Hold push (Boss 2026-11-24 restated: Confirmed → on-hold in the general
+ * derivation, Pending landing earns a hold too, ingest-then-confirm is
+ * idempotent via lastPushedStatus).
  */
 import { StoreOrderPushService, targetForEcoStatus, targetForExplicitTarget } from '../store-order-push.service';
 import { FakeProvider } from '../../providers/__tests__/fake.provider';
@@ -83,6 +86,13 @@ function seedPushable(prisma: any, statusName: string, mappingOverrides = {}) {
   prisma.store.findUnique.mockResolvedValue({ ...CONNECTED_STORE });
 }
 
+/** FakeProvider with Woo-style targets incl. on-hold. */
+function holdCapableFake() {
+  const fake = new FakeProvider();
+  fake.declaredCapabilities.orderStatusUpdateTargets = ['cancelled', 'completed', 'on-hold'];
+  return fake;
+}
+
 beforeEach(() => {
   Object.assign(process.env, FLAGS);
 });
@@ -108,6 +118,12 @@ describe('P7 target resolution (pure, capability-driven — never slug-branched)
 
   it('Returned → cancelled (Boss 2026-11-24: a return cancels the remote order)', () => {
     expect(targetForEcoStatus('Returned', ['cancelled', 'completed'])).toEqual({ target: 'cancelled' });
+  });
+
+  it('Confirmed → on-hold (Boss 2026-11-24 restated: a confirm holds the remote order)', () => {
+    expect(targetForEcoStatus('Confirmed', ['cancelled', 'completed', 'on-hold'])).toEqual({ target: 'on-hold' });
+    // Shopify declares no hold equivalent — the confirm push skips explicitly.
+    expect(targetForEcoStatus('Confirmed', ['CANCELLED', 'FULFILLED'])).toEqual({ skipped: 'UNSUPPORTED_TARGET:on-hold' });
   });
 
   it('absent target → UNSUPPORTED_TARGET; non-pushable status → NOT_PUSHABLE_STATUS', () => {
@@ -147,10 +163,28 @@ describe('P7 notify — post-commit enqueue, non-propagating', () => {
     expect(prisma.order.findUnique).not.toHaveBeenCalled();
   });
 
-  it('never enqueues for non-pushable statuses', async () => {
+  it('enqueues for a mapped order entering Confirmed (confirm-time Hold push — derived job, no explicit target)', async () => {
     const prisma = mockPrisma();
     prisma.storeOrderMapping.findUnique.mockResolvedValue(MAPPING());
     prisma.order.findUnique.mockResolvedValue(ORDER('Confirmed'));
+    const { svc, queues } = buildPush(prisma, new FakeProvider());
+    await svc.notifyOrderStatusChanged('o1');
+    expect(queues.enqueue).toHaveBeenCalledTimes(1);
+    expect(queues.enqueue).toHaveBeenCalledWith(
+      'store-order-push',
+      'order-status-push',
+      expect.objectContaining({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed' }),
+      expect.stringMatching(/^order-push:s1:o1:Confirmed:/),
+    );
+    // Derived job: the target is resolved from the live status by the
+    // worker (Confirmed → on-hold), not carried on the job.
+    expect(queues.enqueue.mock.calls[0][2]).not.toHaveProperty('target');
+  });
+
+  it('never enqueues for non-pushable statuses', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(MAPPING());
+    prisma.order.findUnique.mockResolvedValue(ORDER('Packed'));
     const { svc, queues } = buildPush(prisma, new FakeProvider());
     await svc.notifyOrderStatusChanged('o1');
     expect(queues.enqueue).not.toHaveBeenCalled();
@@ -425,6 +459,21 @@ describe('ingest-time Hold push — notifyIngestedOrder (Boss 2026-11-24)', () =
     );
   });
 
+  it('Pending landing → enqueues an explicit on-hold push job (Boss 2026-11-24 restated: a pending-payment remote order takes on-hold as a normal Woo transition)', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(MAPPING());
+    prisma.order.findUnique.mockResolvedValue(ORDER('Pending'));
+    const { svc, queues } = buildPush(prisma, new FakeProvider());
+    await svc.notifyIngestedOrder('o1');
+    expect(queues.enqueue).toHaveBeenCalledTimes(1);
+    expect(queues.enqueue).toHaveBeenCalledWith(
+      'store-order-push',
+      'order-status-push',
+      expect.objectContaining({ storeId: 's1', orderId: 'o1', ecoStatus: 'Pending', target: 'on-hold' }),
+      expect.stringMatching(/^order-push:s1:o1:ingest-hold:/),
+    );
+  });
+
   it('already-Hold landing → NO enqueue (the remote order is already on hold)', async () => {
     const prisma = mockPrisma();
     prisma.storeOrderMapping.findUnique.mockResolvedValue(MAPPING());
@@ -434,7 +483,7 @@ describe('ingest-time Hold push — notifyIngestedOrder (Boss 2026-11-24)', () =
     expect(queues.enqueue).not.toHaveBeenCalled();
   });
 
-  it.each(['Delivered', 'Cancelled', 'Returned', 'Pending', 'Packed'])(
+  it.each(['Delivered', 'Cancelled', 'Returned', 'Packed'])(
     '%s landing → NO enqueue (the remote order already reflects it)',
     async (status) => {
       const prisma = mockPrisma();
@@ -476,13 +525,6 @@ describe('ingest-time Hold push — notifyIngestedOrder (Boss 2026-11-24)', () =
 });
 
 describe('ingest-time Hold push — worker (explicit-target jobs)', () => {
-  /** FakeProvider with Woo-style targets incl. on-hold. */
-  function holdCapableFake() {
-    const fake = new FakeProvider();
-    fake.declaredCapabilities.orderStatusUpdateTargets = ['cancelled', 'completed', 'on-hold'];
-    return fake;
-  }
-
   it('Confirmed + explicit on-hold → PUSHED:on-hold, read-back-verified, mapping updated', async () => {
     const prisma = mockPrisma();
     seedPushable(prisma, 'Confirmed');
@@ -521,6 +563,25 @@ describe('ingest-time Hold push — worker (explicit-target jobs)', () => {
     expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
   });
 
+  it('Pending + explicit on-hold → PUSHED:on-hold (a pending-payment remote order takes the hold)', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Pending');
+    const fake = holdCapableFake();
+    // Remote order is pending-payment when the worker runs.
+    fake.directSeedOrderStatus('ext-1', 'pending');
+    const { svc } = buildPush(prisma, fake);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Pending', target: 'on-hold' });
+
+    expect(out).toMatchObject({ status: 'SUCCESS', reason: 'PUSHED:on-hold' });
+    expect(fake.calls.filter((c) => c.method === 'pushOrderStatus')).toHaveLength(1);
+    expect(fake.remoteOrderStatus('ext-1')).toBe('on-hold');
+    expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith({
+      where: { id: 'map-1' },
+      data: { lastPushedStatus: 'on-hold' },
+    });
+  });
+
   it('live status moved to Hold before the worker ran → ALREADY_HOLD skip, no push', async () => {
     const prisma = mockPrisma();
     seedPushable(prisma, 'Hold');
@@ -534,6 +595,23 @@ describe('ingest-time Hold push — worker (explicit-target jobs)', () => {
     expect(fake.calls).toHaveLength(0);
     expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
   });
+
+  it.each(['Delivered', 'Cancelled', 'Returned'])(
+    'live status moved to terminal %s → STATUS_SUPERSEDED skip, never a hold onto a finished remote order',
+    async (status) => {
+      const prisma = mockPrisma();
+      seedPushable(prisma, status);
+      const fake = holdCapableFake();
+      const { svc } = buildPush(prisma, fake);
+
+      const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed', target: 'on-hold' });
+
+      expect(out.status).toBe('SKIPPED');
+      expect(out.reason).toMatch(new RegExp(`STATUS_SUPERSEDED:${status}`));
+      expect(fake.calls).toHaveLength(0);
+      expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+    },
+  );
 
   it('live status moved on (Packed) → STATUS_SUPERSEDED skip, no push', async () => {
     const prisma = mockPrisma();
@@ -591,5 +669,102 @@ describe('ingest-time Hold push — worker (explicit-target jobs)', () => {
       expect.stringContaining(':retry:1'),
       expect.objectContaining({ delay: 30_000 }),
     );
+  });
+});
+
+describe('confirm-time Hold push — worker (derived jobs, Boss 2026-11-24 restated)', () => {
+  it('Pending→Confirmed transition (derived, no explicit target) → PUSHED:on-hold, read-back-verified, mapping updated', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Confirmed');
+    const fake = holdCapableFake();
+    const { svc, runs } = buildPush(prisma, fake);
+
+    // The job a confirm enqueues via notifyOrderStatusChanged: derived
+    // target, resolved from the live status by the worker.
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed' });
+
+    expect(out).toMatchObject({ status: 'SUCCESS', reason: 'PUSHED:on-hold' });
+    expect(fake.calls.filter((c) => c.method === 'pushOrderStatus')).toHaveLength(1);
+    expect(fake.calls.find((c) => c.method === 'pushOrderStatus')?.detail).toMatchObject({
+      ref: { providerId: 'ext-1' }, target: 'on-hold',
+    });
+    expect(fake.remoteOrderStatus('ext-1')).toBe('on-hold');
+    expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith({
+      where: { id: 'map-1' },
+      data: { lastPushedStatus: 'on-hold' },
+    });
+    expect(runs.recordItem).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'SUCCESS', reason: expect.stringContaining('read-back verified') }),
+    );
+  });
+
+  it('idempotent via lastPushedStatus: ingest already pushed the hold, then the order is confirmed → ALREADY_PUSHED, zero provider calls', async () => {
+    const prisma = mockPrisma();
+    // The ingest-time hold landed first (mapping records it).
+    seedPushable(prisma, 'Confirmed', { lastPushedStatus: 'on-hold' });
+    const fake = holdCapableFake();
+    const { svc } = buildPush(prisma, fake);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/ALREADY_PUSHED:on-hold/);
+    expect(fake.calls.filter((c) => c.method !== 'resolveCapabilities')).toHaveLength(0);
+    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+  });
+
+  it('live status moved to Hold before the derived job ran → STATUS_SUPERSEDED skip, no push', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Hold');
+    const fake = holdCapableFake();
+    const { svc } = buildPush(prisma, fake);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed' });
+
+    // Derived jobs resolve through the PUSHABLE list, so a live Hold is
+    // a supersede-skip (the explicit-target ALREADY_HOLD reason belongs
+    // to ingest jobs) — either way, no second hold is ever pushed.
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/STATUS_SUPERSEDED:Hold/);
+    expect(fake.calls).toHaveLength(0);
+    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+  });
+
+  it('live status moved on (Packed) after the confirm enqueue → STATUS_SUPERSEDED skip, no push', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Packed');
+    const fake = holdCapableFake();
+    const { svc } = buildPush(prisma, fake);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/STATUS_SUPERSEDED:Packed/);
+    expect(fake.calls).toHaveLength(0);
+    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+  });
+
+  it('provider without on-hold (Shopify-style targets) → UNSUPPORTED_TARGET skip, zero writes', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Confirmed');
+    const provider = {
+      slug: 'shopify',
+      declaredCapabilities: { orderStatusUpdate: true, orderStatusUpdateTargets: ['CANCELLED', 'FULFILLED'] },
+      resolveCapabilities: jest.fn().mockResolvedValue({
+        orderStatusUpdate: true, orderStatusUpdateTargets: ['CANCELLED', 'FULFILLED'],
+      }),
+      pushOrderStatus: jest.fn().mockResolvedValue({ ok: true }),
+      readOrderStatus: jest.fn().mockResolvedValue({ status: 'on-hold' }),
+    } as any;
+    const { svc } = buildPush(prisma, provider);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/UNSUPPORTED_TARGET:on-hold/);
+    expect(provider.pushOrderStatus).not.toHaveBeenCalled();
+    expect(provider.readOrderStatus).not.toHaveBeenCalled();
+    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
   });
 });

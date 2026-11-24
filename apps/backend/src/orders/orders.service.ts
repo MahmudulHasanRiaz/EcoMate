@@ -5363,9 +5363,10 @@ export class OrdersService {
     }
 
     // P7 §8.6: post-commit status-push enqueue for mapped store orders
-    // (cancel/return/Delivered hooks). Non-propagating; the worker re-reads
+    // (confirm/cancel/return/Delivered hooks — Boss 2026-11-24: a confirm
+    // holds the remote order). Non-propagating; the worker re-reads
     // live state and no-ops for non-mapped orders.
-    if (['Cancelled', 'Delivered', 'Returned'].includes(updated.status.name)) {
+    if (['Cancelled', 'Confirmed', 'Delivered', 'Returned'].includes(updated.status.name)) {
       this.notifyStoreOrderPush(updated.id);
     }
 
@@ -6617,9 +6618,9 @@ export class OrdersService {
       }
     }
 
-    // P7 §8.6: bulk cancel/return/Delivered hook — post-commit enqueue per
-    // transitioned order, non-propagating.
-    if (['Cancelled', 'Delivered', 'Returned'].includes(targetStatus.name)) {
+    // P7 §8.6: bulk confirm/cancel/return/Delivered hook — post-commit
+    // enqueue per transitioned order, non-propagating.
+    if (['Cancelled', 'Confirmed', 'Delivered', 'Returned'].includes(targetStatus.name)) {
       for (const bulkPushedId of validIds) this.notifyStoreOrderPush(bulkPushedId);
     }
 
@@ -7221,8 +7222,9 @@ export class OrdersService {
       }
     }
 
-    // P7 §8.6: transition hook — post-commit enqueue, non-propagating.
-    if (['Cancelled', 'Delivered', 'Returned'].includes(newStatus)) {
+    // P7 §8.6: transition hook — post-commit enqueue, non-propagating
+    // (confirm included: a confirm holds the remote order, Boss 2026-11-24).
+    if (['Cancelled', 'Confirmed', 'Delivered', 'Returned'].includes(newStatus)) {
       this.notifyStoreOrderPush(orderId);
     }
 

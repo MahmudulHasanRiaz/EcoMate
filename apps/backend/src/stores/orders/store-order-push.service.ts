@@ -2,13 +2,13 @@
  * Store order status push — central-commerce P7 (§8.6, BR-17).
  *
  * EcoMate → store direction for orders that have a `StoreOrderMapping`:
- * triggered post-commit from the order cancel/return/Delivered hooks
- * (`OrdersService` calls `notifyOrderStatusChanged`, which only enqueues —
- * never throws into the order path, R-2), plus the ingest-time Hold push
- * (`notifyIngestedOrder`, Boss decision 2026-11-24: a newly ingested
- * Confirmed order is put on hold remotely so the channel never
- * double-fulfils it; an order that lands already Hold is skipped). The
- * worker:
+ * triggered post-commit from the order confirm/cancel/return/Delivered
+ * hooks (`OrdersService` calls `notifyOrderStatusChanged`, which only
+ * enqueues — never throws into the order path, R-2), plus the ingest-time
+ * Hold push (`notifyIngestedOrder`, Boss decision 2026-11-24: a newly
+ * ingested Confirmed or Pending order is put on hold remotely so the
+ * channel never double-fulfils it; an order that lands already Hold is
+ * skipped). The worker:
  *
  *  - re-reads mapping + live order status (never trusts the payload, so a
  *    stale enqueue after a re-hold is a `STATUS_SUPERSEDED` skip, not a push);
@@ -17,7 +17,9 @@
  *    on capabilities, never on a provider slug): Cancelled → `cancelled`,
  *    Delivered → `completed`, Returned → `cancelled` (Boss 2026-11-24 — a
  *    return cancels the remote order; the old NO_PUSH_TARGET_FOR_RETURNED
- *    skip is gone). An explicit-target job (ingest Hold push) carries its
+ *    skip is gone), Confirmed → `on-hold` (Boss 2026-11-24, restated —
+ *    confirming an order holds it remotely; already-hold is skipped, never
+ *    re-pushed). An explicit-target job (ingest Hold push) carries its
  *    own target (`on-hold`) and a live-status precondition instead;
  *  - is idempotent via `StoreOrderMapping.lastPushedStatus`: a repeat run
  *    with the same canonical target no-ops with zero provider calls;
@@ -57,12 +59,17 @@ import type {
 
 export type OrderPushTarget = 'cancelled' | 'completed' | 'on-hold';
 
-/** EcoMate statuses that enqueue a push job (cancel/return/Delivered hooks). */
-export const PUSHABLE_ECO_STATUSES = ['Cancelled', 'Delivered', 'Returned'] as const;
+/** EcoMate statuses that enqueue a push job (confirm/cancel/return/Delivered hooks). */
+export const PUSHABLE_ECO_STATUSES = ['Cancelled', 'Confirmed', 'Delivered', 'Returned'] as const;
 
 /** Canonical target per EcoMate status (before capability gating). */
 export const ECO_STATUS_TO_CANONICAL_TARGET: Record<string, OrderPushTarget | null> = {
   Cancelled: 'cancelled',
+  // Boss decision 2026-11-24 (restated in full the same day): confirming
+  // an order holds it remotely. The worker's ALREADY_PUSHED check makes
+  // this a no-op when the ingest-time hold already landed — a confirm
+  // never double-pushes a hold.
+  Confirmed: 'on-hold',
   Delivered: 'completed',
   // Boss decision 2026-11-24: a Returned order cancels the remote order
   // (Woo has no return state — `cancelled` is the faithful target).
@@ -132,9 +139,10 @@ export interface OrderPushJob {
    * (`notifyIngestedOrder` → `'on-hold'`). When present the worker pushes
    * THIS target (after its live-status precondition + capability gate)
    * instead of deriving one from the live EcoMate status — the ingest
-   * rule is "Confirmed → hold remotely", and no EcoMate status maps to
-   * `on-hold` in the general derivation. Retries keep the target (the
-   * retry re-enqueue spreads the whole job).
+   * rule is "Confirmed or Pending → hold remotely", and Pending has no
+   * entry in the general derivation (Confirmed does: `Confirmed →
+   * 'on-hold'`, which is what the confirm-time derived job uses).
+   * Retries keep the target (the retry re-enqueue spreads the whole job).
    */
   target?: OrderPushTarget;
 }
@@ -195,15 +203,18 @@ export class StoreOrderPushService {
   }
 
   /**
-   * Ingest-time Hold push (Boss decision 2026-11-24) — called by the
-   * ingest service right after a new order + its mapping are created.
-   * Rule: the order landed Confirmed → enqueue a push of `on-hold` to
-   * the store (the channel must not fulfil an order EcoMate now owns);
-   * the order landed already Hold (ingested from Woo `on-hold`) → SKIP,
-   * the remote order is already on hold; any other landed status
-   * (Delivered/Cancelled/…) → SKIP, the remote order already reflects
-   * it (the ingest status CAME from the store). Non-mapped orders
-   * return silently (never pushed). Never throws (R-2) — a push
+   * Ingest-time Hold push (Boss decision 2026-11-24, restated in full
+   * the same day) — called by the ingest service right after a new
+   * order + its mapping are created. Rule: the order landed Confirmed
+   * OR Pending → enqueue a push of `on-hold` to the store (the channel
+   * must not fulfil an order EcoMate now owns — a pending-payment
+   * remote order takes on-hold as a normal Woo transition); the order
+   * landed already Hold (ingested from Woo `on-hold`) → SKIP, the
+   * remote order is already on hold; a terminal landed status
+   * (Delivered/Cancelled/Returned/…) → SKIP, the remote order already
+   * reflects it (the ingest status CAME from the store) — a hold is
+   * never pushed onto a completed/cancelled remote order. Non-mapped
+   * orders return silently (never pushed). Never throws (R-2) — a push
    * enqueue failure must never fail the ingest; the worker records
    * the push outcome (SUCCESS/SKIPPED/FAILED + issue) visibly.
    */
@@ -221,9 +232,10 @@ export class StoreOrderPushService {
         include: { status: true },
       });
       const statusName = (order as any)?.status?.name;
-      // Only a Confirmed landing earns a hold push — Hold (already held
-      // remotely) and every other status are skipped, never pushed.
-      if (statusName !== 'Confirmed') return;
+      // Confirmed OR Pending landing earns a hold push — Hold (already
+      // held remotely) and every terminal/other status are skipped,
+      // never pushed.
+      if (statusName !== 'Confirmed' && statusName !== 'Pending') return;
       await this.queues.enqueue(
         'store-order-push',
         'order-status-push',
@@ -276,16 +288,22 @@ export class StoreOrderPushService {
       if (!order || (order as any).trashedAt) return skip('ORDER_GONE: order missing or trashed');
       // Explicit-target jobs (ingest-time Hold push) carry their own
       // live-status precondition instead of the PUSHABLE list: the hold
-      // is owed only while the order is still Confirmed. Already Hold →
-      // the remote order is already held (or the operator held it here),
-      // so the push is skipped, never re-sent; any other status means
-      // the order moved on and the enqueue is stale.
+      // is owed only while the order is still Confirmed or Pending
+      // (Boss 2026-11-24: a Pending landing earns a hold push too — a
+      // pending-payment remote order takes on-hold as a normal Woo
+      // transition, and the worker never pre-reads the remote status:
+      // the push is a blind PUT + read-back verify, so nothing here
+      // rejects a pending remote order). Already Hold → the remote
+      // order is already held (or the operator held it here), so the
+      // push is skipped, never re-sent; any other status means the
+      // order moved on and the enqueue is stale — a terminal status
+      // (Delivered/Cancelled/Returned) never gets a hold pushed onto it.
       if (job.target) {
         if (job.target === 'on-hold') {
           if (liveStatus === 'Hold') {
             return skip('ALREADY_HOLD: order is Hold — no hold push (Boss 2026-11-24: already hold → skip)');
           }
-          if (liveStatus !== 'Confirmed') {
+          if (liveStatus !== 'Confirmed' && liveStatus !== 'Pending') {
             return skip(`STATUS_SUPERSEDED:${liveStatus ?? 'unknown'}: enqueue was for an ingest-time hold push — no push`);
           }
         } else {
