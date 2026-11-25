@@ -133,12 +133,16 @@ describe('resolveStatusName — Woo overrides (Boss directive 2026-11-23 + 2026-
     await expect(svc.resolveStatusName('s1', 'draft')).resolves.toBeNull();
   });
 
-  it('override map is exactly the three Boss-ordered entries', () => {
-    expect(STORE_STATUS_OVERRIDES).toEqual({ refunded: 'Cancelled', returned: 'Cancelled', processing: 'Pending' });
+  it('override map is exactly the four Boss-ordered entries', () => {
+    // `paid → Pending` joined the map with the Shopify fix bundle
+    // (2026-11-25): a paid Shopify order must land Pending EXPLICITLY, not
+    // by falling through to the unmapped → default path.
+    expect(STORE_STATUS_OVERRIDES).toEqual({ refunded: 'Cancelled', returned: 'Cancelled', processing: 'Pending', paid: 'Pending' });
     expect(STORE_STATUS_MAP.refunded).toBe('Cancelled');
     expect(STORE_STATUS_MAP.returned).toBe('Cancelled');
     expect(STORE_STATUS_MAP.processing).toBe('Pending');
-    expect(Object.keys(STORE_STATUS_MAP)).toHaveLength(Object.keys(STATUS_MAP).length + 1);
+    expect(STORE_STATUS_MAP.paid).toBe('Pending');
+    expect(Object.keys(STORE_STATUS_MAP)).toHaveLength(Object.keys(STATUS_MAP).length + 2);
   });
 });
 

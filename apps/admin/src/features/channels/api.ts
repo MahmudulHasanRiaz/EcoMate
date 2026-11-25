@@ -55,6 +55,8 @@ export interface TestConnectionResponse {
   authenticated: boolean
   permissionsOk: boolean
   mediaReachable?: boolean
+  /** Best-effort webhook-list probe (Shopify): false = the token cannot list webhooks — warn, never fail. */
+  webhooksOk?: boolean
   providerStoreId?: string
   existingStoreConflict?: { storeId: string; storeName: string }
   plugin?: { installed: boolean; version?: string }

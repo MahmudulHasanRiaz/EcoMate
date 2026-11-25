@@ -34,6 +34,7 @@ import {
 const STORE = () => buildStoreUnit('SHOPIFY');
 const SHOP = 'test-shop.myshopify.com';
 const TOKEN_URL = `https://${SHOP}/admin/oauth/access_token`;
+const BASE = `https://${SHOP}/admin/api/2026-10`;
 
 const tokenCalls = (mock: MockFetch) =>
   mock.calls.filter((c) => c.url === TOKEN_URL);
@@ -195,6 +196,11 @@ describe('Shopify Client Credentials Grant (Issue 2)', () => {
     expect(err.category).toBe(ProviderErrorCategory.INVALID_REQUEST);
     expect(String(err.message)).toMatch(/app_not_installed/);
     expect(String(err.message)).toMatch(/install the app on the store/);
+    // Shopify fix bundle (2026-11-25): the old guidance said "approve the
+    // app version" — there is no version/approval step for a legacy custom
+    // app created in the store admin, so the message must not say it.
+    expect(String(err.message)).not.toMatch(/approve the app version/);
+    expect(String(err.message)).toMatch(/stored Client ID\/Secret/);
     expect(classifyProviderError(err).retryable).toBe(false);
     expect(tokenCalls(mock)).toHaveLength(1); // no retry loop
     expect(String(err.message)).not.toContain('test-client-secret-fake');
@@ -335,5 +341,75 @@ describe('Shopify Client Credentials Grant (Issue 2)', () => {
       valid: false,
       reason: 'no-secret-configured',
     });
+  });
+});
+
+describe('Shopify token trap — stored-credentials probe must prove a real exchange (2026-11-25)', () => {
+  it('testConnection without forceRefresh reuses the cached bearer (one exchange for two probes)', async () => {
+    const mock = new MockFetch();
+    mockShopifyTokenEndpoint(mock);
+    mock.onAll(() => jsonResponse(200, { shop: { id: 123, myshopify_domain: 'test-shop.myshopify.com' } }));
+    const shopify = new ShopifyProvider(mock.fetch);
+    await shopify.testConnection(STORE());
+    await shopify.testConnection(STORE());
+    expect(tokenCalls(mock)).toHaveLength(1);
+  });
+
+  it('testConnection with forceRefresh re-exchanges even with a warm cache', async () => {
+    const mock = new MockFetch();
+    let n = 0;
+    mock.onPrefix(TOKEN_URL, () => {
+      n += 1;
+      return jsonResponse(200, {
+        access_token: `tok-${n}`,
+        expires_in: 86399,
+        scope: 'write_products,write_inventory,write_orders',
+      });
+    });
+    mock.onAll(() => jsonResponse(200, { shop: { id: 123, myshopify_domain: 'test-shop.myshopify.com' } }));
+    const shopify = new ShopifyProvider(mock.fetch);
+    await shopify.testConnection(STORE());
+    await shopify.testConnection(STORE(), { forceRefresh: true });
+    // Two exchanges: the second probe proves the credentials instead of
+    // passing off the token minted by the first.
+    expect(tokenCalls(mock)).toHaveLength(2);
+    const bearers = mock.calls
+      .filter((c) => c.url.includes('/shop.json'))
+      .map((c) => (c.init?.headers as Record<string, string>)['X-Shopify-Access-Token']);
+    expect(bearers).toEqual(['tok-1', 'tok-2']);
+  });
+
+  it('clearCachedToken drops the bearer: the next call re-exchanges', async () => {
+    const mock = new MockFetch();
+    mockShopifyTokenEndpoint(mock);
+    mock.onAll(() =>
+      jsonResponse(200, { product: { id: 9001, variants: [{ inventory_quantity: 2 }] } }),
+    );
+    const shopify = new ShopifyProvider(mock.fetch);
+    await shopify.readStockState(STORE(), { providerId: '9001' });
+    expect(tokenCalls(mock)).toHaveLength(1);
+    shopify.clearCachedToken(STORE().id);
+    await shopify.readStockState(STORE(), { providerId: '9001' });
+    expect(tokenCalls(mock)).toHaveLength(2);
+  });
+
+  it('webhooks probe: listable → webhooksOk true, 403 → webhooksOk false (never fails the probe)', async () => {
+    const ok = new MockFetch();
+    mockShopifyTokenEndpoint(ok);
+    ok.onPrefix(`${BASE}/webhooks.json`, () => jsonResponse(200, { webhooks: [] }));
+    ok.onAll(() => jsonResponse(200, { shop: { id: 123, myshopify_domain: 'test-shop.myshopify.com' } }));
+    await expect(
+      new ShopifyProvider(ok.fetch).testConnection(STORE()).then((r) => r.webhooksOk),
+    ).resolves.toBe(true);
+
+    const denied = new MockFetch();
+    mockShopifyTokenEndpoint(denied);
+    denied.onPrefix(`${BASE}/webhooks.json`, () =>
+      jsonResponse(403, { errors: 'The api_client does not have the required permission(s).' }),
+    );
+    denied.onAll(() => jsonResponse(200, { shop: { id: 123, myshopify_domain: 'test-shop.myshopify.com' } }));
+    const res = await new ShopifyProvider(denied.fetch).testConnection(STORE());
+    expect(res.authenticated).toBe(true);
+    expect(res.webhooksOk).toBe(false);
   });
 });

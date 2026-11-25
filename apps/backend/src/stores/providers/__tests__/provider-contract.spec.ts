@@ -289,7 +289,7 @@ describe('provider contract suite (P2 §13)', () => {
         // Client Credentials Grant: the Admin API bearer comes from the
         // per-store token exchange — register that mock before any generic.
         tokenSetup: (mock: MockFetch) => mockShopifyTokenEndpoint(mock),
-        probeCalls: 2,
+        probeCalls: 3,
       },
       {
         slug: 'custom',
@@ -311,7 +311,8 @@ describe('provider contract suite (P2 §13)', () => {
           permissionsOk: true,
           providerStoreId: okId,
         });
-        // Shopify probes twice (token exchange + shop.json); others once.
+        // Shopify probes three times (token exchange + shop.json + the
+        // webhooks list probe); others once.
         expect(mock.calls).toHaveLength(probeCalls ?? 1);
       });
 

@@ -768,3 +768,108 @@ describe('confirm-time Hold push — worker (derived jobs, Boss 2026-11-24 resta
     expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
   });
 });
+
+describe('Shopify fix bundle — synonym read-back + ingest marker (2026-11-25)', () => {
+  /** Shopify-style provider: CANCELLED/FULFILLED targets, read-back in remote vocabulary. */
+  function shopifyStyleProvider(overrides: Record<string, unknown> = {}) {
+    return {
+      slug: 'shopify',
+      declaredCapabilities: { orderStatusUpdate: true, orderStatusUpdateTargets: ['CANCELLED', 'FULFILLED'] },
+      resolveCapabilities: jest.fn().mockResolvedValue({
+        orderStatusUpdate: true, orderStatusUpdateTargets: ['CANCELLED', 'FULFILLED'],
+      }),
+      pushOrderStatus: jest.fn().mockResolvedValue({ ok: true }),
+      readOrderStatus: jest.fn().mockResolvedValue({ status: 'FULFILLED' }),
+      ...overrides,
+    } as any;
+  }
+
+  it('Delivered → completed verifies when Shopify reads back FULFILLED (no repair push, no verify failure)', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Delivered');
+    const provider = shopifyStyleProvider();
+    const { svc } = buildPush(prisma, provider);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Delivered' });
+
+    expect(out).toMatchObject({ status: 'SUCCESS', reason: 'PUSHED:completed' });
+    // Exactly one push: the read-back accepted FULFILLED as the synonym of
+    // `completed`, so no repair push ran.
+    expect(provider.pushOrderStatus).toHaveBeenCalledTimes(1);
+    expect(provider.readOrderStatus).toHaveBeenCalledTimes(1);
+    expect(prisma.storeOrderMapping.update).toHaveBeenCalledWith({
+      where: { id: 'map-1' },
+      data: { lastPushedStatus: 'completed' },
+    });
+  });
+
+  it('explicit ingest job on a marker provider → INGEST_MARKED skip, marker called once, no status push', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Pending');
+    const markIngestedOrder = jest.fn().mockResolvedValue({ ok: true });
+    const provider = shopifyStyleProvider({ markIngestedOrder });
+    const { svc, runs, queues } = buildPush(prisma, provider);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Pending', target: 'on-hold' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/INGEST_MARKED/);
+    expect(markIngestedOrder).toHaveBeenCalledTimes(1);
+    expect(markIngestedOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      { providerId: 'ext-1' },
+    );
+    // No status push, no read-back, no mapping write, no retry, no issue.
+    expect(provider.pushOrderStatus).not.toHaveBeenCalled();
+    expect(provider.readOrderStatus).not.toHaveBeenCalled();
+    expect(prisma.storeOrderMapping.update).not.toHaveBeenCalled();
+    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(runs.upsertIssue).not.toHaveBeenCalled();
+  });
+
+  it('marker already present → INGEST_MARKED with the provider reason', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Confirmed');
+    const provider = shopifyStyleProvider({
+      markIngestedOrder: jest.fn().mockResolvedValue({ ok: true, skipped: true, reason: 'TAG_ALREADY_PRESENT' }),
+    });
+    const { svc } = buildPush(prisma, provider);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed', target: 'on-hold' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/INGEST_MARKED:TAG_ALREADY_PRESENT/);
+    expect(provider.pushOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it('marker failure → INGEST_MARKER_FAILED skip, never a retry or DEAD (the ingest must not fail)', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Pending');
+    const provider = shopifyStyleProvider({
+      markIngestedOrder: jest.fn().mockRejectedValue(new Error('shopify 500')),
+    });
+    const { svc, runs, queues } = buildPush(prisma, provider);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Pending', target: 'on-hold' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/INGEST_MARKER_FAILED/);
+    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(runs.upsertIssue).not.toHaveBeenCalled();
+    expect(runs.recordAttempt).not.toHaveBeenCalled();
+  });
+
+  it('derived confirm-time job never takes the marker (ingest jobs only)', async () => {
+    const prisma = mockPrisma();
+    seedPushable(prisma, 'Confirmed');
+    const markIngestedOrder = jest.fn().mockResolvedValue({ ok: true });
+    const provider = shopifyStyleProvider({ markIngestedOrder });
+    const { svc } = buildPush(prisma, provider);
+
+    const out = await svc.handlePush({ storeId: 's1', orderId: 'o1', ecoStatus: 'Confirmed' });
+
+    expect(out.status).toBe('SKIPPED');
+    expect(out.reason).toMatch(/UNSUPPORTED_TARGET:on-hold/);
+    expect(markIngestedOrder).not.toHaveBeenCalled();
+  });
+});

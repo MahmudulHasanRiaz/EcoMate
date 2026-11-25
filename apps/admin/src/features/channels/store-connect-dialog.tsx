@@ -64,6 +64,14 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
   const [probing, setProbing] = useState(false)
   const [probe, setProbe] = useState<TestConnectionResponse | null>(null)
   const [createdId, setCreatedId] = useState<string | null>(null)
+  /**
+   * Token trap (Shopify fix bundle, 2026-11-25): the credentials as saved
+   * by Create, as a JSON string. The probe runs with the CURRENT form
+   * values (override) and never writes — so a correction made after
+   * Create stays unsaved unless Save & Complete persists it (see
+   * handleSaveAndComplete). Compared by value, never by reference.
+   */
+  const [savedCredentials, setSavedCredentials] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [scope, setScope] = useState<SyncScope>({ ...DEFAULT_SYNC_SCOPE })
   const [completing, setCompleting] = useState(false)
@@ -71,7 +79,7 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
 
   const reset = () => {
     setName(''); setDomain(''); setConsumerKey(''); setConsumerSecret('')
-    setProbe(null); setCreatedId(null)
+    setProbe(null); setCreatedId(null); setSavedCredentials(null)
     setScope({ ...DEFAULT_SYNC_SCOPE }); setCompleting(false); setCompleted(false)
   }
 
@@ -131,13 +139,15 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
     if (!name.trim()) { toast.error('Store name is required'); return }
     setSaving(true)
     try {
+      const creds = consumerKey ? credentials() : undefined
       const store = await storesApi.create({
         kind: provider as 'WOOCOMMERCE' | 'SHOPIFY' | 'CUSTOM',
         name: name.trim(),
         domain: domain.trim() || undefined,
-        credentials: consumerKey ? credentials() : undefined,
+        credentials: creds,
       })
       setCreatedId(store.id)
+      setSavedCredentials(creds ? JSON.stringify(creds) : null)
       queryClient.invalidateQueries({ queryKey: STORES_KEYS.all })
       toast.success('Store registered — run Test Connection to verify')
       // NOTE (P9): onCreated is intentionally NOT fired here — the wizard
@@ -175,6 +185,14 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
    * P9 Sync Configuration → Complete: persists the wizard scope + the fixed
    * `adopt_existing` policy (BR-05) via PATCH, then navigates to the store
    * detail. Additive — auth fields and the verify panel are untouched.
+   *
+   * Token trap (Shopify fix bundle, 2026-11-25): the probe runs with the
+   * CURRENT form values and never writes a credential row — so if the
+   * operator corrected the secret after Create and the probe passed, the
+   * STORED row still holds the Create-time values and every worker job
+   * would fail on them. Before the PATCH, persist the probed values via
+   * rotateCredentials when they differ from what Create saved. A failed
+   * persist aborts completion (completing would recreate the trap).
    */
   async function handleSaveAndComplete() {
     const id = createdId
@@ -182,6 +200,14 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
     if (!probe?.authenticated) { toast.error('Verify the connection first — Save & Complete needs a passing probe'); return }
     setCompleting(true)
     try {
+      if (consumerKey) {
+        const current = JSON.stringify(credentials())
+        if (current !== savedCredentials) {
+          await storesApi.rotateCredentials(id, credentials())
+          setSavedCredentials(current)
+          toast.success('Corrected credentials saved')
+        }
+      }
       await storesApi.update(id, { syncScope: scope, initialSyncPolicy: INITIAL_SYNC_POLICY })
       queryClient.invalidateQueries({ queryKey: STORES_KEYS.all })
       queryClient.invalidateQueries({ queryKey: STORES_KEYS.detail(id) })
@@ -272,11 +298,19 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
                 {probe.mediaReachable !== undefined && (
                   <Badge variant={probe.mediaReachable ? 'default' : 'secondary'}>media: {String(probe.mediaReachable)}</Badge>
                 )}
+                {probe.webhooksOk === false && (
+                  <Badge variant="secondary">webhooks: list failed — check app scopes</Badge>
+                )}
               </div>
               <div className="text-xs text-muted-foreground">
                 Stock fidelity: <span className="font-medium">{probe.capabilities.stockStatusFidelity}</span>
                 {' · '}contact-check exposure: <span className="font-medium">{String(probe.capabilities.contactCheckExposure)}</span>
               </div>
+              {probe.webhooksOk === false && (
+                <div className="text-xs text-muted-foreground">
+                  Webhook list failed — webhook creation may fail; check the app&apos;s Admin API scopes in Shopify.
+                </div>
+              )}
               <CapabilityNotice capabilities={probe.capabilities} />
             </div>
           )}

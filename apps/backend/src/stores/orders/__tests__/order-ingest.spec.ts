@@ -956,3 +956,94 @@ describe('Woo order-ingest fixes (Boss 2026-11-25)', () => {
     expect(stored[0].note).toBe(deltaNote);
   });
 });
+
+describe('Shopify fix bundle — payment passthrough + explicit paid → Pending (2026-11-25)', () => {
+  const SHOPIFY_ORDER = {
+    id: 7316841005221,
+    financial_status: 'paid',
+    total_price: '150.00',
+    currency: 'BDT',
+    created_at: '2026-11-25T15:26:00Z',
+    line_items: [{ sku: 'SHO-IMG-001', title: 'Shopify Image Test', quantity: 1, price: '150' }],
+    customer: { first_name: 'Shop', last_name: 'Test', email: 'shoptest@example.com', phone: '01712345678' },
+    shipping_address: {
+      first_name: 'Shop', last_name: 'Test', address1: 'House 7, Road 3', city: 'Dhaka',
+      province: 'Dhaka', zip: '1205', country: 'BD', phone: '01712345678',
+    },
+    billing_address: {
+      first_name: 'Shop', last_name: 'Test', address1: 'House 7, Road 3', city: 'Dhaka',
+      province: 'Dhaka', zip: '1205', country: 'BD', phone: '01712345678',
+    },
+    note: 'Ring the bell twice',
+    shipping_lines: [{ price: '0.00' }],
+  };
+
+  /** Ingests a Shopify-shaped order with NO per-store status-map row, so the
+   * landing must come from the explicit `paid → Pending` override — not the
+   * unmapped → default path. */
+  async function ingestShopify(prisma: any, raw: any, statusName = 'Pending') {
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(null);
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'SHOPIFY', name: 'ecomate-test' });
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue(null);
+    prisma.orderStatus.findFirst.mockResolvedValue({ id: 'st-pending', name: statusName });
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    const { svc, orders } = buildIngest(prisma);
+    const res = await svc.ingest('s1', raw, { type: 'WEBHOOK', runId: 'run-1' });
+    return {
+      res,
+      orders,
+      internal: orders.create.mock.calls[0][4],
+      dto: orders.create.mock.calls[0][0],
+    };
+  }
+
+  it('Shopify paid order lands Pending (explicit map) with paymentStatus PAID', async () => {
+    const prisma = mockPrisma();
+    const { res, internal, dto } = await ingestShopify(prisma, SHOPIFY_ORDER);
+
+    expect(res).toMatchObject({ created: true });
+    expect(internal.initialStatusName).toBe('Pending');
+    expect(internal.externalPaymentStatus).toBe('PAID');
+    expect(dto.shippingAddress).toMatchObject({ address: 'House 7, Road 3', city: 'Dhaka' });
+    expect(dto.billingAddress).toMatchObject({ address: 'House 7, Road 3', city: 'Dhaka' });
+    expect(dto.customerNotes).toBe('Ring the bell twice');
+  });
+
+  it('Shopify pending (COD-shaped) order carries PAYMENT_PENDING, not PAID', async () => {
+    const prisma = mockPrisma();
+    const { internal } = await ingestShopify(prisma, { ...SHOPIFY_ORDER, financial_status: 'pending' });
+    expect(internal.externalPaymentStatus).toBe('PAYMENT_PENDING');
+  });
+
+  it('Woo COD order carries no payment signal (externalPaymentStatus null — Woo behaviour unchanged)', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(null);
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'WOOCOMMERCE', name: 'Dhaka flagship store' });
+    seedStatusMaps(prisma, 'Pending');
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    const { svc, orders } = buildIngest(prisma);
+    await svc.ingest(
+      's1',
+      {
+        id: 221, status: 'pending', total: '500.00', currency: 'BDT',
+        createdAt: '2026-11-25T10:00:00.000Z',
+        line_items: [{ sku: 'SKU-1', name: 'Tee', quantity: 1, price: '500' }],
+        payment_method: 'cod', payment_method_title: 'Cash on delivery',
+        billing: { first_name: 'Sara', last_name: 'K', phone: '01700000001', email: 's@x.test' },
+      },
+      { type: 'WEBHOOK', runId: 'run-1' },
+    );
+    expect(orders.create.mock.calls[0][4].externalPaymentStatus).toBeNull();
+  });
+
+  it("resolveStatusName('paid') → Pending with no DB row (explicit override, not the default)", async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue(null);
+    const { svc } = buildIngest(prisma);
+    await expect(svc.resolveStatusName('s1', 'paid', 'shopify')).resolves.toBe('Pending');
+  });
+});

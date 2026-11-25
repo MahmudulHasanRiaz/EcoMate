@@ -2514,6 +2514,41 @@ describe('OrdersService', () => {
         );
         expect(createdShipping()).toBe(60);
       });
+
+      // Shopify fix bundle (2026-11-25): the store's financial_status maps
+      // to the EcoMate payment status on ingest. COD wins over the external
+      // signal — an external PAID never turns a COD order into PAID.
+      const withPayment = (externalPaymentStatus: any) => ({
+        ...externalInternal(0),
+        externalPaymentStatus,
+      });
+
+      it('ingest with externalPaymentStatus PAID → created paymentStatus PAID', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        await service.create(noDistrict, undefined, undefined, undefined, withPayment('PAID'));
+        expect(createdData().paymentStatus).toBe('PAID');
+      });
+
+      it('ingest with externalPaymentStatus null (Woo COD) → PAYMENT_PENDING, unchanged', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        await service.create(noDistrict, undefined, undefined, undefined, withPayment(null));
+        expect(createdData().paymentStatus).toBe('PAYMENT_PENDING');
+      });
+
+      it('COD paymentOptionType + external PAID → UNPAID (the COD branch wins)', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        await service.create(
+          { ...noDistrict, paymentOptionType: 'CASH_ON_DELIVERY' },
+          undefined,
+          undefined,
+          undefined,
+          withPayment('PAID'),
+        );
+        expect(createdData().paymentStatus).toBe('UNPAID');
+      });
     });
 
     it('applies and saves manual discount when creating an order', async () => {

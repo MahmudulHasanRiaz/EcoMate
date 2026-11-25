@@ -26,8 +26,14 @@
  *  - verifies every push by read-back (`provider.readOrderStatus`): mismatch
  *    → exactly one repair push + re-read → still mismatched → classified
  *    failure (retry ladder) ending in an `ORDER_PUSH_VERIFY_FAILED` issue;
+ *    the read-back match is synonym-aware (`TARGET_SYNONYMS` — Shopify
+ *    reads back `FULFILLED` for canonical `completed`);
  *  - retries per the standard classification (§8.1 ladder, engine-owned —
  *    BullMQ attempts stay 1 so permanent failures never loop).
+ *  - an explicit ingest-time Hold job on a provider with no hold
+ *    equivalent (Shopify) takes the provider's ingest marker instead
+ *    (`markIngestedOrder` — Shopify tags the order `EcoMate`, Boss
+ *    2026-11-25): best-effort, recorded as a skip, never a failure.
  *
  * BR-17: only status travels outward; totals/items/prices are never read,
  * never written. Shopify/Custom adapters stay stubbed until P9/P10 — the
@@ -348,7 +354,42 @@ export class StoreOrderPushService {
             liveStatus,
             capabilities.orderStatusUpdateTargets ?? [],
           );
-      if ('skipped' in resolution) return skip(`${resolution.skipped}: status "${liveStatus}" not pushed`);
+      if ('skipped' in resolution) {
+        // Ingest transfer marker (Shopify fix bundle, Boss 2026-11-25):
+        // an explicit ingest-time Hold job on a provider with no hold
+        // equivalent (Shopify) is NOT a failure — the provider may mark
+        // the ingested order instead (Shopify tags it `EcoMate`). Only
+        // the explicit ingest job qualifies (job.target === 'on-hold');
+        // a derived confirm-time job keeps the plain skip below.
+        // Best-effort: a marker failure is recorded as a skip, never a
+        // retry/DEAD — the marker must never fail the ingest.
+        if (
+          job.target === 'on-hold' &&
+          resolution.skipped.startsWith('UNSUPPORTED_TARGET') &&
+          typeof provider.markIngestedOrder === 'function'
+        ) {
+          const markerSecrets = this.stores
+            ? await this.stores.storeWithSecrets(job.storeId)
+            : { id: job.storeId, kind: store.kind, settings: {}, secrets: {} };
+          const markerRef: RemoteRef = { providerId: mapping.externalOrderId };
+          try {
+            const marked = await provider.markIngestedOrder(markerSecrets as any, markerRef);
+            if (marked && marked.skipped) {
+              return skip(
+                `INGEST_MARKED:${marked.reason ?? 'already-marked'}: ingest marker already present — no status push (provider has no hold equivalent)`,
+              );
+            }
+            return skip(
+              'INGEST_MARKED: order marked as ingested on the store (provider has no hold equivalent) — no status push',
+            );
+          } catch (err) {
+            return skip(
+              `INGEST_MARKER_FAILED:${err instanceof Error ? err.message : String(err)}: ingest unaffected — marker is best-effort`,
+            );
+          }
+        }
+        return skip(`${resolution.skipped}: status "${liveStatus}" not pushed`);
+      }
       const target = resolution.target;
 
       // (5) Idempotency: same canonical target already confirmed → no-op
@@ -432,10 +473,15 @@ export class StoreOrderPushService {
   /**
    * Read-back verification: the push is SUCCESS only when the remote order
    * reads back at the canonical target (case-insensitive — WC returns
-   * lowercase, a future adapter may not). One repair push + re-read on
-   * mismatch, then a retryable failure (remote may settle) ending DEAD +
-   * issue via the caller's ladder. A missing read seam is a loud permanent
-   * failure (VERIFY_UNSUPPORTED), never a silent verify-pass.
+   * lowercase, a future adapter may not). Synonym-aware (TARGET_SYNONYMS
+   * is the acceptance set, not just the capability gate): Shopify reads
+   * back `FULFILLED` for canonical `completed`, and an exact-match check
+   * would force a repair push → ORDER_PUSH_VERIFY_FAILED → retry ladder →
+   * DEAD on every Delivered push (Shopify fix bundle, 2026-11-25). One
+   * repair push + re-read on mismatch, then a retryable failure (remote
+   * may settle) ending DEAD + issue via the caller's ladder. A missing
+   * read seam is a loud permanent failure (VERIFY_UNSUPPORTED), never a
+   * silent verify-pass.
    */
   private async verifyReadBack(
     provider: CommerceProvider,
@@ -451,7 +497,10 @@ export class StoreOrderPushService {
         provider.slug,
       );
     }
-    const matches = (status: string) => String(status ?? '').trim().toLowerCase() === target;
+    const accepted = new Set(
+      [target, ...(TARGET_SYNONYMS[target] ?? [])].map((s) => s.toLowerCase()),
+    );
+    const matches = (status: string) => accepted.has(String(status ?? '').trim().toLowerCase());
     const first = await reader.call(provider, store as any, ref);
     if (matches(first.status)) return;
     // One repair attempt, then fail loud.

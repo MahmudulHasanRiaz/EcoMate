@@ -202,7 +202,7 @@ export function resolveShippingCostFields(dto: {
  *
  * ONE optional fifth parameter on `create()`. Inert by default: when absent
  * (every controller passes only dto/ip/user/userAgent — NO controller may pass
- * `internal`), behaviour is byte-identical to before. Only four behaviours
+ * `internal`), behaviour is byte-identical to before. Only five behaviours
  * diverge, all gated on `internal.ingest === 'external_store'`:
  *  - initial-status lookup replaced by `initialStatusName` when provided;
  *  - `idempotencyKey` pass-through ('store:{storeId}:order:{externalId}');
@@ -211,6 +211,10 @@ export function resolveShippingCostFields(dto: {
  *  - blocked-check bypass: the three storefront blocking checks are skipped
  *    entirely and evaluated read-only for flagging only (BR-13/§8.5.1).
  *    There is no blockedPolicy/reject switch anywhere (BR-13 absolute).
+ *  - `externalPaymentStatus`: the store-reported payment state
+ *    (Shopify `financial_status` via normalizeOrder) sets the order's
+ *    `paymentStatus` (Shopify fix bundle, 2026-11-25 — Boss decision: a
+ *    store-reported Paid flips it to PAID). Null/absent keeps the default.
  */
 export interface OrderCreateInternal {
   ingest?: 'external_store';
@@ -238,6 +242,16 @@ export interface OrderCreateInternal {
    * the 2026-10-25 security rule ignores that for non-staff creates.
    */
   externalShipping?: number | null;
+  /**
+   * The store-reported payment state, set ONLY by the ingest worker
+   * (Shopify `financial_status` mapped by normalizeOrder). Null = the
+   * payload carried no financial-status signal (WooCommerce has no such
+   * field) — create() then keeps the default PAYMENT_PENDING, so the Woo
+   * COD behaviour is unchanged. A COD order is Unpaid in Shopify by
+   * design and maps to PAYMENT_PENDING, never to UNPAID here (UNPAID is
+   * the EcoMate-side COD marker, set from `dto.paymentOptionType` only).
+   */
+  externalPaymentStatus?: PaymentStatus | null;
 }
 
 /** Ingest flags with operational meaning only — never blocking (BR-15). */
@@ -3111,9 +3125,19 @@ export class OrdersService {
           paymentStatus:
             dto.paymentOptionType === 'CASH_ON_DELIVERY'
               ? PaymentStatus.UNPAID
-              : dto.paymentOptionType === 'PARTIAL_PAYMENT' && isStaffCreate && dto.partialAmount && Number(dto.partialAmount) > 0
-                ? (Number(dto.partialAmount) >= Number(finalTotal) ? PaymentStatus.PAID : PaymentStatus.PARTIAL_PAID)
-                : PaymentStatus.PAYMENT_PENDING,
+              : // Shopify fix bundle (2026-11-25): on the external-ingest
+                // path the store-reported payment state wins (a Shopify
+                // Paid order lands PAID, a pending/COD one stays
+                // PAYMENT_PENDING). The ingest DTO never carries a
+                // paymentOptionType, so the COD branch above cannot fire
+                // here — but it stays first so a future caller that sets
+                // both can never have a store status override the COD
+                // UNPAID marker. A null/absent signal keeps the default.
+                isExternalIngest && internal?.externalPaymentStatus
+                ? internal.externalPaymentStatus
+                : dto.paymentOptionType === 'PARTIAL_PAYMENT' && isStaffCreate && dto.partialAmount && Number(dto.partialAmount) > 0
+                  ? (Number(dto.partialAmount) >= Number(finalTotal) ? PaymentStatus.PAID : PaymentStatus.PARTIAL_PAID)
+                  : PaymentStatus.PAYMENT_PENDING,
           // Analytics cost capture (P2 §3.2): staff-entered fulfillment cost.
           ...resolveShippingCostFields(dto),
           partialAmount:

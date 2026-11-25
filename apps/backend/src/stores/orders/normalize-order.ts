@@ -27,6 +27,24 @@ export interface NormalizedIngestOrder {
   externalId: string;
   /** Raw external status string (mapped via StoreOrderStatusMap later). */
   externalStatus: string;
+  /**
+   * The store-reported payment state, mapped from the provider's
+   * financial-status field (Shopify `financial_status` /
+   * bridge `payment_status`) onto the `PaymentStatus` vocabulary —
+   * `PAID` / `PARTIAL_PAID` / `PAYMENT_PENDING` / `REFUNDED` /
+   * `PARTIAL_REFUNDED` / `CANCELLED`, or null when the payload carries no
+   * financial-status signal (WooCommerce has no such field, so Woo
+   * orders always land null here and keep the default
+   * `PAYMENT_PENDING` — the Woo COD behaviour is unchanged).
+   */
+  externalPaymentStatus:
+    | 'PAID'
+    | 'PARTIAL_PAID'
+    | 'PAYMENT_PENDING'
+    | 'REFUNDED'
+    | 'PARTIAL_REFUNDED'
+    | 'CANCELLED'
+    | null;
   externalTotal: number;
   currency: string;
   externalCreatedAt: Date | null;
@@ -120,8 +138,7 @@ export function buildStoreOrderIdentity(storeId: string, externalId: string): {
  * A Woo state code (`BD-13`) resolves to the district name, and `state` /
  * `division` carry the division name; an unknown code or a plain state
  * name is kept verbatim (fail-safe). Empty values are omitted so providers
- * that send no address (Shopify fetch does not request addresses) keep
- * their stored shape unchanged.
+ * that send no address keep their stored shape unchanged.
  */
 export function canonicalizeExternalAddress(
   raw: unknown,
@@ -203,10 +220,11 @@ export function canonicalizeExternalAddress(
  * The store's own shipping charge, when the payload carries one.
  * Woo: `shipping_lines[]` with `total` per line (present-but-empty means
  * the store charged no shipping → 0). Shopify: `shipping_lines[].price`
- * (the Shopify fetch does not request shipping lines, so this stays null
- * there and the tenant-derived charge is kept). Legacy fallbacks:
- * `shipping_total` / `total_shipping`. Returns null when the payload
- * carries no shipping information at all — null is "unknown", NOT 0.
+ * (the Shopify fetch requests shipping lines, so a reconciled order
+ * carries them; a webhook payload without them stays null here and the
+ * tenant-derived charge is kept). Legacy fallbacks: `shipping_total` /
+ * `total_shipping`. Returns null when the payload carries no shipping
+ * information at all — null is "unknown", NOT 0.
  */
 export function extractExternalShipping(
   raw: Record<string, unknown>,
@@ -228,6 +246,41 @@ export function extractExternalShipping(
   return null;
 }
 
+/**
+ * Store-reported payment state → `PaymentStatus` vocabulary (Shopify
+ * fix bundle, 2026-11-25 — Boss decision: a store-reported Paid flips
+ * the EcoMate payment status to PAID). The signal is the provider's
+ * financial-status field: Shopify `financial_status`, bridge
+ * `payment_status`. WooCommerce carries no such field, so Woo orders
+ * always map to null here (unchanged behaviour — a Woo COD order still
+ * lands PAYMENT_PENDING). Unknown values map to null, never to a guess:
+ * the order keeps the default. `pending` / `authorized` map explicitly
+ * to PAYMENT_PENDING (a COD order is Unpaid in Shopify by design and
+ * must stay Payment Pending in EcoMate).
+ */
+export function mapExternalPaymentStatus(
+  financialStatus: unknown,
+): NormalizedIngestOrder['externalPaymentStatus'] {
+  const lower = asString(financialStatus).trim().toLowerCase();
+  switch (lower) {
+    case 'paid':
+      return 'PAID';
+    case 'partially_paid':
+      return 'PARTIAL_PAID';
+    case 'partially_refunded':
+      return 'PARTIAL_REFUNDED';
+    case 'pending':
+    case 'authorized':
+      return 'PAYMENT_PENDING';
+    case 'refunded':
+      return 'REFUNDED';
+    case 'voided':
+      return 'CANCELLED';
+    default:
+      return null;
+  }
+}
+
 export function normalizeOrder(raw: Record<string, unknown>): NormalizedIngestOrder {
   const r = raw ?? {};
   const externalId = pickName(r.id, r.number, r.name, r.order_id) || 'unknown';
@@ -245,8 +298,11 @@ export function normalizeOrder(raw: Record<string, unknown>): NormalizedIngestOr
     price: asNumber(li.price ?? li.unit_price ?? li.total),
   }));
 
-  const billing = (r.billing ?? {}) as Record<string, unknown>;
-  const shipping = (r.shipping ?? {}) as Record<string, unknown>;
+  // Address keys are provider-shaped: Shopify sends `shipping_address` /
+  // `billing_address`, WooCommerce sends `shipping` / `billing`. The
+  // Shopify keys win when present; Woo payloads carry only the short keys.
+  const billing = (r.billing_address ?? r.billing ?? {}) as Record<string, unknown>;
+  const shipping = (r.shipping_address ?? r.shipping ?? {}) as Record<string, unknown>;
   const customer = (r.customer ?? {}) as Record<string, unknown>;
 
   const customerPhone = pickName(
@@ -283,6 +339,9 @@ export function normalizeOrder(raw: Record<string, unknown>): NormalizedIngestOr
     customerName,
     customerPhone,
     customerEmail,
+    externalPaymentStatus: mapExternalPaymentStatus(
+      (r as Record<string, unknown>).financial_status ?? (r as Record<string, unknown>).payment_status,
+    ),
     externalShipping: extractExternalShipping(r),
     customerNote,
     billingAddress: {

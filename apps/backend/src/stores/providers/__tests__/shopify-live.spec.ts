@@ -687,6 +687,135 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       ).rejects.toThrow('VARIANT_LIMIT_EXCEEDED');
       expect(mock.calls).toHaveLength(0);
     });
+
+    // Shopify fix bundle (2026-11-25): a variant links to an image through
+    // `image_id`, and the image must already exist as a product image —
+    // the provider used to drop `v.image` entirely (live: both variant
+    // slots showed "Image is not applied"). Two-phase: reuse-or-upload
+    // the image, then PUT the variant with `image_id`.
+    it('attaches variant images: reuses the product image with the same src, uploads the missing one', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.setFallback((url, init) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'GET' && url.includes('/variants.json')) {
+          return jsonResponse(200, {
+            variants: [{ id: 7001, sku: 'SKU-VAR-A', price: '400.00', inventory_item_id: 8001 }],
+          });
+        }
+        if (method === 'GET' && url.includes('/products/9001/images.json')) {
+          return jsonResponse(200, {
+            images: [{ id: 55, src: 'https://cdn.example.test/a.jpg' }],
+          });
+        }
+        if (method === 'POST' && url.includes('/products/9001/images.json')) {
+          return jsonResponse(201, { image: { id: 56, src: 'https://cdn.example.test/b.jpg' } });
+        }
+        if (method === 'PUT' && url.includes('/variants/7001.json')) {
+          return jsonResponse(200, { variant: { id: 7001, inventory_item_id: 8001 } });
+        }
+        if (method === 'POST' && url.includes('/variants.json')) {
+          return jsonResponse(201, { variant: { id: 7002, inventory_item_id: 8002 } });
+        }
+        return jsonResponse(200, {});
+      });
+      const out = await new ShopifyProvider(mock.fetch).upsertVariants(
+        STORE(),
+        { providerId: '9001' },
+        [
+          { sku: 'SKU-VAR-A', price: '400', image: 'https://cdn.example.test/a.jpg' },
+          { sku: 'SKU-VAR-B', price: '350', image: 'https://cdn.example.test/b.jpg' },
+        ] as any,
+      );
+      expect(out.get('SKU-VAR-A')).toEqual({ providerId: '7001' });
+      expect(out.get('SKU-VAR-B')).toEqual({ providerId: '7002' });
+      // A's image already exists as a product image → reused, never
+      // re-uploaded: exactly one POST /images.json, for B's src only.
+      const imagePosts = mock.calls.filter(
+        (c) => c.init?.method === 'POST' && c.url.includes('/products/9001/images.json'),
+      );
+      expect(imagePosts).toHaveLength(1);
+      expect(JSON.parse(String(imagePosts[0]?.init?.body ?? '{}'))).toEqual({
+        image: { src: 'https://cdn.example.test/b.jpg' },
+      });
+      // Each variant is PUT with its image_id (the second PUT per variant —
+      // the first carries the price payload).
+      const imagePuts = mock.calls.filter((c) => {
+        if (c.init?.method !== 'PUT' || !c.url.includes('/variants/')) return false;
+        try {
+          return JSON.parse(String(c.init?.body ?? '{}')).variant?.image_id !== undefined;
+        } catch {
+          return false;
+        }
+      });
+      expect(imagePuts).toHaveLength(2);
+      expect(JSON.parse(String(imagePuts[0]?.init?.body ?? '{}')).variant).toEqual({
+        id: '7001',
+        image_id: 55,
+      });
+      expect(JSON.parse(String(imagePuts[1]?.init?.body ?? '{}')).variant).toEqual({
+        id: '7002',
+        image_id: 56,
+      });
+    });
+
+    it('a failed image upload drops only that variant image — the push still succeeds', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.setFallback((url, init) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'GET' && url.includes('/variants.json')) {
+          return jsonResponse(200, { variants: [] });
+        }
+        if (method === 'GET' && url.includes('/products/9001/images.json')) {
+          return jsonResponse(200, { images: [] });
+        }
+        if (method === 'POST' && url.includes('/products/9001/images.json')) {
+          return jsonResponse(500, { errors: 'boom' });
+        }
+        if (method === 'POST' && url.includes('/variants.json')) {
+          return jsonResponse(201, { variant: { id: 7002, inventory_item_id: 8002 } });
+        }
+        return jsonResponse(200, {});
+      });
+      const out = await new ShopifyProvider(mock.fetch).upsertVariants(
+        STORE(),
+        { providerId: '9001' },
+        [{ sku: 'SKU-VAR-B', price: '350', image: 'https://cdn.example.test/b.jpg' }] as any,
+      );
+      expect(out.get('SKU-VAR-B')).toEqual({ providerId: '7002' });
+      // No variant PUT carried an image_id (the upload failed first).
+      const imagePuts = mock.calls.filter((c) => {
+        if (c.init?.method !== 'PUT' || !c.url.includes('/variants/')) return false;
+        try {
+          return JSON.parse(String(c.init?.body ?? '{}')).variant?.image_id !== undefined;
+        } catch {
+          return false;
+        }
+      });
+      expect(imagePuts).toHaveLength(0);
+    });
+
+    it('variants without an image issue no image calls at all', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.setFallback((url, init) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'GET' && url.includes('/variants.json')) {
+          return jsonResponse(200, { variants: [] });
+        }
+        if (method === 'POST' && url.includes('/variants.json')) {
+          return jsonResponse(201, { variant: { id: 7002, inventory_item_id: 8002 } });
+        }
+        return jsonResponse(200, {});
+      });
+      await new ShopifyProvider(mock.fetch).upsertVariants(
+        STORE(),
+        { providerId: '9001' },
+        [{ sku: 'SKU-VAR-B', price: '350' }] as any,
+      );
+      expect(mock.calls.filter((c) => c.url.includes('/images.json'))).toHaveLength(0);
+    });
   });
 
   // ── Categories (adapter-internal collections) ─────────────────────────
@@ -1080,18 +1209,149 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       ).rejects.toThrow();
     });
 
-    it('pushOrderStatus: cancelled → cancel.json, completed → fulfillments.json (CANCELLED/FULFILLED)', async () => {
+    it('pushOrderStatus: cancelled → cancel.json, completed → fulfillment-order flow (not the removed /orders/{id}/fulfillments.json)', async () => {
       const mock = new MockFetch();
       mockShopifyTokenEndpoint(mock);
-      mock.onAll(() => jsonResponse(200, {}));
+      mock.setFallback((url, init) => {
+        if (url.includes('/fulfillment_orders.json') && (init?.method ?? 'GET') === 'GET') {
+          return jsonResponse(200, {
+            fulfillment_orders: [
+              { id: 9001, status: 'open', supported_actions: ['create_fulfillment'] },
+            ],
+          });
+        }
+        return jsonResponse(200, {});
+      });
       const shopify = new ShopifyProvider(mock.fetch);
       await shopify.pushOrderStatus(STORE(), { providerId: '5001' }, 'cancelled');
       const api = () => mock.calls.filter((c) => !c.url.includes('/oauth/access_token'));
       expect(api()[0]?.url).toMatch(/\/orders\/5001\/cancel\.json$/);
       expect(api()[0]?.init?.method).toBe('POST');
       await shopify.pushOrderStatus(STORE(), { providerId: '5001' }, 'completed');
-      expect(api()[1]?.url).toMatch(/\/orders\/5001\/fulfillments\.json$/);
-      expect(api()[1]?.init?.method).toBe('POST');
+      // The old POST /orders/{id}/fulfillments.json endpoint no longer
+      // exists — the flow lists fulfillment orders, then creates the
+      // fulfilment against the open one.
+      expect(api().map((c) => c.url).join('\n')).not.toMatch(/\/orders\/5001\/fulfillments\.json/);
+      const listCall = api().find((c) => c.url.includes('/orders/5001/fulfillment_orders.json'));
+      expect(listCall?.init?.method ?? 'GET').toBe('GET');
+      const createCall = api().find((c) => c.url.includes('/fulfillment_orders/9001/fulfillments.json'));
+      expect(createCall?.init?.method).toBe('POST');
+      expect(JSON.parse(String(createCall?.init?.body ?? '{}'))).toEqual({
+        fulfillment: { line_items_by_fulfillment_order: [{ fulfillment_order_id: '9001' }] },
+      });
+    });
+
+    it('pushOrderStatus completed: empty fulfillment-order list fails loud with the scope names', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.setFallback((url) => {
+        if (url.includes('/fulfillment_orders.json')) {
+          // No open fulfillment order is visible: without the
+          // merchant-managed scopes Shopify returns only the subset the
+          // token may see — usually none.
+          return jsonResponse(200, { fulfillment_orders: [] });
+        }
+        return jsonResponse(200, {});
+      });
+      await expect(
+        new ShopifyProvider(mock.fetch).pushOrderStatus(STORE(), { providerId: '5001' }, 'completed'),
+      ).rejects.toThrow(/read_merchant_managed_fulfillment_orders/);
+    });
+
+    it('pushOrderStatus completed: 403 on the fulfillment-order list fails loud with the scope names', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.setFallback((url) => {
+        if (url.includes('/fulfillment_orders.json')) {
+          return jsonResponse(403, { errors: 'The api_client does not have the required permission(s).' });
+        }
+        return jsonResponse(200, {});
+      });
+      await expect(
+        new ShopifyProvider(mock.fetch).pushOrderStatus(STORE(), { providerId: '5001' }, 'completed'),
+      ).rejects.toThrow(/write_merchant_managed_fulfillment_orders/);
+    });
+
+    it('pushOrderStatus completed: refused fulfillment-order create falls back to classic POST /fulfillments.json', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.setFallback((url, init) => {
+        if (url.includes('/orders/5001/fulfillment_orders.json')) {
+          return jsonResponse(200, {
+            fulfillment_orders: [
+              { id: 9001, status: 'open', supported_actions: ['create_fulfillment'] },
+            ],
+          });
+        }
+        if (url.includes('/fulfillment_orders/9001/fulfillments.json')) {
+          return jsonResponse(403, { errors: 'The api_client does not have the required permission(s).' });
+        }
+        if (url.endsWith('/fulfillments.json') && (init?.method ?? 'GET') === 'POST') {
+          return jsonResponse(201, { fulfillment: { id: 777 } });
+        }
+        return jsonResponse(200, {});
+      });
+      const shopify = new ShopifyProvider(mock.fetch);
+      await expect(
+        shopify.pushOrderStatus(STORE(), { providerId: '5001' }, 'completed'),
+      ).resolves.toEqual({ ok: true, ref: { providerId: '5001' } });
+      const classic = mock.calls.find(
+        (c) => c.url.endsWith('/fulfillments.json') && c.init?.method === 'POST',
+      );
+      expect(classic).toBeDefined();
+      expect(JSON.parse(String(classic?.init?.body ?? '{}'))).toEqual({
+        fulfillment: { line_items_by_fulfillment_order: [{ fulfillment_order_id: '9001' }] },
+      });
+    });
+
+    it('fetchOrders requests addresses, note + shipping lines (reconcile parity with webhooks)', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      let seen = '';
+      mock.setFallback((url) => {
+        if (url.includes('/orders.json?')) seen = url;
+        return jsonResponse(200, { orders: [] });
+      });
+      await new ShopifyProvider(mock.fetch).fetchOrders(STORE(), {
+        since: new Date('2026-09-20T00:00:00.000Z'),
+        until: new Date('2026-09-24T00:00:00.000Z'),
+        page: 1,
+        pageSize: 10,
+      });
+      for (const field of ['shipping_address', 'billing_address', 'note', 'shipping_lines']) {
+        expect(seen).toContain(field);
+      }
+    });
+
+    it('markIngestedOrder tags EcoMate, preserving existing tags', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.setFallback((url, init) => {
+        if (url.includes('/orders/5001.json') && (init?.method ?? 'GET') === 'GET') {
+          return jsonResponse(200, { order: { id: 5001, tags: 'sale, new' } });
+        }
+        return jsonResponse(200, { order: { id: 5001 } });
+      });
+      const shopify = new ShopifyProvider(mock.fetch);
+      await expect(
+        shopify.markIngestedOrder(STORE(), { providerId: '5001' }),
+      ).resolves.toEqual({ ok: true, ref: { providerId: '5001' } });
+      const put = mock.calls.find((c) => c.init?.method === 'PUT');
+      expect(put?.url).toMatch(/\/orders\/5001\.json$/);
+      expect(JSON.parse(String(put?.init?.body ?? '{}'))).toEqual({
+        order: { id: '5001', tags: 'sale, new, EcoMate' },
+      });
+    });
+
+    it('markIngestedOrder is a no-op when the EcoMate tag is already present', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.onAll(() => jsonResponse(200, { order: { id: 5001, tags: 'EcoMate, sale' } }));
+      const shopify = new ShopifyProvider(mock.fetch);
+      await expect(
+        shopify.markIngestedOrder(STORE(), { providerId: '5001' }),
+      ).resolves.toMatchObject({ ok: true, skipped: true });
+      expect(mock.calls.filter((c) => c.init?.method === 'PUT')).toHaveLength(0);
     });
 
     it('pushOrderStatus: on-hold throws ORDER_STATUS_TARGET_UNSUPPORTED (no order-level hold in Shopify)', async () => {
@@ -1121,7 +1381,14 @@ describe('ShopifyProvider live HTTP (P9)', () => {
           remote = { ...remote, cancelled_at: '2026-09-21T10:00:00Z' };
           return jsonResponse(200, { order: remote });
         }
-        if (url.endsWith('/fulfillments.json')) {
+        if (url.includes('/orders/5001/fulfillment_orders.json')) {
+          return jsonResponse(200, {
+            fulfillment_orders: [
+              { id: 9001, status: 'open', supported_actions: ['create_fulfillment'] },
+            ],
+          });
+        }
+        if (url.includes('/fulfillment_orders/9001/fulfillments.json')) {
           remote = { ...remote, fulfillment_status: 'fulfilled' };
           return jsonResponse(200, { fulfillment: { id: 1 } });
         }

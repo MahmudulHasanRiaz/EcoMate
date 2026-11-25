@@ -269,6 +269,7 @@ export class StoresService {
 
     if (dto.credentials && Object.keys(dto.credentials).length > 0) {
       await this.storeCredentialRow(store.id, dto.credentials, actorId);
+      this.clearProviderTokenCache(store.kind as string, store.id);
     }
 
     // Webhook lifecycle (G-01/G-02): webhooks auto-create on connect, with
@@ -348,6 +349,7 @@ export class StoresService {
       dto.credentials,
     );
     const row = await this.storeCredentialRow(id, credentials, actorId);
+    this.clearProviderTokenCache(store.kind as string, id);
     // Write-only: acknowledge rotation, never echo the payload.
     return { storeId: id, rotatedAt: row.rotatedAt, keyFingerprint: row.keyFingerprint };
   }
@@ -405,6 +407,22 @@ export class StoresService {
         rotatedById: actorId,
       },
     });
+  }
+
+  /**
+   * Token-trap fix (Shopify fix bundle, 2026-11-25): a credential
+   * rotation must invalidate the in-memory bearer minted under the old
+   * credentials, or a stored probe keeps passing off the stale token.
+   * Best-effort — providers without a token cache ignore it, and a
+   * NATIVE kind throws from providerFor (caught here; a rotation never
+   * fails on the clear). Callers invoke it right after storeCredentialRow.
+   */
+  private clearProviderTokenCache(kind: string, storeId: string): void {
+    try {
+      this.registry.providerFor({ kind }).clearCachedToken?.(storeId);
+    } catch {
+      // Best-effort only.
+    }
   }
 
   /** Latest credential payload, decrypted. Server-side only — never returned by reads. */
@@ -593,12 +611,21 @@ export class StoresService {
     }
     let result: TestConnectionResult;
     try {
-      result = await provider.testConnection({
-        id: store.id,
-        kind: store.kind,
-        settings: (store.settings as Record<string, unknown> | null) ?? {},
-        secrets,
-      });
+      // Token trap (Shopify fix bundle, 2026-11-25): EVERY probe forces a
+      // real exchange against the credentials it was given — stored AND
+      // override. A cached bearer is keyed by store id, not by
+      // credentials, so without this a stored probe passes off a token
+      // minted under different (possibly corrected-but-unsaved) values
+      // while the worker, with a cold cache, fails on the stored row.
+      result = await provider.testConnection(
+        {
+          id: store.id,
+          kind: store.kind,
+          settings: (store.settings as Record<string, unknown> | null) ?? {},
+          secrets,
+        },
+        { forceRefresh: true },
+      );
     } catch (err) {
       // Adapter-refused connections (bad credentials shape, org mismatch,
       // app not installed) surface as 400 with the actionable message.
@@ -679,6 +706,7 @@ export class StoresService {
       dto.credentials,
     );
     await this.storeCredentialRow(id, credentials, actorId);
+    this.clearProviderTokenCache(store.kind as string, id);
     const updated = await this.prisma.store.update({
       where: { id },
       data: { status: 'PENDING', lastError: null },

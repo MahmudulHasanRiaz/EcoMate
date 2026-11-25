@@ -88,6 +88,15 @@ export interface TestConnectionResult {
   authenticated: boolean;
   permissionsOk: boolean;
   mediaReachable?: boolean;
+  /**
+   * Shopify fix bundle (2026-11-25): best-effort `GET /webhooks.json`
+   * probe during testConnection. `true` = the token can list webhooks;
+   * `false` = the list call failed (webhook creation will likely fail —
+   * check the app's Admin API scopes in Shopify); `undefined` = not
+   * probed (network failure, or a provider that does not probe). A
+   * warning signal only — it never fails the connection.
+   */
+  webhooksOk?: boolean;
   providerStoreId?: string;
   existingStoreConflict?: { storeId: string; storeName: string };
   plugin?: { installed: boolean; version?: string };
@@ -211,7 +220,38 @@ export interface CommerceProvider {
    */
   readonly syncedFields?: FieldKey[];
   resolveCapabilities(store: StoreWithSecrets): Promise<ProviderCapabilities>;
-  testConnection(store: StoreWithSecrets): Promise<TestConnectionResult>;
+  /**
+   * Probe the connection. `opts.forceRefresh` (Shopify token trap,
+   * 2026-11-25) forces a real token exchange against the credentials
+   * given instead of reusing a cached bearer minted under different
+   * (possibly stale) credentials — a probe must prove THESE credentials.
+   * Providers without a token cache ignore it.
+   */
+  testConnection(
+    store: StoreWithSecrets,
+    opts?: { forceRefresh?: boolean },
+  ): Promise<TestConnectionResult>;
+  /**
+   * Ingest transfer marker (Shopify fix bundle, Boss 2026-11-25): mark a
+   * remote order as already ingested by EcoMate when the provider has no
+   * hold equivalent for the ingest-time Hold push (Shopify: tag the order
+   * `EcoMate`). Optional — providers without a marker omit it and the
+   * worker keeps the plain UNSUPPORTED_TARGET skip. The marker itself is
+   * idempotent (a second call is a no-op) and best-effort (a failure must
+   * never fail the ingest). Only the explicit ingest job calls it, never
+   * a derived status push.
+   */
+  markIngestedOrder?(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<PushResult>;
+  /**
+   * Drop a cached bearer for one store (Shopify token trap, 2026-11-25):
+   * called after a credential rotation so the next call exchanges with
+   * the new credentials instead of serving a token minted under the old
+   * ones. Optional — providers without a token cache omit it.
+   */
+  clearCachedToken?(storeId: string): void;
   ensureCategories(
     store: StoreWithSecrets,
     paths: CategoryPath[],

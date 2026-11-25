@@ -9,6 +9,7 @@ import {
   clampReconcileWindow,
   extractExternalShipping,
   canonicalizeExternalAddress,
+  mapExternalPaymentStatus,
   RECONCILE_DEFAULT_WINDOW_DAYS,
   RECONCILE_MAX_WINDOW_DAYS,
   RECONCILE_MAX_PAGES,
@@ -309,3 +310,87 @@ describe('Woo order-ingest fixes — BD state-code table (Boss 2026-11-25)', () 
     expect(resolveDistrictFromWooStateCode('BD-99')).toBeUndefined();
   });
 });
+
+describe('Shopify fix bundle — address keys + payment mapping (2026-11-25)', () => {
+  // Live shape of draft order #1001 (ORD-261125-0004): Shopify sends
+  // `shipping_address` / `billing_address`, never Woo's `shipping` /
+  // `billing` — the normalizer used to read only the Woo keys, so every
+  // Shopify address came out empty.
+  const SHOPIFY_ORDER = {
+    id: 7316841005221,
+    name: '#1001',
+    financial_status: 'paid',
+    total_price: '150.00',
+    currency: 'BDT',
+    created_at: '2026-11-25T15:26:00Z',
+    line_items: [{ sku: 'SHO-IMG-001', title: 'Shopify Image Test', quantity: 1, price: '150' }],
+    customer: { first_name: 'Shop', last_name: 'Test', email: 'shoptest@example.com', phone: '01712345678' },
+    shipping_address: {
+      first_name: 'Shop', last_name: 'Test', address1: 'House 7, Road 3',
+      city: 'Dhaka', province: 'Dhaka', zip: '1205', country: 'BD', phone: '01712345678',
+    },
+    billing_address: {
+      first_name: 'Shop', last_name: 'Test', address1: 'House 7, Road 3',
+      city: 'Dhaka', province: 'Dhaka', zip: '1205', country: 'BD', phone: '01712345678',
+    },
+    note: 'Ring the bell twice',
+    shipping_lines: [{ price: '0.00' }],
+  };
+
+  it('reads Shopify shipping_address / billing_address (not just Woo keys)', () => {
+    const out = normalizeOrder(SHOPIFY_ORDER as any);
+    expect(out.shippingAddress).toMatchObject({
+      address: 'House 7, Road 3',
+      city: 'Dhaka',
+      zip: '1205',
+      country: 'BD',
+    });
+    expect(out.billingAddress).toMatchObject({
+      address: 'House 7, Road 3',
+      city: 'Dhaka',
+      zip: '1205',
+    });
+    expect(out.customerNote).toBe('Ring the bell twice');
+    expect(out.externalShipping).toBe(0);
+  });
+
+  it('still reads Woo shipping / billing keys (no regression)', () => {
+    const out = normalizeOrder({
+      id: 221,
+      status: 'pending',
+      total: '500.00',
+      currency: 'BDT',
+      line_items: [{ sku: 'SKU-1', name: 'Tee', quantity: 1, price: '500' }],
+      billing: { first_name: 'Sara', last_name: 'K', address_1: 'House 1', city: 'Dhaka', postcode: '1205', country: 'BD' },
+      shipping: { first_name: 'Sara', last_name: 'K', address_1: 'House 1', city: 'Dhaka', postcode: '1205', country: 'BD' },
+    } as any);
+    expect(out.shippingAddress).toMatchObject({ address: 'House 1', city: 'Dhaka' });
+    expect(out.billingAddress).toMatchObject({ address: 'House 1', city: 'Dhaka' });
+    // Woo carries no financial-status field: no payment signal, and the
+    // order keeps the default PAYMENT_PENDING downstream (COD unchanged).
+    expect(out.externalPaymentStatus).toBeNull();
+  });
+
+  it('maps financial_status → payment status (paid → PAID, pending stays pending)', () => {
+    expect(mapExternalPaymentStatus('paid')).toBe('PAID');
+    expect(mapExternalPaymentStatus('partially_paid')).toBe('PARTIAL_PAID');
+    expect(mapExternalPaymentStatus('partially_refunded')).toBe('PARTIAL_REFUNDED');
+    expect(mapExternalPaymentStatus('pending')).toBe('PAYMENT_PENDING');
+    expect(mapExternalPaymentStatus('authorized')).toBe('PAYMENT_PENDING');
+    expect(mapExternalPaymentStatus('refunded')).toBe('REFUNDED');
+    expect(mapExternalPaymentStatus('voided')).toBe('CANCELLED');
+    expect(mapExternalPaymentStatus('something-new')).toBeNull();
+    expect(mapExternalPaymentStatus(undefined)).toBeNull();
+    expect(mapExternalPaymentStatus(null)).toBeNull();
+  });
+
+  it('normalizes a Shopify paid order to externalPaymentStatus PAID', () => {
+    expect(normalizeOrder(SHOPIFY_ORDER as any).externalPaymentStatus).toBe('PAID');
+  });
+
+  it('normalizes a Shopify COD-shaped order (financial_status pending) to PAYMENT_PENDING', () => {
+    const out = normalizeOrder({ ...SHOPIFY_ORDER, financial_status: 'pending' } as any);
+    expect(out.externalPaymentStatus).toBe('PAYMENT_PENDING');
+  });
+});
+

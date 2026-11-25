@@ -157,6 +157,12 @@ export const ZERO_STOCK_REJECT = 'ZERO_STOCK_REJECT';
 export const STORE_STATUS_OVERRIDES: Record<string, string> = {
   refunded: 'Cancelled',
   returned: 'Cancelled',
+  // Boss decision 2026-11-25 (Shopify): a store-reported `paid` order lands
+  // Pending EXPLICITLY. Previously it landed Pending only because no map
+  // row existed (unmapped → default) — a future operator seeding a `paid`
+  // row would have silently changed the landing. Woo never emits `paid`,
+  // so this is behaviour-neutral there.
+  paid: 'Pending',
   // Boss decision 2026-11-25 (Woo-only): a fresh Woo `processing` order
   // lands Pending — new orders arrive Pending and are confirmed by hand.
   // The shared STATUS_MAP keeps `processing → Confirmed` for the CSV
@@ -769,6 +775,11 @@ export class StoreOrderIngestService {
         // The store's own shipping charge (null = the payload carried no
         // shipping information; create() then keeps the derived charge).
         externalShipping: normalized.externalShipping,
+        // The store-reported payment state (Shopify `financial_status` →
+        // PAID/PARTIAL_PAID/...; null for Woo, which carries no such
+        // field — create() then keeps the default PAYMENT_PENDING, so the
+        // Woo COD behaviour is unchanged).
+        externalPaymentStatus: normalized.externalPaymentStatus,
         storeMetadata: {
           externalStatus: normalized.externalStatus,
           currency: normalized.currency,

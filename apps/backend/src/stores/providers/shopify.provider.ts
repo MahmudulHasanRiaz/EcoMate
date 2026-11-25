@@ -48,13 +48,20 @@
  * Reads stay read-only (product variants' `inventory_quantity` → IN/OUT)
  * for the drift audit on `unsupported` bridges.
  *
- * Orders: fetchOrders pages REST /orders.json over the reconcile window;
+ * Orders: fetchOrders pages REST /orders.json over the reconcile window
+ * (requesting shipping/billing addresses, note + shipping lines so a
+ * reconciled order carries the same data as a webhook order);
  * pushOrderStatus maps canonical cancelled→POST .../orders/{id}/cancel.json
- * and completed→POST .../orders/{id}/fulfillments.json (Shopify
- * CANCELLED/FULFILLED vocabulary rendered inside the adapter — core never
- * branches on a slug). readOrderStatus reads GET /orders/{id}.json for
- * read-back verification (cancelled_at → CANCELLED, fulfilled →
- * FULFILLED).
+ * and completed→the FulfillmentOrder flow (GET .../orders/{id}/
+ * fulfillment_orders.json → POST .../fulfillment_orders/{id}/
+ * fulfillments.json, classic POST /fulfillments.json as fallback — the
+ * old POST .../orders/{id}/fulfillments.json endpoint no longer exists).
+ * The FulfillmentOrder flow needs read/write_merchant_managed_
+ * fulfillment_orders scopes (Shopify labels them approval-required, but
+ * for a custom app they are selectable in the store admin); without them
+ * the push fails loud with the scope names in the message. readOrderStatus
+ * reads GET /orders/{id}.json for read-back verification (cancelled_at →
+ * CANCELLED, fulfilled → FULFILLED).
  *
  * Delete is the GraphQL `productDelete` mutation (capability-gated,
  * hard-delete path only — BR-09). Variant removal stays capability-gated
@@ -65,7 +72,7 @@
  * (R-2/BR-21). Missing connection settings throw INVALID_REQUEST before
  * any HTTP call (never an unauthed call).
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ProviderError, ProviderErrorCategory } from '../../marketing/ad-provider.adapter';
 import { BaseCommerceProvider } from './base-provider';
 import type {
@@ -140,6 +147,25 @@ export const SHOPIFY_DEFAULT_WEIGHT_UNIT = 'kg';
 
 /** OAuth token endpoint path (Client Credentials Grant). */
 export const SHOPIFY_TOKEN_PATH = '/admin/oauth/access_token';
+
+/** Ingest transfer marker tag (Boss 2026-11-25): the order is already in EcoMate. */
+export const SHOPIFY_INGEST_TAG = 'EcoMate';
+
+/**
+ * FulfillmentOrder scopes (Shopify fix bundle, 2026-11-25): the
+ * FulfillmentOrder API is governed by
+ * read/write_merchant_managed_fulfillment_orders (the official
+ * FulfillmentOrder resource page; the access-scopes page labels them
+ * "Shopify approval required"). For a custom app they are selectable in
+ * the store admin (Settings → Apps → Develop apps → the app → Configure)
+ * — no Shopify review — but the token minted without them cannot see or
+ * fulfil merchant-managed fulfillment orders, so a push without them
+ * fails loud with this hint instead of retrying blindly.
+ */
+const SHOPIFY_FULFILLMENT_SCOPES_HINT =
+  'the app needs read_merchant_managed_fulfillment_orders + ' +
+  'write_merchant_managed_fulfillment_orders (store admin → Settings → Apps → ' +
+  'Develop apps → EcoMate Staging → Configure → Admin API scopes), then re-run the push';
 
 /** Fallback token lifetime (the endpoint always returns `expires_in: 86399`). */
 export const SHOPIFY_TOKEN_EXPIRY_SECONDS = 86399;
@@ -428,6 +454,7 @@ export function shopifyProductToSnapshots(
 @Injectable()
 export class ShopifyProvider extends BaseCommerceProvider {
   readonly slug = 'shopify' as const;
+  private readonly logger = new Logger(ShopifyProvider.name);
 
   readonly declaredCapabilities: ProviderCapabilities = {
     products: true,
@@ -496,6 +523,19 @@ export class ShopifyProvider extends BaseCommerceProvider {
    */
   private readonly tokenCache = new Map<string, ShopifyTokenEntry>();
   private readonly tokenInflight = new Map<string, Promise<string>>();
+
+  /**
+   * Drop the cached bearer (and any in-flight exchange) for one store —
+   * called after a credential rotation so the next call exchanges with
+   * the NEW credentials instead of serving a token minted under the old
+   * ones (token trap, 2026-11-25). The worker process holds its own
+   * cache; its token stays valid until expiry, and the stored probe's
+   * force-refresh is what proves the new credentials there.
+   */
+  clearCachedToken(storeId: string): void {
+    this.tokenCache.delete(storeId);
+    this.tokenInflight.delete(storeId);
+  }
 
   /**
    * Resolve the bearer for one store. Concurrent callers coalesce onto a
@@ -593,8 +633,14 @@ export class ShopifyProvider extends BaseCommerceProvider {
       // (rawText was read once above; the stream is already consumed.)
       const oauthCode = /Oauth error ([A-Za-z0-9_]+)/.exec(rawText)?.[1];
       if (oauthCode) {
+        // NOTE (Shopify fix bundle, 2026-11-25): the old guidance said
+        // "approve the app version" — there is no version/approval step
+        // for a legacy custom app created in the store admin, so the
+        // message now points at the real trap instead: the STORED secret
+        // differing from the probed one (reconnect with the values from
+        // the store admin, then retest).
         throw new ProviderError(
-          `[shopify] token exchange refused: ${oauthCode} — install the app on the store (same Dev Dashboard organization) and approve the app version, then retry`,
+          `[shopify] token exchange refused: ${oauthCode} — install the app on the store (same Dev Dashboard organization) and check the stored Client ID/Secret match the installed app (reconnect with the values from the store admin), then retry`,
           ProviderErrorCategory.INVALID_REQUEST,
           'shopify',
         );
@@ -744,8 +790,18 @@ export class ShopifyProvider extends BaseCommerceProvider {
    * silently used. A failed token exchange maps to unreachable data when
    * TEMPORARY, but a PERMANENT org mismatch rethrows loud (the wizard must
    * surface the Dev Dashboard constraint).
+   *
+   * Token trap (Shopify fix bundle, 2026-11-25): `opts.forceRefresh`
+   * forces a REAL exchange against the credentials given. Without it the
+   * per-store cache (keyed by store id, not by credentials) lets a probe
+   * pass off a token minted under DIFFERENT credentials — the stored row
+   * is never validated until a worker job fails with it. The service
+   * always passes forceRefresh for probes (stored AND override).
    */
-  async testConnection(store: StoreWithSecrets): Promise<TestConnectionResult> {
+  async testConnection(
+    store: StoreWithSecrets,
+    opts?: { forceRefresh?: boolean },
+  ): Promise<TestConnectionResult> {
     const secrets = store.secrets ?? {};
     const settings = store.settings ?? {};
     if (String(secrets.accessToken ?? '').trim()) {
@@ -767,7 +823,9 @@ export class ShopifyProvider extends BaseCommerceProvider {
     const shop = rawShop.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
     let token: string;
     try {
-      token = await this.resolveAccessToken(store);
+      token = await this.resolveAccessToken(store, {
+        forceRefresh: opts?.forceRefresh,
+      });
     } catch (err) {
       if (err instanceof ProviderError && err.category === ProviderErrorCategory.INVALID_REQUEST) {
         throw err;
@@ -807,7 +865,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
       ...(served ? { served } : {}),
       fallForward: served !== undefined && served !== SHOPIFY_API_VERSION,
     };
-    return this.connectionFromProbe(
+    const result = this.connectionFromProbe(
       status,
       body,
       providerStoreId,
@@ -815,6 +873,36 @@ export class ShopifyProvider extends BaseCommerceProvider {
       await this.mediaPreflight(settings as Record<string, unknown>),
       apiVersion,
     );
+    // Best-effort webhook-list probe (token-trap batch §7c.4): warn up
+    // front when the token cannot list webhooks instead of discovering it
+    // in Sync Center after connect. Only when the shop probe authenticated
+    // (otherwise there is no bearer worth probing with). Never fails the
+    // probe — `webhooksOk: false` is a warning signal, not a refusal.
+    if (result.authenticated) {
+      const webhooksOk = await this.probeWebhooksList(shop, token);
+      if (webhooksOk !== undefined) result.webhooksOk = webhooksOk;
+    }
+    return result;
+  }
+
+  /**
+   * `GET /webhooks.json?limit=1` with the probed bearer. 2xx → the token
+   * can list webhooks; any HTTP refusal → false; network failure →
+   * undefined (unknown, not a refusal). No separate read/write_webhooks
+   * scopes exist in Shopify's current model — webhook access follows the
+   * topic's resource scope — so the result names no scope; the wizard
+   * warns generically to check the app's Admin API scopes.
+   */
+  private async probeWebhooksList(shop: string, token: string): Promise<boolean | undefined> {
+    try {
+      const res = await this.fetchFn(
+        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json?limit=1`,
+        { headers: { 'X-Shopify-Access-Token': token } },
+      );
+      return res.ok;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Media preflight (plan §12): HEAD the configured probe URL when set. */
@@ -1237,7 +1325,86 @@ export class ShopifyProvider extends BaseCommerceProvider {
         }).catch(() => null);
       }
     }
+    // Variant images (Shopify fix bundle, 2026-11-25): the variant payload
+    // carries no image — a variant links to an image through `image_id`,
+    // and the image must already exist as a product image. Two-phase, per
+    // variant with a verified image URL (the sync engine absolutizes +
+    // HEAD-verifies them): reuse the product image with the same `src`
+    // (re-pushes never duplicate), else POST it, then PUT the variant with
+    // `image_id`. A failure drops ONLY that variant's image — never the
+    // push (mirror of the Woo GAP-3 rule).
+    await this.attachVariantImages(
+      store,
+      ref.providerId,
+      (variants as Record<string, unknown>[])
+        .map((v) => {
+          const sku = String(v.sku ?? '');
+          const src = typeof v.image === 'string' ? v.image.trim() : '';
+          const variantRef = out.get(sku);
+          return variantRef && src ? { sku, src, variantId: variantRef.providerId } : null;
+        })
+        .filter((p): p is { sku: string; src: string; variantId: string } => p !== null),
+    );
     return out;
+  }
+
+  /**
+   * Two-phase variant-image attach (see upsertVariants). One bounded image
+   * list for the whole call, keyed by `src`; missing images are POSTed
+   * once per distinct `src` and the id cached, so a re-push reuses instead
+   * of duplicating. Each variant's failure is swallowed with a warning —
+   * the image is dropped, the push stands.
+   */
+  private async attachVariantImages(
+    store: StoreWithSecrets,
+    productId: string,
+    pairs: { sku: string; src: string; variantId: string }[],
+  ): Promise<void> {
+    if (pairs.length === 0) return;
+    const bySrc = new Map<string, string>();
+    try {
+      const listed = await this.rest<{ images?: { id?: unknown; src?: unknown }[] }>(
+        store,
+        'GET',
+        `/products/${encodeURIComponent(productId)}/images.json?limit=250&fields=id,src`,
+      );
+      for (const img of listed.images ?? []) {
+        if (img?.src !== undefined && img?.id !== undefined) {
+          bySrc.set(String(img.src), String(img.id));
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[shopify] variant image list failed for product ${productId} (attach continues via upload): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    for (const pair of pairs) {
+      try {
+        let imageId = bySrc.get(pair.src);
+        if (!imageId) {
+          const created = await this.rest<{ image?: { id?: unknown } }>(
+            store,
+            'POST',
+            `/products/${encodeURIComponent(productId)}/images.json`,
+            { image: { src: pair.src } },
+          );
+          imageId = created.image?.id !== undefined ? String(created.image.id) : '';
+          if (!imageId) continue;
+          bySrc.set(pair.src, imageId);
+        }
+        const numericId = Number(imageId);
+        await this.rest(store, 'PUT', `/variants/${encodeURIComponent(pair.variantId)}.json`, {
+          variant: {
+            id: pair.variantId,
+            image_id: Number.isFinite(numericId) ? numericId : imageId,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `[shopify] variant image attach failed for SKU ${pair.sku} (image dropped, push continues): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   }
 
   override async ensureMedia(store: StoreWithSecrets, items: NormalizedMedia[]): Promise<Map<string, RemoteRef>> {
@@ -1549,7 +1716,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
       params.set('created_at_max', opts.until.toISOString());
       params.set(
         'fields',
-        'id,name,financial_status,fulfillment_status,cancelled_at,cancel_reason,total_price,currency,created_at,updated_at,line_items,customer,phone,email',
+        'id,name,financial_status,fulfillment_status,cancelled_at,cancel_reason,total_price,currency,created_at,updated_at,line_items,customer,phone,email,shipping_address,billing_address,note,shipping_lines',
       );
       if (opts.status && opts.status.length > 0) params.set('financial_status', opts.status.join(','));
     }
@@ -1572,9 +1739,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
       return { ok: true, ref };
     }
     if (target === 'completed') {
-      await this.rest(store, 'POST', `/orders/${encodeURIComponent(ref.providerId)}/fulfillments.json`, {
-        fulfillment: {},
-      });
+      await this.createFulfillment(store, ref.providerId);
       return { ok: true, ref };
     }
     // Shopify has no order-level hold state in its Admin API (fulfilment
@@ -1588,6 +1753,136 @@ export class ShopifyProvider extends BaseCommerceProvider {
       ProviderErrorCategory.INVALID_REQUEST,
       'shopify',
     );
+  }
+
+  /**
+   * Delivered → Fulfilled (Shopify fix bundle, 2026-11-25): the old
+   * `POST /orders/{id}/fulfillments.json` endpoint no longer exists in
+   * the Shopify REST API — the call 404'd (or silently did nothing) and
+   * the order stayed Unfulfilled. The current flow is fulfillment-order
+   * based:
+   *
+   * 1. `GET /orders/{id}/fulfillment_orders.json` → the open fulfillment
+   *    order(s) with `create_fulfillment` in `supported_actions`.
+   * 2. `POST /fulfillment_orders/{id}/fulfillments.json` with
+   *    `{ fulfillment: { line_items_by_fulfillment_order: [{ fulfillment_order_id }] } }`
+   *    (no per-line quantities = fulfil the whole fulfillment order).
+   *
+   * Fallback: if the fulfillment-order-scoped create is refused for
+   * permissions, one attempt at the classic `POST /fulfillments.json`
+   * with the same body. Scope pre-check (verified against the official
+   * FulfillmentOrder resource page + access-scopes page, 2026-11-25):
+   * the FulfillmentOrder API is governed by
+   * read/write_merchant_managed_fulfillment_orders — the classic create
+   * needs them too, so the fallback cannot rescue a missing scope; a
+   * 403 or an empty fulfillment-order list fails loud with the scope
+   * names in the message (INVALID_REQUEST — retrying without the scope
+   * change is pointless) instead of looping the retry ladder.
+   */
+  private async createFulfillment(store: StoreWithSecrets, orderId: string): Promise<void> {
+    let fulfillmentOrders: any[];
+    try {
+      const listed = await this.rest<{ fulfillment_orders?: any[] }>(
+        store,
+        'GET',
+        `/orders/${encodeURIComponent(orderId)}/fulfillment_orders.json`,
+      );
+      fulfillmentOrders = Array.isArray(listed.fulfillment_orders) ? listed.fulfillment_orders : [];
+    } catch (err) {
+      // A 403 here is the missing-scope case (classifies INVALID_REQUEST);
+      // anything else (404 order gone, 401 auth, network) is not a scope
+      // problem — rethrow it as-is instead of mislabeling it.
+      if (!(err instanceof ProviderError) || err.category !== ProviderErrorCategory.INVALID_REQUEST) {
+        throw err;
+      }
+      throw new ProviderError(
+        `[shopify] cannot list fulfillment orders for order ${orderId} (Delivered → Fulfilled needs the FulfillmentOrder API): ${err.message} — ${SHOPIFY_FULFILLMENT_SCOPES_HINT}`,
+        ProviderErrorCategory.INVALID_REQUEST,
+        'shopify',
+        err,
+      );
+    }
+    const open = fulfillmentOrders.filter((fo) => {
+      if (String(fo?.status ?? '').toLowerCase() !== 'open') return false;
+      const actions = (fo as any)?.supported_actions;
+      if (Array.isArray(actions)) {
+        return actions.some((a: unknown) => String(a).toLowerCase() === 'create_fulfillment');
+      }
+      return true;
+    });
+    if (open.length === 0) {
+      // No open fulfillment order is visible: either the app lacks the
+      // merchant-managed scopes (Shopify returns only the subset the
+      // token may see) or the order genuinely has nothing fulfillable.
+      // Either way there is nothing to fulfil — fail loud, never a blind
+      // fulfilment-shaped guess.
+      throw new ProviderError(
+        `[shopify] no open fulfillment order for order ${orderId} — ${SHOPIFY_FULFILLMENT_SCOPES_HINT} (or the order has nothing fulfillable)`,
+        ProviderErrorCategory.INVALID_REQUEST,
+        'shopify',
+      );
+    }
+    for (const fo of open) {
+      const foId = String(fo.id);
+      const body = {
+        fulfillment: {
+          line_items_by_fulfillment_order: [{ fulfillment_order_id: foId }],
+        },
+      };
+      try {
+        await this.rest(
+          store,
+          'POST',
+          `/fulfillment_orders/${encodeURIComponent(foId)}/fulfillments.json`,
+          body,
+        );
+      } catch (err) {
+        if (!this.isPermissionError(err)) throw err;
+        // Fallback: the classic create endpoint with the same body.
+        try {
+          await this.rest(store, 'POST', '/fulfillments.json', body);
+        } catch (fallbackErr) {
+          throw new ProviderError(
+            `[shopify] cannot create a fulfillment for fulfillment order ${foId} (fulfillment-order create refused, classic create refused too): ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)} — ${SHOPIFY_FULFILLMENT_SCOPES_HINT}`,
+            ProviderErrorCategory.INVALID_REQUEST,
+            'shopify',
+            fallbackErr instanceof Error ? fallbackErr : undefined,
+          );
+        }
+      }
+    }
+  }
+
+  /** A 403 / permission refusal (INVALID_REQUEST from a 403) is the only error the classic-create fallback can rescue. */
+  private isPermissionError(err: unknown): boolean {
+    if (err instanceof ProviderError) return err.category === ProviderErrorCategory.INVALID_REQUEST;
+    return /403|permission/i.test(err instanceof Error ? err.message : String(err));
+  }
+
+  /**
+   * Ingest transfer marker (Boss 2026-11-25): Shopify has no order-level
+   * hold, so an ingested order is marked with the `EcoMate` tag instead —
+   * visible in the order list, filterable, touching no business state.
+   * Read-then-append preserves existing tags; a second call is a no-op
+   * (idempotent). Called only by the explicit ingest job, best-effort.
+   */
+  async markIngestedOrder(store: StoreWithSecrets, ref: RemoteRef): Promise<PushResult> {
+    const body = await this.rest<{ order?: { tags?: unknown } }>(
+      store,
+      'GET',
+      `/orders/${encodeURIComponent(ref.providerId)}.json?fields=id,tags`,
+    );
+    const existing = String(body.order?.tags ?? '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (existing.some((t) => t.toLowerCase() === SHOPIFY_INGEST_TAG.toLowerCase())) {
+      return { ok: true, ref, skipped: true, reason: 'TAG_ALREADY_PRESENT' };
+    }
+    await this.rest(store, 'PUT', `/orders/${encodeURIComponent(ref.providerId)}.json`, {
+      order: { id: ref.providerId, tags: [...existing, SHOPIFY_INGEST_TAG].join(', ') },
+    });
+    return { ok: true, ref };
   }
 
   /**
