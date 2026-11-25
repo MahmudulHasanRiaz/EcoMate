@@ -141,6 +141,19 @@ export class ProductSyncService {
       ecoFields.galleryImages = pushImages.slice(1);
     }
 
+    // Category first (§8.9): resolve the tenant categoryId to the MAPPED
+    // remote term id BEFORE adopt + the field loop, so baselines and the
+    // payload compare in the remote-id domain on both sides. The raw
+    // tenant UUID must never reach a provider: Woo 400s on it
+    // (`categories[0][id] is not of type integer`) and the bridge would
+    // receive a meaningless id. Failure never blocks the product — an
+    // unresolvable category pushes uncategorized.
+    if (product.categoryId && fieldKeys.includes('category')) {
+      ecoFields.category = await this.resolvePushCategoryId(
+        store, provider, storeWithSecrets, product.categoryId as string, runId,
+      );
+    }
+
     if (!mapping) {
       const preexisting = await this.findPreexistingBySku(provider, storeWithSecrets, product.sku as string).catch(() => null);
       if (preexisting) {
@@ -166,15 +179,6 @@ export class ProductSyncService {
         } else {
           throw err;
         }
-      }
-    }
-
-    // Category first (§8.9): failure never blocks the product.
-    if (product.categoryId && fieldKeys.includes('category')) {
-      try {
-        await this.categories.ensurePath(store, provider, storeWithSecrets, product.categoryId as string, runId);
-      } catch (err) {
-        this.logger.warn(`Category ensure failed (non-blocking): ${err}`);
       }
     }
 
@@ -391,6 +395,20 @@ export class ProductSyncService {
     });
     if (!mapping) throw new NotFoundException('Product is not mapped to this store');
     const ecoFields = readEcoMateFields(product);
+    // Force EcoMate Value on the category field must push the MAPPED
+    // remote term id, never the tenant UUID (same rule as syncProduct —
+    // a raw UUID 400s on Woo). 'keep' mode pushes nothing, so it never
+    // resolves.
+    if (
+      mode === 'reset' &&
+      fields.includes('category') &&
+      product.categoryId &&
+      this.capabilityAllows(provider.declaredCapabilities, 'categories', 'category')
+    ) {
+      ecoFields.category = await this.resolvePushCategoryId(
+        store, provider, storeWithSecrets, product.categoryId as string,
+      );
+    }
     // P0 push media: a Force EcoMate Value override on an image field
     // pushes the same prepared (absolute, HEAD-verified) values as a
     // normal sync — no runId here, so issues record without run items.
@@ -649,6 +667,35 @@ export class ProductSyncService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Resolve a tenant categoryId to the remote term id the provider
+   * expects. Ensures the category path first (creating the
+   * StoreCategoryMapping), then reads the mapping back — the returned
+   * ref of ensurePath is not trusted here, because on a partial failure
+   * it can carry a PARENT term id, which would mis-assign the product.
+   * Returns the mapped externalTermId, or null when uncategorized /
+   * unmapped / ensure failed. Never throws: an unresolvable category
+   * pushes uncategorized instead of failing the whole product.
+   */
+  private async resolvePushCategoryId(
+    store: { id: string },
+    provider: any,
+    storeWithSecrets: any,
+    categoryId: string,
+    runId?: string,
+  ): Promise<string | null> {
+    try {
+      await this.categories.ensurePath(store, provider, storeWithSecrets, categoryId, runId);
+    } catch (err) {
+      this.logger.warn(`Category ensure failed (non-blocking): ${err}`);
+      return null;
+    }
+    const mapping = await this.prisma.storeCategoryMapping.findUnique({
+      where: { storeId_categoryId: { storeId: store.id, categoryId } },
+    });
+    return mapping?.externalTermId ?? null;
   }
 
   /** BR-05: adopt pre-existing external values as the baseline. */

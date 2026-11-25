@@ -91,7 +91,13 @@ export function wooFieldToPayload(input: Record<string, unknown>): Record<string
   }
   if (input.category !== undefined && input.category !== null) {
     const ids = Array.isArray(input.category) ? input.category : [input.category];
-    out.categories = ids.map((id) => ({ id: String(id) }));
+    // Woo requires INTEGER term ids. A tenant UUID (or any non-numeric
+    // string) 400s with `categories[0][id] is not of type integer`, so
+    // non-numeric entries are dropped here, never sent. The core resolves
+    // the category to the mapped Woo term id before this runs; this is
+    // defence in depth for any caller that still passes a raw id.
+    const numeric = ids.map((id) => Number(id)).filter((n) => Number.isInteger(n));
+    if (numeric.length > 0) out.categories = numeric.map((id) => ({ id }));
   }
   if (input.brand !== undefined && input.brand !== null) {
     out.meta_data = [...((out.meta_data as unknown[]) ?? []), { key: '_ecomate_brand', value: String(input.brand) }];
@@ -124,6 +130,21 @@ export function wooFieldToPayload(input: Record<string, unknown>): Record<string
   return out;
 }
 
+/**
+ * EcoMate models a single category per product, and the core pushes exactly
+ * that one mapped term id. The snapshot must carry the same single value
+ * (first remote term id, or null) — the old array form could never equal
+ * the single pushed id, so every update read as external drift and the
+ * category field was preserved forever.
+ */
+function firstRemoteCategoryId(body: Record<string, unknown>): string | null {
+  const cats = Array.isArray(body.categories) ? body.categories : [];
+  if (cats.length === 0) return null;
+  const first = cats[0] as any;
+  const id = first?.id ?? first;
+  return id === undefined || id === null ? null : String(id);
+}
+
 export function wooProductToSnapshots(body: Record<string, unknown>, fields: FieldKey[]): Record<FieldKey, FieldSnapshot> {
   const images = (Array.isArray(body.images) ? body.images : []) as { src?: string }[];
   const meta = (Array.isArray(body.meta_data) ? body.meta_data : []) as { key?: string; value?: unknown }[];
@@ -137,7 +158,7 @@ export function wooProductToSnapshots(body: Record<string, unknown>, fields: Fie
     barcode: body.sku ?? null,
     primaryImage: images[0]?.src ?? null,
     galleryImages: images.slice(1).map((i) => i.src).filter(Boolean),
-    category: (Array.isArray(body.categories) ? body.categories : []).map((c: any) => String(c?.id ?? c)),
+    category: firstRemoteCategoryId(body),
     brand: metaOf('_ecomate_brand'),
     tags: (Array.isArray(body.tags) ? body.tags : []).map((t: any) => t?.name ?? t),
     productType: body.type ?? null,

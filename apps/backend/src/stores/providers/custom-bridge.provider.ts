@@ -336,6 +336,22 @@ export function bridgeVariantToPayload(
 }
 
 /**
+ * Same single-category domain as Woo: the snapshot carries the first peer
+ * category id (or null), never the raw array — the core pushes exactly one
+ * mapped id, so only a single value can ever compare equal to it.
+ */
+function firstPeerCategoryId(body: Record<string, unknown>): string | null {
+  const ids = (body as any).category_ids;
+  if (Array.isArray(ids)) {
+    if (ids.length === 0) return null;
+    const first = ids[0];
+    return first === undefined || first === null ? null : String(first);
+  }
+  if (ids === undefined || ids === null) return null;
+  return String(ids);
+}
+
+/**
  * Bridge product JSON → §8.11 field snapshots (ownership baselines).
  * `cost_price` is NEVER read back (push-only, BR-23 → snapshot null).
  */
@@ -363,7 +379,7 @@ export function bridgeProductToSnapshots(
       .slice(1)
       .map((i) => i.src)
       .filter(Boolean),
-    category: body.category_ids ?? null,
+    category: firstPeerCategoryId(body),
     brand: body.brand ?? null,
     tags: Array.isArray(body.tags)
       ? (body.tags as unknown[]).map((t) =>

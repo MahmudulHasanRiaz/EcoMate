@@ -23,6 +23,7 @@ import { ProductSyncService } from '../product-sync.service';
 import { PushMediaService } from '../push-media.service';
 import { TenantRegistryService } from '../../../tenancy/tenant-registry.service';
 import { hashFieldValue } from '../../providers/field-snapshot';
+import { ProviderErrorCategory } from '../../../marketing/ad-provider.adapter';
 
 const STORE_ID = 'store-1';
 const PRODUCT_ID = 'prod-1';
@@ -647,5 +648,120 @@ describe('findRemoteBySku (P1 SKU probe, G-9)', () => {
     await expect(svc.findRemoteBySku(STORE_ID, 'ECO-TEE-1')).rejects.toThrow(
       'NATIVE is never a sync target',
     );
+  });
+});
+
+describe('category id resolution (Woo 400 fix, 2026-11-25)', () => {
+  /** Chain lookup for one or two flat categories; anything else → no category. */
+  const mockCategories = (prisma: any, rows: Record<string, string>) => {
+    (prisma.category.findUnique as jest.Mock).mockImplementation(
+      async ({ where }: any) =>
+        rows[where?.id] ? { id: where.id, name: rows[where.id], parentId: null } : null,
+    );
+  };
+
+  it('create pushes the MAPPED remote id, never the tenant UUID', async () => {
+    const { svc, runId, fake, fieldStates, prisma } = setup({ categoryId: 'cat-1' }, null);
+    mockCategories(prisma, { 'cat-1': 'Rule Test' });
+    const res = await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(res.pushed).toContain('category');
+    // The Fake stores exactly what the field loop pushed: the mapped id.
+    expect(fake.findBySku('ECO-TEE-1')!.fields.category).toBe('fake-cat-1');
+    expect(fake.findBySku('ECO-TEE-1')!.fields.category).not.toBe('cat-1');
+    const st = fieldStates.get(`${STORE_ID}:${PRODUCT_ID}:category`);
+    expect(st?.baselineHash).toBe(hashFieldValue('fake-cat-1'));
+    expect(st?.ownership).toBe('ECOMATE');
+  });
+
+  it('update re-pushes the category when the EcoMate category changes', async () => {
+    const { svc, runId, fake, prisma } = setup(
+      { categoryId: 'cat-1' },
+      { name: 'Eco Tee', category: 'fake-cat-1' },
+    );
+    mockCategories(prisma, { 'cat-1': 'Rule Test', 'cat-2': 'Rule Test 2' });
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-0'); // baselines: category already matches
+    expect(fake.getProduct('remote-1')!.fields.category).toBe('fake-cat-1');
+    (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+      ecoProduct({ categoryId: 'cat-2' }),
+    );
+    const res = await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(res.pushed).toContain('category');
+    expect(fake.getProduct('remote-1')!.fields.category).toBe('fake-cat-2');
+  });
+
+  it('adopt baselines the mapped id — no spurious conflict on a matched category (BR-05)', async () => {
+    const { prisma, fieldStates } = mockPrisma();
+    const fake = new FakeProvider();
+    fake.directSeed(
+      'woo-9',
+      { sku: 'ECO-TEE-1', name: 'Pre-existing Store Name', category: 'fake-cat-1' },
+      'IN_STOCK',
+      'published',
+    );
+    (fake as any).findBySku = async (_store: unknown, sku: string) => {
+      const found = fake.findBySku(sku);
+      return found ? { providerId: 'woo-9' } : null;
+    };
+    (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+      ecoProduct({ categoryId: 'cat-1' }),
+    );
+    mockCategories(prisma, { 'cat-1': 'Rule Test' });
+    const registry: any = { providerFor: () => fake };
+    const runs = new SyncRunService(prisma);
+    const svc = new ProductSyncService(
+      prisma, registry, new FieldOwnershipService(),
+      new DistributionService(prisma, new StoreAvailabilityService()), runs,
+      new CategorySyncService(prisma, runs),
+    );
+    const upsertsBefore = fake.calls.filter((c) => c.method === 'upsertProduct').length;
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-1');
+    // Adopted, not overwritten: the matched category is not pushed at all.
+    expect(fake.calls.filter((c) => c.method === 'upsertProduct').length).toBe(upsertsBefore);
+    const st = fieldStates.get(`${STORE_ID}:${PRODUCT_ID}:category`);
+    expect(st?.ownership).toBe('ECOMATE');
+    expect(st?.baselineHash).toBe(hashFieldValue('fake-cat-1'));
+  });
+
+  it('category-ensure failure never blocks the product (pushes uncategorized)', async () => {
+    const { svc, runId, fake, prisma } = setup({ categoryId: 'cat-1' }, null);
+    mockCategories(prisma, { 'cat-1': 'Rule Test' });
+    fake.injectFailure({
+      method: 'ensureCategories',
+      times: 1,
+      category: ProviderErrorCategory.TEMPORARY_FAILURE,
+    });
+    const res = await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(fake.productCount()).toBe(1);
+    expect(res.pushed).toContain('name');
+    expect(fake.findBySku('ECO-TEE-1')!.fields.category).toBeNull();
+  });
+
+  it('uncategorized product pushes with a null category (regression guard)', async () => {
+    const { svc, runId, fake } = setup({}, null);
+    const res = await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(fake.productCount()).toBe(1);
+    expect(res.pushed.length).toBeGreaterThan(10);
+    expect(fake.findBySku('ECO-TEE-1')!.fields.category).toBeNull();
+  });
+
+  it('Force EcoMate Value on category pushes the mapped id, never the UUID (BR-04)', async () => {
+    const { svc, fake, prisma } = setup({ categoryId: 'cat-1' }, { name: 'Eco Tee' });
+    mockCategories(prisma, { 'cat-1': 'Rule Test', 'cat-2': 'Rule Test 2' });
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-0'); // baselines: category fake-cat-1
+    // Both sides move → CONFLICT on category.
+    fake.getProduct('remote-1')!.fields.category = 'fake-cat-9';
+    (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+      ecoProduct({ categoryId: 'cat-2' }),
+    );
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-1');
+    const before = await prisma.productStoreFieldState.findUnique({
+      where: {
+        storeId_productId_field: { storeId: STORE_ID, productId: PRODUCT_ID, field: 'category' },
+      },
+    });
+    expect(before?.ownership).toBe('CONFLICT');
+    const out = await svc.forceEcoMateValue(STORE_ID, PRODUCT_ID, ['category'], 'actor-1');
+    expect(out.results).toEqual([{ field: 'category', ok: true }]);
+    expect(fake.getProduct('remote-1')!.fields.category).toBe('fake-cat-2');
   });
 });

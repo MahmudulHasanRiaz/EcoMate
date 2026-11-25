@@ -130,7 +130,10 @@ describe('§8.11 field-contract matrix (P4)', () => {
     expect(snaps.price?.value).toBe('100');
     expect(snaps.publicationState?.value).toBe('published');
     expect(snaps.primaryImage?.value).toBe('https://cdn/x/1.jpg');
-    expect(snaps.category?.value).toEqual(['7']);
+    // Single-category domain (Woo 400 fix, 2026-11-25): the snapshot carries
+    // the first remote term id as a string — the old array form could never
+    // equal the single mapped id the core pushes, so it read as drift forever.
+    expect(snaps.category?.value).toBe('7');
     expect(snaps.customFields?.value).toEqual({ material: 'cotton' });
     for (const snap of Object.values(snaps)) {
       expect(typeof snap.hash).toBe('string');
