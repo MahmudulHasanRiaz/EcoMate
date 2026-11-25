@@ -143,6 +143,13 @@ export const ZERO_STOCK_REJECT = 'ZERO_STOCK_REJECT';
  * here. `returned` (literal string, custom-status Woo installs) is unmapped
  * in STATUS_MAP and maps here too.
  *
+ * Plus Boss decision 2026-11-25 (Woo-only): Woo `processing` lands
+ * Pending — new orders arrive Pending and are confirmed by hand. The
+ * shared STATUS_MAP keeps `processing → Confirmed` for the CSV importer
+ * (frozen by Boss 2026-11-23), so that override lives here and is scoped
+ * to Woo in resolveStatusName/ensureStatusMaps — the bridge also emits
+ * `processing` and its landing rule was never decided.
+ *
  * Consulted by resolveStatusName BEFORE the STATUS_MAP fallback, and the
  * seed source for ensureStatusMaps — so a seeded row can never re-introduce
  * the old mapping. Per-store DB rows still win (operator edits).
@@ -150,6 +157,13 @@ export const ZERO_STOCK_REJECT = 'ZERO_STOCK_REJECT';
 export const STORE_STATUS_OVERRIDES: Record<string, string> = {
   refunded: 'Cancelled',
   returned: 'Cancelled',
+  // Boss decision 2026-11-25 (Woo-only): a fresh Woo `processing` order
+  // lands Pending — new orders arrive Pending and are confirmed by hand.
+  // The shared STATUS_MAP keeps `processing → Confirmed` for the CSV
+  // importer (frozen by Boss 2026-11-23), so the override lives here and
+  // is scoped to Woo in resolveStatusName/ensureStatusMaps below — the
+  // bridge also emits `processing` and its landing rule was never decided.
+  processing: 'Pending',
 };
 
 /** Effective external→internal map for store ingest: STATUS_MAP + overrides. */
@@ -162,6 +176,29 @@ export const STORE_STATUS_MAP: Record<string, string> = {
 export interface ErpStockLevel {
   qty: number;
   mode: string | null;
+}
+
+/**
+ * True when a provider slug (`woocommerce` / `shopify` / `custom`, from
+ * the ingest trigger) or a StoreKind (`WOOCOMMERCE` / `SHOPIFY` / `CUSTOM`)
+ * is WooCommerce. Unknown/absent means Woo — the historical behaviour
+ * (the only live provider is Woo, and the store overrides were applied
+ * unscoped before this fix); callers that know the provider pass it
+ * explicitly so production never relies on the default.
+ */
+function isWooProvider(provider?: string | null): boolean {
+  if (!provider) return true;
+  return String(provider).toLowerCase() === 'woocommerce';
+}
+
+/** True when a canonical billing address carries any displayable field. */
+function hasBillingAddressContent(
+  addr?: Record<string, unknown> | null,
+): boolean {
+  if (!addr) return false;
+  return ['address', 'city', 'state', 'postcode', 'country'].some(
+    (k) => typeof addr[k] === 'string' && (addr[k] as string).trim() !== '',
+  );
 }
 
 @Injectable()
@@ -199,29 +236,62 @@ export class StoreOrderIngestService {
    * Seed per-store status rows from the store-effective STORE_STATUS_MAP
    * (STATUS_MAP + the Woo refund/return → Cancelled overrides, §8.5 step 4).
    * Existing rows are never overwritten — operator edits win.
+   *
+   * Woo-only `processing → Pending` (Boss 2026-11-25): non-Woo stores seed
+   * `processing → Confirmed` from STATUS_MAP, because their landing rule
+   * was never decided. Rows already seeded with the old value are repaired
+   * by the data migration `20261125160000_woo_processing_pending_repair`,
+   * not here (this method never overwrites).
    */
   async ensureStatusMaps(storeId: string): Promise<number> {
+    const store = await Promise.resolve(
+      this.prisma.store.findUnique({
+        where: { id: storeId },
+        select: { kind: true },
+      }),
+    ).catch(() => null);
+    const isWoo = isWooProvider((store as any)?.kind);
     let seeded = 0;
     for (const [externalStatus, internalStatusName] of Object.entries(STORE_STATUS_MAP)) {
       const existing = await this.prisma.storeOrderStatusMap.findUnique({
         where: { storeId_externalStatus: { storeId, externalStatus } },
       });
       if (existing) continue;
+      // Non-Woo stores keep the shared STATUS_MAP value for `processing`
+      // (Confirmed); every other entry seeds from the store-effective map.
+      const seedName =
+        externalStatus === 'processing' && !isWoo
+          ? 'Confirmed'
+          : internalStatusName;
       await this.prisma.storeOrderStatusMap.create({
-        data: { storeId, externalStatus, internalStatusName },
+        data: { storeId, externalStatus, internalStatusName: seedName },
       });
       seeded += 1;
     }
     return seeded;
   }
 
-  /** External status → internal OrderStatus name (store map, then seed fallback). */
-  async resolveStatusName(storeId: string, externalStatus: string): Promise<string | null> {
+  /**
+   * External status → internal OrderStatus name (store map, then seed fallback).
+   * `provider` is the ingest trigger's provider slug (or a StoreKind);
+   * absent means "unknown" and keeps the historical Woo behaviour.
+   */
+  async resolveStatusName(
+    storeId: string,
+    externalStatus: string,
+    provider?: string,
+  ): Promise<string | null> {
     const row = await this.prisma.storeOrderStatusMap.findUnique({
       where: { storeId_externalStatus: { storeId, externalStatus } },
     });
     if (row) return row.internalStatusName;
     const lower = (externalStatus ?? '').toLowerCase();
+    // Woo-only `processing → Pending` (Boss 2026-11-25): the bridge also
+    // emits `processing` for fresh orders, but its landing rule was never
+    // decided — it keeps the shared STATUS_MAP value (Confirmed).
+    if (lower === 'processing' && !isWooProvider(provider)) {
+      return STATUS_MAP[lower] ?? null;
+    }
     if (STORE_STATUS_MAP[lower]) return STORE_STATUS_MAP[lower];
     return null;
   }
@@ -561,7 +631,14 @@ export class StoreOrderIngestService {
     const storeKind = (store as any)?.kind ?? 'CUSTOM';
     const storeName = (store as any)?.name ?? storeId;
 
-    const statusName = await this.resolveStatusName(storeId, normalized.externalStatus);
+    const statusName = await this.resolveStatusName(
+      storeId,
+      normalized.externalStatus,
+      // Woo-only `processing → Pending` (Boss 2026-11-25): the trigger's
+      // provider slug decides; the store kind is the fallback when the
+      // trigger carries none.
+      trigger.provider ?? storeKind,
+    );
     let initialStatusName: string | undefined;
     if (statusName) {
       const statusRow = await this.prisma.orderStatus.findFirst({ where: { name: statusName } });
@@ -659,10 +736,20 @@ export class StoreOrderIngestService {
         // Shipping/contact detail rides the order (name/phone/email double
         // as fallback contacts when PII-approved reads provide them).
         shippingAddress: (normalized.shippingAddress ?? {}) as any,
+        // Billing address at order time (was Null — dto.billingAddress was
+        // never passed). Only when the payload actually carried one.
+        billingAddress: hasBillingAddressContent(normalized.billingAddress)
+          ? (normalized.billingAddress as any)
+          : undefined,
+        // Customer note from the store (Woo `customer_note` / Shopify
+        // `note`). APPEND-style: the parts list is joined, so a future
+        // writer that also targets this slot appends instead of
+        // overwriting. The old port-invented phone fallback owned this
+        // slot — REMOVED (Boss 2026-11-25): an un-normalized phone is
+        // surfaced as an unverified phone in the admin (see
+        // getUnverifiedCustomerPhone), never as a note.
         customerNotes:
-          normalizedPhone || !normalized.customerPhone
-            ? undefined
-            : `External customer phone (un-normalized): ${normalized.customerPhone}`,
+          [normalized.customerNote].filter(Boolean).join('\n') || undefined,
         sourcePlatform: 'EXTERNAL_STORE',
         sourceType: `EXTERNAL_STORE:${storeKind}`,
         sourceEntity: storeName,
@@ -679,6 +766,9 @@ export class StoreOrderIngestService {
         allowStockShortfall: true,
         skipPurchaseTracking: true,
         allowProductlessItems: true,
+        // The store's own shipping charge (null = the payload carried no
+        // shipping information; create() then keeps the derived charge).
+        externalShipping: normalized.externalShipping,
         storeMetadata: {
           externalStatus: normalized.externalStatus,
           currency: normalized.currency,
@@ -812,6 +902,15 @@ export class StoreOrderIngestService {
     const timeline = Array.isArray((order as any)?.timeline)
       ? [...(order as any).timeline]
       : [];
+    // Dedupe: the BR-17 delta note is deterministic text for a given totals
+    // pair, and two funnels can hit the existing-order path in the same
+    // second (e.g. the `order.updated` webhook our own Hold push fires +
+    // the reconcile tick) — each would append an identical note, and every
+    // future touch would append it again (unbounded growth). An identical
+    // note already on this order's timeline is the same logical event, so
+    // it is not appended twice. The note content and BR-17 wording are
+    // unchanged.
+    if (timeline.some((entry: any) => entry?.note === note)) return;
     timeline.push({ status: statusName, timestamp: new Date().toISOString(), note });
     await this.prisma.order.update({
       where: { id: orderId },

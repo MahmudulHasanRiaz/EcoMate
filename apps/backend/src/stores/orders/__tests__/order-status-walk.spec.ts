@@ -91,20 +91,32 @@ function rawOrder(status: string) {
   };
 }
 
-describe('resolveStatusName — Woo overrides (Boss directive 2026-11-23)', () => {
+describe('resolveStatusName — Woo overrides (Boss directive 2026-11-23 + 2026-11-25)', () => {
   it.each([
     ['refunded', 'Cancelled'],
     ['returned', 'Cancelled'],
     ['completed', 'Delivered'],
     ['cancelled', 'Cancelled'],
     ['on-hold', 'Hold'],
-    ['processing', 'Confirmed'],
+    // Boss 2026-11-25 (Woo-only): new Woo orders arrive Pending, confirmed
+    // by hand. No provider arg = unknown = historical Woo behaviour.
+    ['processing', 'Pending'],
     ['pending', 'Pending'],
   ])('%s → %s (no per-store DB row)', async (external, internal) => {
     const prisma = mockPrisma();
     prisma.storeOrderStatusMap.findUnique.mockResolvedValue(null);
     const { svc } = buildIngest(prisma, jest.fn());
     await expect(svc.resolveStatusName('s1', external)).resolves.toBe(internal);
+  });
+
+  it('processing is Woo-scoped: bridge/Shopify keep the shared STATUS_MAP value (Confirmed)', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue(null);
+    const { svc } = buildIngest(prisma, jest.fn());
+    await expect(svc.resolveStatusName('s1', 'processing', 'custom')).resolves.toBe('Confirmed');
+    await expect(svc.resolveStatusName('s1', 'processing', 'shopify')).resolves.toBe('Confirmed');
+    await expect(svc.resolveStatusName('s1', 'processing', 'woocommerce')).resolves.toBe('Pending');
+    await expect(svc.resolveStatusName('s1', 'processing', 'WOOCOMMERCE')).resolves.toBe('Pending');
   });
 
   it('per-store DB row still wins over the override (operator edits)', async () => {
@@ -121,10 +133,11 @@ describe('resolveStatusName — Woo overrides (Boss directive 2026-11-23)', () =
     await expect(svc.resolveStatusName('s1', 'draft')).resolves.toBeNull();
   });
 
-  it('override map is exactly the two Boss-ordered entries', () => {
-    expect(STORE_STATUS_OVERRIDES).toEqual({ refunded: 'Cancelled', returned: 'Cancelled' });
+  it('override map is exactly the three Boss-ordered entries', () => {
+    expect(STORE_STATUS_OVERRIDES).toEqual({ refunded: 'Cancelled', returned: 'Cancelled', processing: 'Pending' });
     expect(STORE_STATUS_MAP.refunded).toBe('Cancelled');
     expect(STORE_STATUS_MAP.returned).toBe('Cancelled');
+    expect(STORE_STATUS_MAP.processing).toBe('Pending');
     expect(Object.keys(STORE_STATUS_MAP)).toHaveLength(Object.keys(STATUS_MAP).length + 1);
   });
 });
@@ -149,6 +162,10 @@ describe('ensureStatusMaps seeds the Woo-effective map', () => {
 describe('CSV importer mapping unchanged (STATUS_MAP is shared — do NOT change it)', () => {
   it('STATUS_MAP still maps refunded → Returned for CSV rows', () => {
     expect(STATUS_MAP.refunded).toBe('Returned');
+  });
+
+  it('STATUS_MAP still maps processing → Confirmed for CSV rows (frozen by Boss 2026-11-23)', () => {
+    expect(STATUS_MAP.processing).toBe('Confirmed');
   });
 
   it('STATUS_MAP has no literal returned entry (the override owns it)', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail, getOrderPaidAmount, getOrderDueAmount, getOrderPaymentMode, getPaymentModeForAmounts, hasOpenCodAlert } from './order-display'
+import { getCustomerDisplayName, getCustomerPhone, getUnverifiedCustomerPhone, getCustomerEmail, getOrderPaidAmount, getOrderDueAmount, getOrderPaymentMode, getPaymentModeForAmounts, hasOpenCodAlert } from './order-display'
 
 describe('customer snapshot authority (D-A)', () => {
   it('display name prefers snapshot over profile', () => {
@@ -398,5 +398,50 @@ describe('hasOpenCodAlert (derived list badge)', () => {
   it('is quiet without dispatches', () => {
     expect(hasOpenCodAlert({ total: 1500 })).toBe(false)
     expect(hasOpenCodAlert(null)).toBe(false)
+  })
+})
+
+describe('getUnverifiedCustomerPhone (Woo order-ingest fix, Boss 2026-11-25)', () => {
+  it('returns the raw shipping-address phone when no verified phone resolves (live #221: 12-digit number)', () => {
+    expect(
+      getUnverifiedCustomerPhone({
+        guestPhone: null,
+        customerPhone: null,
+        customer: null,
+        shippingAddress: { phone: '016013015876', city: 'Dhaka' },
+      }),
+    ).toBe('016013015876')
+  })
+
+  it('returns empty when a verified phone exists (the verified surface owns the number)', () => {
+    expect(
+      getUnverifiedCustomerPhone({
+        guestPhone: '+8801700000001',
+        shippingAddress: { phone: '016013015876' },
+      }),
+    ).toBe('')
+    expect(
+      getUnverifiedCustomerPhone({
+        customerPhone: '+8801700000001',
+        shippingAddress: { phone: '016013015876' },
+      }),
+    ).toBe('')
+  })
+
+  it('returns empty when there is no phone anywhere', () => {
+    expect(getUnverifiedCustomerPhone({})).toBe('')
+    expect(getUnverifiedCustomerPhone({ shippingAddress: null })).toBe('')
+    expect(getUnverifiedCustomerPhone({ shippingAddress: { city: 'Dhaka' } })).toBe('')
+  })
+
+  it('does not leak the raw number through getCustomerPhone (verified-only)', () => {
+    expect(
+      getCustomerPhone({
+        guestPhone: null,
+        customerPhone: null,
+        customer: null,
+        shippingAddress: { phone: '016013015876' },
+      }),
+    ).toBe('')
   })
 })

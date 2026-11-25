@@ -10,6 +10,10 @@
  * (the `sanitizeFailurePayload` pattern, §4.1).
  */
 import { createHash } from 'crypto';
+import {
+  resolveDistrictFromWooStateCode,
+  resolveDivision,
+} from '../../delivery-areas/data/district-division';
 
 export interface NormalizedIngestItem {
   sku: string;
@@ -30,6 +34,17 @@ export interface NormalizedIngestOrder {
   customerName: string | null;
   customerPhone: string | null;
   customerEmail: string | null;
+  /** The store's own shipping charge when the payload carried one; null =
+   * the payload carries no shipping information at all (the order then
+   * keeps the tenant-derived charge). 0 is a real value: the store
+   * charged no shipping. */
+  externalShipping: number | null;
+  /** Customer note from the store (Woo `customer_note` / Shopify `note`);
+   * null when the store order has none. */
+  customerNote: string | null;
+  /** Canonical billing address (same shape as `shippingAddress`); sparse
+   * or empty when the payload carries no billing address. */
+  billingAddress: Record<string, unknown>;
   shippingAddress: Record<string, unknown>;
   items: NormalizedIngestItem[];
 }
@@ -90,6 +105,129 @@ export function buildStoreOrderIdentity(storeId: string, externalId: string): {
  * Unknown shapes yield an order with empty items (SKU resolution then raises
  * UNMATCHED_SKU per item — never a throw here).
  */
+/**
+ * Canonicalize a store-supplied address (Woo `address_1` / `address_2` /
+ * `postcode` / BD state code, Shopify `address1` / `zip` / `province`,
+ * bridge `addressLine` / `zip`) into the shape the admin display + order
+ * snapshot read (`address` / `addressLine`, `city`, `zone`, `state`,
+ * `division`, `zip` / `postalCode` / `postcode`, `country`, `phone`).
+ *
+ * Deliberately emits `zone` (the district name) and NOT `district`:
+ * `orders.service.create()` derives the tenant delivery charge from
+ * `dto.district || shippingAddress.district`, and a `no_delivery` zone
+ * would THROW and lose the external order (BR-13). `zone` is display-only,
+ * so the district is visible without ever touching the derivation.
+ * A Woo state code (`BD-13`) resolves to the district name, and `state` /
+ * `division` carry the division name; an unknown code or a plain state
+ * name is kept verbatim (fail-safe). Empty values are omitted so providers
+ * that send no address (Shopify fetch does not request addresses) keep
+ * their stored shape unchanged.
+ */
+export function canonicalizeExternalAddress(
+  raw: unknown,
+  fallback?: Record<string, unknown>,
+): Record<string, unknown> {
+  const a = (raw ?? {}) as Record<string, unknown>;
+  const f = fallback ?? {};
+  const out: Record<string, unknown> = {};
+
+  const line1 =
+    asString(a.address_1) ||
+    asString(a.address1) ||
+    asString(a.address) ||
+    asString(a.addressLine) ||
+    asString(a.street) ||
+    asString(a.line1);
+  const line2 = asString(a.address_2) || asString(a.address2) || asString(a.line2);
+  const street = [line1, line2].filter(Boolean).join(', ');
+  if (street) {
+    out.address = street;
+    out.addressLine = street;
+  }
+
+  const city = asString(a.city) || asString(f.city) || asString(a.thana);
+  if (city) out.city = city;
+
+  const rawState =
+    asString(a.state) || asString(a.province) || asString(a.state_code);
+  if (rawState) {
+    const district = resolveDistrictFromWooStateCode(rawState);
+    if (district) {
+      // Woo BD state code → district name (zone) + division name.
+      out.zone = district;
+      const division = resolveDivision(district);
+      if (division) {
+        out.state = division;
+        out.division = division;
+      }
+      out.stateCode = rawState.trim().toUpperCase();
+    } else {
+      // Plain state name (or an unknown code — kept verbatim, fail-safe).
+      // A known district name resolves to its division; anything else
+      // (e.g. a US state) stays as the state.
+      const division = resolveDivision(rawState);
+      if (division) {
+        out.zone = rawState.trim();
+        out.state = division;
+        out.division = division;
+      } else {
+        out.state = rawState.trim();
+      }
+    }
+  }
+
+  const zip =
+    asString(a.postcode) ||
+    asString(a.zip) ||
+    asString(a.postalCode) ||
+    asString(f.postcode) ||
+    asString(f.zip) ||
+    asString(f.postalCode);
+  if (zip) {
+    out.zip = zip;
+    out.postalCode = zip;
+    out.postcode = zip;
+  }
+
+  const country =
+    asString(a.country) || asString(a.country_code) || asString(f.country);
+  if (country) out.country = country;
+
+  const phone = asString(a.phone) || asString(f.phone);
+  if (phone) out.phone = phone;
+
+  return out;
+}
+
+/**
+ * The store's own shipping charge, when the payload carries one.
+ * Woo: `shipping_lines[]` with `total` per line (present-but-empty means
+ * the store charged no shipping → 0). Shopify: `shipping_lines[].price`
+ * (the Shopify fetch does not request shipping lines, so this stays null
+ * there and the tenant-derived charge is kept). Legacy fallbacks:
+ * `shipping_total` / `total_shipping`. Returns null when the payload
+ * carries no shipping information at all — null is "unknown", NOT 0.
+ */
+export function extractExternalShipping(
+  raw: Record<string, unknown>,
+): number | null {
+  const lines = (raw as any).shipping_lines;
+  if (Array.isArray(lines)) {
+    return Math.max(
+      0,
+      lines.reduce(
+        (sum: number, line: any) => sum + asNumber(line?.total ?? line?.price),
+        0,
+      ),
+    );
+  }
+  const total = (raw as any).shipping_total ?? (raw as any).total_shipping;
+  if (total !== undefined && total !== null && total !== '') {
+    return Math.max(0, asNumber(total));
+  }
+  return null;
+}
+
 export function normalizeOrder(raw: Record<string, unknown>): NormalizedIngestOrder {
   const r = raw ?? {};
   const externalId = pickName(r.id, r.number, r.name, r.order_id) || 'unknown';
@@ -127,6 +265,14 @@ export function normalizeOrder(raw: Record<string, unknown>): NormalizedIngestOr
   const createdMs = createdRaw ? Date.parse(createdRaw) : NaN;
   const updatedMs = updatedRaw ? Date.parse(updatedRaw) : NaN;
 
+  // Canonical addresses: raw provider keys stay for provenance, canonical
+  // keys win where both exist. Shipping falls back to billing for
+  // city/country/phone/postcode when the store left them blank.
+  const canonicalShipping = canonicalizeExternalAddress(shipping, billing);
+  const canonicalBilling = canonicalizeExternalAddress(billing);
+  const customerNote =
+    asString(r.customer_note) || asString(r.note) || null;
+
   return {
     externalId,
     externalStatus: pickName(r.status, r.financial_status, r.order_status) || 'pending',
@@ -137,11 +283,15 @@ export function normalizeOrder(raw: Record<string, unknown>): NormalizedIngestOr
     customerName,
     customerPhone,
     customerEmail,
+    externalShipping: extractExternalShipping(r),
+    customerNote,
+    billingAddress: {
+      ...(billing && typeof billing === 'object' ? billing : {}),
+      ...canonicalBilling,
+    },
     shippingAddress: {
       ...(shipping && typeof shipping === 'object' ? shipping : {}),
-      ...(billing && typeof billing === 'object'
-        ? { billing_city: billing.city, billing_country: billing.country }
-        : {}),
+      ...canonicalShipping,
     },
     items,
   };

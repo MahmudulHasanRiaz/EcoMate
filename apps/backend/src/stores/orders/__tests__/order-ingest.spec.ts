@@ -431,8 +431,12 @@ describe('P6 status map seeding (store-effective STORE_STATUS_MAP)', () => {
     const { svc } = buildIngest(prisma);
     const seeded = await svc.ensureStatusMaps('s1');
     expect(seeded).toBe(Object.keys(STORE_STATUS_MAP).length);
+    // Woo-only `processing → Pending` (Boss 2026-11-25): the mock store
+    // lookup returns nothing, so the seed defaults to the historical Woo
+    // behaviour. Non-Woo stores seed `processing → Confirmed` instead
+    // (see the non-Woo seed test below).
     expect(prisma.storeOrderStatusMap.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ externalStatus: 'processing', internalStatusName: 'Confirmed' }) }),
+      expect.objectContaining({ data: expect.objectContaining({ externalStatus: 'processing', internalStatusName: 'Pending' }) }),
     );
     // Woo overrides ride the seed too — a seeded row must never
     // re-introduce the old refunded → Returned mapping.
@@ -711,5 +715,244 @@ describe('P13 ZERO_STOCK_REJECT — operator-directed deviation from BR-13/BR-16
       ),
     ).rejects.toThrow(new RegExp(ZERO_STOCK_REJECT));
     expect(orders.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('Woo order-ingest fixes (Boss 2026-11-25)', () => {
+  // Woo-shaped raw order (live #221 shape): billing/shipping with
+  // address_1 + postcode + BD state code, 12-digit phone, no note.
+  const WOO_RAW = {
+    id: 'ext-221',
+    status: 'processing',
+    total: '150',
+    currency: 'BDT',
+    createdAt: '2026-09-23T13:00:00.000Z',
+    billing: {
+      first_name: 'Riaz', last_name: 'Test', phone: '016013015876', email: 'mahhj@ff.jg',
+      address_1: 'Dhaka, bari', city: 'Dhaka', state: 'BD-13', postcode: '1229', country: 'BD',
+    },
+    shipping: {
+      first_name: 'Riaz', last_name: 'Test', phone: '016013015876',
+      address_1: 'Dhaka, bari', city: 'Dhaka', state: 'BD-13', postcode: '1229', country: 'BD',
+    },
+    line_items: [{ sku: 'SIMPLE-IMG-001', quantity: 1, price: '150' }],
+  };
+
+  /** Woo (or bridge) create with NO per-store DB status row — the fallback runs. */
+  function seedCreateNoRow(prisma: any, kind = 'WOOCOMMERCE') {
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(null);
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind, name: kind === 'WOOCOMMERCE' ? 'Woo' : 'Bridge' });
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue(null);
+    prisma.orderStatus.findFirst.mockImplementation(async ({ where }: any) => ({
+      id: `st-${where.name}`,
+      name: where.name,
+    }));
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    prisma.storeOrderMapping.create.mockResolvedValue({});
+  }
+
+  function createdDto(orders: any) {
+    return orders.create.mock.calls[0][0];
+  }
+  function createdInternal(orders: any) {
+    return orders.create.mock.calls[0][4];
+  }
+
+  it('Woo processing lands Pending (not Confirmed) when no DB row exists', async () => {
+    const prisma = mockPrisma();
+    seedCreateNoRow(prisma);
+    const { svc, orders } = buildIngest(prisma);
+
+    const res = await svc.ingest('s1', { ...WOO_RAW }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+
+    expect(res).toMatchObject({ created: true, orderId: 'ord-1' });
+    expect(createdInternal(orders).initialStatusName).toBe('Pending');
+  });
+
+  it('Woo processing → Pending AND the Hold push still fires on the Pending landing', async () => {
+    const prisma = mockPrisma();
+    seedCreateNoRow(prisma);
+    const push = { notifyIngestedOrder: jest.fn().mockResolvedValue(undefined) };
+    const orders = {
+      create: jest.fn().mockResolvedValue({ ...CREATED_ORDER }),
+      updateStatus: jest.fn().mockResolvedValue({}),
+    };
+    const svc = new StoreOrderIngestService(
+      prisma,
+      orders as any,
+      mockRuns(),
+      { providerFor: jest.fn() } as any,
+      { storeWithSecrets: jest.fn() } as any,
+      undefined,
+      push,
+    );
+
+    const res = await svc.ingest('s1', { ...WOO_RAW }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+
+    expect(res).toMatchObject({ created: true });
+    expect(orders.create.mock.calls[0][4].initialStatusName).toBe('Pending');
+    expect(push.notifyIngestedOrder).toHaveBeenCalledTimes(1);
+    expect(push.notifyIngestedOrder).toHaveBeenCalledWith('ord-1');
+  });
+
+  it('bridge processing keeps landing Confirmed (its landing rule was never decided)', async () => {
+    const prisma = mockPrisma();
+    seedCreateNoRow(prisma, 'CUSTOM');
+    const { svc, orders } = buildIngest(prisma);
+
+    const res = await svc.ingest('s1', {
+      id: 'ext-b1', status: 'processing', total: 250, currency: 'BDT',
+      createdAt: '2026-09-23T13:00:00.000Z',
+      items: [{ sku: 'SKU-IN-001', qty: 1, price: 250 }],
+    }, { type: 'WEBHOOK', runId: 'run-1', provider: 'custom' });
+
+    expect(res).toMatchObject({ created: true });
+    expect(createdInternal(orders).initialStatusName).toBe('Confirmed');
+  });
+
+  it('a per-store DB row still wins over the fallback (operator edit preserved)', async () => {
+    const prisma = mockPrisma();
+    seedCreateNoRow(prisma);
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Confirmed' });
+    const { svc, orders } = buildIngest(prisma);
+
+    await svc.ingest('s1', { ...WOO_RAW }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+
+    expect(createdInternal(orders).initialStatusName).toBe('Confirmed');
+  });
+
+  it('non-Woo stores seed processing → Confirmed (Woo-only override)', async () => {
+    const prisma = mockPrisma();
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM' });
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue(null);
+    prisma.storeOrderStatusMap.create.mockResolvedValue({});
+    const { svc } = buildIngest(prisma);
+
+    await svc.ensureStatusMaps('s1');
+
+    expect(prisma.storeOrderStatusMap.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ externalStatus: 'processing', internalStatusName: 'Confirmed' }) }),
+    );
+  });
+
+  it('Woo shipping line → EcoMate shipping equals Woo’s; no line → ৳0 (internal, never dto.shippingCharge)', async () => {
+    const prisma = mockPrisma();
+    seedCreateNoRow(prisma);
+    const { svc, orders } = buildIngest(prisma);
+
+    await svc.ingest('s1', {
+      ...WOO_RAW,
+      shipping_lines: [{ total: '60.00' }],
+    }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+    expect(createdInternal(orders).externalShipping).toBe(60);
+    expect(createdDto(orders).shippingCharge).toBeUndefined();
+
+    // A real Woo order with no shipping line carries `shipping_lines: []`
+    // (the key is always present in Woo payloads) → ৳0, never invented.
+    orders.create.mockClear();
+    await svc.ingest('s1', { ...WOO_RAW, id: 'ext-222', shipping_lines: [] }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+    expect(createdInternal(orders).externalShipping).toBe(0);
+
+    // The key entirely absent means "unknown" (Shopify/bridge payloads
+    // never carry it) → null, and create() keeps the derived charge.
+    orders.create.mockClear();
+    await svc.ingest('s1', { ...WOO_RAW, id: 'ext-223' }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+    expect(createdInternal(orders).externalShipping).toBeNull();
+  });
+
+  it('12-digit phone → NOT in customerNotes, IS in shippingAddress.phone (unverified surface)', async () => {
+    const prisma = mockPrisma();
+    seedCreateNoRow(prisma);
+    const { svc, orders } = buildIngest(prisma);
+
+    await svc.ingest('s1', { ...WOO_RAW }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+
+    const dto = createdDto(orders);
+    expect(dto.guestPhone).toBeUndefined();
+    expect(dto.customerNotes).toBeUndefined();
+    expect(dto.shippingAddress.phone).toBe('016013015876');
+  });
+
+  it('valid 11-digit phone → normal phone field as today', async () => {
+    const prisma = mockPrisma();
+    seedCreateNoRow(prisma);
+    const { svc, orders } = buildIngest(prisma);
+
+    await svc.ingest('s1', {
+      ...WOO_RAW,
+      billing: { ...WOO_RAW.billing, phone: '01700000001' },
+      shipping: { ...WOO_RAW.shipping, phone: '01700000001' },
+    }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+
+    const dto = createdDto(orders);
+    expect(dto.guestPhone).toBe('+8801700000001');
+    expect(dto.customerNotes).toBeUndefined();
+  });
+
+  it('Woo customer_note → EcoMate customer note (append-style)', async () => {
+    const prisma = mockPrisma();
+    seedCreateNoRow(prisma);
+    const { svc, orders } = buildIngest(prisma);
+
+    await svc.ingest('s1', { ...WOO_RAW, customer_note: 'Please call before delivery' }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+
+    expect(createdDto(orders).customerNotes).toBe('Please call before delivery');
+  });
+
+  it('Woo address → full display fields + snapshot postcode + billing address present', async () => {
+    const prisma = mockPrisma();
+    seedCreateNoRow(prisma);
+    const { svc, orders } = buildIngest(prisma);
+
+    await svc.ingest('s1', { ...WOO_RAW }, { type: 'WEBHOOK', runId: 'run-1', provider: 'woocommerce' });
+
+    const dto = createdDto(orders);
+    expect(dto.shippingAddress).toMatchObject({
+      address: 'Dhaka, bari',
+      addressLine: 'Dhaka, bari',
+      city: 'Dhaka',
+      zone: 'Dhaka',
+      state: 'Dhaka',
+      zip: '1229',
+      postcode: '1229',
+      country: 'BD',
+    });
+    expect(dto.billingAddress).toMatchObject({
+      address: 'Dhaka, bari',
+      city: 'Dhaka',
+      state: 'Dhaka',
+      postcode: '1229',
+    });
+  });
+
+  it('two reconcile funnels in the same second → the BR-17 delta note appears once', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue({
+      orderId: 'ord-1', externalOrderId: 'ext-2',
+      order: { status: { name: 'Confirmed' }, total: 250 },
+    });
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Confirmed' });
+    const deltaNote = 'Reconcile note: external total 500 differs from ingested 250 — kept ingested values (BR-17).';
+    prisma.order.findUnique
+      .mockResolvedValueOnce({ timeline: [] })
+      .mockResolvedValue({ timeline: [{ status: 'Confirmed', timestamp: '2026-11-25T09:49:00.000Z', note: deltaNote }] });
+    const { svc, orders } = buildIngest(prisma);
+
+    const raw = {
+      id: 'ext-2', status: 'processing', total: 500, currency: 'BDT',
+      createdAt: '2026-09-21T11:00:00.000Z', items: [],
+    };
+    // Funnel 1 (webhook fired by our own Hold push) + funnel 2 (reconcile
+    // tick) — same totals, same second.
+    await svc.ingest('s1', { ...raw }, { type: 'WEBHOOK', runId: 'run-1' });
+    await svc.ingest('s1', { ...raw }, { type: 'RECONCILE', runId: 'run-1' });
+
+    expect(orders.create).not.toHaveBeenCalled();
+    expect(prisma.order.update).toHaveBeenCalledTimes(1);
+    const stored = prisma.order.update.mock.calls[0][0].data.timeline as any[];
+    expect(stored).toHaveLength(1);
+    expect(stored[0].note).toBe(deltaNote);
   });
 });

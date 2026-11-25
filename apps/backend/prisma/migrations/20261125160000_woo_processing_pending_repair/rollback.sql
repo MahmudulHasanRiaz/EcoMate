@@ -1,0 +1,12 @@
+-- Rollback for 20261125160000_woo_processing_pending_repair.
+--
+-- There is intentionally no reverse statement: the forward migration only
+-- repairs Woo `processing → Confirmed` rows to `Pending` (Boss decision
+-- 2026-11-25 — new Woo orders arrive Pending, confirmed by hand), and
+-- restoring `Confirmed` would reintroduce the auto-confirm bug the fix
+-- removes. The repair is idempotent and safe to leave applied; the
+-- Woo-only override in the code keeps new seeds at `Pending` from here on.
+-- An operator who genuinely wants a Woo store's `processing` to land
+-- Confirmed can re-map that one row from the console (per-store status
+-- maps are operator-editable and always win over the fallback).
+-- (No-op by design.)

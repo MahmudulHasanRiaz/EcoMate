@@ -157,3 +157,99 @@ export function isKnownDistrict(district?: string | null): boolean {
   if (!district) return false;
   return resolveDivision(district) !== undefined;
 }
+
+/**
+ * WooCommerce Bangladesh state codes → district (ISO 3166-2:BD).
+ *
+ * WooCommerce ships orders with the state as a two-letter country + two-digit
+ * district code (e.g. `BD-13` = Dhaka) — see WooCommerce `i18n/states.php`
+ * (`BD` section) and ISO 3166-2:BD. The values are this project's canonical
+ * district spellings so `resolveDivision()` works on them directly.
+ * All 64 districts are present.
+ */
+export const WOO_BD_STATE_TO_DISTRICT: Readonly<Record<string, string>> = {
+  // Dhaka division (13)
+  'BD-13': 'Dhaka',
+  'BD-15': 'Faridpur',
+  'BD-18': 'Gazipur',
+  'BD-17': 'Gopalganj',
+  'BD-26': 'Kishoreganj',
+  'BD-33': 'Madaripur',
+  'BD-64': 'Manikganj',
+  'BD-38': 'Munshiganj',
+  'BD-40': 'Narayanganj',
+  'BD-41': 'Narsingdi',
+  'BD-51': 'Rajbari',
+  'BD-56': 'Shariatpur',
+  'BD-61': 'Tangail',
+  // Chittagong division (11)
+  'BD-01': 'Bandarban',
+  'BD-04': 'Brahmanbaria',
+  'BD-09': 'Chandpur',
+  'BD-10': 'Chittagong',
+  'BD-08': 'Comilla',
+  'BD-11': "Cox's Bazar",
+  'BD-16': 'Feni',
+  'BD-29': 'Khagrachari',
+  'BD-31': 'Lakshmipur',
+  'BD-45': 'Noakhali',
+  'BD-54': 'Rangamati',
+  // Rajshahi division (8)
+  'BD-03': 'Bogura',
+  'BD-63': 'Chapainawabganj',
+  'BD-24': 'Joypurhat',
+  'BD-39': 'Naogaon',
+  'BD-42': 'Natore',
+  'BD-47': 'Pabna',
+  'BD-52': 'Rajshahi',
+  'BD-58': 'Sirajganj',
+  // Khulna division (10)
+  'BD-05': 'Bagerhat',
+  'BD-12': 'Chuadanga',
+  'BD-22': 'Jashore',
+  'BD-23': 'Jhenaidah',
+  'BD-27': 'Khulna',
+  'BD-30': 'Kushtia',
+  'BD-34': 'Magura',
+  'BD-36': 'Meherpur',
+  'BD-46': 'Narail',
+  'BD-55': 'Satkhira',
+  // Barisal division (6)
+  'BD-02': 'Barguna',
+  'BD-06': 'Barisal',
+  'BD-07': 'Bhola',
+  'BD-25': 'Jhalokati',
+  'BD-49': 'Patuakhali',
+  'BD-50': 'Pirojpur',
+  // Sylhet division (4)
+  'BD-20': 'Habiganj',
+  'BD-37': 'Moulvibazar',
+  'BD-59': 'Sunamganj',
+  'BD-60': 'Sylhet',
+  // Rangpur division (8)
+  'BD-14': 'Dinajpur',
+  'BD-19': 'Gaibandha',
+  'BD-28': 'Kurigram',
+  'BD-32': 'Lalmonirhat',
+  'BD-44': 'Nilphamari',
+  'BD-48': 'Panchagarh',
+  'BD-53': 'Rangpur',
+  'BD-62': 'Thakurgaon',
+  // Mymensingh division (4)
+  'BD-21': 'Jamalpur',
+  'BD-35': 'Mymensingh',
+  'BD-43': 'Netrokona',
+  'BD-57': 'Sherpur',
+};
+
+/**
+ * Resolve a WooCommerce BD state code (e.g. `BD-13`) to the canonical
+ * district name, or undefined for anything that is not a known code
+ * (callers keep the raw value then — fail-safe, never a wrong district).
+ */
+export function resolveDistrictFromWooStateCode(
+  code?: string | null,
+): string | undefined {
+  if (!code) return undefined;
+  return WOO_BD_STATE_TO_DISTRICT[code.trim().toUpperCase()];
+}

@@ -227,6 +227,17 @@ export interface OrderCreateInternal {
    * map action — the order is never lost. Only the ingest worker sets this.
    */
   allowProductlessItems?: boolean;
+  /**
+   * The external store's own shipping charge, set ONLY by the ingest
+   * worker (Woo `shipping_lines[]` totals, summed). Null = the payload
+   * carried no shipping information at all — the tenant-derived charge is
+   * kept. 0 is a real value: the store charged no shipping (Boss decision
+   * 2026-11-25: Woo's shipping wins when present; no Woo shipping line
+   * means ৳0 — never invent a charge the store's customer didn't agree
+   * to). This rides the internal contract, NOT `dto.shippingCharge` —
+   * the 2026-10-25 security rule ignores that for non-staff creates.
+   */
+  externalShipping?: number | null;
 }
 
 /** Ingest flags with operational meaning only — never blocking (BR-15). */
@@ -2641,6 +2652,23 @@ export class OrdersService {
         }
       }
 
+      // P6 external-ingest shipping (Boss decision 2026-11-25): the
+      // store's own shipping charge wins when the payload carried one
+      // (`internal.externalShipping`); no shipping line on the store
+      // order means ৳0 — never invent a charge the store's customer
+      // didn't agree to. The native derivation above still runs (and
+      // still throws for a misconfigured tenant), but its result is
+      // discarded here. A null `externalShipping` means "no shipping
+      // information in the payload" (e.g. Shopify, whose fetch does not
+      // request shipping lines) — those orders keep the derived charge,
+      // exactly as before. The native order path never sets
+      // `internal.externalShipping`, so it is untouched.
+      if (isExternalIngest && internal?.externalShipping != null) {
+        const externalCharge = Math.max(0, Number(internal.externalShipping) || 0);
+        isShippingOverridden = Math.abs(externalCharge - derivedShippingCharge) > 0.01;
+        finalShippingCharge = externalCharge;
+      }
+
       const itemsForTotals = dto.items.map((i) => ({
         ...i,
         addonAmount: resolvedCustomizations.get(i)?.addonAmount ?? 0,
@@ -2874,7 +2902,7 @@ export class OrdersService {
       const orderTimeLastName = dto.guestName?.split(' ').slice(1).join(' ') || linkedCustomer?.lastName || orderActor?.lastName || null;
       const orderTimeCity = (shippingAddrObj.city as string) || (shippingAddrObj.district as string) || null;
       const orderTimeState = (shippingAddrObj.state as string) || (shippingAddrObj.division as string) || resolveDivision(dto.district) || null;
-      const orderTimeZip = (shippingAddrObj.zip as string) || (shippingAddrObj.zipCode as string) || (shippingAddrObj.postalCode as string) || null;
+      const orderTimeZip = (shippingAddrObj.zip as string) || (shippingAddrObj.zipCode as string) || (shippingAddrObj.postalCode as string) || (shippingAddrObj.postcode as string) || null;
       const orderTimeCountry = (shippingAddrObj.country as string) || 'BD';
 
       // Journey session for this ctxId, used ONLY as a fallback for signals the

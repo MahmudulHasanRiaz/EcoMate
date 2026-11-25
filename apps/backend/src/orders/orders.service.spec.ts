@@ -2463,6 +2463,57 @@ describe('OrdersService', () => {
         await service.create(noDistrict);
         expect(createdShipping()).toBe(150);
       });
+
+      // External-store shipping (Boss 2026-11-25): the store's own charge
+      // wins when the payload carried one; no shipping line means ৳0.
+      // The native derivation above still runs, but its result is
+      // discarded for ingest orders.
+      const externalInternal = (externalShipping: number | null) => ({
+        ingest: 'external_store' as const,
+        storeId: 's1',
+        externalOrderId: 'ext-1',
+        externalShipping,
+      });
+      const createdData = () =>
+        (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+
+      it('uses the store’s shipping charge when the payload carried one (derived 150 discarded)', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        await service.create(noDistrict, undefined, undefined, undefined, externalInternal(60));
+        expect(createdShipping()).toBe(60);
+        expect(createdData().shippingChargeOverridden).toBe(true);
+        expect(createdData().total).toBe(2500 + 60); // guest manual discount is ignored (security 2026-10-25)
+      });
+
+      it('no Woo shipping line (externalShipping 0) → ৳0 even when the tenant would charge 150', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        await service.create(noDistrict, undefined, undefined, undefined, externalInternal(0));
+        expect(createdShipping()).toBe(0);
+        expect(createdData().total).toBe(2500 + 0);
+      });
+
+      it('null externalShipping (no shipping info in the payload) → derived charge kept', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        await service.create(noDistrict, undefined, undefined, undefined, externalInternal(null));
+        expect(createdShipping()).toBe(150);
+        expect(createdData().total).toBe(2500 + 150);
+      });
+
+      it('a guest dto.shippingCharge is still ignored for ingest orders (security 2026-10-25)', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        await service.create(
+          { ...noDistrict, shippingCharge: 999 },
+          undefined,
+          undefined,
+          undefined,
+          externalInternal(60),
+        );
+        expect(createdShipping()).toBe(60);
+      });
     });
 
     it('applies and saves manual discount when creating an order', async () => {

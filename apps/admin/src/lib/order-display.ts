@@ -60,6 +60,20 @@ export function getCustomerPhone(order: OrderCustomerSnapshot): string {
 }
 
 /**
+ * Resolve an UNVERIFIED customer phone for an external-store order whose
+ * number failed normalization (e.g. a 12-digit typo — a valid BD mobile
+ * is 11 digits). The raw number survives in the stored shipping address
+ * (Woo `shipping.phone`, canonicalized at ingest). It is returned ONLY
+ * when no verified phone resolves, and the UI must badge it "Unverified"
+ * — it never feeds the verified phone surfaces (block checks, courier
+ * lookup, or contact actions that assume a dialable normalized number).
+ */
+export function getUnverifiedCustomerPhone(order: OrderCustomerSnapshot): string {
+  if (getCustomerPhone(order)) return ''
+  return (order.shippingAddress?.phone || '').trim()
+}
+
+/**
  * Resolve customer email from order-time snapshot.
  * Priority: snapshot email > CustomerProfile email
  */

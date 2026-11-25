@@ -55,6 +55,7 @@ import { byExactMatchFirst } from '@/lib/search-products'
 import {
   getCustomerDisplayName,
   getCustomerPhone,
+  getUnverifiedCustomerPhone,
   getCustomerEmail,
   getOrderPaidAmount,
   getOrderDueAmount,
@@ -2201,6 +2202,21 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                           />
                         </div>
                       )}
+                      {/* Unverified phone from an external store: the number
+                          failed normalization (e.g. a 12-digit typo — a valid
+                          BD mobile is 11 digits), so it never reached the
+                          verified phone field. Shown with a call link + an
+                          Unverified badge only — no contact actions, no
+                          block control (those assume a normalized number). */}
+                      {!getCustomerPhone(order) && getUnverifiedCustomerPhone(order) && (
+                        <div className='text-muted-foreground text-[11px] sm:text-xs flex items-center gap-1.5 sm:gap-2 flex-wrap pt-0.5'>
+                          <a href={`tel:${getUnverifiedCustomerPhone(order)}`} className='flex items-center gap-1 font-medium hover:text-primary transition-colors text-foreground'>
+                            <Phone className='h-3 w-3 text-muted-foreground' />
+                            <span>{getUnverifiedCustomerPhone(order)}</span>
+                          </a>
+                          <span className='rounded border border-border/60 px-1 py-px text-[9px] sm:text-[10px] text-muted-foreground'>Unverified</span>
+                        </div>
+                      )}
                       {(order as any).secondaryPhone && (
                         <div className='text-muted-foreground text-[11px] sm:text-xs flex items-center gap-1.5 sm:gap-2 flex-wrap pt-0.5'>
                           <a href={`tel:${(order as any).secondaryPhone}`} className='flex items-center gap-1 font-medium hover:text-primary transition-colors text-foreground'>
@@ -2229,9 +2245,9 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                         {(order.shippingAddress.address || order.shippingAddress.addressLine) && (
                           <p className='text-foreground font-normal'>{order.shippingAddress.address || order.shippingAddress.addressLine}</p>
                         )}
-                        {(order.shippingAddress.city || order.shippingAddress.zone) && (
+                        {(order.shippingAddress.city || order.shippingAddress.zone || order.shippingAddress.postcode || order.shippingAddress.zip || order.shippingAddress.postalCode) && (
                           <p className='text-[11px] sm:text-xs text-muted-foreground mt-0.5'>
-                            {[order.shippingAddress.zone?.name || order.shippingAddress.zone, order.shippingAddress.city?.name || order.shippingAddress.city].filter(Boolean).join(', ')}
+                            {[order.shippingAddress.zone?.name || order.shippingAddress.zone, order.shippingAddress.city?.name || order.shippingAddress.city, order.shippingAddress.postcode || order.shippingAddress.zip || order.shippingAddress.postalCode].filter(Boolean).join(', ')}
                           </p>
                         )}
                       </div>
