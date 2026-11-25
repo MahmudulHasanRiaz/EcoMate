@@ -81,6 +81,18 @@ export function isAllowedCustomField(key: string): boolean {
   return CUSTOM_FIELD_ALLOWLIST.has(key);
 }
 
+/** A variant's primary image: `image` wins; `images[0]` is the fallback
+ * (writes merge `image` into the front of `images`, so the two agree when
+ * both are set). Null when the variant has no image. */
+export function variantPrimaryImage(v: any): string | null {
+  if (typeof v?.image === 'string' && v.image.trim().length > 0) return v.image;
+  const list = Array.isArray(v?.images) ? v.images : [];
+  const first = list.find(
+    (x: unknown) => typeof x === 'string' && (x as string).trim().length > 0,
+  );
+  return typeof first === 'string' ? first : null;
+}
+
 /** Extract the canonical per-field values from a Product row (read-only). */
 export function readEcoMateFields(product: any): Record<string, unknown> {
   const images: string[] = Array.isArray(product.images) ? product.images : [];
@@ -104,6 +116,7 @@ export function readEcoMateFields(product: any): Record<string, unknown> {
       price: v.price !== undefined && v.price !== null ? String(v.price) : null,
       salePrice: v.salePrice !== undefined && v.salePrice !== null ? String(v.salePrice) : null,
       isActive: v.isActive,
+      image: variantPrimaryImage(v),
     })),
     variantAttributes: (product.variants ?? []).map((v: any) => ({
       sku: v.sku,

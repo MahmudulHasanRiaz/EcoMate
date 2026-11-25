@@ -127,6 +127,32 @@ export function wooFieldToPayload(input: Record<string, unknown>): Record<string
     const t = String(input.productType);
     if (t === 'simple' || t === 'variable') out.type = t;
   }
+  // Parent attribute definitions (variable push, 2026-11-25): the core
+  // derives these from the CURRENT variants and rides them as the
+  // transient `__variantAttributeDefs` key — the `variantAttributes`
+  // matrix row itself is inert for Woo (no remote snapshot exists), so
+  // the raw EcoMate value (attribute-value ids) must never reach this
+  // mapper. `variation: true` is REQUIRED — Woo defaults it to false,
+  // and an attribute without it cannot define variations. Sent on
+  // create AND update (upsertProduct calls this mapper for both).
+  if (Array.isArray(input.__variantAttributeDefs) && input.__variantAttributeDefs.length > 0) {
+    const attrs = (input.__variantAttributeDefs as unknown[])
+      .filter(
+        (d): d is { name: string; options: unknown[] } =>
+          !!d && typeof d === 'object' &&
+          typeof (d as { name?: unknown }).name === 'string' &&
+          ((d as { name: string }).name as string).length > 0 &&
+          Array.isArray((d as { options?: unknown }).options) &&
+          ((d as { options: unknown[] }).options as unknown[]).length > 0,
+      )
+      .map((d) => ({
+        name: d.name,
+        options: d.options.map((o) => String(o)),
+        visible: true,
+        variation: true,
+      }));
+    if (attrs.length > 0) out.attributes = attrs;
+  }
   return out;
 }
 
@@ -434,6 +460,25 @@ export class WooCommerceProvider extends BaseCommerceProvider {
       if (rec.price !== undefined) payload.regular_price = rec.price === null ? '' : String(rec.price);
       if (rec.salePrice !== undefined) payload.sale_price = rec.salePrice === null ? '' : String(rec.salePrice);
       if (rec.isActive !== undefined) payload.status = rec.isActive ? 'publish' : 'private';
+      // Variation attributes (variable push, 2026-11-25): the core
+      // attaches `{Size: 'S'}` per variant — Woo wants
+      // `[{name, option}]`. Sent on POST and PUT (this payload is built
+      // once and shared by both branches, including the 404-fallback
+      // re-POST). An empty object sends nothing: Woo reads a missing
+      // attributes key as "Any", an explicit `[]` is not equivalent.
+      if (rec.attributes !== undefined && rec.attributes !== null && typeof rec.attributes === 'object') {
+        const attrs = Object.entries(rec.attributes as Record<string, unknown>)
+          .filter(([, value]) => value !== undefined && value !== null && String(value) !== '')
+          .map(([name, option]) => ({ name, option: String(option) }));
+        if (attrs.length > 0) payload.attributes = attrs;
+      }
+      // Variation image (variable push, 2026-11-25): the core sends only
+      // the PushMediaService-verified ABSOLUTE url (relative `/uploads/`
+      // paths never reach Woo — it fetches server-side). Defence in
+      // depth: a non-absolute value is dropped here, never sent.
+      if (typeof rec.image === 'string' && /^https?:\/\/[^/]/i.test(rec.image)) {
+        payload.image = { src: rec.image };
+      }
       const existingId = typeof rec.__externalVariantId === 'string' ? rec.__externalVariantId : undefined;
       if (existingId) {
         try {

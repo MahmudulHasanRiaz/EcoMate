@@ -36,14 +36,32 @@ const PRODUCT_ID = 'prod-1';
  */
 class WooLikeProvider extends FakeProvider {
   variantCalls: Array<{ op: 'create' | 'update'; sku: string; id: string }> = [];
+  /** Raw parent upsert inputs, in call order — the Fake stores only the
+   * listed `fields`, so transient keys (`__variantAttributeDefs`) are
+   * asserted here, not on the stored record. */
+  upsertInputs: Array<Record<string, unknown>> = [];
+  /** Variant payloads as received by upsertVariants, in call order. */
+  variantPayloads: Array<Record<string, unknown>> = [];
   private remoteVariations = new Map<string, Map<string, string>>(); // productId -> variationId -> sku
   private varSeq = 0;
+
+  override async upsertProduct(
+    store: StoreWithSecrets,
+    input: any,
+    fields: any,
+  ): Promise<RemoteRef> {
+    this.upsertInputs.push({ ...(input as Record<string, unknown>) });
+    return super.upsertProduct(store, input, fields);
+  }
 
   override async upsertVariants(
     _store: StoreWithSecrets,
     ref: RemoteRef,
     variants: NormalizedVariant[],
   ): Promise<Map<string, RemoteRef>> {
+    this.variantPayloads.push(
+      ...(variants as Array<Record<string, unknown>>).map((v) => ({ ...v })),
+    );
     const out = new Map<string, RemoteRef>();
     let list = this.remoteVariations.get(ref.providerId);
     if (!list) {
@@ -218,7 +236,15 @@ function mockPrisma() {
   return { prisma, productMappings, variantMappings, issues, items };
 }
 
-function variableProduct(variants: Array<{ id: string; sku: string }>) {
+function variableProduct(
+  variants: Array<{
+    id: string;
+    sku: string;
+    attributeValues?: Array<{ attributeValueId: string }>;
+    image?: string | null;
+    images?: string[] | null;
+  }>,
+) {
   return {
     id: PRODUCT_ID,
     name: 'Eco Tee',
@@ -244,14 +270,31 @@ function variableProduct(variants: Array<{ id: string; sku: string }>) {
       price: '10',
       salePrice: null,
       isActive: true,
-      attributeValues: [],
+      attributeValues: v.attributeValues ?? [],
+      image: v.image ?? null,
+      images: v.images ?? null,
     })),
     productCategories: [],
   };
 }
 
+function attributeValueRows() {
+  return [
+    { id: 'av-size-s', value: 'S', attribute: { name: 'Size' } },
+    { id: 'av-size-m', value: 'M', attribute: { name: 'Size' } },
+  ];
+}
+
+/** Two variants with Size S / M — the shape the live test pushes. */
+function sizeVariants() {
+  return [
+    { id: 'v1', sku: 'V-1', attributeValues: [{ attributeValueId: 'av-size-s' }] },
+    { id: 'v2', sku: 'V-2', attributeValues: [{ attributeValueId: 'av-size-m' }] },
+  ];
+}
+
 function setup(variants: Array<{ id: string; sku: string }>) {
-  const { prisma, productMappings, variantMappings } = mockPrisma();
+  const { prisma, productMappings, variantMappings, items } = mockPrisma();
   const provider = new WooLikeProvider();
   (prisma.product.findUnique as jest.Mock).mockResolvedValue(variableProduct(variants));
   const registry: any = { providerFor: () => provider };
@@ -266,8 +309,90 @@ function setup(variants: Array<{ id: string; sku: string }>) {
   );
   const mappingExternalId = () =>
     (productMappings.get(`${STORE_ID}:${PRODUCT_ID}`) as any)?.externalId as string | undefined;
-  return { prisma, provider, svc, productMappings, variantMappings, mappingExternalId };
+  return { prisma, provider, svc, productMappings, variantMappings, mappingExternalId, items };
 }
+
+describe('variable push parent attributes + variant attributes (GAP 1 + 2)', () => {
+  it('fresh create carries parent defs and per-variant attributes', async () => {
+    const { svc, provider, prisma, mappingExternalId } = setup(sizeVariants());
+    (prisma as any).attributeValue.findMany.mockResolvedValue(attributeValueRows());
+
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-1');
+
+    // Parent upsert carried the derived definitions (transient key —
+    // the Fake stores only listed fields, so this is asserted on the
+    // captured input, not the stored record).
+    expect(provider.upsertInputs).toHaveLength(1);
+    expect(provider.upsertInputs[0]!.__variantAttributeDefs).toEqual([
+      { name: 'Size', options: ['S', 'M'] },
+    ]);
+    // Variant payloads carry the resolved attribute names.
+    expect(provider.variantPayloads).toHaveLength(2);
+    expect(provider.variantPayloads).toContainEqual(
+      expect.objectContaining({ sku: 'V-1', attributes: { Size: 'S' } }),
+    );
+    expect(provider.variantPayloads).toContainEqual(
+      expect.objectContaining({ sku: 'V-2', attributes: { Size: 'M' } }),
+    );
+    expect(mappingExternalId()).toBeDefined();
+  });
+
+  it('update push (name change) still sends parent defs + variant attributes', async () => {
+    const { svc, provider, prisma } = setup(sizeVariants());
+    (prisma as any).attributeValue.findMany.mockResolvedValue(attributeValueRows());
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-1');
+
+    // A name-only change triggers a parent update (no variant change).
+    (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      ...variableProduct(sizeVariants()),
+      name: 'Eco Tee v2',
+    });
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-2');
+
+    const updateInput = provider.upsertInputs[provider.upsertInputs.length - 1]!;
+    expect(updateInput.__variantAttributeDefs).toEqual([
+      { name: 'Size', options: ['S', 'M'] },
+    ]);
+    // syncVariants still runs on the update and still carries attributes.
+    const secondPush = provider.variantPayloads.slice(2);
+    expect(secondPush).toHaveLength(2);
+    expect(secondPush[0]).toMatchObject({ sku: 'V-1', attributes: { Size: 'S' } });
+    expect(secondPush[1]).toMatchObject({ sku: 'V-2', attributes: { Size: 'M' } });
+    // ...and still zero duplicate variations (V1 holds with attributes).
+    expect(provider.variantCalls.filter((c) => c.op === 'create')).toHaveLength(2);
+  });
+
+  it('Force EcoMate Value on variantAttributes sends the defs (override path)', async () => {
+    const { svc, provider, prisma } = setup(sizeVariants());
+    (prisma as any).attributeValue.findMany.mockResolvedValue(attributeValueRows());
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-1');
+
+    provider.upsertInputs.length = 0;
+    await svc.forceEcoMateValue(STORE_ID, PRODUCT_ID, ['variantAttributes']);
+
+    expect(provider.upsertInputs).toHaveLength(1);
+    expect(provider.upsertInputs[0]!.__variantAttributeDefs).toEqual([
+      { name: 'Size', options: ['S', 'M'] },
+    ]);
+  });
+
+  it('no PushMediaService wired → variant payload carries no image (old behaviour)', async () => {
+    const { svc, provider, prisma } = setup([
+      {
+        id: 'v1',
+        sku: 'V-1',
+        attributeValues: [{ attributeValueId: 'av-size-s' }],
+        image: '/uploads/var-s.jpg',
+      },
+    ]);
+    (prisma as any).attributeValue.findMany.mockResolvedValue(attributeValueRows());
+
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-1');
+
+    expect(provider.variantPayloads).toHaveLength(1);
+    expect(provider.variantPayloads[0]).not.toHaveProperty('image');
+  });
+});
 
 describe('V1 variation duplication (Phase 1)', () => {
   it('second push of the same variable product creates ZERO new remote variations', async () => {

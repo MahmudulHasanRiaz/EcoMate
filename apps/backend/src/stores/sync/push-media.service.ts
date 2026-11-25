@@ -111,6 +111,55 @@ export class PushMediaService {
   }
 
   /**
+   * Shared absolutize + HEAD-verify core. One result per input entry, in
+   * input order — callers decide how to aggregate (a plain list for
+   * parent images, a per-SKU map for variant images). The drop reason is
+   * per entry so a batch never has to guess which entry failed.
+   */
+  private async verifyEntries(
+    raw: unknown[],
+    origin: string | null,
+  ): Promise<
+    Array<{
+      raw: unknown;
+      candidate: string | null;
+      ok: boolean;
+      drop: 'invalid' | 'no-origin' | 'unreachable' | null;
+    }>
+  > {
+    const classified = raw.map((entry) => {
+      const c = classifyImageEntry(entry);
+      if (c.kind === 'absolute') return { raw: entry, candidate: c.url, drop: null };
+      if (c.kind === 'relative') {
+        if (origin) return { raw: entry, candidate: `${origin}${c.path}`, drop: null };
+        return { raw: entry, candidate: null, drop: 'no-origin' as const };
+      }
+      return { raw: entry, candidate: null, drop: 'invalid' as const };
+    });
+    // Reachability: HEAD every candidate in parallel. The indexed map
+    // preserves order (primary image stays first) — a naive push in
+    // completion order would scramble primary vs gallery.
+    const checks = await Promise.all(
+      classified.map(async (entry) => {
+        if (!entry.candidate) return { ...entry, ok: false };
+        try {
+          await this.fetcher.head(entry.candidate, {
+            totalTimeoutMs: PUSH_MEDIA_HEAD_TIMEOUT_MS,
+            maxRedirects: PUSH_MEDIA_HEAD_MAX_REDIRECTS,
+          });
+          return { ...entry, ok: true };
+        } catch (err) {
+          this.logger.debug(
+            `push media unreachable, dropping: ${entry.candidate} (${(err as Error)?.message ?? err})`,
+          );
+          return { ...entry, ok: false, drop: 'unreachable' as const };
+        }
+      }),
+    );
+    return checks;
+  }
+
+  /**
    * Prepare a product's images for a push: absolutize + HEAD-verify.
    * Returns the verified list (order preserved — index 0 is the
    * primary image) plus drop counts. Records issues via SyncRunService
@@ -138,55 +187,26 @@ export class PushMediaService {
 
     const originResult = this.resolveMediaOrigin(args.tenantId ?? null);
     const origin = originResult?.origin ?? null;
+    const results = await this.verifyEntries(raw, origin);
 
-    const candidates: string[] = [];
+    const images: string[] = [];
     let droppedInvalid = 0;
+    let droppedUnreachable = 0;
     let droppedNoOrigin = 0;
     const invalidSamples: string[] = [];
-    for (const entry of raw) {
-      const classified = classifyImageEntry(entry);
-      if (classified.kind === 'absolute') {
-        candidates.push(classified.url);
+    for (const r of results) {
+      if (r.ok && r.candidate) {
+        images.push(r.candidate);
         continue;
       }
-      if (classified.kind === 'relative') {
-        if (origin) {
-          candidates.push(`${origin}${classified.path}`);
-          continue;
-        }
+      if (r.drop === 'invalid') {
+        droppedInvalid += 1;
+        if (invalidSamples.length < 2) invalidSamples.push(String(r.raw).slice(0, 120));
+      } else if (r.drop === 'no-origin') {
         droppedNoOrigin += 1;
-        continue;
+      } else if (r.drop === 'unreachable') {
+        droppedUnreachable += 1;
       }
-      droppedInvalid += 1;
-      if (invalidSamples.length < 2) {
-        invalidSamples.push(String(entry).slice(0, 120));
-      }
-    }
-
-    // Reachability: HEAD every candidate in parallel. The indexed map
-    // preserves order (primary image stays first) — a naive push in
-    // completion order would scramble primary vs gallery.
-    const checks = await Promise.all(
-      candidates.map(async (url) => {
-        try {
-          await this.fetcher.head(url, {
-            totalTimeoutMs: PUSH_MEDIA_HEAD_TIMEOUT_MS,
-            maxRedirects: PUSH_MEDIA_HEAD_MAX_REDIRECTS,
-          });
-          return { url, ok: true as const };
-        } catch (err) {
-          this.logger.debug(
-            `push media unreachable, dropping: ${url} (${(err as Error)?.message ?? err})`,
-          );
-          return { url, ok: false as const };
-        }
-      }),
-    );
-    const images: string[] = [];
-    let droppedUnreachable = 0;
-    for (const check of checks) {
-      if (check.ok) images.push(check.url);
-      else droppedUnreachable += 1;
     }
 
     await this.recordMediaOutcomes(args, {
@@ -207,6 +227,137 @@ export class PushMediaService {
       originResolved: origin !== null,
       origin,
     };
+  }
+
+  /**
+   * Prepare per-variant images for a push: the SAME absolutize +
+   * HEAD-verify core as parent images, keyed by variant SKU. Returns
+   * the verified absolute URL per SKU — a dropped image simply has no
+   * entry, so that variation pushes without an image (never a dead src,
+   * never a failed push).
+   *
+   * Variant outcomes record under VARIANT_MEDIA_* codes (never the
+   * parent MEDIA_* codes): the parent and variant batches share one
+   * issue row per code per product, so sharing codes would let one
+   * batch resolve the other's drop. One recording per batch, SKUs named
+   * in the message.
+   */
+  async preparePushVariantImages(args: {
+    storeId: string;
+    tenantId?: string | null;
+    productId: string;
+    entries: Array<{ sku: string; image: unknown }>;
+    runId?: string;
+  }): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const entries = (Array.isArray(args.entries) ? args.entries : []).filter(
+      (e) => e && typeof e.sku === 'string' && e.sku.length > 0,
+    );
+    // No variant images → no-op before any origin resolution or network call.
+    if (entries.length === 0) return out;
+
+    const originResult = this.resolveMediaOrigin(args.tenantId ?? null);
+    const origin = originResult?.origin ?? null;
+    const results = await this.verifyEntries(
+      entries.map((e) => e.image),
+      origin,
+    );
+    const dropped: Array<{ sku: string; drop: string }> = [];
+    results.forEach((r, i) => {
+      const sku = entries[i]!.sku;
+      if (r.ok && r.candidate) {
+        out.set(sku, r.candidate);
+        return;
+      }
+      dropped.push({ sku, drop: r.drop ?? 'invalid' });
+    });
+
+    await this.recordVariantMediaOutcomes(args, dropped);
+    return out;
+  }
+
+  private async recordVariantMediaOutcomes(
+    args: { storeId: string; productId: string; runId?: string },
+    dropped: Array<{ sku: string; drop: string }>,
+  ): Promise<void> {
+    if (!this.runs) return;
+    const { storeId, productId, runId } = args;
+    const objectKey = `product:${productId}`;
+    const byDrop = (kind: string) => dropped.filter((d) => d.drop === kind);
+    const skus = (list: Array<{ sku: string }>) =>
+      list.map((d) => d.sku).slice(0, 3).join(', ');
+    try {
+      const invalid = byDrop('invalid');
+      if (invalid.length > 0) {
+        await this.runs.upsertIssue({
+          storeId,
+          code: 'VARIANT_MEDIA_URL_INVALID',
+          objectType: 'PRODUCT',
+          objectKey,
+          productId,
+          message: `${invalid.length} variant image URL(s) could not be parsed and were not pushed (SKUs: ${skus(invalid)}).`,
+        });
+        await this.recordSkippedItem(
+          runId,
+          storeId,
+          productId,
+          `VARIANT_MEDIA_URL_INVALID:${invalid.length} variant image URL(s) unparseable — dropped from the push (SKUs: ${skus(invalid)})`,
+        );
+      } else {
+        await this.runs
+          .resolveIssue(storeId, 'VARIANT_MEDIA_URL_INVALID', objectKey, 'All variant image URLs parse.')
+          .catch(() => undefined);
+      }
+
+      const unreachable = byDrop('unreachable');
+      if (unreachable.length > 0) {
+        await this.runs.upsertIssue({
+          storeId,
+          code: 'VARIANT_MEDIA_UNREACHABLE',
+          objectType: 'PRODUCT',
+          objectKey,
+          productId,
+          message: `${unreachable.length} variant image(s) could not be reached at push time and were not pushed (SKUs: ${skus(unreachable)}); those variations were pushed without an image.`,
+        });
+        await this.recordSkippedItem(
+          runId,
+          storeId,
+          productId,
+          `VARIANT_MEDIA_UNREACHABLE:${unreachable.length} variant image(s) unreachable at push time — variations pushed without an image (SKUs: ${skus(unreachable)})`,
+        );
+      } else {
+        await this.runs
+          .resolveIssue(storeId, 'VARIANT_MEDIA_UNREACHABLE', objectKey, 'All pushed variant images reachable.')
+          .catch(() => undefined);
+      }
+
+      const noOrigin = byDrop('no-origin');
+      if (noOrigin.length > 0) {
+        await this.runs.upsertIssue({
+          storeId,
+          code: 'VARIANT_MEDIA_ORIGIN_UNRESOLVED',
+          objectType: 'PRODUCT',
+          objectKey,
+          productId,
+          message: `${noOrigin.length} relative variant image URL(s) could not be absolutized — no canonical tenant host could be resolved — and were not pushed (SKUs: ${skus(noOrigin)}).`,
+        });
+        await this.recordSkippedItem(
+          runId,
+          storeId,
+          productId,
+          `VARIANT_MEDIA_ORIGIN_UNRESOLVED:${noOrigin.length} relative variant image(s) dropped — no canonical tenant host (SKUs: ${skus(noOrigin)})`,
+        );
+      } else {
+        await this.runs
+          .resolveIssue(storeId, 'VARIANT_MEDIA_ORIGIN_UNRESOLVED', objectKey, 'Canonical tenant host resolved.')
+          .catch(() => undefined);
+      }
+    } catch (err) {
+      // Bookkeeping must never fail the push.
+      this.logger.warn(
+        `push variant media issue recording failed for product ${productId}: ${(err as Error)?.message ?? err}`,
+      );
+    }
   }
 
   private async recordMediaOutcomes(

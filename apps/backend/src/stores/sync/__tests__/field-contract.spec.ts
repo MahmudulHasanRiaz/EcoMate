@@ -100,6 +100,23 @@ describe('§8.11 field-contract matrix (P4)', () => {
     expect(matrixRowFor('publicationState')).toMatchObject({ override: false, audit: 'G' });
   });
 
+  it('Table B rows 13-14: variants carry the primary image (image wins, images[0] fallback, null when none)', () => {
+    const eco = readEcoMateFields({
+      sku: 'VAR-1',
+      images: [],
+      variants: [
+        { sku: 'V-1', price: '100', salePrice: null, isActive: true, image: '/uploads/var-s.jpg', images: ['/uploads/var-s.jpg'] },
+        { sku: 'V-2', price: '120', salePrice: null, isActive: true, image: null, images: ['/uploads/var-m.jpg'] },
+        { sku: 'V-3', price: '130', salePrice: null, isActive: true, image: null, images: [] },
+      ],
+    });
+    expect(eco.variants).toEqual([
+      expect.objectContaining({ sku: 'V-1', image: '/uploads/var-s.jpg' }),
+      expect.objectContaining({ sku: 'V-2', image: '/uploads/var-m.jpg' }),
+      expect.objectContaining({ sku: 'V-3', image: null }),
+    ]);
+  });
+
   it('Table B row 24: custom fields allowlisted, secrets structurally excluded', () => {
     expect(isAllowedCustomField('material')).toBe(true);
     for (const secret of ['apiKey', 'webhookSecret', 'private_token', 'password']) {

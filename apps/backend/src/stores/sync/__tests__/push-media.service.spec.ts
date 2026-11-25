@@ -327,6 +327,116 @@ describe('PushMediaService', () => {
     });
   });
 
+  describe('preparePushVariantImages', () => {
+    const args = (entries: Array<{ sku: string; image: unknown }>, runId = 'run-1') => ({
+      storeId: STORE_ID,
+      tenantId: TENANT_ID,
+      productId: PRODUCT_ID,
+      entries,
+      runId,
+    });
+
+    it('maps each SKU to its verified absolute URL (relative absolutized, absolute untouched)', async () => {
+      const fetcher = mockFetcher();
+      const svc = new PushMediaService(seededRegistry(), mockRuns() as any, fetcher as any);
+      const out = await svc.preparePushVariantImages(
+        args([
+          { sku: 'VAR-TEST-S', image: '/uploads/var-s.jpg' },
+          { sku: 'VAR-TEST-M', image: 'https://cdn.example.com/var-m.jpg' },
+        ]),
+      );
+      expect(out.get('VAR-TEST-S')).toBe(ABS('/uploads/var-s.jpg'));
+      expect(out.get('VAR-TEST-M')).toBe('https://cdn.example.com/var-m.jpg');
+      expect(fetcher.head).toHaveBeenCalledWith(ABS('/uploads/var-s.jpg'), expect.anything());
+      expect(fetcher.head).toHaveBeenCalledWith('https://cdn.example.com/var-m.jpg', expect.anything());
+    });
+
+    it('dead variant image → VARIANT_MEDIA_UNREACHABLE with the SKU named, other variant unaffected', async () => {
+      const runs = mockRuns();
+      const svc = new PushMediaService(
+        seededRegistry(),
+        runs as any,
+        mockFetcher((url) => !url.includes('var-m.jpg')) as any,
+      );
+      const out = await svc.preparePushVariantImages(
+        args([
+          { sku: 'VAR-TEST-S', image: '/uploads/var-s.jpg' },
+          { sku: 'VAR-TEST-M', image: '/uploads/var-m.jpg' },
+        ]),
+      );
+      expect(out.get('VAR-TEST-S')).toBe(ABS('/uploads/var-s.jpg'));
+      expect(out.has('VAR-TEST-M')).toBe(false);
+      const issue = (runs.upsertIssue as jest.Mock).mock.calls.find(
+        ([input]) => input.code === 'VARIANT_MEDIA_UNREACHABLE',
+      )?.[0];
+      expect(issue).toBeDefined();
+      expect(issue.message).toContain('VAR-TEST-M');
+      // Parent MEDIA_* codes are never touched by the variant batch.
+      expect((runs.upsertIssue as jest.Mock).mock.calls
+        .map(([input]) => input.code)
+        .filter((c) => !c.startsWith('VARIANT_'))).toEqual([]);
+      expect(runs.recordItem).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({
+          objectType: 'MEDIA',
+          status: 'SKIPPED',
+          reason: expect.stringContaining('VARIANT_MEDIA_UNREACHABLE'),
+        }),
+      );
+    });
+
+    it('unparseable variant image → VARIANT_MEDIA_URL_INVALID, valid one still maps', async () => {
+      const runs = mockRuns();
+      const svc = new PushMediaService(seededRegistry(), runs as any, mockFetcher() as any);
+      const out = await svc.preparePushVariantImages(
+        args([
+          { sku: 'VAR-TEST-S', image: 'not-a-url' },
+          { sku: 'VAR-TEST-M', image: '/uploads/var-m.jpg' },
+        ]),
+      );
+      expect(out.has('VAR-TEST-S')).toBe(false);
+      expect(out.get('VAR-TEST-M')).toBe(ABS('/uploads/var-m.jpg'));
+      expect(runs.upsertIssue).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'VARIANT_MEDIA_URL_INVALID', productId: PRODUCT_ID }),
+      );
+    });
+
+    it('no canonical domain → relative dropped with VARIANT_MEDIA_ORIGIN_UNRESOLVED, absolute still maps', async () => {
+      const runs = mockRuns();
+      const emptyRegistry = new TenantRegistryService();
+      emptyRegistry.setDomainConfig(DOMAIN_CONFIG);
+      const svc = new PushMediaService(emptyRegistry, runs as any, mockFetcher() as any);
+      const out = await svc.preparePushVariantImages({
+        storeId: STORE_ID,
+        tenantId: 'unknown-tenant',
+        productId: PRODUCT_ID,
+        entries: [
+          { sku: 'VAR-TEST-S', image: '/uploads/var-s.jpg' },
+          { sku: 'VAR-TEST-M', image: 'https://cdn.example.com/var-m.jpg' },
+        ],
+      });
+      expect(out.has('VAR-TEST-S')).toBe(false);
+      expect(out.get('VAR-TEST-M')).toBe('https://cdn.example.com/var-m.jpg');
+      expect(runs.upsertIssue).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'VARIANT_MEDIA_ORIGIN_UNRESOLVED', productId: PRODUCT_ID }),
+      );
+    });
+
+    it('empty entries → no-op: no origin resolution, no HEAD, no issues', async () => {
+      const registry = seededRegistry();
+      const resolveSpy = jest.spyOn(registry, 'resolveById');
+      const runs = mockRuns();
+      const fetcher = mockFetcher();
+      const svc = new PushMediaService(registry, runs as any, fetcher as any);
+      const out = await svc.preparePushVariantImages(args([]));
+      expect(out.size).toBe(0);
+      expect(resolveSpy).not.toHaveBeenCalled();
+      expect(fetcher.head).not.toHaveBeenCalled();
+      expect(runs.upsertIssue).not.toHaveBeenCalled();
+      expect(runs.recordItem).not.toHaveBeenCalled();
+    });
+  });
+
   describe('classifyImageEntry', () => {
     it.each([
       ['https://cdn.example.com/x.jpg', 'absolute'],

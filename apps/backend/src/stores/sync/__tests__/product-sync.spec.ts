@@ -575,6 +575,101 @@ describe('push media (P0)', () => {
   });
 });
 
+describe('variable variant images (GAP 3, 2026-11-25)', () => {
+  const SIZE_ROWS = [
+    { id: 'av-size-s', value: 'S', attribute: { name: 'Size' } },
+    { id: 'av-size-m', value: 'M', attribute: { name: 'Size' } },
+  ];
+
+  function variableWithImages(variants: Array<Record<string, unknown>>) {
+    return {
+      type: 'variable',
+      sku: 'VAR-TEST-001',
+      name: 'Variable Push Test',
+      variants,
+    };
+  }
+
+  function sizeVariant(id: string, sku: string, price: string, image: string | null) {
+    return {
+      id,
+      sku,
+      price,
+      salePrice: null,
+      isActive: true,
+      attributeValues: [{ attributeValueId: `av-size-${sku.endsWith('-S') ? 's' : 'm'}` }],
+      image,
+      images: image ? [image] : [],
+    };
+  }
+
+  it('variant images push as absolute faah.net URLs, distinct per variant', async () => {
+    const { svc, runId, fake, prisma, head } = setupWithMedia(
+      variableWithImages([
+        sizeVariant('v1', 'VAR-TEST-S', '100', '/uploads/var-s.jpg'),
+        sizeVariant('v2', 'VAR-TEST-M', '120', '/uploads/var-m.jpg'),
+      ]),
+      null,
+    );
+    (prisma as any).attributeValue = { findMany: jest.fn(async () => SIZE_ROWS) };
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+
+    const created = fake.findBySku('VAR-TEST-001')!;
+    // The REAL pushed values live on the variant slots (syncVariants),
+    // not the inert `variants` field value.
+    expect(created.variants.get('VAR-TEST-S')?.data).toMatchObject({
+      attributes: { Size: 'S' },
+      image: absMedia('/uploads/var-s.jpg'),
+    });
+    expect(created.variants.get('VAR-TEST-M')?.data).toMatchObject({
+      attributes: { Size: 'M' },
+      image: absMedia('/uploads/var-m.jpg'),
+    });
+    expect(head).toHaveBeenCalledWith(absMedia('/uploads/var-s.jpg'), expect.anything());
+    expect(head).toHaveBeenCalledWith(absMedia('/uploads/var-m.jpg'), expect.anything());
+  });
+
+  it('HEAD-fail variant image → VARIANT_MEDIA_UNREACHABLE + variation pushes imageless, other variant keeps its image', async () => {
+    const { svc, runId, fake, prisma, issues, items } = setupWithMedia(
+      variableWithImages([
+        sizeVariant('v1', 'VAR-TEST-S', '100', '/uploads/var-s.jpg'),
+        sizeVariant('v2', 'VAR-TEST-M', '120', '/uploads/var-m.jpg'),
+      ]),
+      null,
+      { headOk: (url: string) => !url.includes('var-m.jpg') },
+    );
+    (prisma as any).attributeValue = { findMany: jest.fn(async () => SIZE_ROWS) };
+    const res = await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+
+    expect(fake.productCount()).toBe(1);
+    expect(res.pushed).toContain('name');
+    const created = fake.findBySku('VAR-TEST-001')!;
+    expect(created.variants.get('VAR-TEST-S')?.data.image).toBe(absMedia('/uploads/var-s.jpg'));
+    expect(created.variants.get('VAR-TEST-M')?.data).not.toHaveProperty('image');
+    expect(issues.some((i) => i.code === 'VARIANT_MEDIA_UNREACHABLE')).toBe(true);
+    const skipped = items.find(
+      (i: any) =>
+        i.objectType === 'MEDIA' &&
+        i.status === 'SKIPPED' &&
+        String(i.reason).includes('VARIANT_MEDIA_UNREACHABLE') &&
+        String(i.reason).includes('VAR-TEST-M'),
+    );
+    expect(skipped).toBeDefined();
+  });
+
+  it('variant without an image pushes with no image key', async () => {
+    const { svc, runId, fake, prisma } = setupWithMedia(
+      variableWithImages([sizeVariant('v1', 'VAR-TEST-S', '100', null)]),
+      null,
+    );
+    (prisma as any).attributeValue = { findMany: jest.fn(async () => SIZE_ROWS) };
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+
+    const created = fake.findBySku('VAR-TEST-001')!;
+    expect(created.variants.get('VAR-TEST-S')?.data).not.toHaveProperty('image');
+  });
+});
+
 describe('findRemoteBySku (P1 SKU probe, G-9)', () => {
   // The Fake's own findBySku is an introspection helper with a different
   // signature (sku) → FakeRemoteProduct, so the probe tests override it

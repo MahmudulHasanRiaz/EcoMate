@@ -21,7 +21,7 @@ import { StoresService } from '../stores.service';
 // registry/runs/queues/stores — never product-sync.
 import { StockStatusSyncService } from './stock-status-sync.service';
 import { hashFieldValue } from '../providers/field-snapshot';
-import { FIELD_MATRIX, matrixRowFor, readEcoMateFields, assertSyncedFieldsSubset } from './field-matrix';
+import { FIELD_MATRIX, matrixRowFor, readEcoMateFields, assertSyncedFieldsSubset, variantPrimaryImage } from './field-matrix';
 import { classifyProviderError, RETRY_BACKOFF_MS, MAX_SYNC_ATTEMPTS } from '../providers/retry-classifier';
 import { SyncRunService } from './sync-run.service';
 import { CategorySyncService } from './category-sync.service';
@@ -32,6 +32,30 @@ export const SYNC_FANOUT_CONCURRENCY_DEFAULT = 5;
 
 function sha(input: string): string {
   return createHash('sha256').update(input).digest('hex');
+}
+
+/**
+ * Parent attribute definitions from `withVariantAttributeNames` output
+ * (`{sku, attributes: {Size: 'S'}}` per variant): one entry per attribute
+ * name, options = the distinct values across variants, in first-seen
+ * order (the merchant's variant order — not sorted, so S stays before
+ * M). Empty values are dropped — Woo rejects an empty option.
+ * Exported for specs.
+ */
+export function variantAttributeDefsFromDecorated(
+  decorated: Array<Record<string, unknown>>,
+): Array<{ name: string; options: string[] }> {
+  const byName = new Map<string, Set<string>>();
+  for (const v of decorated ?? []) {
+    const attrs = (v as any)?.attributes;
+    if (!attrs || typeof attrs !== 'object') continue;
+    for (const [name, value] of Object.entries(attrs as Record<string, unknown>)) {
+      if (!name || value === undefined || value === null || String(value) === '') continue;
+      if (!byName.has(name)) byName.set(name, new Set<string>());
+      byName.get(name)!.add(String(value));
+    }
+  }
+  return [...byName.entries()].map(([name, values]) => ({ name, options: [...values] }));
 }
 
 @Injectable()
@@ -139,6 +163,38 @@ export class ProductSyncService {
       pushImages = prepared.images;
       ecoFields.primaryImage = pushImages[0] ?? null;
       ecoFields.galleryImages = pushImages.slice(1);
+    }
+
+    // Variant images (GAP 3, variable push 2026-11-25): the SAME
+    // absolutize + HEAD-verify treatment as parent images, keyed by
+    // variant SKU. A dropped image simply has no entry — syncVariants
+    // pushes that variation without an image (never a dead src, never
+    // a failed push). Runs only for variable products with a
+    // media-capable provider and a PushMediaService wired; specs that
+    // construct the service without it keep today's behaviour (no
+    // variant image). Keyed (not positional) so a drop can never
+    // mis-assign one variant's image to another.
+    const variantImageBySku = new Map<string, string>();
+    if (
+      this.pushMedia &&
+      caps.media === true &&
+      product.type === 'variable' &&
+      Array.isArray(product.variants) &&
+      product.variants.length > 0
+    ) {
+      const entries = (product.variants as any[])
+        .map((v: any) => ({ sku: typeof v?.sku === 'string' ? v.sku : '', image: variantPrimaryImage(v) }))
+        .filter((e) => e.sku.length > 0 && e.image !== null);
+      if (entries.length > 0) {
+        const prepared = await this.pushMedia.preparePushVariantImages({
+          storeId,
+          tenantId: store.tenantId ?? null,
+          productId,
+          entries: entries as Array<{ sku: string; image: unknown }>,
+          runId,
+        });
+        for (const [sku, url] of prepared) variantImageBySku.set(sku, url);
+      }
     }
 
     // Category first (§8.9): resolve the tenant categoryId to the MAPPED
@@ -288,6 +344,27 @@ export class ProductSyncService {
         (pushPayload as any).variants,
       );
     }
+    // GAP 1 (variable push, 2026-11-25): parent attribute DEFINITIONS
+    // for Woo. The variants/variantAttributes matrix rows are inert for
+    // Woo — no remote snapshot exists, so the field loop preserves them
+    // on every update and pushPayload.variants is absent there — so the
+    // definitions are derived here from the CURRENT variants and ride
+    // the parent upsert on create AND update, before syncVariants POSTs
+    // variations that reference them. Attribute data is EcoMate-
+    // authoritative here, the same as the variants syncVariants pushes
+    // unconditionally (a wp-admin attribute edit is overwritten the
+    // same way a wp-admin variant price edit is — the field loop cannot
+    // see either, since Woo returns no variant snapshots).
+    if (product.type === 'variable' && Array.isArray(product.variants) && product.variants.length > 0) {
+      const decorated = Array.isArray((pushPayload as any).variants)
+        ? ((pushPayload as any).variants as any[])
+        : await this.withVariantAttributeNames(
+            product,
+            (product.variants as any[]).map((v: any) => ({ sku: v.sku })),
+          );
+      const defs = variantAttributeDefsFromDecorated(decorated);
+      if (defs.length > 0) (pushPayload as any).__variantAttributeDefs = defs;
+    }
     if (!mapping) {
       const ref = await provider.upsertProduct(storeWithSecrets, pushPayload as any, pushFields);
       mapping = await this.prisma.storeProductMapping.create({
@@ -336,7 +413,7 @@ export class ProductSyncService {
     }
 
     // Variants: add/update; removal per variantDelete.
-    await this.syncVariants(storeId, provider, storeWithSecrets, product, mapping, runId);
+    await this.syncVariants(storeId, provider, storeWithSecrets, product, mapping, runId, variantImageBySku);
 
     // Fresh mapping (created or adopted above) → the remote never received
     // a stock projection. Kick AFTER variant mappings exist, else variant
@@ -460,9 +537,27 @@ export class ProductSyncService {
           results.push({ field, ok: false, reason: `CAPABILITY_UNSUPPORTED: ${row.capability}` });
           continue;
         }
+        // Force EcoMate Value on variantAttributes must also carry the
+        // parent definitions (GAP 1) — without them the override pushes
+        // the raw EcoMate value (attribute-value ids) which the Woo
+        // mapper ignores, so the override would "succeed" while changing
+        // nothing remotely.
+        const overridePayload: Record<string, unknown> = {
+          sku: (product as any).sku ?? undefined,
+          [field]: (ecoFields as any)[field],
+          __externalId: mapping.externalId,
+        };
+        if (field === 'variantAttributes' && product.type === 'variable') {
+          const decorated = await this.withVariantAttributeNames(
+            product,
+            ((ecoFields as any).variants as any[]) ?? [],
+          );
+          const defs = variantAttributeDefsFromDecorated(decorated);
+          if (defs.length > 0) overridePayload.__variantAttributeDefs = defs;
+        }
         await provider.upsertProduct(
           storeWithSecrets,
-          { sku: (product as any).sku ?? undefined, [field]: (ecoFields as any)[field], __externalId: mapping.externalId } as any,
+          overridePayload as any,
           [field],
         );
         const ecoHash = hashFieldValue((ecoFields as any)[field]);
@@ -755,6 +850,7 @@ export class ProductSyncService {
   private async syncVariants(
     storeId: string, provider: any, storeWithSecrets: any,
     product: any, mapping: any, runId: string,
+    variantImageBySku?: Map<string, string>,
   ) {
     const variants = product.variants ?? [];
     if (product.type !== 'variable' || variants.length === 0 || !mapping) return;
@@ -779,6 +875,13 @@ export class ProductSyncService {
         price: v.price !== null && v.price !== undefined ? String(v.price) : undefined,
         salePrice: v.salePrice !== null && v.salePrice !== undefined ? String(v.salePrice) : undefined,
         isActive: v.isActive,
+        // GAP 3: the PushMediaService-verified absolute image URL for
+        // this variant (or nothing — a dropped/unset image means the
+        // variation pushes without one). withVariantAttributeNames
+        // spreads entries, so this survives decoration below.
+        ...(variantImageBySku?.get(v.sku)
+          ? { image: variantImageBySku.get(v.sku) }
+          : {}),
         ...(externalByVariantId.get(v.id)
           ? { __externalVariantId: externalByVariantId.get(v.id) }
           : {}),
