@@ -1,0 +1,10 @@
+-- Rollback for 20261125150000_variant_image_primary_repair.
+--
+-- There is intentionally no reverse statement: the forward migration only
+-- converges `image` to `images[0]` on rows where the two disagreed, and
+-- the pre-repair `image` values were the stale divergence itself — they
+-- are not recorded anywhere, and restoring them would reintroduce the bug
+-- (a replaced variant image going stale on re-push). The repair is
+-- idempotent and safe to leave applied; the write-layer fix alongside it
+-- keeps the columns in agreement from here on.
+-- (No-op by design.)

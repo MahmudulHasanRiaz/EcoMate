@@ -2725,6 +2725,14 @@ export class ProductsService {
     if (dto.standardCost !== undefined) data.standardCost = dto.standardCost;
     if (dto.image !== undefined) data.image = dto.image;
     if (dto.images !== undefined) data.images = dto.images as any;
+    // Defence in depth: the push path reads the variant primary with
+    // `image` winning over `images[0]` (variantPrimaryImage), so an
+    // images-only write must keep the two columns in agreement — else a
+    // replaced variant image goes stale on every later push (live:
+    // VAR-TEST-001 S re-uploaded the first-picked file on re-push).
+    if (dto.images !== undefined && dto.image === undefined) {
+      data.image = dto.images[0] ?? null;
+    }
     const updated = await this.prisma.productVariant.update({
       where: { id: variantId },
       data,

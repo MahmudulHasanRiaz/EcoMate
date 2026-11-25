@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 
 const mockGet = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
+const mockUpdateVariant = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: {} })))
 const mockProductGet = vi.hoisted(() => vi.fn())
 const mockToastError = vi.hoisted(() => vi.fn())
 
@@ -76,7 +77,7 @@ vi.mock('@/features/products/api', () => ({
     publishDraft: vi.fn(),
     delete: vi.fn(),
     generateVariants: vi.fn(),
-    updateVariant: vi.fn(),
+    updateVariant: mockUpdateVariant,
     reorderVariants: vi.fn(),
     removeAllVariants: vi.fn(),
     removeVariant: vi.fn(),
@@ -207,6 +208,7 @@ describe('ProductForm edit-mode initialization (staging regression)', () => {
     })
     mockProductGet.mockImplementation(() => Promise.resolve({ data: FULL_PRODUCT }))
     mockUpdate.mockImplementation(() => Promise.resolve({ data: { ...FULL_PRODUCT } }))
+    mockUpdateVariant.mockImplementation(() => Promise.resolve({ data: {} }))
   })
 
   it('fills every persisted field from the full product once the GET resolves', async () => {
@@ -320,6 +322,43 @@ describe('ProductForm edit-mode initialization (staging regression)', () => {
 
     await expect.element(ui.getByText('VAR-1-RED')).toBeInTheDocument()
     await expect.element(ui.getByText('Variants (1)')).toBeInTheDocument()
+  })
+
+  it('variant image manager save sends image alongside images in server mode (staleness fix, 2026-11-25)', async () => {
+    const NEW1 = 'https://cdn.example.com/var-new.jpg'
+    const NEW2 = 'https://cdn.example.com/var-new2.jpg'
+    const OLD = 'https://cdn.example.com/var-old.jpg'
+    // Diverged row, as the live VAR-TEST-001 S was: `images` moved on to
+    // the new file while `image` still holds the first-picked one. The
+    // push reads `image` first, so the save must send both.
+    mockProductGet.mockImplementation(() =>
+      Promise.resolve({
+        data: {
+          ...VARIABLE_PRODUCT,
+          variants: [{ ...VARIABLE_PRODUCT.variants[0], images: [NEW1, NEW2], image: OLD }],
+        },
+      }),
+    )
+    const ui = await renderForm({ ...LIST_ROW, id: 'p2', name: 'Var Product', type: 'variable', sku: 'VAR-1', variants: [] })
+
+    await expect.element(ui.getByPlaceholder('Product name')).toHaveValue('Var Product')
+    await userEvent.click(ui.getByRole('tab', { name: 'Variants' }))
+    await expect.element(ui.getByText('VAR-1-RED')).toBeInTheDocument()
+
+    // Open the variant image manager from the row thumbnail (the only
+    // .shrink-0.cursor-pointer in the mounted Variants tab).
+    const thumbs = document.querySelectorAll('.shrink-0.cursor-pointer')
+    expect(thumbs).toHaveLength(1)
+    await userEvent.click(thumbs[0] as HTMLElement)
+    await expect.element(ui.getByRole('button', { name: 'Save Images' })).toBeInTheDocument()
+    await userEvent.click(ui.getByRole('button', { name: 'Save Images' }))
+
+    await vi.waitFor(() => {
+      expect(mockUpdateVariant).toHaveBeenCalledWith('p2', 'v-1', {
+        images: [NEW1, NEW2],
+        image: NEW1,
+      })
+    })
   })
 
   it('validation errors point at the tab and the field (SEO title)', async () => {

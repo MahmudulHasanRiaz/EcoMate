@@ -1321,6 +1321,76 @@ describe('ProductsService', () => {
         data: { standardCost: 450 },
       });
     });
+
+    it('derives image from images[0] when the DTO carries images only (variant-image staleness fix, 2026-11-25)', async () => {
+      (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue(
+        mockVariant,
+      );
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({
+        ...mockVariant,
+        images: ['new.jpg'],
+        image: 'new.jpg',
+      });
+      (media.syncEntityImages as jest.Mock).mockResolvedValue(['new.jpg']);
+
+      await service.updateVariant('prod-1', 'variant-1', {
+        images: ['new.jpg'],
+      });
+
+      // The push path reads `image` first (variantPrimaryImage), so an
+      // images-only write must keep the two columns in agreement — else
+      // a replaced variant image goes stale on every later push.
+      expect(prisma.productVariant.update).toHaveBeenCalledWith({
+        where: { id: 'variant-1' },
+        data: { images: ['new.jpg'], image: 'new.jpg' },
+      });
+      expect(media.syncEntityImages).toHaveBeenCalledWith(
+        'variant',
+        'variant-1',
+        ['new.jpg'],
+      );
+    });
+
+    it('derives image null when images is emptied', async () => {
+      (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue(
+        mockVariant,
+      );
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({
+        ...mockVariant,
+        images: [],
+        image: null,
+      });
+      (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
+
+      await service.updateVariant('prod-1', 'variant-1', { images: [] });
+
+      expect(prisma.productVariant.update).toHaveBeenCalledWith({
+        where: { id: 'variant-1' },
+        data: { images: [], image: null },
+      });
+    });
+
+    it('an explicit image still wins over images[0]', async () => {
+      (prisma.productVariant.findFirst as jest.Mock).mockResolvedValue(
+        mockVariant,
+      );
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({
+        ...mockVariant,
+        images: ['a.jpg'],
+        image: 'b.jpg',
+      });
+      (media.syncEntityImages as jest.Mock).mockResolvedValue(['a.jpg']);
+
+      await service.updateVariant('prod-1', 'variant-1', {
+        images: ['a.jpg'],
+        image: 'b.jpg',
+      });
+
+      expect(prisma.productVariant.update).toHaveBeenCalledWith({
+        where: { id: 'variant-1' },
+        data: { images: ['a.jpg'], image: 'b.jpg' },
+      });
+    });
   });
 
   describe('generateVariants', () => {

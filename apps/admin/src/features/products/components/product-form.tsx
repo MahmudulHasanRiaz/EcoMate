@@ -1070,7 +1070,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       updateVariantMut.mutate({
         id: currentRow?.id || createdProductId!,
         variantId,
-        data: { images: mgrImages },
+        data: { images: mgrImages, image: mgrImages[0] || null },
       }, {
         onSuccess: () => setVariantImgMgr(null),
       })
@@ -1986,7 +1986,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                         updateVariantMut.mutate({
                           id: currentRow.id,
                           variantId: activeVariantId,
-                          data: { images: urls },
+                          data: { images: urls, image: urls[0] || null },
                         })
                       }
                       setVariantPickerOpen(false)

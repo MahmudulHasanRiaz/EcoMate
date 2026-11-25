@@ -22,6 +22,9 @@ import { CategorySyncService } from '../category-sync.service';
 import { ProductSyncService } from '../product-sync.service';
 import { PushMediaService } from '../push-media.service';
 import { TenantRegistryService } from '../../../tenancy/tenant-registry.service';
+import { WooCommerceProvider } from '../../providers/woocommerce.provider';
+import { MockFetch, buildStoreUnit, jsonResponse } from '../../providers/__tests__/fixtures';
+import { ProductsService } from '../../../products/products.service';
 import { hashFieldValue } from '../../providers/field-snapshot';
 import { ProviderErrorCategory } from '../../../marketing/ad-provider.adapter';
 
@@ -667,6 +670,206 @@ describe('variable variant images (GAP 3, 2026-11-25)', () => {
 
     const created = fake.findBySku('VAR-TEST-001')!;
     expect(created.variants.get('VAR-TEST-S')?.data).not.toHaveProperty('image');
+  });
+});
+
+/**
+ * Variant-image staleness repair (2026-11-25). The live failure: VAR-TEST-001
+ * S was first pushed with a broken webp, its image was replaced in EcoMate,
+ * but every re-push re-sent the stale primary because the admin save wrote
+ * only `images` and the push reads `image` first. This suite proves the
+ * whole chain with the REAL WooCommerceProvider against a fake Woo
+ * (request-body assertions): first push sends the stale file, an
+ * images-only updateVariant heals the stored row, and the re-push PUT
+ * carries the new image — with the old filename in no request body.
+ */
+describe('variant image staleness repair (2026-11-25)', () => {
+  const OLD_IMG = '/uploads/var-s-old.webp';
+  const NEW_IMG = '/uploads/var-s-new.jpg';
+  const SIZE_ROWS = [
+    { id: 'av-size-s', value: 'S', attribute: { name: 'Size' } },
+  ];
+
+  /** Minimal fake Woo: product create/update + variation create/update. */
+  function fakeWooReal() {
+    const mock = new MockFetch();
+    const variations = new Map<string, Record<string, unknown>>();
+    let varSeq = 300;
+    mock.onAll((url, init) => {
+      const method = init?.method ?? 'GET';
+      if (url.includes('/products?sku=')) return jsonResponse(200, []);
+      const varMatch = /\/products\/(\d+)\/variations(?:\/(\d+))?$/.exec(url);
+      if (varMatch) {
+        const vid = varMatch[2];
+        if (method === 'POST' && !vid) {
+          varSeq += 1;
+          const id = String(varSeq);
+          variations.set(id, JSON.parse((init?.body as string) ?? '{}'));
+          return jsonResponse(201, { id: Number(id) });
+        }
+        if (method === 'PUT' && vid) {
+          if (!variations.has(vid)) {
+            return jsonResponse(404, { code: 'rest_post_invalid_id', message: 'Invalid post ID.' });
+          }
+          variations.set(vid, JSON.parse((init?.body as string) ?? '{}'));
+          return jsonResponse(200, { id: Number(vid) });
+        }
+        return jsonResponse(405, { code: 'rest_method_not_allowed' });
+      }
+      if (url.endsWith('/products') && method === 'POST') {
+        return jsonResponse(201, { id: 200 });
+      }
+      if (/\/products\/\d+$/.test(url) && method === 'PUT') {
+        return jsonResponse(200, { id: 200 });
+      }
+      return jsonResponse(404, { message: 'no mock' });
+    });
+    return mock;
+  }
+
+  function variationBodies(mock: MockFetch, method: string): Record<string, unknown>[] {
+    const pattern = method === 'POST' ? /\/variations$/ : /\/variations\/\d+$/;
+    return mock.calls
+      .filter((c) => (c.init as any)?.method === method && pattern.test(c.url))
+      .map((c) => JSON.parse(String((c.init as any)?.body ?? '{}')));
+  }
+
+  function setupStaleChain() {
+    const { prisma, fieldStates, productMappings, issues, items, attempts } = mockPrisma();
+    // Mutable product row shared by ProductsService + ProductSyncService,
+    // so the updateVariant write is what the later syncProduct reads.
+    const variant: any = {
+      id: 'v1',
+      productId: PRODUCT_ID,
+      sku: 'VAR-TEST-S',
+      price: '100',
+      salePrice: null,
+      isActive: true,
+      managedStockQuantity: 10,
+      attributeValues: [{ attributeValueId: 'av-size-s' }],
+      image: OLD_IMG,
+      images: [NEW_IMG],
+    };
+    const product: any = {
+      id: PRODUCT_ID,
+      name: 'Variable Push Test',
+      slug: 'variable-push-test',
+      type: 'variable',
+      description: 'Full',
+      shortDesc: 'Short',
+      basePrice: '100',
+      salePrice: null,
+      sku: 'VAR-TEST-001',
+      isActive: true,
+      status: 'active',
+      categoryId: null,
+      brandId: null,
+      brand: null,
+      tags: [],
+      productTags: [],
+      images: [],
+      seoMeta: {},
+      variants: [variant],
+      productCategories: [],
+    };
+    (prisma.product.findUnique as jest.Mock).mockImplementation(async () => product);
+    // This file's mockPrisma defines only product.findUnique — the
+    // updateVariant path also needs findFirst/update (syncEffectivePrice).
+    (prisma as any).product.findFirst = jest.fn(async () => ({
+      type: 'variable',
+      basePrice: 100,
+      salePrice: null,
+      effectivePrice: 100,
+    }));
+    (prisma as any).product.update = jest.fn(async () => product);
+    (prisma as any).productVariant = {
+      findFirst: jest.fn(async () => variant),
+      findMany: jest.fn(async () => [{ price: 100, salePrice: null }]),
+      update: jest.fn(async ({ data }: any) => {
+        Object.assign(variant, data);
+        return variant;
+      }),
+    };
+    (prisma.store.findUnique as jest.Mock).mockResolvedValue({
+      id: STORE_ID,
+      kind: 'WOOCOMMERCE',
+      name: 'Woo',
+      settings: {},
+      tenantId: TENANT_ID,
+    });
+    (prisma as any).attributeValue = {
+      findMany: jest.fn(async () => SIZE_ROWS),
+    };
+
+    const mediaMock: any = {
+      syncEntityImages: jest.fn(async () => [NEW_IMG]),
+    };
+    const productsSvc = new ProductsService(
+      prisma as any,
+      mediaMock,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    const mock = fakeWooReal();
+    const provider = new WooCommerceProvider(mock.fetch);
+    const registry = new TenantRegistryService();
+    registry.setDomainConfig(MEDIA_DOMAIN_CONFIG);
+    registry.replace([
+      { id: TENANT_ID, slug: TENANT_SLUG, status: 'ACTIVE', hosts: [`${TENANT_SLUG}.staging.faah.net`] },
+    ]);
+    const head = jest.fn(async (url: string) => ({
+      statusCode: 200,
+      contentType: 'image/jpeg',
+      finalUrl: url,
+    }));
+    const runs = new SyncRunService(prisma);
+    const pushMedia = new PushMediaService(registry, runs, { head } as any);
+    const registrySvc: any = { providerFor: () => provider };
+    const storesStub: any = {
+      storeWithSecrets: async () => buildStoreUnit('WOOCOMMERCE'),
+    };
+    const svc = new ProductSyncService(
+      prisma,
+      registrySvc,
+      new FieldOwnershipService(),
+      new DistributionService(prisma, new StoreAvailabilityService()),
+      runs,
+      new CategorySyncService(prisma, runs),
+      storesStub,
+      undefined,
+      pushMedia,
+    );
+    return { prisma, productsSvc, svc, mock, variant, fieldStates, productMappings, issues, items, attempts, head };
+  }
+
+  it('images-only updateVariant heals the primary, and the re-push PUT carries the new image', async () => {
+    const { productsSvc, svc, mock, variant } = setupStaleChain();
+
+    // First push sends the stale pre-repair shape (old primary wins).
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-1');
+    const firstPosts = variationBodies(mock, 'POST');
+    expect(firstPosts).toHaveLength(1);
+    expect(firstPosts[0]!.image).toEqual({ src: absMedia(OLD_IMG) });
+
+    // The images-only update heals the stored row (fix 2).
+    await productsSvc.updateVariant(PRODUCT_ID, 'v1', { images: [NEW_IMG] });
+    expect(variant.image).toBe(NEW_IMG);
+    expect(variant.images).toEqual([NEW_IMG]);
+
+    // Re-push: variation PUT carries the NEW image; the old filename
+    // appears in no request body at all.
+    mock.calls.length = 0;
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, 'run-2');
+    const puts = variationBodies(mock, 'PUT');
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.image).toEqual({ src: absMedia(NEW_IMG) });
+    expect(
+      mock.calls.some((c) => JSON.stringify((c.init as any)?.body ?? '').includes('var-s-old')),
+    ).toBe(false);
   });
 });
 
