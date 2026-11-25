@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { HelpCenterPage } from '@/features/help-center'
 
 export const Route = createFileRoute('/_authenticated/op/help-center/')({
-  component: () => <div className='p-8'>Operational Help Center (Coming Soon)</div>,
+  component: HelpCenterPage,
 })
