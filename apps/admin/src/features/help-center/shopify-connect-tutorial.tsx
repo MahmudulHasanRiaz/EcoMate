@@ -1,11 +1,11 @@
 /**
  * Shopify connect tutorial — static Help Center content (no CMS, no backend).
  *
- * Live-proven on the test store (ecomate-test) 2026-11-25: custom app in the
- * Shopify store admin, Client ID + Client Secret connect, Test Connection
+ * Live-proven on the test store (ecomate-test) 2026-11-25/26: custom app in
+ * the Shopify store admin, Client ID + Client Secret connect, Test Connection
  * auto-creates the 4 webhooks, product push works, orders auto-arrive as
- * Pending, Cancelled push works. Delivered → Fulfilled is NOT working yet
- * (dead endpoint, fix pending) — so this tutorial never claims it.
+ * Pending, Cancelled push works. Delivered → Fulfilled works too — Shopify
+ * order #1003 Fulfilled in ~2 min, live-proven 2026-11-26.
  *
  * Language: simple Bangla, Smart Mix — Shopify/EcoMate UI terms stay in
  * ENGLISH exactly as they appear on screen.
@@ -259,11 +259,10 @@ export function ShopifyConnectTutorial() {
           <li>
             EcoMate-te order Cancel korle Shopify-teo Cancelled hoy
           </li>
+          <li>
+            EcoMate-te order Delivered korle Shopify-te Fulfilled hoy
+          </li>
         </ul>
-        <Note>
-          Ekta kaj ekhono ashe nai: EcoMate-te order Delivered korle Shopify-te
-          ekhono Fulfilled hoy na — eta amra thik korchi.
-        </Note>
       </section>
 
       <section aria-label="Somossha hole" className="space-y-2">
