@@ -218,7 +218,6 @@ model betterAuthUser {
 
   accounts  betterAuthAccount[]
   sessions  betterAuthSession[]
-  customerProfile CustomerProfile?
   employee  Employee?
 
   @@map("better_auth_users")
@@ -345,7 +344,15 @@ model CustomerProfile {
   lastOrderIp String?
   lastOrderAt DateTime?
 
-  betterAuthUser betterAuthUser?   @relation(fields: [betterAuthUserId], references: [id], onDelete: SetNull)
+  // NOTE (2026-11-26, central-auth link-back): `betterAuthUserId` holds the
+  // CENTRAL user id after script 03 runs, and the central id has no row in
+  // the tenant-local `better_auth_users` table — so this column deliberately
+  // carries NO @relation / FK (the FK `CustomerProfile_betterAuthUserId_fkey`
+  // was dropped by migration 20261126174952_drop_customerprofile_betterauthuser_fk:
+  // it P2003'd the first link-back write on staging). The column stays
+  // @unique; lookups are by the scalar id only — no code ever selected the
+  // relation (verified 2026-11-26: zero `betterAuthUser` selects on
+  // CustomerProfile anywhere in backend/auth-service/platform-api).
   orders    Order[]
   addresses Address[]
   // Customer-owned, reusable address book. Independent from Order.shippingAddress

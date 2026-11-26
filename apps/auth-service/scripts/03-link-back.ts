@@ -5,6 +5,19 @@
  *   `UserProfile.betterAuthUserId`, `Employee.betterAuthUserId`,
  *   `CustomerProfile.betterAuthUserId`.
  *
+ * Employee link-back is DEFERRED (2026-11-26): `Employee.betterAuthUserId`
+ * still carries a DB FK to the tenant-local `better_auth_users` table, and
+ * the `Employee.betterAuthUser` relation is load-bearing in production code
+ * (commissions name/avatar, attendance-device mappings, staff-performance
+ * email resolution) — so the FK cannot be dropped without first reworking
+ * those reads. That rework belongs to Phase 5, when the legacy BA tables
+ * are deleted. Until then, employee rows whose stored id differs from the
+ * central target are SKIPPED (`employees_deferred_fk`), never attempted:
+ * a violating write P2003s and kills the run before the report is written
+ * (exactly what happened to CustomerProfile on staging, 2026-11-26 — its
+ * FK had no code usage and was dropped instead). Rows already equal to the
+ * central target still count as alreadyPresent (no write, no violation).
+ *
  * The central id is resolved by EMAIL lookup against the central `user`
  * table (the id script 01 assigned), never from a stale file — so this
  * script is independently re-runnable. Rows whose source id already equals
@@ -124,6 +137,16 @@ async function main(): Promise<void> {
           }
           if (row.betterAuthUserId === target) {
             bump(report.alreadyPresent, label);
+            continue;
+          }
+          // Employee link-back deferred (see header): the FK to the
+          // tenant-local better_auth_users table would P2003 on any
+          // central id with no local row. Skip — never attempt the write.
+          if (model === 'employee') {
+            bump(report.skipped, 'employees_deferred_fk');
+            report.notes.push(
+              `employee ${row.id} (tenant ${t.slug}): skipped — link-back deferred, FK to local better_auth_users blocks central ids (Phase 5)`,
+            );
             continue;
           }
           updates.push({ id: row.id, target });

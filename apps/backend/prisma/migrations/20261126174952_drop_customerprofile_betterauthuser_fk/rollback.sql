@@ -1,0 +1,16 @@
+-- Rollback for 20261126174952_drop_customerprofile_betterauthuser_fk.
+--
+-- Re-adds the FK exactly as the 0001_saas_baseline created it
+-- (migration.sql line 5819):
+--   ALTER TABLE "CustomerProfile" ADD CONSTRAINT
+--   "CustomerProfile_betterAuthUserId_fkey" FOREIGN KEY ("betterAuthUserId")
+--   REFERENCES "better_auth_users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+--
+-- WARNING: rolling back is only safe while every CustomerProfile row's
+-- betterAuthUserId either is NULL or references a row in the tenant-local
+-- better_auth_users table. After script 03 link-back runs, rows hold
+-- CENTRAL user ids with no local row — re-adding the FK would FAIL on
+-- those rows (P2003 at ADD CONSTRAINT time). Do NOT roll back after a
+-- link-back; if the link-back must be undone, restore the old ids from
+-- migration-mapping.json FIRST, then re-add the constraint.
+ALTER TABLE "CustomerProfile" ADD CONSTRAINT "CustomerProfile_betterAuthUserId_fkey" FOREIGN KEY ("betterAuthUserId") REFERENCES "better_auth_users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
