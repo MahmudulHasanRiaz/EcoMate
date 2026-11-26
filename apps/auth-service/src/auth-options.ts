@@ -269,11 +269,69 @@ export function buildAuthOptions(deps: {
           },
         },
         update: {
-          before: async (user) => {
-            const { platformRole: _platformRole, ...rest } = user as Record<
-              string,
-              unknown
-            >;
+          before: async (user, ctx) => {
+            // SUPERADMIN self-disable guard (Phase 4 §5 decision, Boss
+            // 2026-11-26: server-side enforcement, NOT UI-only). The
+            // twoFactor plugin's POST /two-factor/disable calls
+            // internalAdapter.updateUser(id, { twoFactorEnabled: false })
+            // AFTER password validation
+            // (dist/plugins/two-factor/index.mjs:250-270), and BA's
+            // disable endpoint does not know platformRole — so without
+            // this a SUPERADMIN could remove their own MFA with a direct
+            // API call even though the console UI hides the button.
+            // databaseHooks.user.update.before is the seam that runs on
+            // that call: updateUser routes through updateWithHooks
+            // (dist/db/internal-adapter.mjs:681 ->
+            // dist/db/with-hooks.mjs:40-78), and a throw here aborts the
+            // update before any write.
+            //
+            // Acts ONLY when BOTH hold: the update sets
+            // twoFactorEnabled:false AND the endpoint context is
+            // /two-factor/disable. The hook receives only the update
+            // data (no `where`), so the target is the session user —
+            // the disable endpoint always targets its own session user
+            // (resolved below via the authoritative session, populated
+            // by sensitiveSessionMiddleware before the handler runs).
+            // The operator reset endpoint
+            // (POST /internal/users/:id/mfa/reset) writes via Prisma
+            // directly and never reaches this hook, so it is unaffected
+            // by design. Fail OPEN when there is no endpoint/session
+            // context: without a session the endpoint itself 401s in
+            // sensitiveSessionMiddleware before any DB write, so a
+            // missing context can only mean an in-process call from
+            // trusted server code (no such caller exists today).
+            const data = user as Record<string, unknown>;
+            if (
+              data['twoFactorEnabled'] === false &&
+              ctx?.path === '/two-factor/disable'
+            ) {
+              // AuthContext carries no typed `session` field (it is
+              // attached at runtime by getSessionFromCtx) — read it via
+              // a narrow cast, same pattern as Q11's twoFactorEnabled
+              // cast above.
+              const sessionUserId = (
+                ctx.context as unknown as {
+                  session?: { user?: { id?: string } } | null;
+                }
+              ).session?.user?.id;
+              if (sessionUserId) {
+                // internalAdapter.findUserById returns the core User
+                // type, which omits plugin/additional fields —
+                // platformRole is a D5 additional field, so read it via
+                // a narrow cast.
+                const target = (await ctx.context.internalAdapter.findUserById(
+                  sessionUserId,
+                )) as { id: string; platformRole?: string | null } | null;
+                if (target?.platformRole === 'SUPERADMIN') {
+                  throw APIError.from('FORBIDDEN', {
+                    code: 'SUPERADMIN_MFA_DISABLE_FORBIDDEN',
+                    message:
+                      'Super admins cannot disable two-factor authentication. Ask another super admin to reset it from the console.',
+                  });
+                }
+              }
+            }
+            const { platformRole: _platformRole, ...rest } = data;
             return { data: rest };
           },
         },

@@ -222,9 +222,11 @@ export function AccountPage() {
     try {
       if (isCentralBa) {
         // BA `twoFactor.disable` needs password proof, not a code.
-        // The SUPERADMIN button is hidden by the UI below (server-side
-        // enforcement of that rule does not exist on the BA side — see
-        // BUILD-SUMMARY).
+        // The SUPERADMIN button is hidden by the UI below; the rule is
+        // also enforced server-side (auth-service
+        // databaseHooks.user.update.before → 403
+        // SUPERADMIN_MFA_DISABLE_FORBIDDEN), so a direct API call
+        // cannot bypass it either.
         const { error } = await authClient.twoFactor.disable({
           password: disablePassword,
         });
