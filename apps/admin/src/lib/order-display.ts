@@ -247,6 +247,18 @@ function hasRefundActivity(order: OrderPaymentSummarySource | null | undefined):
 export function getOrderDueAmount(order: OrderPaymentSummarySource | null | undefined): number {
   if (!order) return 0
   if (isCancelledOrder(order)) return 0
+  // Row-less PAID: the money arrived outside EcoMate (e.g. paid in Shopify),
+  // so no Payment rows exist — but the server due still equals the total
+  // because the server derivation only counts rows. Mirror
+  // getOrderPaidAmount: a row-less PAID order is fully paid, so nothing is
+  // due — even when the server due is present. When rows exist, the ledger
+  // decides (a stale stored PAID status never overrides recorded rows).
+  if (
+    order.paymentStatus === 'PAID' &&
+    !(Array.isArray(order.payments) && order.payments.length > 0)
+  ) {
+    return 0
+  }
   // One shared derivation: the server's due already subtracts PAID, applied
   // credit and received return value. Prefer it whenever present.
   if (order.due !== null && order.due !== undefined) {
@@ -259,9 +271,6 @@ export function getOrderDueAmount(order: OrderPaymentSummarySource | null | unde
       0,
       total - getOrderPaidAmount(order) - getOrderCreditApplied(order) - receivedReturns,
     )
-  }
-  if (order.paymentStatus === 'PAID') {
-    return 0
   }
   const paid = getOrderPaidAmount(order)
   return Math.max(0, total - paid - receivedReturns)

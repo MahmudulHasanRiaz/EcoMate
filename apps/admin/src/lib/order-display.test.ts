@@ -130,6 +130,19 @@ describe('getOrderDueAmount', () => {
     expect(getOrderDueAmount({ total: 1500, paymentStatus: 'PAID' })).toBe(0)
   })
 
+  it('returns 0 for a row-less PAID order whose server due still equals the total (paid outside EcoMate, e.g. Shopify #1003 → ORD-261126-0001)', () => {
+    const order = { total: 230, paymentStatus: 'PAID', due: 230, payments: [] }
+    expect(getOrderPaidAmount(order)).toBe(230)
+    expect(getOrderDueAmount(order)).toBe(0)
+    expect(getOrderPaidAmount(order) + getOrderDueAmount(order)).toBe(order.total)
+  })
+
+  it('leaves a PAYMENT_PENDING order due untouched (server due still preferred)', () => {
+    const order = { total: 420, paymentStatus: 'PAYMENT_PENDING', due: 420 }
+    expect(getOrderPaidAmount(order)).toBe(0)
+    expect(getOrderDueAmount(order)).toBe(420)
+  })
+
   it('returns the full total for a FULL_PAYMENT order with no recorded payments (Pay Later)', () => {
     expect(getOrderDueAmount({ total: 1500, paymentOptionType: 'FULL_PAYMENT' })).toBe(1500)
   })
