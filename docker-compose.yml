@@ -715,7 +715,10 @@ services:
     environment:
       NODE_ENV: production
       AUTH_PORT: ${AUTH_PORT:-4200}
-      BETTER_AUTH_SECRET: <redacted>
+      # Secrets come from the Portainer stack env — NEVER hardcode a value
+      # here: a literal overrides the stack env and the service silently
+      # runs with the wrong secret (staging 2026-11-26: 10-char literals).
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       AUTH_DB_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ecomate_auth
       AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-https://auth.em.commercians.com}
       AUTH_INTERNAL_URL: ${AUTH_INTERNAL_URL:-http://auth-service:4200}
@@ -731,7 +734,7 @@ services:
       AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
       AUTH_ORG_LIMIT: ${AUTH_ORG_LIMIT:-5}
       AUTH_PLATFORM_API_URL: ${AUTH_PLATFORM_API_URL:-http://platform-api:4100/api}
-      INTERNAL_SERVICE_SECRET: <redacted>
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
       IMPERSONATION_TTL_SECONDS: ${IMPERSONATION_TTL_SECONDS:-900}
       AUTH_TENANT_PRIMARY_DOMAIN: ${AUTH_TENANT_PRIMARY_DOMAIN:-faah.net}
       AUTH_SOCIAL_TOTP_STRICT: ${AUTH_SOCIAL_TOTP_STRICT:-false}

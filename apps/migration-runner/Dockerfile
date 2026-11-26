@@ -20,6 +20,17 @@ WORKDIR /app
 COPY package*.json ./
 COPY apps/migration-runner/package.json apps/migration-runner/package.json
 RUN --mount=type=cache,target=/root/.npm npm install
+# Flatten workspace-nested modules into the root node_modules. npm nests
+# better-auth under apps/migration-runner/node_modules (the lockfile
+# records no root copy — verified in package-lock.json and in a
+# builder-context repro), but the runner stage carries only the root
+# node_modules, so script 02 crashed on staging with
+# "Cannot find module 'better-auth/crypto'". Same failure mode + fix as
+# apps/auth-service (better-auth, run #48 image) and apps/backend
+# (better-auth, preventive). Placed after the npm install so nothing
+# re-nests afterwards. The builder context has no other app workspace,
+# so flattening cannot conflict.
+RUN if [ -d apps/migration-runner/node_modules ]; then cp -r apps/migration-runner/node_modules/. node_modules/; fi
 
 # Phase 2 scripts, in place (unchanged) + the three schemas + their
 # prisma.config.ts files (prisma 7 reads the config from the working
@@ -70,6 +81,16 @@ COPY apps/migration-runner/entrypoint.sh ./apps/migration-runner/entrypoint.sh
 COPY apps/migration-runner/package.json ./apps/migration-runner/package.json
 RUN mkdir -p /app/out && chown nestjs:nodejs /app/out && \
     chmod +x /app/apps/migration-runner/entrypoint.sh
+# Runtime-presence gate: a green build must mean a runnable image. Import
+# every external package the 01 -> 03 scripts import (see
+# apps/auth-service/scripts/ + lib/) from the runner layout
+# (/app/node_modules only — resolution from the scripts' cwd
+# /app/apps/auth-service walks up to the same directory). If any is
+# missing — e.g. a dep npm nests under a workspace instead of hoisting
+# to the root — the build FAILS here, before the image is pushed. This is
+# the check that would have caught the script-02 better-auth/crypto
+# failure (staging, deploy resume #2) at build time instead of on staging.
+RUN node --input-type=module -e "for (const m of ['better-auth', 'better-auth/crypto', 'pg', '@prisma/adapter-pg', '@prisma/client', 'tsx']) { await import(m); console.log('runtime dep ok:', m); }"
 USER nestjs
 ENV NODE_ENV=production
 WORKDIR /app/apps/auth-service
