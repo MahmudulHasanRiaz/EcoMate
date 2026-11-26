@@ -1049,3 +1049,109 @@ describe('daily audit (BullMQ repeatable, SyncRun STOCK)', () => {
     expect(sql).not.toMatch(/DROP\s+(TABLE|COLUMN)/i);
   });
 });
+
+describe('stock-refill fix (OUT → IN flip above threshold + explicit sync)', () => {
+  it('planFor: above + availability flip + quantized-capped → quantity at the cap; faithful → status', () => {
+    expect(planFor('quantized-capped', true, 50, 'above', 5, false, false, true)).toEqual({
+      kind: 'quantity',
+      state: 'IN_STOCK',
+      wireQty: 5,
+    });
+    expect(planFor('faithful', true, 50, 'above', 5, false, false, true)).toEqual({
+      kind: 'status',
+      state: 'IN_STOCK',
+      wireQty: 0,
+    });
+    // No flip, no audit, not first → status plan (planner shape unchanged).
+    expect(planFor('quantized-capped', true, 50, 'above', 5, false, false, false)).toEqual({
+      kind: 'status',
+      state: 'IN_STOCK',
+      wireQty: 0,
+    });
+  });
+
+  it('refill 0→10 above threshold pushes on faithful (Woo): remote OUT → IN_STOCK status', async () => {
+    const s = setup({ managedStockQuantity: 10, reservedStock: 0 });
+    seedRemote(s, 'OUT_OF_STOCK');
+    // Projected before (lastEvaluatedVersion set, older than the refill
+    // version) — without the fix this is an ABOVE_THRESHOLD skip.
+    mapped(s, '000000000000001:000000000000000');
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED' });
+    expect(s.fake.getProduct('remote-1')?.stockState).toBe('IN_STOCK');
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(0);
+  });
+
+  it('refill 0→10 above threshold pushes on quantized-capped (Shopify): remote 0 → cap 5', async () => {
+    const s = setup({ managedStockQuantity: 10, reservedStock: 0 });
+    s.fake.setFidelity('quantized-capped', 5);
+    seedRemote(s, 'OUT_OF_STOCK');
+    mapped(s, '000000000000001:000000000000000');
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
+    expect(s.fake.getProduct('remote-1')?.stockQuantity).toBe(5);
+  });
+
+  it('above threshold with remote already IN stays silent (no flip, no redundant push)', async () => {
+    const s = setup({ managedStockQuantity: 10, reservedStock: 0 });
+    seedRemote(s, 'IN_STOCK');
+    mapped(s, '000000000000001:000000000000000');
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SKIPPED', pushed: false, reason: 'ABOVE_THRESHOLD' });
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockState')).toHaveLength(0);
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(0);
+  });
+
+  it('explicit manual sync pushes after a stale evaluation (refill already evaluated, remote still OUT)', async () => {
+    const s = setup({ managedStockQuantity: 10, reservedStock: 0 });
+    seedRemote(s, 'OUT_OF_STOCK');
+    // The refill's per-change evaluation already landed: lastEvaluatedVersion
+    // equals the current version, so a plain re-evaluation is STALE_EVENT.
+    const current = versionFor(new Date('2026-09-20T00:00:00Z'), null);
+    mapped(s, current);
+    const stale = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(stale[0]).toMatchObject({ status: 'SKIPPED', pushed: false, reason: 'STALE_EVENT' });
+    // The operator's explicit "Sync stock only" bypasses STALE_EVENT and,
+    // because the remote is still OUT, restores availability.
+    const swept = await s.svc.sweepStore(STORE_ID, RUN_ID);
+    expect(swept).toMatchObject({ pushed: 1, skipped: 0, failed: 0 });
+    expect(s.fake.getProduct('remote-1')?.stockState).toBe('IN_STOCK');
+  });
+
+  it('explicit manual sync does not force redundant pushes (remote already IN above threshold)', async () => {
+    const s = setup({ managedStockQuantity: 10, reservedStock: 0 });
+    seedRemote(s, 'IN_STOCK');
+    const current = versionFor(new Date('2026-09-20T00:00:00Z'), null);
+    mapped(s, current);
+    const swept = await s.svc.sweepStore(STORE_ID, RUN_ID);
+    expect(swept).toMatchObject({ pushed: 0, skipped: 1, failed: 0 });
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockState')).toHaveLength(0);
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(0);
+  });
+
+  it('unit step 4→3 still pushes; identical re-evaluation is still suppressed', async () => {
+    const s = setup({ managedStockQuantity: 4, reservedStock: 0 });
+    seedRemote(s, 'OUT_OF_STOCK');
+    mapped(s);
+    const first = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(first[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
+    // A newer commit lands with one unit fewer (fresh monotonic version).
+    s.setProduct(
+      simpleProduct({ managedStockQuantity: 3, reservedStock: 0, updatedAt: new Date('2026-09-21T00:00:00Z') }),
+    );
+    const second = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(second[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
+    expect(
+      s.fake.calls.filter((c) => c.method === 'publishStockQuantity').map((c) => (c.detail as any).qty),
+    ).toEqual([4, 3]);
+    // Same units, newer version, remote drifted, inside the cooldown →
+    // suppressed (no flap-push storm).
+    s.fake.getProduct('remote-1')!.stockQuantity = 9;
+    s.setProduct(
+      simpleProduct({ managedStockQuantity: 3, reservedStock: 0, updatedAt: new Date('2026-09-22T00:00:00Z') }),
+    );
+    const third = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(third[0]).toMatchObject({ status: 'SUCCESS', pushed: false, reason: 'COOLDOWN_SUPPRESSED' });
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(2);
+  });
+});

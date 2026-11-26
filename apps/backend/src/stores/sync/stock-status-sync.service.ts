@@ -20,11 +20,17 @@
  *   exits monitor-only, the daily audit runs read-only and raises
  *   STOCK_DRIFT_MONITOR_ONLY. Zero-write now applies ONLY here.
  *
- * BR-07 banding (unchanged): `qty = 0` → forced push + read-back verify on
+ * BR-07 banding: `qty = 0` → forced push + read-back verify on
  * every assigned store; `0 < qty < threshold` (default 5, per-store override
  * via `Store.settings.stockLowThreshold`, product `lowStockQty` fallback) →
  * immediate push per change; `qty >= threshold` → no per-change push, the
- * daily audit owns it (including the capped band).
+ * daily audit owns it (including the capped band) — EXCEPT an availability
+ * flip (remote OUT_OF_STOCK, desired IN_STOCK): the threshold gates
+ * quantity-only updates, not availability flips, so a restocked product
+ * is pushed back IN even above threshold (stock-refill fix, 2026-11-26).
+ * An explicit manual stock sync ("Sync stock only") bypasses the
+ * STALE_EVENT guard: an operator's explicit request re-evaluates live
+ * state and is never a stale event.
  *
  * Change notification: every writer in §3.8 calls
  * `notifyStockChanged()` AFTER commit inside a non-propagating guard. No
@@ -69,6 +75,7 @@ import {
 } from '../providers/retry-classifier';
 import type {
   CommerceProvider,
+  ProviderCapabilities,
   RemoteRef,
   StockState,
   StockStatusFidelity,
@@ -170,6 +177,11 @@ export interface StockPushPlan {
  *   + quantity-capable → quantity at the cap. Later above-band evaluations
  *   stay silent (audit-owned) — but the first must project, otherwise a
  *   newly mapped product sits at remote zero/unknown until 3AM.
+ * - above + AVAILABILITY FLIP (remote OUT, desired IN) + `quantized-capped`
+ *   + quantity-capable → quantity at the cap. The threshold gates
+ *   quantity-only updates, not availability flips — otherwise a restocked
+ *   product sits OUT on the remote until 3AM (stock-refill fix, 2026-11-26).
+ *   Faithful remotes flip via the status plan (no quantity ever).
  * - everything else (status-only bridges, faithful above-band, undeclared
  *   quantity) → status-only.
  * `quantityCapable` = `caps.stockQuantity === true` AND the matching
@@ -183,6 +195,7 @@ export function planFor(
   threshold: number,
   audit: boolean,
   firstEvaluation = false,
+  availabilityFlip = false,
 ): StockPushPlan {
   if (path === 'always') return { kind: 'status', state: 'IN_STOCK', wireQty: 0 };
   const finite = Number.isFinite(qty);
@@ -194,7 +207,7 @@ export function planFor(
   }
   if (
     path === 'above' &&
-    (audit || firstEvaluation) &&
+    (audit || firstEvaluation || availabilityFlip) &&
     fidelity === 'quantized-capped' &&
     quantityCapable
   ) {
@@ -441,7 +454,7 @@ export class StockStatusSyncService implements OnModuleInit {
     productId: string,
     variantId: string | null,
     runId: string,
-    opts: { audit: boolean },
+    opts: { audit: boolean; explicit?: boolean },
   ): Promise<StockTargetResult[]> {
     const store = await this.prisma.store.findUnique({ where: { id: storeId } });
     if (!store || store.kind === 'NATIVE') {
@@ -529,7 +542,7 @@ export class StockStatusSyncService implements OnModuleInit {
     product: any,
     variant: any | null,
     runId: string,
-    opts: { audit: boolean },
+    opts: { audit: boolean; explicit?: boolean },
   ): Promise<StockTargetResult> {
     const objectType = variant ? 'VARIANT' : 'PRODUCT';
     const objectKey = `stock:${store.id}:${product.id}:${variant?.id ?? '-'}`;
@@ -554,7 +567,11 @@ export class StockStatusSyncService implements OnModuleInit {
 
     // Race safety: a stale event can never resurrect state. The audit owns
     // remote truth and always re-verifies, so it is exempt from this guard.
-    if (!opts.audit && isStale(version, mapping?.lastEvaluatedVersion)) {
+    // An explicit manual sync is exempt too: it re-reads live state at
+    // evaluation time, so it can never resurrect an older state — the
+    // "stale" comparison is about an event's age, and an explicit request
+    // is by definition current (stock-refill fix, 2026-11-26).
+    if (!opts.audit && !opts.explicit && isStale(version, mapping?.lastEvaluatedVersion)) {
       await item('SKIPPED', 'STALE_EVENT: a newer evaluation already landed — never resurrect state');
       return { status: 'SKIPPED', pushed: false, reason: 'STALE_EVENT' };
     }
@@ -610,21 +627,39 @@ export class StockStatusSyncService implements OnModuleInit {
       return { status: 'SKIPPED', pushed: false, reason: 'NOT_MAPPED' };
     }
 
-    // BR-07/P13: above threshold → no per-change push; the daily audit owns
-    // it (including the Shopify capped band). EXCEPTION: the first-ever
-    // evaluation (no projection landed yet) always executes — otherwise a
-    // newly mapped product would sit at remote zero/unknown until 3AM.
-    if (desired.path === 'above' && !opts.audit && mapping?.lastEvaluatedVersion) {
-      await this.bumpVersion(store.id, product.id, variant, version);
-      await item('SKIPPED', `ABOVE_THRESHOLD: qty ${desired.qty} ≥ threshold ${threshold} — daily audit owns it (BR-07)`);
-      return { status: 'SKIPPED', pushed: false, reason: 'ABOVE_THRESHOLD' };
-    }
-
     const quantityCapable =
       caps.stockQuantity === true &&
       (variant
         ? typeof provider.publishVariantStockQuantity === 'function'
         : typeof provider.publishStockQuantity === 'function');
+
+    // BR-07/P13: above threshold → no per-change push; the daily audit owns
+    // it (including the Shopify capped band). EXCEPTIONS: the first-ever
+    // evaluation (no projection landed yet) always executes — otherwise a
+    // newly mapped product would sit at remote zero/unknown until 3AM;
+    // and an availability flip (remote OUT_OF_STOCK, desired IN_STOCK)
+    // always executes — the threshold gates quantity-only updates, not
+    // availability flips (stock-refill fix, 2026-11-26). The flip probe
+    // reads the remote first: no flip, no push.
+    let availabilityFlip = false;
+    if (desired.path === 'above' && !opts.audit && mapping?.lastEvaluatedVersion) {
+      availabilityFlip = await this.remoteIsOut(
+        provider,
+        storeWithSecrets,
+        store,
+        product,
+        variant,
+        mapping,
+        caps,
+        quantityCapable,
+      );
+      if (!availabilityFlip) {
+        await this.bumpVersion(store.id, product.id, variant, version);
+        await item('SKIPPED', `ABOVE_THRESHOLD: qty ${desired.qty} ≥ threshold ${threshold} — daily audit owns it (BR-07)`);
+        return { status: 'SKIPPED', pushed: false, reason: 'ABOVE_THRESHOLD' };
+      }
+    }
+
     const plan = planFor(
       caps.stockStatusFidelity,
       quantityCapable,
@@ -633,6 +668,7 @@ export class StockStatusSyncService implements OnModuleInit {
       desired.threshold,
       opts.audit,
       !mapping?.lastEvaluatedVersion,
+      availabilityFlip,
     );
     const record = (status: string, reason: string) =>
       this.runs.recordItem(runId, {
@@ -835,6 +871,9 @@ export class StockStatusSyncService implements OnModuleInit {
    * Manual per-store stock-only sweep (store detail "Sync stock" button).
    * Evaluates every assigned product of one store (variant fan-out inside
    * evaluateProduct), bounded at 500. Returns run-shaped counts.
+   * Explicit: an operator's manual request bypasses the STALE_EVENT guard
+   * (it re-reads live state — never a stale event) and, via the flip
+   * probe, restores availability above threshold (stock-refill fix).
    */
   async sweepStore(
     storeId: string,
@@ -848,7 +887,7 @@ export class StockStatusSyncService implements OnModuleInit {
     });
     for (const a of assignments as { productId: string }[]) {
       try {
-        const results = await this.evaluateProduct(storeId, a.productId, null, runId, { audit: false });
+        const results = await this.evaluateProduct(storeId, a.productId, null, runId, { audit: false, explicit: true });
         for (const r of results) {
           if (r.status === 'FAILED') counts.failed += 1;
           else if (r.pushed) counts.pushed += 1;
@@ -1138,6 +1177,33 @@ export class StockStatusSyncService implements OnModuleInit {
         data: { lastEvaluatedVersion: version },
       });
     }
+  }
+
+  /**
+   * Availability-flip probe (BR-07 exception, stock-refill fix, 2026-11-26):
+   * is the remote currently OUT while ERP wants IN? Quantity-capable
+   * quantized-capped remotes answer by quantity (0 = OUT — their status
+   * is derived from the level); everything else by status. An unobservable
+   * remote (null read) cannot prove a flip — return false and preserve the
+   * old audit-owned skip.
+   */
+  private async remoteIsOut(
+    provider: CommerceProvider,
+    sws: StoreWithSecrets,
+    store: any,
+    product: any,
+    variant: any | null,
+    mapping: any,
+    caps: ProviderCapabilities,
+    quantityCapable: boolean,
+  ): Promise<boolean> {
+    if (caps.stockStatusFidelity === 'quantized-capped' && quantityCapable) {
+      const q = await this.readQuantity(provider, sws, store.id, product, variant, mapping);
+      if (q !== null) return q <= 0;
+    }
+    const state = await this.readRemote(provider, sws, store.id, product, variant, mapping);
+    if (state === null) return false;
+    return state === 'OUT_OF_STOCK';
   }
 
   private async readRemote(
