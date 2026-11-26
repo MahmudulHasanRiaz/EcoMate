@@ -6,7 +6,7 @@ name: Build Images
 #            github (ubuntu-latest, native amd64 = no emulation, but cold
 #            cache on first run and shared-IP Docker Hub limits can bite)
 #   all + backend/storefront/admin/pos/platform-api/platform-admin/landing/
-#   caddy: which images to build.
+#   caddy/auth-service: which images to build.
 # Deployment stays manual too (Deploy SaaS workflow pulls these images).
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ on:
         required: false
         default: true
         type: boolean
-      backend:  
+      backend:
         description: 'Build backend image?'
         required: false
         default: false
@@ -64,6 +64,11 @@ on:
         required: false
         default: false
         type: boolean
+      auth-service:
+        description: 'Build auth-service image?'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -76,14 +81,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Static data-safety gates. These run BEFORE the backend/platform-api
-  # images are built, so a destructive migration (DROP COLUMN / DELETE FROM /
-  # TRUNCATE on a post-P0 migration) can never reach the published image
-  # (deployment itself is manual, so the gate only needs to protect the image).
-  # Only needed when the backend or platform-api image will actually rebuild.
+  # Static data-safety gates. These run BEFORE the backend/platform-api/
+  # auth-service images are built, so a destructive migration (DROP COLUMN /
+  # DELETE FROM / TRUNCATE on a post-P0 migration) can never reach the
+  # published image (deployment itself is manual, so the gate only needs to
+  # protect the image).
+  # Only needed when the backend, platform-api, or auth-service image will
+  # actually rebuild.
   guards:
     name: static guards
-    if: inputs.all == true || inputs.backend == true || inputs.platform-api == true
+    if: inputs.all == true || inputs.backend == true || inputs.platform-api == true || inputs.auth-service == true
     # fromJSON array literal: runs-on accepts an expression evaluating to labels.
     runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
     timeout-minutes: 30
@@ -118,6 +125,18 @@ jobs:
             exit 1
           fi
           echo "Platform migrations additive: OK"
+
+      - name: Auth migration-safety gate (no destructive auth migrations)
+        if: inputs.all == true || inputs.auth-service == true
+        # fs-only grep (no DB, no node_modules needed): migration.sql files
+        # must stay additive. rollback.sql files are EXCLUDED — they undo
+        # by design, so DROP/TRUNCATE there is correct, not a violation.
+        run: |
+          if grep -rniE 'DROP[[:space:]]+(TABLE|COLUMN)|TRUNCATE[[:space:]]+(TABLE[[:space:]]+)?|DELETE[[:space:]]+FROM' apps/auth-service/prisma/migrations/*/migration.sql; then
+            echo "::error::Destructive statement in an auth-service migration.sql — migrations must stay additive (put the undo in rollback.sql)."
+            exit 1
+          fi
+          echo "Auth-service migrations additive: OK"
 
       - name: Plan §8 tenancy guards (PrismaClient / raw SQL / schema)
         if: inputs.all == true || inputs.backend == true
@@ -313,9 +332,25 @@ jobs:
   # suite with a live DB.
   unit:
     name: unit tests
-    if: ${{ inputs.all == true || inputs.backend == true || inputs.storefront == true || inputs.admin == true || inputs.pos == true || inputs.platform-api == true || inputs.platform-admin == true || inputs.landing == true }}
+    if: ${{ inputs.all == true || inputs.backend == true || inputs.storefront == true || inputs.admin == true || inputs.pos == true || inputs.platform-api == true || inputs.platform-admin == true || inputs.landing == true || inputs.auth-service == true }}
     runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
     timeout-minutes: 30
+    # Auth-service tests are DB-backed (46 in Phase 1) — they need a live
+    # Postgres. Port 55434: 55432 is the dev cluster and 55433 is the
+    # rls-gates disposable DB, and both can run in the same dispatch.
+    # (Per the Phase 1 README 'CI story' snippet, with the port moved
+    # from 55432 to 55434 for that reason.)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci-auth-only
+          POSTGRES_DB: ecomate_auth
+        ports:
+          - 55434:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=2s --health-timeout=2s --health-retries=15
     steps:
       - uses: actions/checkout@v5
 
@@ -327,6 +362,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
+
+      - name: Auth service unit tests
+        if: inputs.all == true || inputs.auth-service == true
+        working-directory: apps/auth-service
+        env:
+          AUTH_DB_URL: postgresql://postgres:ci-auth-only@127.0.0.1:55434/ecomate_auth
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+          npm test
 
       - name: Backend unit tests
         if: inputs.all == true || inputs.backend == true
@@ -471,7 +516,6 @@ jobs:
     with:
       service: landing
       runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
-      build-args: NEXT_PUBLIC_TURNSTILE_SITE_KEY=0x4AAAAAAGG3TLtrKBQQsf7m
 
   build-caddy:
     # The edge image has no tests of its own — the caddy-validate job is
@@ -481,4 +525,14 @@ jobs:
     uses: ./.github/workflows/build-service-image.yml
     with:
       service: caddy
+      runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
+
+  build-auth-service:
+    # DB-backed service like backend/platform-api: the guards job (auth
+    # migration-safety step) and the unit job (auth-service tests) gate it.
+    needs: [guards, unit]
+    if: inputs.all == true || inputs.auth-service == true
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: auth-service
       runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
