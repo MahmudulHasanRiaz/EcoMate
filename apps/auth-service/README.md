@@ -64,15 +64,55 @@ Env-driven, see `.env.example`. Highlights:
   Verification-link TTL is set explicitly to 24 h (BA default is 3600 s;
   `dist/api/routes/email-verification.mjs:14`), preserving the current
   custom EMAIL_VERIFICATION OTP window.
-- **Reset links (D7=B, BA native):** endpoint `/request-password-reset`
-  (NOT `/forget-password`). **Q5 resolution — reset-token TTL is 3600 s
-  by default and configurable** via
+- **Reset links (D7=B, BA native — SUPERSEDED as the UI flow by the D7
+  flip, 2026-11-26; the endpoint stays as a fallback):** endpoint
+  `/request-password-reset` (NOT `/forget-password`). **Q5 resolution —
+  reset-token TTL is 3600 s by default and configurable** via
   `emailAndPassword.resetPasswordTokenExpiresIn`
   (`apps/backend/node_modules/better-auth/dist/api/routes/password.mjs:73`,
   `resetPasswordTokenExpiresIn || 3600`); set explicitly to **900 s
   (15 min)** to preserve the current custom OTP reset window. The token
   is a **path segment** in the emailed URL:
   `{baseURL}/reset-password/<token>?callbackURL=…`.
+- **Email OTP login + OTP password reset (D7 FLIP, 2026-11-26 — Boss:
+  "Ha, plugin diye OTP firiye anaw"):** `emailOTP()` plugin
+  (`src/auth-options.ts`, BA 1.7.28 docs
+  `better-auth.com/docs/plugins/email-otp`). Config: `otpLength: 6`,
+  `expiresIn: 900` (15 min, the old reset OTP window; BA default 300),
+  `allowedAttempts: 5` (the old flow consumed all OTPs at 5 failures;
+  BA default 3), `storeOTP: "encrypted"` (BA default is `"plain"` —
+  never ship plain), `disableSignUp: true` (MANDATORY — OTP login must
+  never auto-create users; unknown emails answer `INVALID_OTP`),
+  `resendStrategy: "rotate"` (every resend issues a new code; the old
+  one stops working). `changeEmail` is NOT enabled.
+  `overrideDefaultEmailVerification` is UNSET — email verification
+  stays LINK-based; the EMAIL_VERIFICATION OTP decision is still open
+  for Phase 5. Mailer: `Mailer.sendVerificationOTP(to, otp, type)`
+  (`src/mailer.ts`, nodemailer SMTP, same env shape as the reset /
+  verification mails; per-type subjects so a login code cannot be
+  mistaken for a reset code). Client: `emailOTPClient()` in the three
+  tenant frontends (`authClient.signIn.emailOtp()`,
+  `authClient.emailOtp.{sendVerificationOtp,requestPasswordReset,
+  resetPassword}`). Endpoints: `POST /sign-in/email-otp`,
+  `POST /email-otp/send-verification-otp`,
+  `POST /email-otp/request-password-reset`,
+  `POST /email-otp/reset-password`. Rate limits: see the table below.
+  **Password-removal gotcha (verified in BA 1.7.28 source,
+  `dist/db/revoke-unproven-account-access.mjs`):** OTP sign-in on an
+  `emailVerified: false` user DELETES every account row (including the
+  credential/password account) and ALL sessions, then flips the user
+  verified. Closed at migration time, not in the plugin: script 01
+  forces `emailVerified: true` for every migrated tenant user (with a
+  re-run backfill) and `POST /internal/users` defaults new users to
+  verified — migrated users are existing trusted users and legacy
+  login never gated on `emailVerified`. A live regression test
+  (`tests/email-otp.test.ts`, "GOTCHA") pins the BA behaviour so the
+  migration forcing can never silently regress. **TOTP note:** OTP
+  sign-in does NOT trigger a TOTP challenge — BA's twoFactor plugin
+  only gates `/sign-in/email|username|phone-number`; the mailbox OTP
+  is itself the possession proof, and the same mailbox already resets
+  the password without TOTP, so OTP login adds no new
+  mailbox-compromise path.
 - **Passwords:** dispatching `verify` — stored hashes starting with `$2`
   verify with `bcryptjs.compare` (legacy bcrypt users), everything else
   with BA's default scrypt verify; `hash` is NOT overridden, so new /
@@ -275,6 +315,11 @@ the gate. Users without TOTP are unaffected either way.
 | `POST /request-password-reset` | 3 / 60 s (BA custom rule) | BA built-in special rule is also 3/60 s |
 | `POST /send-verification-email` | 3 / 60 s (BA custom rule) | BA built-in special rule is also 3/60 s |
 | `/two-factor/*` | 3 / 10 s (BA plugin rule, NOT overridden) | `dist/plugins/two-factor/index.mjs:389-395` |
+| `POST /email-otp/send-verification-otp`, `/email-otp/check-verification-otp`, `/email-otp/verify-email`, `/email-otp/request-password-reset`, `/email-otp/request-email-change`, `/email-otp/change-email`, `/forget-password/email-otp` | 3 / 60 s (emailOTP plugin rule) | `dist/plugins/email-otp/index.mjs` `rateLimit` — plugin rules override BA's default special rules (`dist/api/rate-limiter/index.mjs:254-263`); `customRules` in `src/auth-options.ts` override plugin rules |
+| `POST /sign-in/email-otp`, `POST /email-otp/reset-password` | 10 / 60 s (BA custom rule, D7 flip) | plugin default is 3/60 s, which would 429 a user on their 4th guess and make `allowedAttempts: 5` unreachable; 10/60 s is parity with `/sign-in/email` |
+| OTP attempts (`allowedAttempts`) | 5 wrong guesses per OTP, then 403 `TOO_MANY_ATTEMPTS` and the OTP stays consumed | `emailOTP({ allowedAttempts: 5 })` — the BA equivalent of the old flow's "5 failures consume all live OTPs" (`dist/plugins/email-otp/routes.mjs` `atomicVerifyOTP`) |
+| Per-IP OTP sign-in pacing | failed OTP verifies count toward the same 10/60 s → 15-min IP block as password sign-in; success clears it | `src/server.ts` (`OTP_SIGN_IN_PATH`) — the deploy checklist's per-IP sign-in pacing covers OTP sign-in too |
+| OTP account lockout | NONE — deliberately not applied | an OTP is mailbox proof; a password-failure lockout must not block this recovery path, and OTP failures must not let an attacker lock the victim out of OTP login. Guessing is bounded by `allowedAttempts` + the per-path / per-IP limits above |
 | Account lockout | **4th** consecutive failed sign-in locks the account 15 min; success clears it | tenant parity — legacy code (`auth.service.ts:220-250`: `failedLoginAttempts === 3` sets `lockoutUntil = now + 15 min`; counter caps at 4). The plan's "5th attempt" comment contradicts its own code. |
 | Per-IP sign-in block | 10 failed sign-ins from one IP in 60 s → that IP blocked from sign-in for 15 min | tenant hijack limiter parity (BA's rolling window cannot express the 15-min block, so the wrapper adds it) |
 | Per-IP MFA-challenge cap | 10 verify attempts from one IP in 600 s | platform `/challenge` 10/10 min parity |

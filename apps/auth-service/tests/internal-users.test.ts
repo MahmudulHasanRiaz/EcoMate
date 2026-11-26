@@ -99,7 +99,10 @@ test('internal users: create → get by id → get by email (case-insensitive) �
   assert.ok(id);
   createdUserIds.push(id);
   assert.equal(created.json?.email, email);
-  assert.equal(created.json?.emailVerified, false);
+  // D7 flip: centrally-created users default to emailVerified true
+  // (an unverified row loses its password account on first OTP login —
+  // BA revokeUnprovenAccountAccess). Explicit `false` is still honoured.
+  assert.equal(created.json?.emailVerified, true);
 
   const byId = await api(srv.baseUrl, `/internal/users/${id}`, {
     headers: SECRET_HEADERS,

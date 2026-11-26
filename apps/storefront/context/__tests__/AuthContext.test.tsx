@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 
-const { sessionState, getMe, login, register, logout, verifyTotp, verifyBackupCode } =
+const { sessionState, getMe, login, requestLoginOtp, loginWithOtp, register, logout, verifyTotp, verifyBackupCode } =
   vi.hoisted(() => ({
     sessionState: {
       data: null as {
@@ -13,6 +13,8 @@ const { sessionState, getMe, login, register, logout, verifyTotp, verifyBackupCo
     },
     getMe: vi.fn(),
     login: vi.fn(),
+    requestLoginOtp: vi.fn(),
+    loginWithOtp: vi.fn(),
     register: vi.fn(),
     logout: vi.fn(),
     verifyTotp: vi.fn(),
@@ -28,6 +30,8 @@ vi.mock("@/lib/better-auth-client", () => ({
 vi.mock("@/lib/api/auth", () => ({
   getMe,
   login,
+  requestLoginOtp,
+  loginWithOtp,
   register,
   logout,
   verifyTotp,
@@ -63,7 +67,7 @@ const customer = {
 };
 
 function Probe() {
-  const { user, loading, twoFactorRequired, login, logout, verifyTwoFactor } =
+  const { user, loading, twoFactorRequired, login, loginWithOtp, requestLoginOtp, logout, verifyTwoFactor } =
     useAuth();
   return (
     <div>
@@ -72,6 +76,14 @@ function Probe() {
       <div data-testid="twofa">{twoFactorRequired ? "required" : "off"}</div>
       <button onClick={() => void login("aya@shop.test", "Secret123!")}>
         sign-in
+      </button>
+      <button
+        onClick={async () => {
+          await requestLoginOtp("aya@shop.test");
+          await loginWithOtp("aya@shop.test", "123456");
+        }}
+      >
+        otp-sign-in
       </button>
       <button onClick={() => void logout()}>sign-out</button>
       <button onClick={() => void verifyTwoFactor("123456")}>verify</button>
@@ -86,6 +98,8 @@ describe("storefront AuthContext (Phase 3)", () => {
     sessionState.isPending = false;
     getMe.mockResolvedValue(customer);
     login.mockResolvedValue({ user: customer });
+    requestLoginOtp.mockResolvedValue(undefined);
+    loginWithOtp.mockResolvedValue({ user: customer });
     register.mockResolvedValue({ user: customer });
     logout.mockResolvedValue(undefined);
     verifyTotp.mockResolvedValue({ user: customer });
@@ -147,6 +161,19 @@ describe("storefront AuthContext (Phase 3)", () => {
     screen.getByText("sign-out").click();
     await waitFor(() => expect(screen.getByTestId("user")).toHaveTextContent("none"));
     expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it("OTP login requests a code then signs in with it", async () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("loading")).toHaveTextContent("ready"));
+    screen.getByText("otp-sign-in").click();
+    await waitFor(() => expect(screen.getByTestId("user")).toHaveTextContent("aya@shop.test"));
+    expect(requestLoginOtp).toHaveBeenCalledWith("aya@shop.test");
+    expect(loginWithOtp).toHaveBeenCalledWith("aya@shop.test", "123456");
   });
 
   it("a TwoFactorRequiredError sets twoFactorRequired instead of throwing", async () => {

@@ -66,7 +66,7 @@ describe('ResetPassword page (Phase 3)', () => {
       .element(screen.getByText(/^Reset link expired$/i))
       .toBeInTheDocument()
     await expect
-      .element(screen.getByRole('link', { name: /^Request a new link$/i }))
+      .element(screen.getByRole('link', { name: /^Request a new code$/i }))
       .toBeInTheDocument()
   })
 

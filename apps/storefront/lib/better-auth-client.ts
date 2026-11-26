@@ -1,5 +1,5 @@
 import { createAuthClient } from "better-auth/react";
-import { twoFactorClient } from "better-auth/client/plugins";
+import { emailOTPClient, twoFactorClient } from "better-auth/client/plugins";
 
 // NOTE: the client MUST come from "better-auth/react", not
 // "better-auth/client" — only the React client exposes `useSession()` as
@@ -30,5 +30,7 @@ export const authClient = createAuthClient({
     // the login screen verifies the code via `twoFactor.verifyTotp`.
     // Enrolment itself lives in the admin app (D13), not in the storefront.
     twoFactorClient(),
+    // OTP login (D7 flip, 2026-11-26): `authClient.signIn.emailOtp()`.
+    emailOTPClient(),
   ],
 });

@@ -27,6 +27,19 @@
  *    user + credential account from its bcrypt hash.
  *  - BA-only user (no `UserProfile`) migrates as a central user; member
  *    only if a staff role can be established from `betterAuthUser.role`.
+ *  - `emailVerified` is FORCED to `true` for every migrated tenant user
+ *    (D7 flip, 2026-11-26 — see the note at the `emailVerified` sites
+ *    below). The source value is NOT copied: legacy login never gated
+ *    on `emailVerified` (register sets it `false`, only an explicit
+ *    verify-email flips it), so most migrated rows would arrive
+ *    `false` — and BA 1.7.28's OTP sign-in (`signInEmailOTP` →
+ *    `revokeUnprovenAccountAccess`, `dist/db/revoke-unproven-account-access.mjs`)
+ *    DELETES every account row (including the credential/password
+ *    account) and ALL sessions for an `emailVerified: false` user on
+ *    first OTP login. Migrated users are existing trusted users who
+ *    have been logging in; forcing `true` is what keeps OTP login from
+ *    nuking their passwords. The re-run path backfills `false` → `true`
+ *    for users a pre-fix run already created.
  *  - `SignupRequest` rows are COUNTED ONLY — never migrated as users,
  *    never deleted (retention decision in REHEARSAL-SUMMARY.md).
  *
@@ -246,6 +259,18 @@ async function main(): Promise<void> {
             `User ${email}: central id ${existing.id} already exists (canonical source id ${canonical.id} not reused on re-run).`,
           );
         }
+        // D7 flip backfill: a pre-fix run may have created this user with
+        // the source emailVerified (usually false). An unverified central
+        // user loses their password account on first OTP login (BA
+        // revokeUnprovenAccountAccess) — force it true, same reason as
+        // the create path below. Idempotent: already-true rows untouched.
+        if (!existing.emailVerified && APPLY) {
+          await auth.user.update({
+            where: { id: existing.id },
+            data: { emailVerified: true },
+          });
+          bump(report.migrated, 'users_email_verified_backfilled');
+        }
       } else {
         // Preserve the canonical source id unless it is taken by another email.
         const idTaken = await auth.user.findUnique({ where: { id: canonical.id } });
@@ -271,7 +296,16 @@ async function main(): Promise<void> {
                 email,
               ),
               email,
-              emailVerified: canonical.emailVerified,
+              // D7 flip: FORCED true, never the source value. Legacy
+              // login never gated on emailVerified (register sets false;
+              // only verify-email flips it), so copying
+              // canonical.emailVerified would migrate most users as
+              // unverified — and BA 1.7.28 OTP sign-in deletes every
+              // account row + all sessions for an unverified user
+              // (revokeUnprovenAccountAccess). These are existing
+              // trusted users who have been logging in; verified is the
+              // honest value for them.
+              emailVerified: true,
               image: canonical.image ?? null,
               createdAt: canonical.createdAt,
             },
@@ -380,6 +414,14 @@ async function main(): Promise<void> {
       if (preExisting) {
         centralId = preExisting.id;
         bump(report.alreadyPresent, 'users');
+        // D7 flip backfill (same reason as the canonical path above).
+        if (!preExisting.emailVerified && APPLY) {
+          await auth.user.update({
+            where: { id: preExisting.id },
+            data: { emailVerified: true },
+          });
+          bump(report.migrated, 'users_email_verified_backfilled');
+        }
       } else {
         centralId = crypto.randomUUID();
         if (APPLY) {
@@ -388,7 +430,11 @@ async function main(): Promise<void> {
               id: centralId,
               name: displayName(null, p.firstName, p.lastName, email),
               email,
-              emailVerified: p.emailVerified,
+              // D7 flip: FORCED true (see the canonical path above) —
+              // a legacy-only profile's emailVerified is false unless
+              // the user ever verified, and copying it would expose
+              // the user to BA's OTP-sign-in account deletion.
+              emailVerified: true,
               image: null,
               createdAt: p.createdAt,
             },

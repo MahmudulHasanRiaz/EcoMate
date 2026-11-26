@@ -13,6 +13,8 @@ import { useAuthStore } from '@/stores/auth-store'
 
 const navigate = vi.hoisted(() => vi.fn())
 const signInEmail = vi.hoisted(() => vi.fn())
+const signInEmailOtp = vi.hoisted(() => vi.fn())
+const sendVerificationOtp = vi.hoisted(() => vi.fn())
 const signInSocial = vi.hoisted(() => vi.fn())
 const verifyTotp = vi.hoisted(() => vi.fn())
 const verifyBackupCode = vi.hoisted(() => vi.fn())
@@ -34,7 +36,8 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/lib/better-auth-client', () => ({
   authClient: {
-    signIn: { email: signInEmail, social: signInSocial },
+    signIn: { email: signInEmail, social: signInSocial, emailOtp: signInEmailOtp },
+    emailOtp: { sendVerificationOtp },
     twoFactor: { verifyTotp, verifyBackupCode },
     signOut,
   },
@@ -64,6 +67,8 @@ describe('UserAuthForm (Phase 3)', () => {
     vi.clearAllMocks()
     useAuthStore.getState().auth.reset()
     signInEmail.mockResolvedValue({ error: null })
+    signInEmailOtp.mockResolvedValue({ error: null })
+    sendVerificationOtp.mockResolvedValue({ error: null })
     signInSocial.mockResolvedValue({ error: null })
     verifyTotp.mockResolvedValue({ error: null })
     verifyBackupCode.mockResolvedValue({ error: null })
@@ -205,5 +210,48 @@ describe('UserAuthForm (Phase 3)', () => {
     const call = signInSocial.mock.calls[0][0]
     expect(call.callbackURL).toContain(window.location.origin)
     expect(call.errorCallbackURL).toContain('/sign-in')
+  })
+
+  it('OTP login: sends a code, verifies it, and completes sign-in', async () => {
+    const screen = await render(<UserAuthForm />)
+    await userEvent.click(screen.getByRole('button', { name: 'OTP diye login' }))
+
+    await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Send OTP' }))
+    expect(sendVerificationOtp).toHaveBeenCalledWith({
+      email: 'admin@example.com',
+      type: 'sign-in',
+    })
+
+    const otpInput = screen.container.querySelector('input[autocomplete="one-time-code"]')
+    expect(otpInput).not.toBeNull()
+    await userEvent.fill(otpInput as HTMLInputElement, '123456')
+    await userEvent.click(screen.getByText('Verify and sign in'))
+
+    expect(signInEmailOtp).toHaveBeenCalledWith({
+      email: 'admin@example.com',
+      otp: '123456',
+    })
+    expect(useAuthStore.getState().auth.isSignedIn).toBe(true)
+    expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
+  })
+
+  it('OTP login: resend requests a fresh code', async () => {
+    const screen = await render(<UserAuthForm />)
+    await userEvent.click(screen.getByRole('button', { name: 'OTP diye login' }))
+    await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Send OTP' }))
+    await vi.waitFor(() =>
+      expect(sendVerificationOtp).toHaveBeenCalledTimes(1),
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Resend code' }))
+    await vi.waitFor(() =>
+      expect(sendVerificationOtp).toHaveBeenCalledTimes(2),
+    )
+    expect(sendVerificationOtp).toHaveBeenNthCalledWith(2, {
+      email: 'admin@example.com',
+      type: 'sign-in',
+    })
   })
 })

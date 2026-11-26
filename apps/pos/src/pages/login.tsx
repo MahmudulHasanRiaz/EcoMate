@@ -41,10 +41,12 @@ export function LoginPage({ onSuccess }: Props) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [storeLogo, setStoreLogo] = useState<string | null>(null)
-  const [stage, setStage] = useState<'password' | 'challenge'>('password')
+  const [stage, setStage] = useState<'password' | 'challenge' | 'otp-email' | 'otp-code'>('password')
   const [useBackupCode, setUseBackupCode] = useState(false)
   const [code, setCode] = useState('')
   const [backupCode, setBackupCode] = useState('')
+  const [otpEmail, setOtpEmail] = useState('')
+  const [otpCode, setOtpCode] = useState('')
   const [pendingProvider, setPendingProvider] = useState<SocialProviderId | null>(null)
 
   useEffect(() => {
@@ -155,6 +157,67 @@ export function LoginPage({ onSuccess }: Props) {
     }
   }
 
+  /**
+   * OTP login (D7 flip, 2026-11-26): email → 6-digit code (valid 15 min,
+   * 5 wrong tries lock that code) → signed in. Same `completeSignIn`
+   * role gate as the password path; password login stays as before.
+   */
+  const handleOtpEmailSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      const { error: sendError } = await authClient.emailOtp.sendVerificationOtp({
+        email: otpEmail,
+        type: 'sign-in',
+      })
+      if (sendError) throw sendError
+      setOtpCode('')
+      setStage('otp-code')
+    } catch (err: any) {
+      setError(baErrorMessage(err, 'Could not send the code. Please try again.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOtpCodeSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      const { error: signInError } = await authClient.signIn.emailOtp({
+        email: otpEmail,
+        otp: otpCode.trim(),
+      })
+      if (signInError) throw signInError
+      await completeSignIn()
+    } catch (err: any) {
+      setError(baErrorMessage(err, 'Invalid code. Please try again.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOtpResend = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      // Resend rotates: a fresh code is issued and the previous one stops
+      // working (resendStrategy "rotate", service-side).
+      const { error: sendError } = await authClient.emailOtp.sendVerificationOtp({
+        email: otpEmail,
+        type: 'sign-in',
+      })
+      if (sendError) throw sendError
+      setOtpCode('')
+    } catch (err: any) {
+      setError(baErrorMessage(err, 'Could not resend the code. Please try again.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function handleSocial(provider: SocialProviderId) {
     setPendingProvider(provider)
     setError('')
@@ -183,7 +246,15 @@ export function LoginPage({ onSuccess }: Props) {
       <div className="absolute -bottom-20 -right-20 h-96 w-96 rounded-full bg-teal-500/10 blur-[100px]" />
 
       <form
-        onSubmit={stage === 'challenge' ? (useBackupCode ? handleBackupCodeSubmit : handleChallengeSubmit) : handleSubmit}
+        onSubmit={
+          stage === 'challenge'
+            ? (useBackupCode ? handleBackupCodeSubmit : handleChallengeSubmit)
+            : stage === 'otp-email'
+              ? handleOtpEmailSubmit
+              : stage === 'otp-code'
+                ? handleOtpCodeSubmit
+                : handleSubmit
+        }
         className="glass-dark relative z-10 w-full max-w-md rounded-2xl p-8 text-white shadow-2xl transition-all duration-300"
       >
         <div className="mb-8 flex flex-col items-center">
@@ -203,7 +274,13 @@ export function LoginPage({ onSuccess }: Props) {
           )}
           <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-100">EcoMate POS</h1>
           <p className="mt-1 text-sm text-slate-400">
-            {stage === 'challenge' ? 'Two-factor authentication' : 'Sign in to your checkout terminal'}
+            {stage === 'challenge'
+              ? 'Two-factor authentication'
+              : stage === 'otp-email'
+                ? 'Sign in with an OTP code'
+                : stage === 'otp-code'
+                  ? 'Enter the 6-digit code'
+                  : 'Sign in to your checkout terminal'}
           </p>
         </div>
 
@@ -213,7 +290,111 @@ export function LoginPage({ onSuccess }: Props) {
           </div>
         )}
 
-        {stage === 'challenge' ? (
+        {stage === 'otp-email' ? (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+              Apnar email-e ekta 6-digit code pathano hobe. Code diye sign in
+              korun — password lagbe na.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Email Address</label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
+                <input
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900/50 py-3 pl-11 pr-4 text-sm text-slate-200 placeholder-slate-600 outline-none transition-all duration-200 focus:border-emerald-500 focus:bg-slate-900 focus:ring-2 focus:ring-emerald-500/20"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="Enter email address"
+                  value={otpEmail}
+                  onChange={(e) => setOtpEmail(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 transition hover:bg-emerald-400 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Sending...</span>
+                </>
+              ) : (
+                <span>Send OTP</span>
+              )}
+            </button>
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => setStage('password')}
+                className="text-sm font-medium text-slate-400 underline underline-offset-4 hover:text-slate-200 cursor-pointer"
+              >
+                Back to password sign-in
+              </button>
+            </div>
+          </div>
+        ) : stage === 'otp-code' ? (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+              {otpEmail} — ei email-e 6-digit code pathano hoyeche. Code-ti 15
+              minute porjonto valid.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Login code</label>
+              <div className="relative">
+                <ShieldCheck className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
+                <input
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900/50 py-3 pl-11 pr-4 text-sm text-slate-200 placeholder-slate-600 outline-none transition-all duration-200 focus:border-emerald-500 focus:bg-slate-900 focus:ring-2 focus:ring-emerald-500/20 tracking-[0.3em]"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  required
+                  autoFocus
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={loading || otpCode.length < 6}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3.5 text-sm font-bold text-slate-950 transition hover:bg-emerald-400 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Verifying...</span>
+                </>
+              ) : (
+                <span>Verify and sign in</span>
+              )}
+            </button>
+            <div className="flex items-center justify-between text-sm">
+              <button
+                type="button"
+                onClick={handleOtpResend}
+                disabled={loading}
+                className="font-medium text-slate-400 underline underline-offset-4 hover:text-slate-200 disabled:opacity-50 cursor-pointer"
+              >
+                Resend code
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStage('otp-email')
+                  setOtpCode('')
+                }}
+                className="font-medium text-slate-400 underline underline-offset-4 hover:text-slate-200 cursor-pointer"
+              >
+                Use a different email
+              </button>
+            </div>
+          </div>
+        ) : stage === 'challenge' ? (
           <div className="space-y-4">
             <p className="text-sm text-slate-400">
               Two-factor authentication is on for this account. Enter the
@@ -343,6 +524,18 @@ export function LoginPage({ onSuccess }: Props) {
               ) : (
                 <span>Launch POS Terminal</span>
               )}
+            </button>
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => {
+                setError('')
+                setStage('otp-email')
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900/50 py-3.5 text-sm font-bold text-slate-200 transition hover:border-emerald-500/50 hover:text-white disabled:opacity-50 cursor-pointer"
+            >
+              OTP diye login
             </button>
 
             <div className="mt-6">

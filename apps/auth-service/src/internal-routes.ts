@@ -312,7 +312,15 @@ export async function handleCreateInternalUser(
           id: randomUUID(),
           name: (name as string).trim(),
           email,
-          emailVerified: (emailVerified as boolean | undefined) ?? false,
+          // D7 flip: default TRUE, not false. Users created here are
+          // created by the tenant backend / an admin — a trusted,
+          // out-of-band-verified account — and an `emailVerified: false`
+          // row loses its password account on first OTP login (BA
+          // 1.7.28 revokeUnprovenAccountAccess). An explicit caller
+          // value of `false` is still honoured (the caller then owns
+          // the consequence), but the default must never create an
+          // unverified password user. Same rule as script 01.
+          emailVerified: (emailVerified as boolean | undefined) ?? true,
           role: 'user',
         },
       });

@@ -31,6 +31,9 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /** OTP login (D7 flip): send a code, then sign in with it. */
+  requestLoginOtp: (email: string) => Promise<void>;
+  loginWithOtp: (email: string, otp: string) => Promise<void>;
   register: (data: {
     firstName: string;
     lastName: string;
@@ -127,6 +130,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   };
 
+  const requestLoginOtp = async (email: string) => {
+    await authApi.requestLoginOtp(email);
+  };
+
+  const loginWithOtp = async (email: string, otp: string) => {
+    const res = await authApi.loginWithOtp(email, otp);
+    setTwoFactorRequired(false);
+    setUser(res.user);
+  };
+
   const clearTwoFactor = () => setTwoFactorRequired(false);
 
   const register = async (data: {
@@ -152,6 +165,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         loading,
         login,
+        requestLoginOtp,
+        loginWithOtp,
         register,
         logout,
         refreshUser,

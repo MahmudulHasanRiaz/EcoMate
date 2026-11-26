@@ -17,6 +17,7 @@ import {
   ownerAc,
 } from 'better-auth/plugins/organization/access';
 import { twoFactor } from 'better-auth/plugins/two-factor';
+import { emailOTP } from 'better-auth/plugins/email-otp';
 import { APIError } from '@better-auth/core/error';
 import { createHMAC } from '@better-auth/utils/hmac';
 import bcrypt from 'bcryptjs';
@@ -396,6 +397,14 @@ export function buildAuthOptions(deps: {
     //   wrapper (src/ip-limits.ts) + the account lockout (src/lockout.ts).
     // - /request-password-reset + /send-verification-email: 3/60s — BA
     //   built-in default, restated explicitly.
+    // - /email-otp/* + /sign-in/email-otp: the emailOTP plugin registers
+    //   its own 3/60s rules per path (dist/plugins/email-otp/index.mjs
+    //   `rateLimit`), which OVERRIDE BA's default special rules
+    //   (rate-limiter/index.mjs: plugin rules win over defaults, and
+    //   customRules below win over plugin rules). The two VERIFY paths
+    //   are raised to 10/60s in customRules (see there) so the
+    //   configured allowedAttempts: 5 is reachable; the SEND paths keep
+    //   the plugin's 3/60s.
     // - /two-factor/*: NOT overridden — the plugin's own 3/10s rule
     //   (dist/plugins/two-factor/index.mjs:389-395) stays, plus the
     //   server-side 10/10-min per-IP challenge cap (platform parity) and
@@ -420,6 +429,17 @@ export function buildAuthOptions(deps: {
         '/request-password-reset': { window: 60, max: 3 },
         '/send-verification-email': { window: 60, max: 3 },
         '/impersonation/consume': { window: 60, max: 20 },
+        // D7 flip — OTP verify paths (override the plugin's own 3/60
+        // rules, which would 429 a user on their 4th guess and make the
+        // configured allowedAttempts: 5 unreachable within a minute).
+        // 10/60 = parity with /sign-in/email. Guessing stays bounded by
+        // allowedAttempts 5 per OTP (5th wrong guess consumes it; the
+        // next verify answers 403 TOO_MANY_ATTEMPTS) + the per-IP
+        // sign-in pacing in src/server.ts (10 failures/60 s → 15-min
+        // block). Send paths keep the plugin's 3/60 (sending mail is
+        // the expensive operation; resend rotates the OTP).
+        '/sign-in/email-otp': { window: 60, max: 10 },
+        '/email-otp/reset-password': { window: 60, max: 10 },
       },
     },
     plugins: [
@@ -478,6 +498,67 @@ export function buildAuthOptions(deps: {
           enabled: true,
           maxFailedAttempts: 10,
           durationSeconds: 900,
+        },
+      }),
+      // Email OTP login + password reset (D7 FLIP, Boss 2026-11-26 ~16:26:
+      // "Ha, plugin diye OTP firiye anaw"). D7 was decided B (BA native
+      // reset links) WITHOUT the plugin ever being evaluated — the
+      // correction is OTP via the `emailOTP` plugin, which covers sign-in
+      // (`/sign-in/email-otp`), email verification and password reset
+      // (`/email-otp/request-password-reset` + `/email-otp/reset-password`)
+      // in BA 1.7.28 (docs: better-auth.com/docs/plugins/email-otp).
+      //
+      // Options (match the old proven custom OTP UX where BA allows):
+      // - otpLength 6, expiresIn 900 s (old reset OTP lived 15 min; BA
+      //   default is 300 s).
+      // - allowedAttempts 5 (old flow consumed all live OTPs at 5 failures;
+      //   BA default is 3). At the limit the endpoint answers 403
+      //   TOO_MANY_ATTEMPTS and the OTP stays consumed — the BA equivalent
+      //   of the old behaviour (see routes.mjs atomicVerifyOTP).
+      // - storeOTP "encrypted" (BA default is "plain" — never ship plain;
+      //   encrypted with the BA secret, same key family as the twoFactor
+      //   backup codes, which are also stored encrypted).
+      // - disableSignUp TRUE (mandatory): OTP login must NEVER auto-create
+      //   users — signup is the controlled SaaS flow. An unknown email on
+      //   /sign-in/email-otp answers INVALID_OTP (BA returns the same
+      //   error as a wrong code, so no enumeration).
+      // - resendStrategy "rotate" (BA default): every resend issues a new
+      //   OTP and the previous one stops working.
+      // - changeEmail NOT enabled: email change stays out of scope.
+      // - overrideDefaultEmailVerification UNSET (false): email
+      //   verification stays LINK-based. The EMAIL_VERIFICATION OTP
+      //   decision is still open for Phase 5 (Phase 3 report §2) — the
+      //   plugin CAN send `email-verification` OTPs, but nothing in the
+      //   UI calls it and the default verification flow is untouched.
+      //
+      // PASSWORD-REMOVAL GOTCHA (verified in BA 1.7.28 source, NOT docs
+      // prose): `signInEmailOTP` (routes.mjs) calls
+      // `revokeUnprovenAccountAccess` when the user row has
+      // `emailVerified: false` — it DELETES every account row (including
+      // the credential/password account) and ALL sessions, then flips
+      // `emailVerified: true`. A migrated tenant user who never verified
+      // their email would LOSE their password on first OTP login. The
+      // fix is at migration time, not here: script 01 marks every
+      // migrated tenant user `emailVerified: true` (existing trusted
+      // users who have been logging in — legacy login never gated on
+      // emailVerified — see scripts/01-migrate-tenant-users.ts header),
+      // and `POST /internal/users` defaults new centrally-created users
+      // to `emailVerified: true` for the same reason. With every central
+      // user verified, the revocation path can never fire for a real
+      // user; it can only fire for a row created outside those paths,
+      // where deleting unproven access is the correct BA behaviour.
+      // The reset-password OTP endpoint does NOT call that helper (it
+      // only flips emailVerified after a successful reset), so a reset
+      // never removes a password by itself.
+      emailOTP({
+        otpLength: 6,
+        expiresIn: 900,
+        allowedAttempts: 5,
+        storeOTP: 'encrypted',
+        disableSignUp: true,
+        resendStrategy: 'rotate',
+        sendVerificationOTP: async ({ email, otp, type }) => {
+          await mailer.sendVerificationOTP(email, otp, type);
         },
       }),
       // Admin plugin (Q7, design §1): narrow custom roles — "operator"

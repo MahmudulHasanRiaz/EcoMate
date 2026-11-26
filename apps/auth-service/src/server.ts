@@ -68,6 +68,8 @@ export interface ServerDeps {
 
 const BASE_PATH = '/api/better-auth';
 const SIGN_IN_PATH = '/sign-in/email';
+// D7 flip: OTP sign-in shares the per-IP sign-in pacing (see below).
+const OTP_SIGN_IN_PATH = '/sign-in/email-otp';
 const MFA_CHALLENGE_PATHS = new Set([
   '/two-factor/verify-totp',
   '/two-factor/verify-backup-code',
@@ -114,6 +116,17 @@ interface AuditRule {
 const AUDIT_RULES: Record<string, AuditRule> = {
   '/sign-up/email': { event: 'auth.sign_up' },
   '/sign-in/email': { event: 'auth.sign_in' },
+  // D7 flip: OTP sign-in + OTP reset audited under their own events.
+  '/sign-in/email-otp': { event: 'auth.sign_in_otp' },
+  '/email-otp/send-verification-otp': {
+    event: 'auth.otp.sent',
+  },
+  '/email-otp/request-password-reset': {
+    event: 'auth.password_reset_otp.requested',
+  },
+  '/email-otp/reset-password': {
+    event: 'auth.password_reset_otp.completed',
+  },
   '/request-password-reset': { event: 'auth.password_reset.requested' },
   '/reset-password': { event: 'auth.password_reset.completed' },
   '/organization/create': { event: 'auth.organization.created' },
@@ -452,6 +465,25 @@ export function createServer(deps: ServerDeps): http.Server {
           return;
         }
       }
+      // D7 flip — OTP sign-in pacing: a blocked IP is blocked for OTP
+      // sign-in too (same 10-failures/60 s → 15-min block bucket as
+      // password sign-in). Deliberately NO account-lockout pre-check
+      // here: the OTP is mailbox proof, so a password-failure lockout
+      // must not block this recovery path — and OTP failures must not
+      // write DB lockout rows (an attacker guessing OTPs could otherwise
+      // lock the victim out of OTP login as well). Guessing is bounded
+      // by the plugin instead: allowedAttempts 5 per OTP + the plugin's
+      // own 3/60 s per-path rate limit (see auth-options.ts).
+      if (method === 'POST' && endpoint === OTP_SIGN_IN_PATH && email) {
+        if (ipSignIn.isBlocked(ip)) {
+          logger.audit('auth.sign_in_otp.blocked_ip', { requestId, ip });
+          sendJson(429, {
+            code: 'TOO_MANY_REQUESTS',
+            message: 'Too many requests. Please try again later.',
+          });
+          return;
+        }
+      }
       if (method === 'POST' && MFA_CHALLENGE_PATHS.has(endpoint)) {
         if (ipMfa.isBlocked(ip)) {
           logger.audit('auth.totp.blocked_ip', { requestId, ip, route });
@@ -594,6 +626,19 @@ export function createServer(deps: ServerDeps): http.Server {
         }
       }
 
+      // D7 flip — OTP sign-in IP accounting: a successful OTP sign-in
+      // clears the IP's failure history (same as password sign-in); a
+      // failed OTP verification (400 INVALID_OTP / 403 TOO_MANY_ATTEMPTS)
+      // counts toward the per-IP block, but NEVER toward the DB account
+      // lockout (see the pre-check note above).
+      if (method === 'POST' && endpoint === OTP_SIGN_IN_PATH && email) {
+        if (status === 200) {
+          ipSignIn.reset(ip);
+        } else if (status === 400 || status === 403) {
+          ipSignIn.record(ip);
+        }
+      }
+
       // Audit log (auth security events from day one).
       const rule = method === 'POST' ? AUDIT_RULES[endpoint] : undefined;
       if (rule) {
@@ -603,7 +648,7 @@ export function createServer(deps: ServerDeps): http.Server {
           status,
         };
         if (email) fields.email = email;
-        if (endpoint === '/sign-in/email') {
+        if (endpoint === '/sign-in/email' || endpoint === '/sign-in/email-otp') {
           fields.outcome = status === 200 ? 'success' : 'failure';
         }
         if (endpoint === '/admin/stop-impersonating' && status === 200) {

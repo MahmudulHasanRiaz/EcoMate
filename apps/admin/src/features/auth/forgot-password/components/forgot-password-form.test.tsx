@@ -4,24 +4,34 @@ import { userEvent, type Locator } from 'vitest/browser'
 import { ForgotPasswordForm } from './forgot-password-form'
 
 /**
- * Phase 3 (D7=B): BA native reset LINKS replace the OTP flow — the form
- * calls `authClient.requestPasswordReset()` and shows the same generic
- * confirmation whether or not the email exists (anti-enumeration).
- * There is no `/otp` navigation anymore.
+ * D7 flip (2026-11-26): OTP flow replaces the Phase 3 BA native reset
+ * LINKS. The form calls `authClient.emailOtp.requestPasswordReset()` to
+ * send a 6-digit code, then `authClient.emailOtp.resetPassword()` with
+ * the code + new password. The confirmation stays generic (anti-enumeration).
  */
 
 const requestPasswordReset = vi.hoisted(() => vi.fn())
+const resetPassword = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
+const toastError = vi.hoisted(() => vi.fn())
+const navigate = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/better-auth-client', () => ({
-  authClient: { requestPasswordReset },
+  authClient: {
+    emailOtp: { requestPasswordReset, resetPassword },
+  },
 }))
 
 vi.mock('sonner', () => ({
-  toast: { success: toastSuccess },
+  toast: { success: toastSuccess, error: toastError },
 }))
 
-describe('ForgotPasswordForm (Phase 3)', () => {
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  return { ...actual, useNavigate: () => navigate }
+})
+
+describe('ForgotPasswordForm (D7 flip — OTP)', () => {
   let screen: RenderResult
   let emailInput: Locator
   let sendButton: Locator
@@ -29,13 +39,14 @@ describe('ForgotPasswordForm (Phase 3)', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     requestPasswordReset.mockResolvedValue({ error: null })
+    resetPassword.mockResolvedValue({ error: null })
 
     screen = await render(<ForgotPasswordForm />)
     emailInput = screen.getByRole('textbox', { name: /^Email$/i })
-    sendButton = screen.getByRole('button', { name: /^Send reset link$/i })
+    sendButton = screen.getByRole('button', { name: /^Send reset code$/i })
   })
 
-  it('renders email field and send-reset-link button', async () => {
+  it('renders email field and send-reset-code button', async () => {
     await expect.element(emailInput).toBeInTheDocument()
     await expect.element(sendButton).toBeInTheDocument()
   })
@@ -48,20 +59,24 @@ describe('ForgotPasswordForm (Phase 3)', () => {
     expect(requestPasswordReset).not.toHaveBeenCalled()
   })
 
-  it('requests a reset link and shows the generic confirmation on success', async () => {
+  it('requests a reset code and shows the OTP + new-password step', async () => {
     await userEvent.fill(emailInput, 'a@b.com')
     await userEvent.click(sendButton)
 
     await vi.waitFor(() =>
       expect(requestPasswordReset).toHaveBeenCalledWith({
         email: 'a@b.com',
-        redirectTo: expect.stringContaining('/reset-password'),
       }),
     )
     await expect
-      .element(screen.getByText(/If an account exists for a@b\.com, a password reset link is on its way/i))
+      .element(
+        screen.getByText(/If an account exists for a@b\.com, a 6-digit reset code is on its way/i),
+      )
       .toBeInTheDocument()
-    await expect.element(screen.getByRole('button', { name: /Send to a different email/i })).toBeInTheDocument()
+    await expect.element(screen.getByText(/^Reset code$/i)).toBeInTheDocument()
+    await expect
+      .element(screen.getByRole('button', { name: /Resend code/i }))
+      .toBeInTheDocument()
   })
 
   it('shows the same confirmation when the request fails (anti-enumeration)', async () => {
@@ -71,9 +86,47 @@ describe('ForgotPasswordForm (Phase 3)', () => {
     await userEvent.click(sendButton)
 
     await expect
-      .element(screen.getByText(/If an account exists for a@b\.com, a password reset link is on its way/i))
+      .element(
+        screen.getByText(/If an account exists for a@b\.com, a 6-digit reset code is on its way/i),
+      )
       .toBeInTheDocument()
-    expect(toastSuccess).toHaveBeenCalledWith('If the email exists, a reset link has been sent')
+    expect(toastSuccess).toHaveBeenCalledWith(
+      'If the email exists, a reset code has been sent',
+    )
+  })
+
+  it('resets the password with the code and navigates to sign-in', async () => {
+    await userEvent.fill(emailInput, 'a@b.com')
+    await userEvent.click(sendButton)
+    await vi.waitFor(() =>
+      expect(requestPasswordReset).toHaveBeenCalled(),
+    )
+
+    const codeInput = screen.container.querySelector(
+      'input[autocomplete="one-time-code"]',
+    )
+    expect(codeInput).not.toBeNull()
+    await userEvent.fill(codeInput as HTMLInputElement, '123456')
+    await userEvent.fill(
+      screen.getByLabelText(/^New Password$/i),
+      'NewPass1!',
+    )
+    await userEvent.fill(
+      screen.getByLabelText(/^Confirm New Password$/i),
+      'NewPass1!',
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: /^Reset Password$/i }),
+    )
+
+    await vi.waitFor(() =>
+      expect(resetPassword).toHaveBeenCalledWith({
+        email: 'a@b.com',
+        otp: '123456',
+        password: 'NewPass1!',
+      }),
+    )
+    expect(navigate).toHaveBeenCalledWith({ to: '/sign-in' })
   })
 
   it('returns to the form when sending to a different email', async () => {
@@ -84,6 +137,6 @@ describe('ForgotPasswordForm (Phase 3)', () => {
       .toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: /Send to a different email/i }))
-    await expect.element(screen.getByRole('button', { name: /^Send reset link$/i })).toBeInTheDocument()
+    await expect.element(screen.getByRole('button', { name: /^Send reset code$/i })).toBeInTheDocument()
   })
 })

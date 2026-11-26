@@ -24,6 +24,8 @@ export default function AccountPage() {
     user,
     loading,
     login,
+    requestLoginOtp,
+    loginWithOtp,
     register,
     twoFactorRequired,
     verifyTwoFactor,
@@ -45,6 +47,9 @@ export default function AccountPage() {
   const [backupCode, setBackupCode] = useState('');
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<SocialProviderId | null>(null);
+  // OTP login (D7 flip, 2026-11-26): email → 6-digit code → signed in.
+  const [otpStage, setOtpStage] = useState<'password' | 'otp-email' | 'otp-code'>('password');
+  const [otpCode, setOtpCode] = useState('');
 
   // Social sign-in returns here with `?error=` when the provider (or the
   // user) refuses — surface it instead of a silent landing on the form.
@@ -142,6 +147,74 @@ export default function AccountPage() {
     );
   }
 
+  if (!user && isLoginMode && otpStage !== 'password') {
+    return (
+      <div className="max-w-md mx-auto px-4 py-12 md:py-24">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">
+              {otpStage === 'otp-email' ? 'OTP diye login' : 'Enter the code'}
+            </h2>
+            <p className="text-sm text-gray-500">
+              {otpStage === 'otp-email'
+                ? 'Apnar email-e ekta 6-digit code pathano hobe. Code diye sign in korun — password lagbe na.'
+                : `${email} — ei email-e 6-digit code pathano hoyeche. Code-ti 15 minute porjonto valid.`}
+            </p>
+          </div>
+          {otpStage === 'otp-email' ? (
+            <form onSubmit={async (e) => {
+              e.preventDefault(); setError(''); setSubmitting(true);
+              try {
+                await requestLoginOtp(email);
+                setOtpCode('');
+                setOtpStage('otp-code');
+              } catch (err: any) {
+                setError(err?.message || 'Could not send the code. Please try again.');
+              } finally { setSubmitting(false); }
+            }} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-600 ml-1">Email</label>
+                <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm" required autoFocus />
+              </div>
+              {error && <div className="text-red-500 text-xs font-medium bg-red-50 p-3 rounded-xl">{error}</div>}
+              <button type="submit" disabled={submitting} className="w-full h-12 bg-brand-blue hover:bg-brand-blue/90 text-white font-bold rounded-xl transition-all shadow-lg shadow-brand-blue/20 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center">
+                {submitting ? <Loader2 className="animate-spin" size={20} /> : 'Send OTP'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={async (e) => {
+              e.preventDefault(); setError(''); setSubmitting(true);
+              try {
+                await loginWithOtp(email, otpCode.trim());
+              } catch (err: any) {
+                setError(err?.message || 'Invalid code. Please try again.');
+              } finally { setSubmitting(false); }
+            }} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-600 ml-1">Login code</label>
+                <input type="text" inputMode="numeric" autoComplete="one-time-code" value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="123456" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-brand-blue text-sm tracking-[0.3em]" required autoFocus />
+              </div>
+              {error && <div className="text-red-500 text-xs font-medium bg-red-50 p-3 rounded-xl">{error}</div>}
+              <button type="submit" disabled={submitting || otpCode.length < 6} className="w-full h-12 bg-brand-blue hover:bg-brand-blue/90 text-white font-bold rounded-xl transition-all shadow-lg shadow-brand-blue/20 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center">
+                {submitting ? <Loader2 className="animate-spin" size={20} /> : 'Verify and sign in'}
+              </button>
+            </form>
+          )}
+          <div className="mt-6 flex items-center justify-between text-sm">
+            {otpStage === 'otp-code' ? (
+              <button type="button" onClick={async () => { setError(''); setSubmitting(true); try { await requestLoginOtp(email); setOtpCode(''); } catch (err: any) { setError(err?.message || 'Could not resend the code.'); } finally { setSubmitting(false); } }} disabled={submitting} className="font-medium text-gray-500 underline underline-offset-4 hover:text-brand-blue disabled:opacity-60">
+                Resend code
+              </button>
+            ) : <span />}
+            <button type="button" onClick={() => { setOtpStage(otpStage === 'otp-code' ? 'otp-email' : 'password'); setOtpCode(''); setError(''); }} className="font-medium text-gray-500 underline underline-offset-4 hover:text-brand-blue">
+              {otpStage === 'otp-code' ? 'Use a different email' : 'Back to password sign-in'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="max-w-md mx-auto px-4 py-12 md:py-24">
@@ -205,6 +278,12 @@ export default function AccountPage() {
               {submitting ? <Loader2 className="animate-spin" size={20} /> : (isLoginMode ? 'Sign In' : 'Create Account')}
             </button>
           </form>
+
+          {isLoginMode && (
+            <button type="button" disabled={submitting} onClick={() => { setError(''); setOtpStage('otp-email'); }} className="mt-3 w-full h-12 rounded-xl border border-gray-200 bg-white text-sm font-bold text-gray-700 transition hover:border-brand-blue hover:text-brand-blue disabled:opacity-60">
+              OTP diye login
+            </button>
+          )}
 
           {isLoginMode && (
             <div className="mt-6">

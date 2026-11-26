@@ -1,5 +1,5 @@
 import { createAuthClient } from "better-auth/react";
-import { twoFactorClient } from "better-auth/client/plugins";
+import { emailOTPClient, twoFactorClient } from "better-auth/client/plugins";
 
 // Same-origin by default: the POS origin proxies /api/* to the backend
 // (VITE_API_URL defaults to /api), so auth calls belong on this origin.
@@ -31,5 +31,7 @@ export const authClient = createAuthClient({
     // the login screen verifies the code via `twoFactor.verifyTotp`.
     // Enrolment itself lives in the admin app (D13), not in POS.
     twoFactorClient(),
+    // OTP login (D7 flip, 2026-11-26): `authClient.signIn.emailOtp()`.
+    emailOTPClient(),
   ],
 });

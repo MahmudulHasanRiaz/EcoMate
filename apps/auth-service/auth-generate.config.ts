@@ -30,6 +30,7 @@ export const auth = betterAuth(
     mailer: {
       sendVerificationEmail: async () => {},
       sendResetPasswordEmail: async () => {},
+      sendVerificationOTP: async () => {},
     },
   }),
 );

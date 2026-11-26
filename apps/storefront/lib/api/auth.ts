@@ -74,6 +74,32 @@ export async function verifyBackupCode(code: string): Promise<AuthResponse> {
   return { user: await getMe() };
 }
 
+/**
+ * OTP login (D7 flip, 2026-11-26): a 6-digit code to the email (valid 15
+ * minutes; 5 wrong tries lock that code) signs the customer in without a
+ * password. Same `getMe()` profile load as password login.
+ */
+export async function requestLoginOtp(email: string): Promise<void> {
+  const { error } = await authClient.emailOtp.sendVerificationOtp({
+    email,
+    type: "sign-in",
+  });
+  if (error) {
+    throw new Error(baErrorMessage(error, "Could not send the code"));
+  }
+}
+
+export async function loginWithOtp(
+  email: string,
+  otp: string,
+): Promise<AuthResponse> {
+  const { error } = await authClient.signIn.emailOtp({ email, otp });
+  if (error) {
+    throw new Error(baErrorMessage(error, "Invalid code. Please try again."));
+  }
+  return { user: await getMe() };
+}
+
 export async function register(data: {
   firstName: string;
   lastName: string;

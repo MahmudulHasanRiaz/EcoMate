@@ -12,11 +12,22 @@ import type { AuthServiceConfig } from './config.js';
 import { logger } from './logger.js';
 
 export interface CapturedMail {
-  type: 'verification' | 'reset';
+  type: 'verification' | 'reset' | 'otp';
   to: string;
   url: string;
+  /** OTP value, only for type 'otp' (AUTH_MAIL_MODE=test capture). */
+  otp?: string;
+  /** OTP purpose, only for type 'otp'. */
+  otpType?: OtpType;
   capturedAt: string;
 }
+
+/** OTP purposes (Better Auth emailOTP plugin `type` values). */
+export type OtpType =
+  | 'sign-in'
+  | 'email-verification'
+  | 'forget-password'
+  | 'change-email';
 
 const captured: CapturedMail[] = [];
 
@@ -33,6 +44,13 @@ export function clearCapturedMail(): void {
 export interface Mailer {
   sendVerificationEmail(to: string, url: string): Promise<void>;
   sendResetPasswordEmail(to: string, url: string): Promise<void>;
+  /**
+   * EmailOTP plugin sender (D7 flip, 2026-11-26: OTP login + OTP password
+   * reset via the `emailOTP` plugin). One 6-digit code per purpose; the
+   * mailer does not know or care whether the OTP signs in or resets — the
+   * subject/body name the purpose so the user can tell them apart.
+   */
+  sendVerificationOTP(to: string, otp: string, type: OtpType): Promise<void>;
 }
 
 function escapeHtml(s: string): string {
@@ -51,6 +69,30 @@ function verificationHtml(url: string): string {
 function resetHtml(url: string): string {
   const safe = escapeHtml(url);
   return `<p>Hello,</p><p>We received a request to reset your EcoMate password. Click the link below to choose a new password. The link expires in 15 minutes.</p><p><a href="${safe}">Reset my password</a></p><p>If you did not request this, you can ignore this email — your password will not change.</p>`;
+}
+
+const OTP_SUBJECTS: Record<OtpType, string> = {
+  'sign-in': 'Your EcoMate login code',
+  'forget-password': 'Your EcoMate password reset code',
+  'email-verification': 'Your EcoMate verification code',
+  'change-email': 'Your EcoMate email change code',
+};
+
+const OTP_INTRO: Record<OtpType, string> = {
+  'sign-in': 'Use this code to sign in to EcoMate.',
+  'forget-password':
+    'Use this code to reset your EcoMate password. If you did not request this, you can ignore this email — your password will not change.',
+  'email-verification': 'Use this code to verify your EcoMate email address.',
+  'change-email': 'Use this code to confirm your new EcoMate email address.',
+};
+
+function otpHtml(otp: string, type: OtpType): string {
+  const safe = escapeHtml(otp);
+  return `<p>Hello,</p><p>${OTP_INTRO[type]} The code expires in 15 minutes.</p><p style="font-size: 28px; letter-spacing: 6px; font-weight: bold;">${safe}</p><p>If you did not request this code, you can ignore this email.</p>`;
+}
+
+function otpText(otp: string, type: OtpType): string {
+  return `${OTP_INTRO[type]} Your code is ${otp}. It expires in 15 minutes. If you did not request this code, you can ignore this email.`;
 }
 
 export function createMailer(config: AuthServiceConfig): Mailer {
@@ -116,8 +158,46 @@ export function createMailer(config: AuthServiceConfig): Mailer {
     logger.info('auth.mail.sent', { type, to });
   }
 
+  async function sendOtp(
+    to: string,
+    otp: string,
+    type: OtpType,
+  ): Promise<void> {
+    if (config.mailMode === 'test') {
+      captured.push({
+        type: 'otp',
+        to,
+        url: '',
+        otp,
+        otpType: type,
+        capturedAt: new Date().toISOString(),
+      });
+      logger.info('auth.mail.captured', { type: 'otp', otpType: type, to });
+      return;
+    }
+    const tx = getTransporter();
+    if (!tx) {
+      logger.error('auth.mail.not_sent', {
+        type: 'otp',
+        otpType: type,
+        to,
+        reason: 'smtp_not_configured',
+      });
+      return;
+    }
+    await tx.sendMail({
+      from: config.smtp.from,
+      to,
+      subject: OTP_SUBJECTS[type],
+      text: otpText(otp, type),
+      html: otpHtml(otp, type),
+    });
+    logger.info('auth.mail.sent', { type: 'otp', otpType: type, to });
+  }
+
   return {
     sendVerificationEmail: (to, url) => send('verification', to, url),
     sendResetPasswordEmail: (to, url) => send('reset', to, url),
+    sendVerificationOTP: (to, otp, type) => sendOtp(to, otp, type),
   };
 }

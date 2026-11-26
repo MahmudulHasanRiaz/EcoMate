@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { signInEmail, signUpEmail, verifyTotp, verifyBackupCode, signOut, apiGet, apiPut } =
+const { signInEmail, signInEmailOtp, sendVerificationOtp, signUpEmail, verifyTotp, verifyBackupCode, signOut, apiGet, apiPut } =
   vi.hoisted(() => ({
     signInEmail: vi.fn(),
+    signInEmailOtp: vi.fn(),
+    sendVerificationOtp: vi.fn(),
     signUpEmail: vi.fn(),
     verifyTotp: vi.fn(),
     verifyBackupCode: vi.fn(),
@@ -13,7 +15,8 @@ const { signInEmail, signUpEmail, verifyTotp, verifyBackupCode, signOut, apiGet,
 
 vi.mock("../../better-auth-client", () => ({
   authClient: {
-    signIn: { email: signInEmail },
+    signIn: { email: signInEmail, emailOtp: signInEmailOtp },
+    emailOtp: { sendVerificationOtp },
     signUp: { email: signUpEmail },
     twoFactor: { verifyTotp, verifyBackupCode },
     signOut,
@@ -26,6 +29,8 @@ vi.mock("../../api-client", () => ({
 
 import {
   login,
+  requestLoginOtp,
+  loginWithOtp,
   register,
   verifyTotp as verifyTotpFn,
   verifyBackupCode as verifyBackupCodeFn,
@@ -60,6 +65,8 @@ describe("storefront lib/api/auth (Phase 3)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     signInEmail.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    signInEmailOtp.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    sendVerificationOtp.mockResolvedValue({ data: null, error: null });
     signUpEmail.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     verifyTotp.mockResolvedValue({ data: { token: "t" }, error: null });
     verifyBackupCode.mockResolvedValue({ data: { token: "t" }, error: null });
@@ -144,5 +151,33 @@ describe("storefront lib/api/auth (Phase 3)", () => {
     await expect(getMe()).resolves.toEqual(customer);
     apiGet.mockResolvedValueOnce({ data: customer });
     await expect(getMe()).resolves.toEqual(customer);
+  });
+
+  it("OTP login: requests a sign-in code for the email", async () => {
+    await requestLoginOtp("aya@shop.test");
+    expect(sendVerificationOtp).toHaveBeenCalledWith({
+      email: "aya@shop.test",
+      type: "sign-in",
+    });
+  });
+
+  it("OTP login: verifies the code and returns the tenant profile", async () => {
+    const res = await loginWithOtp("aya@shop.test", "123456");
+    expect(signInEmailOtp).toHaveBeenCalledWith({
+      email: "aya@shop.test",
+      otp: "123456",
+    });
+    expect(apiGet).toHaveBeenCalledWith("/auth/me");
+    expect(res.user).toEqual(customer);
+  });
+
+  it("OTP login: a wrong code throws the server message", async () => {
+    signInEmailOtp.mockResolvedValue({
+      data: null,
+      error: { status: 400, message: "Invalid OTP", code: "INVALID_OTP" },
+    });
+    await expect(loginWithOtp("aya@shop.test", "000000")).rejects.toThrow(
+      "Invalid OTP",
+    );
   });
 });

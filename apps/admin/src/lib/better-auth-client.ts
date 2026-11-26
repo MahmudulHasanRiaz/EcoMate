@@ -1,6 +1,7 @@
 import { createAuthClient } from "better-auth/react";
 import {
   adminClient,
+  emailOTPClient,
   organizationClient,
   twoFactorClient,
 } from "better-auth/client/plugins";
@@ -34,6 +35,9 @@ export const authClient = createAuthClient({
     organizationClient(),
     // Tenant-staff TOTP enrolment + challenge (D13).
     twoFactorClient(),
+    // OTP login + OTP password reset (D7 flip, 2026-11-26):
+    // `authClient.signIn.emailOtp()` / `authClient.emailOtp.*`.
+    emailOTPClient(),
     // Impersonation stop (D8): `authClient.admin.stopImpersonating()`
     // restores the operator session from the `admin_session` cookie.
     adminClient(),

@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-const { signInEmail, signInSocial, verifyTotp, verifyBackupCode, signOut, apiGet } =
+const { signInEmail, signInEmailOtp, sendVerificationOtp, signInSocial, verifyTotp, verifyBackupCode, signOut, apiGet } =
   vi.hoisted(() => ({
     signInEmail: vi.fn(),
+    signInEmailOtp: vi.fn(),
+    sendVerificationOtp: vi.fn(),
     signInSocial: vi.fn(),
     verifyTotp: vi.fn(),
     verifyBackupCode: vi.fn(),
@@ -13,7 +15,8 @@ const { signInEmail, signInSocial, verifyTotp, verifyBackupCode, signOut, apiGet
 
 vi.mock('../../lib/better-auth-client', () => ({
   authClient: {
-    signIn: { email: signInEmail, social: signInSocial },
+    signIn: { email: signInEmail, social: signInSocial, emailOtp: signInEmailOtp },
+    emailOtp: { sendVerificationOtp },
     twoFactor: { verifyTotp, verifyBackupCode },
     signOut,
   },
@@ -48,6 +51,8 @@ describe('POS LoginPage (Phase 3)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     signInEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
+    signInEmailOtp.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
+    sendVerificationOtp.mockResolvedValue({ data: null, error: null })
     signInSocial.mockResolvedValue({ data: null, error: null })
     verifyTotp.mockResolvedValue({ data: { token: 't' }, error: null })
     verifyBackupCode.mockResolvedValue({ data: { token: 't' }, error: null })
@@ -169,5 +174,43 @@ describe('POS LoginPage (Phase 3)', () => {
       screen.getByText('Social sign-in was cancelled. Please try again or sign in with email.'),
     ).toBeInTheDocument()
     window.history.pushState({}, '', '/pos/')
+  })
+
+  it('OTP login: sends a code, verifies it, and enters the terminal', async () => {
+    const onSuccess = vi.fn()
+    render(<LoginPage onSuccess={onSuccess} />)
+    fireEvent.click(screen.getByRole('button', { name: 'OTP diye login' }))
+    fireEvent.change(screen.getByPlaceholderText('Enter email address'), {
+      target: { value: 'cashier@shop.test' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Send OTP' }))
+    await waitFor(() =>
+      expect(sendVerificationOtp).toHaveBeenCalledWith({
+        email: 'cashier@shop.test',
+        type: 'sign-in',
+      }),
+    )
+    fireEvent.change(screen.getByPlaceholderText('123456'), {
+      target: { value: '123456' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }))
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    expect(signInEmailOtp).toHaveBeenCalledWith({
+      email: 'cashier@shop.test',
+      otp: '123456',
+    })
+    expect(apiGet).toHaveBeenCalledWith('/auth/me')
+  })
+
+  it('OTP login: resend requests a fresh code', async () => {
+    render(<LoginPage onSuccess={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'OTP diye login' }))
+    fireEvent.change(screen.getByPlaceholderText('Enter email address'), {
+      target: { value: 'cashier@shop.test' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Send OTP' }))
+    await waitFor(() => expect(sendVerificationOtp).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Resend code' }))
+    await waitFor(() => expect(sendVerificationOtp).toHaveBeenCalledTimes(2))
   })
 })
