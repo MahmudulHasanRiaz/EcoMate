@@ -6,7 +6,7 @@ name: Build Images
 #            github (ubuntu-latest, native amd64 = no emulation, but cold
 #            cache on first run and shared-IP Docker Hub limits can bite)
 #   all + backend/storefront/admin/pos/platform-api/platform-admin/landing/
-#   caddy/auth-service: which images to build.
+#   caddy/auth-service/migration-runner: which images to build.
 # Deployment stays manual too (Deploy SaaS workflow pulls these images).
 on:
   workflow_dispatch:
@@ -69,6 +69,11 @@ on:
         required: false
         default: false
         type: boolean
+      migration-runner:
+        description: 'Build migration-runner image?'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -87,10 +92,13 @@ jobs:
   # published image (deployment itself is manual, so the gate only needs to
   # protect the image).
   # Only needed when the backend, platform-api, or auth-service image will
-  # actually rebuild.
+  # actually rebuild. migration-runner is listed in the job condition only
+  # so build-migration-runner (needs: [guards, unit]) is satisfiable on a
+  # runner-only dispatch — it adds NO gate step here, because the runner
+  # ships no migrations of its own.
   guards:
     name: static guards
-    if: inputs.all == true || inputs.backend == true || inputs.platform-api == true || inputs.auth-service == true
+    if: inputs.all == true || inputs.backend == true || inputs.platform-api == true || inputs.auth-service == true || inputs.migration-runner == true
     # fromJSON array literal: runs-on accepts an expression evaluating to labels.
     runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
     timeout-minutes: 30
@@ -332,7 +340,11 @@ jobs:
   # suite with a live DB.
   unit:
     name: unit tests
-    if: ${{ inputs.all == true || inputs.backend == true || inputs.storefront == true || inputs.admin == true || inputs.pos == true || inputs.platform-api == true || inputs.platform-admin == true || inputs.landing == true || inputs.auth-service == true }}
+    # migration-runner is in this condition only so build-migration-runner
+    # (needs: [guards, unit]) can run on a runner-only dispatch — it adds
+    # NO test step here; the scripts it runs are covered by the
+    # auth-service unit tests (tests/migration-scripts.test.ts).
+    if: ${{ inputs.all == true || inputs.backend == true || inputs.storefront == true || inputs.admin == true || inputs.pos == true || inputs.platform-api == true || inputs.platform-admin == true || inputs.landing == true || inputs.auth-service == true || inputs.migration-runner == true }}
     runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
     timeout-minutes: 30
     # Auth-service tests are DB-backed (46 in Phase 1) — they need a live
@@ -535,4 +547,21 @@ jobs:
     uses: ./.github/workflows/build-service-image.yml
     with:
       service: auth-service
+      runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
+
+  build-migration-runner:
+    # Thin wrapper around the Phase 2 scripts (apps/auth-service/scripts/
+    # 01-03) — it ships NO migrations and NO tests of its own. Its gate is
+    # the auth-service one: guards (auth migration-safety) + unit
+    # (auth-service tests, incl. tests/migration-scripts.test.ts) — hence
+    # needs: [guards, unit] like build-auth-service, and the
+    # migration-runner toggle in both jobs' `if` conditions so a
+    # runner-only dispatch actually runs instead of skipping on a skipped
+    # need. No timeout-minutes passed (default 120, same as the
+    # frontend jobs).
+    needs: [guards, unit]
+    if: inputs.all == true || inputs.migration-runner == true
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: migration-runner
       runners: ${{ inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]' }}
