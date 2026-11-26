@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getShowrooms } from '../api/client'
+import { authClient } from '../lib/better-auth-client'
 import { useSessionStore } from '../stores/session-store'
 import { MapPin, Phone, Building2, Search, LogOut, ArrowRight, Loader2 } from 'lucide-react'
 
@@ -32,8 +33,11 @@ export function SessionSelectPage({ onSelected }: Props) {
     onSelected()
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('pos_access_token')
+  const handleLogout = async () => {
+    // Phase 3: end the BA session (the old `pos_access_token` removal is
+    // gone — there is no token anymore). The business session id is
+    // cleared too; the stale `pos_session_id` key is removed as before.
+    await authClient.signOut().catch(() => {})
     localStorage.removeItem('pos_session_id')
     window.location.href = '/pos/'
   }

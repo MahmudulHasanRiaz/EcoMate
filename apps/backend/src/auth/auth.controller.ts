@@ -177,13 +177,21 @@ export class AuthController {
   async changePassword(
     @CurrentUser() user: { userId: string },
     @Body() dto: ChangePasswordDto,
+    @Req() req: { headers?: Record<string, string | string[] | undefined> },
   ) {
     // An impersonated platform operator must never be able to change the
     // tenant owner's password — that would lock the owner out of their
     // own account. Owner password resets go through the platform console
     // (audited there) instead.
     assertNotImpersonated(user, 'Password changes');
-    return this.authService.changePassword(user.userId, dto);
+    // Central-ba mode needs the session cookie + tenant Host so the
+    // service can authenticate the change-password call (H9/H10).
+    const cookie = req?.headers?.['cookie'];
+    const host = req?.headers?.['host'];
+    return this.authService.changePassword(user.userId, dto, {
+      cookie: typeof cookie === 'string' ? cookie : undefined,
+      host: typeof host === 'string' ? host : undefined,
+    });
   }
 
   @Public()

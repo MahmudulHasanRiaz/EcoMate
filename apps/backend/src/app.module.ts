@@ -61,6 +61,9 @@ import { CacheModule } from './cache/cache.module';
 import { CachePurgeModule } from './cache-purge/cache-purge.module';
 import { RolesGuard } from './auth/roles.guard';
 import { DualModeAuthGuard } from './common/guards/dual-mode-auth.guard';
+import { CentralSessionAuthGuard } from './common/guards/central-session-auth.guard';
+import { TenantAuthModeGuard } from './common/guards/tenant-auth-mode.guard';
+import { CentralAuthModule } from './auth/central-auth.module';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { BetterAuthModule } from './better-auth/better-auth.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
@@ -232,6 +235,7 @@ import { TenantLimitGuard } from './entitlements/tenant-limit.guard';
     PosModule,
     PosAnalyticsModule,
     BetterAuthModule,
+    CentralAuthModule,
     BackupModule,
     AuthSettingsModule,
     PermissionsModule,
@@ -253,7 +257,13 @@ import { TenantLimitGuard } from './entitlements/tenant-limit.guard';
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: TenantSubscriptionGuard },
     { provide: APP_GUARD, useClass: TenantLimitGuard },
-    { provide: APP_GUARD, useClass: DualModeAuthGuard },
+    // Phase 3: ONE auth gate that delegates per TENANT_AUTH_MODE —
+    // DualModeAuthGuard (legacy-jwt, default) or CentralSessionAuthGuard
+    // (central-ba). Both guards are plain providers below so the
+    // delegating guard can inject them.
+    { provide: APP_GUARD, useClass: TenantAuthModeGuard },
+    DualModeAuthGuard,
+    CentralSessionAuthGuard,
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: FeatureGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },

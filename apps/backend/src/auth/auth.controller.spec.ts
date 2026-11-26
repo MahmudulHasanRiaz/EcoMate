@@ -5,48 +5,25 @@ import { AuthService } from './auth.service';
 import { SecurityService } from '../security/security.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getAllPermissions } from '../common/permissions/registry';
-import {
-  computeEffectivePermissions,
-  getRoleDefaultPermissions,
-} from '../common/permissions/effective-permissions';
+import { loadEffectivePermissions } from '../common/permissions/permissions-loader';
 
 describe('AuthController — me() permission fallback', () => {
   let controller: AuthController;
   let prisma: PrismaService;
 
-  // The real permission computation now lives in AuthService; the mock
-  // mirrors it against the prisma mock so the fallback behaviour the
-  // controller used to implement itself stays under test.
+  // The real permission computation now lives in AuthService (which
+  // delegates to the ONE loader); the mock calls the loader against the
+  // prisma mock so the fallback behaviour the controller used to
+  // implement itself stays under test.
   const mockAuthService = {
     me: jest.fn(),
     adminLogin: jest.fn(),
     impersonate: jest.fn(),
     changePassword: jest.fn().mockResolvedValue({ message: 'ok' }),
     computePermissionsForUser: jest.fn(async (user: any) => {
-      const role = user.role || 'customer';
-      if (role === 'superadmin' || role === 'admin') {
-        return getAllPermissions();
-      }
-      if (role === 'customer') {
-        return [];
-      }
-      // Mirror of the real no-BA-link fallback: shared role defaults, not
-      // a hardcoded [] — preset-less employees get their four restored
-      // keys (2026-10-28 client-compat fix).
-      if (!user.betterAuthUserId) {
-        return getRoleDefaultPermissions(role);
-      }
-      const baUser = await prisma!.betterAuthUser.findFirst({
-        where: { id: user.betterAuthUserId },
-        select: {
-          override_permissions: true,
-          employee: { include: { accessPreset: true } },
-        },
-      });
-      return computeEffectivePermissions({
-        role,
-        employeeLink: baUser?.employee ?? null,
-        overridePermissions: baUser?.override_permissions,
+      return loadEffectivePermissions(prisma!, {
+        role: user.role,
+        betterAuthUserId: user.betterAuthUserId,
       });
     }),
   };
@@ -66,7 +43,10 @@ describe('AuthController — me() permission fallback', () => {
         { provide: SecurityService, useValue: mockSecurity },
         {
           provide: PrismaService,
-          useValue: { betterAuthUser: { findFirst: jest.fn() } },
+          useValue: {
+            betterAuthUser: { findFirst: jest.fn() },
+            employee: { findFirst: jest.fn() },
+          },
         },
       ],
     }).compile();
@@ -94,20 +74,41 @@ describe('AuthController — me() permission fallback', () => {
     expect(prisma.betterAuthUser.findFirst).not.toHaveBeenCalled();
   });
 
-  it('admin without permissions → ALL registered keys, no BA query', async () => {
+  it('admin without permissions → ALL registered keys (loader re-reads: no preset, no overrides)', async () => {
+    (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
+      override_permissions: [],
+      denied_permissions: [],
+    });
+    (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
     const result = await controller.me({
       userId: 'user-1',
       role: 'admin',
       betterAuthUserId: 'ba-1',
     });
     expect(result.permissions).toEqual(getAllPermissions());
-    expect(prisma.betterAuthUser.findFirst).not.toHaveBeenCalled();
+    // Phase 3 R-8: the ONE loader re-reads overrides + the employee
+    // link on every call for a linked admin (the old mirror short-
+    // circuited admin → all without a DB read).
+    expect(prisma.betterAuthUser.findFirst).toHaveBeenCalledWith({
+      where: { id: 'ba-1' },
+      select: {
+        override_permissions: true,
+        denied_permissions: true,
+      },
+    });
+    expect(prisma.employee.findFirst).toHaveBeenCalledWith({
+      where: { betterAuthUserId: 'ba-1' },
+      include: { accessPreset: true },
+    });
   });
 
   it('employee without permissions + BA row with preset & override → union', async () => {
     (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: ['view_orders'],
-      employee: { accessPreset: { permissions: ['view_customers'] } },
+      denied_permissions: [],
+    });
+    (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
+      accessPreset: { permissions: ['view_customers'] },
     });
     const result = await controller.me({
       userId: 'user-1',
@@ -119,16 +120,21 @@ describe('AuthController — me() permission fallback', () => {
       where: { id: 'ba-1' },
       select: {
         override_permissions: true,
-        employee: { include: { accessPreset: true } },
+        denied_permissions: true,
       },
+    });
+    expect(prisma.employee.findFirst).toHaveBeenCalledWith({
+      where: { betterAuthUserId: 'ba-1' },
+      include: { accessPreset: true },
     });
   });
 
   it('employee with BA row but no employee link → employee role defaults (no preset in use)', async () => {
     (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: [],
-      employee: null,
+      denied_permissions: [],
     });
+    (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
     const result = await controller.me({
       userId: 'user-1',
       role: 'employee',
@@ -277,10 +283,12 @@ describe('AuthController — me() permission fallback', () => {
     await controller.changePassword(
       { userId: 'user-1' } as any,
       { currentPassword: 'old', newPassword: 'new-password-123' } as any,
+      { headers: { cookie: 'session_token=tok', host: 'tenant1.faah.net' } } as any,
     );
     expect(mockAuthService.changePassword).toHaveBeenCalledWith(
       'user-1',
       { currentPassword: 'old', newPassword: 'new-password-123' },
+      { cookie: 'session_token=tok', host: 'tenant1.faah.net' },
     );
   });
 });

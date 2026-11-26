@@ -12,7 +12,9 @@ import { AuthLayout } from '../auth-layout'
 import { UserAuthForm } from './components/user-auth-form'
 
 export function SignIn() {
-  const { redirect, expired, customer, registered } = useSearch({ from: '/(auth)/sign-in' })
+  const { redirect, expired, customer, registered, error } = useSearch({
+    from: '/(auth)/sign-in',
+  })
 
   return (
     <AuthLayout>
@@ -32,6 +34,19 @@ export function SignIn() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <div
+              role='alert'
+              className='mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+            >
+              <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
+              <span>
+                {error === 'access_denied'
+                  ? 'Social sign-in was cancelled. Please try again or sign in with email.'
+                  : 'Social sign-in failed. Please try again or sign in with email.'}
+              </span>
+            </div>
+          )}
           {expired === '1' && (
             <div
               role='status'

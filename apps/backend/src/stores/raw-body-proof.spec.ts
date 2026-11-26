@@ -34,10 +34,20 @@ describe('P0 proof (1) — actual adapter behaviour documented', () => {
     expect(main).not.toMatch(/addContentTypeParser\(\s*['"]application\/json['"]/);
     // Multipart (50 MB uploads) is the only custom body handling globally.
     expect(main).toMatch(/@fastify\/multipart/);
-    // Route-scoped interception precedent already exists in main.ts itself:
-    // the better-auth bridge hijacks ONLY its own prefix and returns
-    // immediately for every other URL.
-    expect(main).toMatch(/request\.url\.startsWith\('\/api\/better-auth\/'\)/);
+    // Phase 3 central-auth cutover: the better-auth bridge hijack that
+    // used to intercept ONLY the /api/better-auth/* prefix in main.ts
+    // is RETIRED — Caddy proxies those paths to the central auth
+    // service now. main.ts must not intercept them anymore (and must
+    // not call auth.handler in-process).
+    expect(main).not.toMatch(
+      /request\.url\.startsWith\('\/api\/better-auth\/'\)/,
+    );
+    expect(main).not.toMatch(/auth\.handler\(/);
+    // Route-scoped interception precedent that REMAINS: the store
+    // webhook raw-body capture (preParsing hook + path predicate).
+    const capture = readSource('stores/raw-body-capture.ts');
+    expect(capture).toMatch(/addHook\(\s*['"]preParsing['"]/);
+    expect(capture).toMatch(/isStoreWebhookPath/);
   });
 
   it('route-scoped capture uses preParsing with a path predicate', () => {

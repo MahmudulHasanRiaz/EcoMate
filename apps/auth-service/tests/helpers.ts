@@ -25,6 +25,8 @@ export interface TestServer {
   auth: ReturnType<typeof createAuth>['auth'];
   prisma: ReturnType<typeof createAuth>['prisma'];
   config: AuthServiceConfig;
+  /** Live tenant registry (null when no platform-api is configured). */
+  registry: ReturnType<typeof createAuth>['registry'];
   close: () => Promise<void>;
 }
 
@@ -52,10 +54,16 @@ export function testEnv(port: number): void {
 export async function startTestServer(port: number): Promise<TestServer> {
   testEnv(port);
   const config = loadConfig();
-  const { auth, prisma } = createAuth(config);
-  const server = createServer({ auth, prisma, config });
-  await new Promise<void>((resolve) => {
-    server.listen(port, '127.0.0.1', () => resolve());
+  const { auth, prisma, registry } = createAuth(config);
+  const server = createServer({ auth, prisma, config, registry });
+  await new Promise<void>((resolve, reject) => {
+    // Reject on listen error (e.g. EADDRINUSE): without this the
+    // promise never settles and the test hangs until its timeout.
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
   });
   return {
     port,
@@ -63,6 +71,7 @@ export async function startTestServer(port: number): Promise<TestServer> {
     auth,
     prisma,
     config,
+    registry,
     close: async () => {
       await new Promise<void>((resolve) => {
         server.close(() => resolve());

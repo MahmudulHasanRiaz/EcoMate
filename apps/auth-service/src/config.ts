@@ -70,12 +70,23 @@ export interface AuthServiceConfig {
   baseProtocol: 'http' | 'https';
   /**
    * Hosts trusted as request Origins for mutations. This is the Phase 1
-   * config-driven allowlist. Phase 3 swaps the resolver to a live lookup
-   * against the platform tenant registry (verified custom domains +
-   * tenant subdomains); the async-function shape is already in place
-   * (see src/auth.ts `trustedOrigins`).
+   * config-driven allowlist, kept as the base layer: Phase 3 trusts the
+   * UNION of this list and the live platform-registry lookup (verified
+   * custom domains + tenant subdomains — see src/tenant-registry.ts
+   * and the `trustedOrigins` function in src/auth-options.ts).
    */
   trustedHosts: string[];
+  /**
+   * Trusted reverse-proxy IPs/CIDR ranges for `advanced.ipAddress`
+   * (BA walks the X-Forwarded-For chain right-to-left past these).
+   * Empty = trust single-value X-Forwarded-For only (Caddy as the
+   * direct edge). Set to the upstream proxy's egress ranges when one
+   * fronts Caddy (Cloudflare's published ranges for faah.net) — see
+   * README "Rate limiting" / the deploy checklist. Without this, a
+   * multi-value forwarded chain resolves to no IP and BA falls back
+   * to one shared per-path rate-limit bucket (Phase 1 §5 finding 3).
+   */
+  trustedProxies: string[];
   /** Max organizations one user may own/be a member of (D12; console-configurable later). */
   organizationLimit: number;
   /** Max members per organization (staff only — customers are never members, D4). */
@@ -193,6 +204,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AuthServiceCon
     allowedHosts: splitList(env.AUTH_ALLOWED_HOSTS, DEFAULT_ALLOWED_HOSTS),
     baseProtocol,
     trustedHosts: splitList(env.AUTH_TRUSTED_HOSTS, DEFAULT_TRUSTED_HOSTS),
+    trustedProxies: splitList(env.AUTH_TRUSTED_PROXIES, []),
     organizationLimit: parseIntEnv('AUTH_ORG_LIMIT', 5),
     membershipLimit: parseIntEnv('AUTH_MEMBERSHIP_LIMIT', 100),
     smtp: {

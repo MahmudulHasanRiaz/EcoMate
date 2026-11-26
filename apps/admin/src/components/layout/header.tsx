@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { OrgSwitcher } from '@/components/layout/org-switcher'
 import { HeaderChromeContext } from '@/context/header-chrome-provider'
 
 type HeaderProps = React.HTMLAttributes<HTMLElement> & {
@@ -49,6 +50,8 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
         <HeaderChromeContext value={true}>
           {children}
         </HeaderChromeContext>
+        {/* Org (store) switcher — only renders for multi-org users. */}
+        <OrgSwitcher />
         {/* Right-hand cluster: theme toggle first, then the attendance clock
             immediately beside it, sharing one container so the pair reads as
             a single control. The avatar/profile menu intentionally lives only

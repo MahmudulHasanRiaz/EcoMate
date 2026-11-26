@@ -1,8 +1,5 @@
 import axios from "axios";
 
-let lastRefreshAttempt = 0;
-const REFRESH_COOLDOWN = 5000;
-
 function getBaseUrl(): string {
   if (typeof window !== "undefined" && !window.location.hostname.includes("localhost")) {
     return "/api";
@@ -17,13 +14,18 @@ const apiClient = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+/**
+ * Phase 3 central Better Auth cutover.
+ *
+ * Auth is the BA session cookie now (httpOnly, set by the central service
+ * via the same-origin `/api/better-auth/*` proxy, sent with
+ * `withCredentials`). There is NO Bearer token anymore, and NO refresh
+ * machinery: the BA session refreshes server-side (`updateAge`), so a
+ * 401 means the session is gone. The interceptor dispatches `auth:logout`
+ * (the AuthContext clears the user) and rejects — it never replays the
+ * request.
+ */
 apiClient.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  }
   if (config.data instanceof FormData) {
     if (config.headers) {
       delete config.headers["Content-Type"];
@@ -36,35 +38,9 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (res) => res,
   async (error) => {
-    const req = error.config;
-    if (error.response?.status === 401 && !req._retry && req.url !== "/auth/refresh" && req.url !== "/auth/login") {
-      const now = Date.now();
-      if (now - lastRefreshAttempt < REFRESH_COOLDOWN) {
-        return Promise.reject(error);
-      }
-      lastRefreshAttempt = now;
-      req._retry = true;
-      try {
-        const { data } = await axios.post(
-          `${apiClient.defaults.baseURL}/auth/refresh`,
-          {},
-          { withCredentials: true },
-        );
-        if (data.accessToken && typeof window !== "undefined") {
-          localStorage.setItem("token", data.accessToken);
-          window.dispatchEvent(new CustomEvent("auth:token-refreshed", { detail: data.user }));
-        }
-        req.headers = {
-          ...req.headers,
-          Authorization: `Bearer ${data.accessToken}`,
-        };
-        return apiClient(req);
-      } catch {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("token");
-          window.dispatchEvent(new Event("auth:logout"));
-        }
-        return Promise.reject(error);
+    if (error.response?.status === 401) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("auth:logout"));
       }
     }
     return Promise.reject(error);

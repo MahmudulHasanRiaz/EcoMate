@@ -7,6 +7,9 @@ const searchSchema = z.object({
   expired: z.coerce.string().optional(),
   customer: z.coerce.string().optional(),
   registered: z.coerce.string().optional(),
+  // Set by the central service when a social sign-in fails: the sign-in
+  // form passes this page as `errorCallbackURL` (see lib/ba-auth-errors).
+  error: z.string().optional(),
 })
 
 export const Route = createFileRoute('/(auth)/sign-in')({

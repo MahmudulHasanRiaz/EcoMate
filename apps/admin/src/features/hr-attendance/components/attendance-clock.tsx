@@ -119,13 +119,11 @@ function useHeaderSlot(): HTMLElement | null {
 }
 
 function ClockBody() {
-  const accessToken = useAuthStore((s) => s.auth.accessToken)
-
   // Gate on the employee link alone, NOT on `permissions`: a staff member with
   // no access preset legitimately has an empty permission list, yet is exactly
   // who this widget exists for. The /hr/my endpoints are role-guarded
   // server-side, and a 404 from the profile probe means "not an employee".
-  const signedIn = !!accessToken
+  const signedIn = useAuthStore((s) => s.auth.isSignedIn)
   const profile = useMyHrProfileQuery(signedIn)
   const isEmployee = profile.data !== null && profile.isSuccess
 

@@ -3,7 +3,7 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { customSession } from 'better-auth/plugins';
 import { baPrisma } from './prisma';
-import { computeEffectivePermissions } from '../common/permissions/effective-permissions';
+import { loadEffectivePermissions } from '../common/permissions/permissions-loader';
 
 const secret = process.env.BETTER_AUTH_SECRET;
 if (!secret) {
@@ -110,32 +110,28 @@ export const auth = betterAuth({
         let employeeId: string | undefined;
 
         const role = (user as any).role || 'customer';
-        const overridePerms: string[] =
-          (user as any).override_permissions || [];
-        const deniedPerms: string[] =
-          (user as any).denied_permissions || [];
 
-        // Preset supremacy (owner 2026-10-24): the employee link is fetched
-        // for admins too — an admin's linked preset now wins over the old
-        // "admin = all". Superadmin stays all-open inside the computation.
-        let employeeLink: { accessPresetId?: string | null; accessPreset?: { permissions: string[] } | null } | null = null;
+        // Phase 3 R-8: the ONE permission loader. It re-reads overrides
+        // + the employee preset from the DB via baPrisma (never the
+        // session user object — the session may carry stale overrides)
+        // and lets DB errors propagate to the catch below, which
+        // fail-closes to `customer / []` exactly as before. The
+        // `role !== 'admin'` judgement call inside
+        // computeEffectivePermissions is preserved verbatim by the loader.
+        permissions = await loadEffectivePermissions(baPrisma, {
+          role,
+          betterAuthUserId: user.id,
+        });
+
         if (role !== 'customer') {
           const emp = await baPrisma.employee.findFirst({
             where: { betterAuthUserId: user.id },
-            include: { accessPreset: true },
+            select: { id: true },
           });
           if (emp) {
             employeeId = emp.id;
-            employeeLink = emp;
           }
         }
-
-        permissions = computeEffectivePermissions({
-          role,
-          employeeLink,
-          overridePermissions: overridePerms,
-          deniedPermissions: deniedPerms,
-        });
 
         if (role === 'customer') {
           const profile = await baPrisma.customerProfile.findFirst({

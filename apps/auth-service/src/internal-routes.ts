@@ -1,10 +1,15 @@
 // Service-owned internal routes (plain HTTP, NOT Better Auth endpoints):
 //   POST /internal/users/role-sync
 //   POST /internal/organizations/provision
-// Both require `x-platform-service-token` == INTERNAL_SERVICE_SECRET
+//   POST /internal/users, GET /internal/users/:id,
+//   GET /internal/users/by-email, GET /internal/users/search,
+//   PATCH /internal/users/:id, DELETE /internal/users/:id
+// All require `x-platform-service-token` == INTERNAL_SERVICE_SECRET
 // (503 when the secret is unconfigured). Caddy never routes /internal/*
-// from any public host; only platform-api calls these on the internal URL.
-import { timingSafeEqual } from 'node:crypto';
+// from any public host; only platform-api and the tenant backend call
+// these on the internal URL.
+import { timingSafeEqual, randomUUID } from 'node:crypto';
+import { hashPassword } from 'better-auth/crypto';
 import type { PrismaClient } from './generated/prisma/index.js';
 import type { AuthServiceConfig } from './config.js';
 import { logger } from './logger.js';
@@ -40,6 +45,10 @@ export interface InternalRouteRequest {
   body: Record<string, unknown> | null;
   headers: Headers;
   requestId: string;
+  /** URL query params (GET routes). */
+  query?: Record<string, string>;
+  /** Path params (e.g. { userId } for /internal/users/:id). */
+  params?: Record<string, string>;
 }
 
 export interface InternalRouteResult {
@@ -169,4 +178,480 @@ export async function handleProvisionOrganization(
     });
     return { status: 500, json: { error: 'provision_failed' } };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — internal user CRUD for the tenant backend (central-auth cutover)
+// ---------------------------------------------------------------------------
+//
+// The tenant backend's users/employees/customer-linking services used to
+// write tenant-DB `better_auth_users`/`better_auth_accounts` rows directly
+// (baPrisma). After the cutover those rows live here, in `ecomate_auth`,
+// and the backend must never touch this database directly — it calls these
+// internal endpoints instead (same secret + audit conventions as
+// role-sync/provision above).
+//
+// Why adapter-level Prisma, not `auth.api.signUpEmail`: signUpEmail mints a
+// live session for the new user and sends the verification email — both
+// wrong for an admin-created user (the operator never sees that session;
+// no verification mail is wanted at create time). The provision endpoint
+// already set the precedent: system actions use adapter-level writes.
+// Passwords are hashed with BA's own scrypt `hashPassword`, providerId
+// 'credential' (BA 1.7.28 — Phase 2 proved the 'email' → 'credential'
+// rewrite). New user ids are `randomUUID()` (the migration scripts use the
+// same for collision-regenerated ids); BA-native sign-ups keep their own
+// cuid-style ids — nothing in the service depends on the id format.
+// Tenant staff roles are the org-plugin custom roles (owner, admin,
+// cashier, packing_assistant, employee — see auth-options.ts); customers
+// are plain users and never get a member row (D4).
+
+/** Tenant staff org roles — the org-plugin custom roles, nothing else. */
+export const TENANT_ORG_ROLES = [
+  'owner',
+  'admin',
+  'cashier',
+  'packing_assistant',
+  'employee',
+] as const;
+
+type InternalUserDeps = { prisma: PrismaClient; config: AuthServiceConfig };
+
+function publicUserShape(u: {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  role: string | null;
+  platformRole: string | null;
+  createdAt: Date;
+}): Record<string, unknown> {
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    emailVerified: u.emailVerified,
+    role: u.role,
+    platformRole: u.platformRole,
+    createdAt: u.createdAt.toISOString(),
+  };
+}
+
+function normalizeEmail(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const email = raw.trim().toLowerCase();
+  return email.includes('@') ? email : null;
+}
+
+function isPrismaUniqueViolation(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === 'object' &&
+    'code' in err &&
+    (err as { code: unknown }).code === 'P2002'
+  );
+}
+
+/**
+ * POST /internal/users — create a central user (+ credential account when
+ * a password is given, + org member row when organizationId/orgRole are
+ * given). 201 { id, email, emailVerified, organizationId?, orgRole? };
+ * 400 validation; 404 organization_not_found; 403
+ * organization_member_limit (membershipLimit, default 100); 409
+ * email_exists.
+ */
+export async function handleCreateInternalUser(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const email = normalizeEmail(req.body?.['email']);
+  const name = req.body?.['name'];
+  const password = req.body?.['password'];
+  const emailVerified = req.body?.['emailVerified'];
+  const organizationId = req.body?.['organizationId'];
+  const orgRole = req.body?.['orgRole'];
+  if (
+    !email ||
+    typeof name !== 'string' ||
+    name.trim().length === 0 ||
+    (password !== undefined &&
+      (typeof password !== 'string' || password.length < 8)) ||
+    (emailVerified !== undefined && typeof emailVerified !== 'boolean') ||
+    (organizationId !== undefined && typeof organizationId !== 'string') ||
+    (orgRole !== undefined &&
+      (typeof orgRole !== 'string' ||
+        !(TENANT_ORG_ROLES as readonly string[]).includes(orgRole))) ||
+    (orgRole !== undefined && organizationId === undefined)
+  ) {
+    return { status: 400, json: { error: 'invalid_user_body' } };
+  }
+  if (organizationId !== undefined) {
+    const org = await deps.prisma.organization.findUnique({
+      where: { id: organizationId as string },
+      select: { id: true },
+    });
+    if (!org) {
+      return { status: 404, json: { error: 'organization_not_found' } };
+    }
+    const memberCount = await deps.prisma.member.count({
+      where: { organizationId: organizationId as string },
+    });
+    if (memberCount >= deps.config.membershipLimit) {
+      return { status: 403, json: { error: 'organization_member_limit' } };
+    }
+  }
+  try {
+    const created = await deps.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          id: randomUUID(),
+          name: (name as string).trim(),
+          email,
+          emailVerified: (emailVerified as boolean | undefined) ?? false,
+          role: 'user',
+        },
+      });
+      if (password !== undefined) {
+        await tx.account.create({
+          data: {
+            id: `acc_${randomUUID()}`,
+            accountId: user.id,
+            providerId: 'credential',
+            userId: user.id,
+            password: await hashPassword(password as string),
+          },
+        });
+      }
+      if (organizationId !== undefined) {
+        await tx.member.create({
+          data: {
+            id: `mem_${randomUUID()}`,
+            organizationId: organizationId as string,
+            userId: user.id,
+            role: orgRole as string,
+            createdAt: new Date(),
+          },
+        });
+      }
+      return user;
+    });
+    logger.audit('auth.user.created', {
+      requestId: req.requestId,
+      userId: created.id,
+      email: created.email,
+      organizationId:
+        typeof organizationId === 'string' ? organizationId : undefined,
+    });
+    return {
+      status: 201,
+      json: {
+        id: created.id,
+        email: created.email,
+        emailVerified: created.emailVerified,
+        ...(organizationId !== undefined
+          ? {
+              organizationId: organizationId as string,
+              orgRole: orgRole as string,
+            }
+          : {}),
+      },
+    };
+  } catch (err) {
+    if (isPrismaUniqueViolation(err)) {
+      return { status: 409, json: { error: 'email_exists' } };
+    }
+    logger.error('auth.user.create_failed', {
+      requestId: req.requestId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { status: 500, json: { error: 'user_create_failed' } };
+  }
+}
+
+/**
+ * GET /internal/users/:id — fetch one central user. 200 public shape;
+ * 404 user_not_found.
+ */
+export async function handleGetInternalUserById(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const userId = req.params?.['userId'];
+  if (!userId) {
+    return { status: 400, json: { error: 'userId_required' } };
+  }
+  const user = await deps.prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    return { status: 404, json: { error: 'user_not_found' } };
+  }
+  return { status: 200, json: publicUserShape(user) };
+}
+
+/**
+ * GET /internal/users/by-email?email= — fetch one central user by email
+ * (lowercased, like the stored value). 200 public shape; 400
+ * email_required; 404 user_not_found.
+ */
+export async function handleGetInternalUserByEmail(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const email = normalizeEmail(req.query?.['email']);
+  if (!email) {
+    return { status: 400, json: { error: 'email_required' } };
+  }
+  const user = await deps.prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    return { status: 404, json: { error: 'user_not_found' } };
+  }
+  return { status: 200, json: publicUserShape(user) };
+}
+
+/**
+ * GET /internal/users/search?q=&limit= — search central users by name or
+ * email substring (case-insensitive), for the employee picker (the old
+ * `searchBaUsers` listed tenant-DB BA users with no Employee row; the
+ * backend filters out ids that already have an Employee row). 200
+ * { users: [{ id, name, email }] }; 400 q_required; limit defaults to 20,
+ * clamped to [1, 20].
+ */
+export async function handleSearchInternalUsers(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const q = (req.query?.['q'] ?? '').trim();
+  if (!q) {
+    return { status: 400, json: { error: 'q_required' } };
+  }
+  const rawLimit = Number(req.query?.['limit'] ?? 20);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(20, Math.max(1, Math.floor(rawLimit)))
+    : 20;
+  const users = await deps.prisma.user.findMany({
+    where: {
+      OR: [
+        { email: { contains: q, mode: 'insensitive' } },
+        { name: { contains: q, mode: 'insensitive' } },
+      ],
+    },
+    select: { id: true, name: true, email: true },
+    orderBy: { email: 'asc' },
+    take: limit,
+  });
+  return { status: 200, json: { users } };
+}
+
+/**
+ * PATCH /internal/users/:id — update a central user. Body subset: name,
+ * email, password (re-hashed with scrypt; upserts the credential account),
+ * emailVerified, plus organizationId + orgRole for the member row
+ * (orgRole null removes the membership — used when an employee is
+ * un-hired back to `customer`, since customers are never members, D4).
+ * 200 public shape (+ organizationId/orgRole when membership was touched);
+ * 400 validation; 404 user_not_found / organization_not_found; 409
+ * email_exists.
+ */
+export async function handleUpdateInternalUser(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const userId = req.params?.['userId'];
+  if (!userId) {
+    return { status: 400, json: { error: 'userId_required' } };
+  }
+  const body = req.body ?? {};
+  const name = body['name'];
+  const emailRaw = body['email'];
+  const password = body['password'];
+  const emailVerified = body['emailVerified'];
+  const organizationId = body['organizationId'];
+  const orgRole = body['orgRole'];
+  const email =
+    emailRaw === undefined ? undefined : normalizeEmail(emailRaw);
+  if (
+    (name !== undefined &&
+      (typeof name !== 'string' || name.trim().length === 0)) ||
+    (emailRaw !== undefined && email === null) ||
+    (password !== undefined &&
+      (typeof password !== 'string' || password.length < 8)) ||
+    (emailVerified !== undefined && typeof emailVerified !== 'boolean') ||
+    (organizationId !== undefined && typeof organizationId !== 'string') ||
+    (orgRole !== undefined &&
+      orgRole !== null &&
+      (typeof orgRole !== 'string' ||
+        !(TENANT_ORG_ROLES as readonly string[]).includes(orgRole))) ||
+    (orgRole !== undefined && organizationId === undefined)
+  ) {
+    return { status: 400, json: { error: 'invalid_user_body' } };
+  }
+  const existing = await deps.prisma.user.findUnique({
+    where: { id: userId },
+  });
+  if (!existing) {
+    return { status: 404, json: { error: 'user_not_found' } };
+  }
+  if (email && email !== existing.email) {
+    const clash = await deps.prisma.user.findUnique({ where: { email } });
+    if (clash) {
+      return { status: 409, json: { error: 'email_exists' } };
+    }
+  }
+  if (organizationId !== undefined) {
+    const org = await deps.prisma.organization.findUnique({
+      where: { id: organizationId as string },
+      select: { id: true },
+    });
+    if (!org) {
+      return { status: 404, json: { error: 'organization_not_found' } };
+    }
+  }
+  try {
+    const updated = await deps.prisma.$transaction(async (tx) => {
+      const userData: Record<string, unknown> = {};
+      if (name !== undefined) userData['name'] = (name as string).trim();
+      if (email !== undefined) userData['email'] = email;
+      if (emailVerified !== undefined) {
+        userData['emailVerified'] = emailVerified as boolean;
+      }
+      const user =
+        Object.keys(userData).length > 0
+          ? await tx.user.update({ where: { id: userId }, data: userData })
+          : existing;
+      if (password !== undefined) {
+        const hashed = await hashPassword(password as string);
+        const account = await tx.account.findFirst({
+          where: { userId, providerId: 'credential' },
+        });
+        if (account) {
+          await tx.account.update({
+            where: { id: account.id },
+            data: { password: hashed },
+          });
+        } else {
+          await tx.account.create({
+            data: {
+              id: `acc_${randomUUID()}`,
+              accountId: userId,
+              providerId: 'credential',
+              userId,
+              password: hashed,
+            },
+          });
+        }
+      }
+      if (organizationId !== undefined) {
+        const orgId = organizationId as string;
+        if (orgRole === null) {
+          await tx.member.deleteMany({
+            where: { organizationId: orgId, userId },
+          });
+        } else {
+          const member = await tx.member.findFirst({
+            where: { organizationId: orgId, userId },
+          });
+          if (member) {
+            await tx.member.update({
+              where: { id: member.id },
+              data: { role: orgRole as string },
+            });
+          } else {
+            const memberCount = await tx.member.count({
+              where: { organizationId: orgId },
+            });
+            if (memberCount >= deps.config.membershipLimit) {
+              throw Object.assign(
+                new Error('organization_member_limit'),
+                { code: 'ORG_MEMBER_LIMIT' },
+              );
+            }
+            await tx.member.create({
+              data: {
+                id: `mem_${randomUUID()}`,
+                organizationId: orgId,
+                userId,
+                role: orgRole as string,
+                createdAt: new Date(),
+              },
+            });
+          }
+        }
+      }
+      return user;
+    });
+    logger.audit('auth.user.updated', {
+      requestId: req.requestId,
+      userId,
+      organizationId:
+        typeof organizationId === 'string' ? organizationId : undefined,
+    });
+    return {
+      status: 200,
+      json: {
+        ...publicUserShape(updated),
+        ...(organizationId !== undefined
+          ? {
+              organizationId: organizationId as string,
+              orgRole: (orgRole as string | null) ?? null,
+            }
+          : {}),
+      },
+    };
+  } catch (err) {
+    if (
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: unknown }).code === 'ORG_MEMBER_LIMIT'
+    ) {
+      return { status: 403, json: { error: 'organization_member_limit' } };
+    }
+    if (isPrismaUniqueViolation(err)) {
+      return { status: 409, json: { error: 'email_exists' } };
+    }
+    logger.error('auth.user.update_failed', {
+      requestId: req.requestId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { status: 500, json: { error: 'user_update_failed' } };
+  }
+}
+
+/**
+ * DELETE /internal/users/:id — delete a central user. Sessions, accounts,
+ * member rows, invitations and two-factor rows cascade at the DB level
+ * (onDelete: Cascade on every User relation). 200 { id, deleted: true };
+ * 404 user_not_found.
+ */
+export async function handleDeleteInternalUser(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const userId = req.params?.['userId'];
+  if (!userId) {
+    return { status: 400, json: { error: 'userId_required' } };
+  }
+  const existing = await deps.prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!existing) {
+    return { status: 404, json: { error: 'user_not_found' } };
+  }
+  await deps.prisma.user.delete({ where: { id: userId } });
+  logger.audit('auth.user.deleted', {
+    requestId: req.requestId,
+    userId,
+  });
+  return { status: 200, json: { id: userId, deleted: true } };
 }

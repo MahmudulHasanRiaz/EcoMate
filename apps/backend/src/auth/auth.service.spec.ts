@@ -501,13 +501,15 @@ describe('AuthService', () => {
     it('accepts a staff account and returns computed permissions', async () => {
       const cashier = { ...mockUser, role: 'cashier', betterAuthUserId: 'ba-1' };
       mockSuccessfulLogin(cashier);
+      // Phase 3 R-8: the ONE loader reads overrides from the BA row and
+      // the employee preset DIRECTLY from the Employee table.
       (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
         override_permissions: [],
         denied_permissions: [],
-        employee: {
-          accessPresetId: 'preset-1',
-          accessPreset: { permissions: ['view_orders', 'create_orders'] },
-        },
+      });
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
+        accessPresetId: 'preset-1',
+        accessPreset: { permissions: ['view_orders', 'create_orders'] },
       });
 
       const result = await service.adminLogin(loginDto);

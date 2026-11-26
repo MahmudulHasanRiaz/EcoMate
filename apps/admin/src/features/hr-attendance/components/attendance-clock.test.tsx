@@ -12,7 +12,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 const auth = vi.hoisted(() => ({
-  accessToken: 'tok' as string,
+  isSignedIn: true as boolean,
   permissions: ['view_hr'] as string[],
 }))
 
@@ -20,7 +20,7 @@ vi.mock('@/stores/auth-store', () => ({
   useAuthStore: (selector: (s: any) => unknown) =>
     selector({
       auth: {
-        accessToken: auth.accessToken,
+        isSignedIn: auth.isSignedIn,
         user: { id: 'u1', email: 'a@b.c', role: 'employee', permissions: auth.permissions },
       },
     }),
@@ -75,12 +75,12 @@ const BASE = { workedMinutes: 0, breakMinutes: 0, appAllowed: true, appMethod: '
 describe('AttendanceClock', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    auth.accessToken = 'tok'
+    auth.isSignedIn = true
     auth.permissions = ['view_hr']
   })
 
-  it('renders nothing without an access token', async () => {
-    auth.accessToken = ''
+  it('renders nothing when signed out', async () => {
+    auth.isSignedIn = false
     mockRoutes({ state: 'before_work', ...BASE })
     wrap(<AttendanceClock />)
     expect(document.querySelector('[aria-label="Attendance clock"]')).toBeNull()
@@ -170,7 +170,7 @@ describe('AttendanceClock', () => {
 describe('AttendanceClock actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    auth.accessToken = 'tok'
+    auth.isSignedIn = true
     auth.permissions = ['view_hr']
   })
 

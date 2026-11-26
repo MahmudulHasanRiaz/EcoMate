@@ -34,6 +34,7 @@ import { initSentry } from './observability/sentry';
 import { TenantPrismaManager } from './tenancy/tenant-prisma.manager';
 import { tenantStorage } from './tenancy/tenant-context';
 import { setBaPrismaResolver } from './better-auth/prisma';
+import { getTenantAuthMode } from './common/tenant-auth-mode';
 import { parseWorkerMode } from './common/worker-mode';
 
 async function bootstrap() {
@@ -81,26 +82,32 @@ async function bootstrap() {
   // (users/customers/employees services). Same resolver as main.ts: the
   // per-job tenant comes from ALS (TenantWorkerHost sets it); the hardcoded
   // fallback tenant is TEST-ONLY, exactly as in main.ts.
+  // Phase 3: legacy-jwt only — in central-ba mode queue paths use the
+  // central service over HTTP (same flag-gated services as the HTTP
+  // entrypoint), so the resolver install is skipped here too.
   const tenantManager = app.get(TenantPrismaManager);
   const defaultTenantId =
     process.env.DEFAULT_TENANT_ID ||
     (process.env.NODE_ENV === 'test'
       ? '00000000-0000-4000-8000-000000000000'
       : undefined);
-  setBaPrismaResolver(() => {
-    const tenantId = tenantStorage.getStore()?.tenantId || defaultTenantId;
-    if (!tenantId) {
-      throw new Error(
-        'Better Auth requires a tenant context (no tenant in context and no DEFAULT_TENANT_ID configured)',
-      );
-    }
-    return tenantManager.getClient(tenantId);
-  });
+  if (getTenantAuthMode() === 'legacy-jwt') {
+    setBaPrismaResolver(() => {
+      const tenantId = tenantStorage.getStore()?.tenantId || defaultTenantId;
+      if (!tenantId) {
+        throw new Error(
+          'Better Auth requires a tenant context (no tenant in context and no DEFAULT_TENANT_ID configured)',
+        );
+      }
+      return tenantManager.getClient(tenantId);
+    });
+  }
 
   console.log(
     `[worker] WORKER_MODE=${workerMode} — queue processors active, ` +
       `schedulers ${workerMode === 'worker' ? 'disabled' : 'enabled'}, ` +
-      `no HTTP server (application context only)`,
+      `no HTTP server (application context only), ` +
+      `tenant-auth-mode=${getTenantAuthMode()}`,
   );
 }
 // Worker split (WORKER_MODE): a failed bootstrap (including the

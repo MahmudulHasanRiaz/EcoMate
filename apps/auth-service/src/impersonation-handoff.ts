@@ -20,6 +20,7 @@ import { setSessionCookie } from 'better-auth/cookies';
 import type { BetterAuthPlugin } from 'better-auth';
 import type { PrismaClient } from './generated/prisma/index.js';
 import type { AuthServiceConfig } from './config.js';
+import type { TenantRegistry } from './tenant-registry.js';
 import { logger } from './logger.js';
 
 /** Roles whose holders may never be impersonated (design §1.4/§4.3). */
@@ -89,12 +90,20 @@ const FAIL_REDIRECT = '/admin/sign-in?error=impersonation_failed';
 export interface HandoffPluginDeps {
   prisma: PrismaClient;
   config: AuthServiceConfig;
+  /**
+   * Live platform tenant registry (Phase 3, survey §16.4). Null when
+   * the platform-api is not reachable — the host check then keeps the
+   * Phase 1 rules (strict slug check, other hosts accepted with a
+   * warning audit). When present, a non-subdomain host must be a
+   * registered host OF THIS ORG, anything else fails closed.
+   */
+  registry?: TenantRegistry | null;
 }
 
 export function createImpersonationHandoffPlugin(
   deps: HandoffPluginDeps,
 ): BetterAuthPlugin {
-  const { prisma, config } = deps;
+  const { prisma, config, registry } = deps;
 
   const consume = createAuthEndpoint(
     '/impersonation/consume',
@@ -199,11 +208,23 @@ export function createImpersonationHandoffPlugin(
         throw fail('admin_session_expired', logBase);
       }
 
-      // 6. Host check (misuse guard, not a security boundary — the
-      // token's entropy + 900 s TTL + single-use is the control). If the
-      // Host parses as <slug>.<primaryDomain>, the slug must equal the
-      // org's slug. Hosts under no configured base domain (custom
-      // domains, test hosts) are accepted with a warning audit.
+      // 6. Host check — the consuming host must be a registered tenant
+      // host OF THIS ORG. Two proofs, either suffices:
+      //   (a) `<slug>.<primaryDomain>` with the slug equal to the org's
+      //       slug (the Phase 1 strict check, kept verbatim — the org
+      //       slug IS the tenant's registered subdomain identity, read
+      //       from the auth DB's own org row);
+      //   (b) a host in the org's registry hosts (tenant subdomain or
+      //       VERIFIED/ACTIVE custom domain, from
+      //       GET /internal/tenants/registry).
+      // Anything else fails closed (302 to sign-in + audit). The
+      // token's entropy + 900 s TTL + single-use claim remain the
+      // primary controls; this check stops a stolen token being
+      // consumed on an unrelated host. When no registry is configured
+      // (local dev / schema-gen only — production compose always
+      // configures it), non-subdomain hosts keep the Phase 1
+      // warning-accept behaviour instead of failing closed, so a
+      // missing registry can never break impersonation in dev.
       const host = ctx.headers?.get('host') ?? '';
       const bareHost = host.split(':')[0].toLowerCase();
       const suffix = `.${config.tenantPrimaryDomain.toLowerCase()}`;
@@ -215,6 +236,16 @@ export function createImpersonationHandoffPlugin(
         if (!org || org.slug !== slug) {
           throw fail('wrong_host', { ...logBase, host: bareHost });
         }
+      } else if (registry) {
+        const orgHosts = await registry.getTenantHosts(row.organizationId);
+        if (!orgHosts || !orgHosts.has(bareHost)) {
+          throw fail('unregistered_host', { ...logBase, host: bareHost });
+        }
+        logger.audit('auth.impersonation.consume_custom_domain_host', {
+          requestId,
+          ...logBase,
+          host: bareHost,
+        });
       } else {
         logger.audit('auth.impersonation.consume_custom_domain_host', {
           requestId,

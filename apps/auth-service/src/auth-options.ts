@@ -28,6 +28,7 @@ import {
 } from './org-limits.js';
 import { createImpersonationHandoffPlugin } from './impersonation-handoff.js';
 import { getFakeIdpEmail } from './test-fake-idp.js';
+import type { TenantRegistry } from './tenant-registry.js';
 
 // ---------------------------------------------------------------------------
 // Organization roles (D11=A dynamic access control; D4=A staff only members)
@@ -80,8 +81,17 @@ export function buildAuthOptions(deps: {
    * in the schema-generation context (auth-generate.config.ts), where no
    * request ever runs — the org-limit checker then fails closed. */
   prisma?: PrismaClient | null;
+  /**
+   * Live platform tenant registry (Phase 3 swap). Null when the
+   * platform-api is not reachable from this service (no
+   * AUTH_PLATFORM_API_URL / INTERNAL_SERVICE_SECRET) — trustedOrigins
+   * then stays on the config allowlist alone and the consume host
+   * check stays on the Phase 1 rules. Undefined only in the
+   * schema-generation context.
+   */
+  registry?: TenantRegistry | null;
 }): BetterAuthOptions {
-  const { config, database, mailer, prisma } = deps;
+  const { config, database, mailer, prisma, registry } = deps;
 
   return {
     // Top-level appName sets the TOTP issuer (spike-proven: without it the
@@ -98,11 +108,17 @@ export function buildAuthOptions(deps: {
       protocol: config.baseProtocol,
     },
     basePath: '/api/better-auth',
-    // Async registry-shaped validator. In THIS phase the registry is the
-    // config-driven allowlist (AUTH_TRUSTED_HOSTS). Phase 3 swaps the
-    // lookup inside this function for a live platform-registry query
-    // (verified custom domains + tenant subdomains) — the call sites do
-    // not change. Never echo the request origin blindly.
+    // TrustedOrigins — Phase 3 registry swap (survey §11). The origin
+    // is trusted iff its host is EITHER in the config allowlist
+    // (AUTH_TRUSTED_HOSTS: platform hosts + dev hosts) OR in the live
+    // platform tenant registry (tenant subdomains + VERIFIED/ACTIVE
+    // custom domains, fetched from GET /internal/tenants/registry and
+    // cached 60 s — see src/tenant-registry.ts). The allowlist stays as
+    // the base layer because the console/platform hosts are not tenant
+    // domains and never appear in the registry. A registry outage
+    // degrades to the allowlist alone (last-good snapshot while one
+    // exists); custom-domain origins then fail closed until the
+    // registry answers again. Never echo the request origin blindly.
     trustedOrigins: async (request) => {
       const origin = request?.headers.get('origin');
       if (!origin) return [];
@@ -118,10 +134,32 @@ export function buildAuthOptions(deps: {
       const allowed = config.trustedHosts.some(
         (h) => h === host || h === bareHost,
       );
-      return allowed ? [origin] : [];
+      if (allowed) return [origin];
+      if (registry && (await registry.isRegisteredHost(bareHost))) {
+        return [origin];
+      }
+      return [];
     },
     advanced: {
       trustedProxyHeaders: true,
+      // Client-IP resolution for BA's own rate limiting (Phase 1 §5
+      // finding 3 — CLOSED by this block + the Caddy X-Forwarded-For
+      // forwarding; without a resolvable IP BA falls back to one shared
+      // per-path bucket). `ipAddressHeaders` restates BA's default
+      // (["x-forwarded-for"]) explicitly so the contract is visible.
+      // `trustedProxies` (AUTH_TRUSTED_PROXIES) lets BA walk a
+      // multi-value forwarded chain past the upstream proxy's hops —
+      // required when Cloudflare fronts Caddy (it appends its edge IP,
+      // making the header multi-value); with no trusted proxies only a
+      // single-value header is trusted, which is exactly what Caddy
+      // sends as the direct edge. See src/tenant-registry.ts header +
+      // README "Rate limiting" for the deployment rule.
+      ipAddress: {
+        ipAddressHeaders: ['x-forwarded-for'],
+        ...(config.trustedProxies.length > 0
+          ? { trustedProxies: config.trustedProxies }
+          : {}),
+      },
       // disableOriginCheck: FALSE, explicitly. BA 1.7.28 defaults
       // skipOriginCheck to TRUE whenever NODE_ENV=test
       // (dist/context/create-context.mjs:211, isTest() = NODE_ENV==="test"
@@ -461,9 +499,11 @@ export function buildAuthOptions(deps: {
       }),
       // D8 handoff — consume endpoint (design §4.4). Only wired when a
       // Prisma client exists (production/test); the schema-generation
-      // context has none and never serves a request.
+      // context has none and never serves a request. The registry is
+      // threaded through for the custom-domain host check (null =
+      // Phase 1 host rules).
       ...(prisma
-        ? [createImpersonationHandoffPlugin({ prisma, config })]
+        ? [createImpersonationHandoffPlugin({ prisma, config, registry })]
         : []),
       // TEST-ONLY fake generic-OAuth IdP for the Q11 tests (config.fakeIdp
       // is populated only under NODE_ENV=test with AUTH_FAKE_IDP_* set).

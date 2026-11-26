@@ -6,16 +6,21 @@ import { SessionOpenPage } from './pages/session-open'
 import { PosTerminalPage } from './pages/pos-terminal'
 import { SessionClosePage } from './pages/session-close'
 import { useSessionStore } from './stores/session-store'
+import { authClient } from './lib/better-auth-client'
 
 type Page = 'login' | 'session-select' | 'session-open' | 'pos' | 'session-close'
 
 export function App() {
   const [page, setPage] = useState<Page>('login')
   const { sessionId } = useSessionStore()
-  const token = localStorage.getItem('pos_access_token')
+  // Phase 3: the BA session cookie is the credential — there is no
+  // `pos_access_token` in localStorage anymore.
+  const { data: session, isPending: sessionPending } = authClient.useSession()
+  const signedIn = !!session
 
   useEffect(() => {
-    if (!token) {
+    if (sessionPending) return
+    if (!signedIn) {
       setPage('login')
       return
     }
@@ -33,7 +38,14 @@ export function App() {
       if (prev === 'session-open' && sessionId === null) return 'session-select'
       return prev
     })
-  }, [token, sessionId])
+  }, [signedIn, sessionPending, sessionId])
+
+  // Closing the drawer signs the cashier out of the terminal (pre-existing
+  // behaviour: both Close and Cancel on the close screen end the login).
+  async function handleSessionClosed() {
+    await authClient.signOut().catch(() => {})
+    setPage('login')
+  }
 
   return (
     <>
@@ -42,7 +54,7 @@ export function App() {
       {page === 'session-select' && <SessionSelectPage onSelected={() => setPage('session-open')} />}
       {page === 'session-open' && <SessionOpenPage onOpened={() => setPage('pos')} />}
       {page === 'pos' && <PosTerminalPage onCloseSession={() => setPage('session-close')} />}
-      {page === 'session-close' && <SessionClosePage onClosed={() => { localStorage.removeItem('pos_access_token'); setPage('login') }} />}
+      {page === 'session-close' && <SessionClosePage onClosed={handleSessionClosed} />}
     </>
   )
 }

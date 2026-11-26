@@ -19,68 +19,130 @@ function unauthorized(config: any): never {
   } as any)
 }
 
-/** Adapter that 401s the first attempt (config._retry unset) and replays ok. */
-function retryAdapter() {
-  return (async (config: any) => {
-    if (config._retry) {
-      return {
-        data: { ok: true, url: config.url },
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config,
-      }
-    }
-    return unauthorized(config)
-  }) as any
-}
+/**
+ * Phase 3: there is no refresh machinery anymore — the BA session cookie
+ * is the credential and it refreshes server-side. A 401 means the session
+ * is gone: the interceptor resets local auth state and redirects once to
+ * sign-in. It never replays the request and never calls `/auth/refresh`.
+ *
+ * The `sessionRedirect.assign` spy is installed in beforeEach for EVERY
+ * test in this file: the real `window.location.assign` would navigate the
+ * vitest browser iframe away from the test page and kill the whole run
+ * (the as-found baseline died exactly this way — 79 files never ran).
+ */
+describe('apiClient 401 handling (Phase 3)', () => {
+  let assignSpy: ReturnType<typeof vi.spyOn>
 
-describe('apiClient refresh interceptor', () => {
   beforeEach(() => {
     useAuthStore.getState().auth.reset()
-    document.cookie =
-      'eco_mate_access_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
     vi.restoreAllMocks()
-    apiClient.defaults.adapter = retryAdapter()
+    assignSpy = vi
+      .spyOn(sessionRedirect, 'assign')
+      .mockImplementation(() => {})
+    apiClient.defaults.adapter = async (config) => unauthorized(config) as never
   })
 
-  it('refreshes on a 401 and replays the original request with the rotated token', async () => {
-    const refreshSpy = vi.spyOn(axios, 'post').mockImplementation(async (url) => {
-      expect(String(url)).toContain('/auth/refresh')
-      return { data: { accessToken: 'fresh-access-token' } } as any
-    })
-
-    const res = await apiClient.get('/protected/resource')
-
-    expect(res.data.ok).toBe(true)
-    expect(refreshSpy).toHaveBeenCalledTimes(1)
-    expect(useAuthStore.getState().auth.accessToken).toBe('fresh-access-token')
+  afterEach(() => {
+    assignSpy.mockRestore()
   })
 
-  it('issues a FRESH refresh for each new 401 instead of reusing a stale token', async () => {
-    let refreshCount = 0
-    vi.spyOn(axios, 'post').mockImplementation(async () => {
-      refreshCount += 1
-      return { data: { accessToken: `refreshed-${refreshCount}` } } as any
-    })
+  it('resets auth and redirects once on a 401, without replaying the request', async () => {
+    const postSpy = vi.spyOn(axios, 'post')
+    useAuthStore.getState().auth.setSignedIn(true)
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: '1', email: 'a@b.c', role: 'admin', permissions: [] })
+    let adapterCalls = 0
+    apiClient.defaults.adapter = async (config) => {
+      adapterCalls += 1
+      return unauthorized(config) as never
+    }
+    const resetSpy = vi.spyOn(useAuthStore.getState().auth, 'reset')
+    const originalUrl = window.location.pathname + window.location.search
+    window.history.pushState({}, '', '/admin/op/orders')
 
-    await apiClient.get('/a')
-    await apiClient.get('/b')
-
-    // Two DISTINCT 401s must trigger two separate /auth/refresh calls — before
-    // the fix the second one reused the first (now-expired) token and failed.
-    expect(refreshCount).toBe(2)
+    try {
+      await expect(apiClient.get('/protected/resource')).rejects.toBeTruthy()
+      expect(adapterCalls).toBe(1)
+      expect(postSpy).not.toHaveBeenCalled()
+      expect(resetSpy).toHaveBeenCalled()
+      expect(useAuthStore.getState().auth.isSignedIn).toBe(false)
+      expect(assignSpy).toHaveBeenCalledWith(
+        expect.stringContaining('expired=1'),
+      )
+    } finally {
+      window.history.pushState({}, '', originalUrl)
+    }
   })
 
-  it('never triggers a refresh for 401s on the auth/login endpoint itself', async () => {
-    const postSpy = vi.spyOn(axios, 'post').mockResolvedValue({
-      data: { accessToken: 'x' },
-    } as any)
-    await expect(apiClient.post('/auth/login')).rejects.toMatchObject({
-      response: { status: 401 },
-    })
-    // No refresh is attempted when the failing request is on an auth path.
+  it('never calls /auth/refresh on a 401', async () => {
+    const postSpy = vi.spyOn(axios, 'post').mockResolvedValue({ data: {} } as any)
+    await expect(apiClient.get('/a')).rejects.toBeTruthy()
+    await expect(apiClient.get('/b')).rejects.toBeTruthy()
+    // Two DISTINCT 401s: no refresh is attempted for either.
     expect(postSpy).not.toHaveBeenCalled()
+  })
+
+  it('does NOT redirect on a 401 from a public auth page', async () => {
+    const originalUrl = window.location.pathname + window.location.search
+    window.history.pushState({}, '', '/admin/forgot-password?email=a@b.com')
+
+    try {
+      await expect(apiClient.get('/entitlements/me')).rejects.toBeTruthy()
+      // Auth is still cleared — only the bounce is suppressed.
+      expect(useAuthStore.getState().auth.isSignedIn).toBe(false)
+      expect(assignSpy).not.toHaveBeenCalled()
+    } finally {
+      window.history.pushState({}, '', originalUrl)
+    }
+  })
+
+  it('does NOT redirect when already on the sign-in page with no session', async () => {
+    const originalUrl = window.location.pathname + window.location.search
+    window.history.pushState({}, '', '/admin/sign-in')
+
+    try {
+      await expect(apiClient.get('/entitlements/me')).rejects.toBeTruthy()
+      expect(assignSpy).not.toHaveBeenCalled()
+    } finally {
+      window.history.pushState({}, '', originalUrl)
+    }
+  })
+
+  it('redirects with expired=1 from an authenticated page', async () => {
+    const originalUrl = window.location.pathname + window.location.search
+    window.history.pushState({}, '', '/admin/op/orders')
+
+    try {
+      await expect(apiClient.get('/hr/anything')).rejects.toBeTruthy()
+      expect(assignSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/admin\/sign-in\?/),
+      )
+      expect(assignSpy).toHaveBeenCalledWith(
+        expect.stringContaining('expired=1'),
+      )
+    } finally {
+      window.history.pushState({}, '', originalUrl)
+    }
+  })
+
+  it('lets non-401 errors propagate without resetting or redirecting', async () => {
+    // A custom axios adapter settles itself: a 500 must REJECT (the
+    // built-in adapters do this via validateStatus; a custom one that
+    // resolves a 500 response would look like success).
+    apiClient.defaults.adapter = (async (config: any) => {
+      throw new AxiosError('Server Error', 'ERR_BAD_RESPONSE', config, config, {
+        status: 500,
+        statusText: 'Server Error',
+        data: {},
+        headers: {},
+        config,
+      } as any)
+    }) as any
+    useAuthStore.getState().auth.setSignedIn(true)
+    await expect(apiClient.get('/x')).rejects.toBeTruthy()
+    expect(useAuthStore.getState().auth.isSignedIn).toBe(true)
+    expect(assignSpy).not.toHaveBeenCalled()
   })
 
   it('builds a sign-in redirect URL that preserves the request path and marks expired', () => {
@@ -91,46 +153,32 @@ describe('apiClient refresh interceptor', () => {
   })
 })
 
-describe('apiClient session expiry (G-21)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    useAuthStore.getState().auth.reset()
-    document.cookie =
-      'eco_mate_access_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
-    vi.restoreAllMocks()
-    // Every refresh attempt fails → the backoff loop exhausts.
-    vi.spyOn(axios, 'post').mockRejectedValue(new Error('refresh unavailable'))
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
+describe('apiClient session expiry helpers (Phase 3)', () => {
   it('redirects only when a session was authenticated or the user is not on the sign-in page', () => {
     expect(shouldRedirectOnSessionExpiry(true, '/admin/op/orders')).toBe(true)
     expect(shouldRedirectOnSessionExpiry(false, '/admin/op/orders')).toBe(true)
-    // No token + already on the sign-in page → a failed anonymous call, no bounce.
+    // No session + already on the sign-in page → a failed anonymous call, no bounce.
     expect(shouldRedirectOnSessionExpiry(false, '/admin/sign-in')).toBe(false)
   })
 
-  it('never redirects from a public auth page, with or without a token', () => {
+  it('never redirects from a public auth page, with or without a session', () => {
     // A 401 on a public auth page is not a session expiring — there is no
-    // session. The reset flow (otp/forgot-password/reset-password) must
-    // survive the user leaving the tab to copy their code (2026-11-22).
+    // session. The OTP page is gone (D7=B: BA native reset links replace
+    // the OTP flow), so `/otp` is NOT public anymore.
     for (const path of [
       '/admin/sign-in',
       '/admin/sign-in-2',
       '/admin/sign-up',
       '/admin/forgot-password',
-      '/admin/otp',
       '/admin/reset-password',
     ]) {
       expect(shouldRedirectOnSessionExpiry(false, path)).toBe(false)
       expect(shouldRedirectOnSessionExpiry(true, path)).toBe(false)
     }
+    expect(shouldRedirectOnSessionExpiry(false, '/admin/otp')).toBe(true)
   })
 
-  it('still redirects from authenticated pages, with or without a token', () => {
+  it('still redirects from authenticated pages, with or without a session', () => {
     expect(shouldRedirectOnSessionExpiry(true, '/admin/op/orders')).toBe(true)
     expect(shouldRedirectOnSessionExpiry(false, '/admin/op/orders')).toBe(true)
     expect(shouldRedirectOnSessionExpiry(true, '/admin/')).toBe(true)
@@ -138,82 +186,14 @@ describe('apiClient session expiry (G-21)', () => {
   })
 
   it('isPublicAuthPath normalises the /admin basepath and trailing slashes', () => {
-    expect(isPublicAuthPath('/admin/otp')).toBe(true)
-    expect(isPublicAuthPath('/otp')).toBe(true)
-    expect(isPublicAuthPath('/admin/otp/')).toBe(true)
+    // The OTP page is gone (D7=B) — it is no longer a public auth path.
+    expect(isPublicAuthPath('/admin/otp')).toBe(false)
+    expect(isPublicAuthPath('/otp')).toBe(false)
+    expect(isPublicAuthPath('/admin/forgot-password')).toBe(true)
+    expect(isPublicAuthPath('/forgot-password/')).toBe(true)
     expect(isPublicAuthPath('/reset-password')).toBe(true)
     expect(isPublicAuthPath('/admin/op/orders')).toBe(false)
     expect(isPublicAuthPath('/admin/')).toBe(false)
     expect(isPublicAuthPath('/')).toBe(false)
-  })
-
-  it('does NOT redirect when refresh retries exhaust on a public auth page', async () => {
-    const assignSpy = vi
-      .spyOn(sessionRedirect, 'assign')
-      .mockImplementation(() => {})
-    apiClient.defaults.adapter = async (config) => unauthorized(config) as never
-    const resetSpy = vi.spyOn(useAuthStore.getState().auth, 'reset')
-    const originalUrl = window.location.pathname + window.location.search
-    window.history.pushState({}, '', '/admin/otp?email=a@b.com')
-
-    try {
-      const request = apiClient.get('/entitlements/me')
-      // Attach the rejection assertion BEFORE advancing timers: the
-      // request rejects while the backoff runs, and a rejection with no
-      // handler attached at that point is reported as an unhandled error
-      // even if it is awaited later.
-      const assertion = expect(request).rejects.toBeTruthy()
-      await vi.advanceTimersByTimeAsync(31000)
-
-      await assertion
-      // Auth is still cleared — only the bounce is suppressed.
-      expect(resetSpy).toHaveBeenCalled()
-      expect(assignSpy).not.toHaveBeenCalled()
-    } finally {
-      window.history.pushState({}, '', originalUrl)
-    }
-  })
-
-  it('still redirects when refresh retries exhaust on an authenticated page', async () => {
-    const assignSpy = vi
-      .spyOn(sessionRedirect, 'assign')
-      .mockImplementation(() => {})
-    apiClient.defaults.adapter = async (config) => unauthorized(config) as never
-    const originalUrl = window.location.pathname + window.location.search
-    window.history.pushState({}, '', '/admin/op/orders')
-
-    try {
-      const request = apiClient.get('/entitlements/me')
-      // Attach before advancing timers (see the test above).
-      const assertion = expect(request).rejects.toBeTruthy()
-      await vi.advanceTimersByTimeAsync(31000)
-
-      await assertion
-      expect(assignSpy).toHaveBeenCalledWith(
-        expect.stringContaining('expired=1'),
-      )
-    } finally {
-      window.history.pushState({}, '', originalUrl)
-    }
-  })
-
-  it('logs out and redirects with expired=1 when refresh retries exhaust on a 401', async () => {
-    const assignSpy = vi
-      .spyOn(sessionRedirect, 'assign')
-      .mockImplementation(() => {})
-    apiClient.defaults.adapter = async (config) => unauthorized(config) as never
-    const resetSpy = vi.spyOn(useAuthStore.getState().auth, 'reset')
-
-    const request = apiClient.get('/hr/anything')
-    // Attach before advancing timers (see above).
-    const assertion = expect(request).rejects.toBeTruthy()
-    await vi.advanceTimersByTimeAsync(31000)
-
-    await assertion
-    expect(resetSpy).toHaveBeenCalled()
-    expect(assignSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^\/admin\/sign-in\?/),
-    )
-    expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining('expired=1'))
   })
 })

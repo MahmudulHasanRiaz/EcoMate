@@ -10,11 +10,7 @@ import { auth } from '../../better-auth/auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { getTenantContext } from '../../tenancy/tenant-context';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import {
-  computeEffectivePermissions,
-  getRoleDefaultPermissions,
-} from '../permissions/effective-permissions';
-import { getAllPermissions } from '../permissions/registry';
+import { loadEffectivePermissions } from '../permissions/permissions-loader';
 
 @Injectable()
 export class DualModeAuthGuard {
@@ -179,37 +175,15 @@ export class DualModeAuthGuard {
     throw new UnauthorizedException('Authentication required');
   }
 
+  // Phase 3 R-8: delegates to the ONE permission loader. A loader error
+  // propagates into the JWT path's outer try/catch (which falls through
+  // to the BA session check and then to 401) — the same fail-closed
+  // shape this method had before; the central guard throws 401
+  // directly because it has no fallback path.
   private async loadPermissionsFor(user: any): Promise<string[]> {
-    const role = user.role || 'customer';
-    // Owner rule 2026-10-24: superadmin is always all-open (Q1). Every
-    // other role goes through the preset-supremacy computation — including
-    // admins, whose linked preset now wins over the old "admin = all".
-    if (role === 'superadmin') {
-      return getAllPermissions();
-    }
-    if (role === 'customer') {
-      return [];
-    }
-    // No BA link means no preset can exist for this account: fall back to
-    // the shared role defaults (admin → all, employee → its four restored
-    // keys, everyone else → nothing). Keep this branch on the helper —
-    // an inline copy here is how the three call sites drifted before.
-    if (!user.betterAuthUserId) {
-      return getRoleDefaultPermissions(role);
-    }
-    const baUser = await this.prisma.betterAuthUser.findFirst({
-      where: { id: user.betterAuthUserId },
-      select: {
-        override_permissions: true,
-        denied_permissions: true,
-        employee: { include: { accessPreset: true } },
-      },
-    });
-    return computeEffectivePermissions({
-      role,
-      employeeLink: baUser?.employee ?? null,
-      overridePermissions: baUser?.override_permissions,
-      deniedPermissions: baUser?.denied_permissions,
+    return loadEffectivePermissions(this.prisma, {
+      role: user.role,
+      betterAuthUserId: user.betterAuthUserId,
     });
   }
 }

@@ -8,8 +8,16 @@ import { handoffSweeper } from './impersonation-handoff.js';
 import { logger } from './logger.js';
 
 const config = loadConfig();
-const { auth, prisma } = createAuth(config);
-const server = createServer({ auth, prisma, config });
+const { auth, prisma, registry } = createAuth(config);
+const server = createServer({ auth, prisma, config, registry });
+
+// Prime the tenant-registry snapshot at boot (best-effort): a newly
+// verified custom domain is usable within one refresh interval, but
+// priming avoids serving the first minute on the config allowlist
+// alone when the registry is already up.
+if (registry) {
+  void registry.refresh();
+}
 
 // Impersonation handoff rows are retained 30 days for audit, then purged
 // (design §4.2). Sweep once at boot (after the DB is up) and daily after.

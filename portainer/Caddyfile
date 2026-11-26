@@ -5,10 +5,29 @@
 #   www.ecomate.bd   -> landing (public signup front door)
 #   saas.ecomate.bd  -> platform-admin console; /api/* -> platform-api
 #   api.ecomate.bd   -> platform-api (control plane + webhooks)
+#   auth.em.commercians.com -> auth-service (central Better Auth, Phase 1)
 #   ecomate.bd       -> 301 to www.ecomate.bd (canonical marketing host)
 #   anything else    -> tenant block (:443): /api/* -> backend,
 #                       /admin, /admin/* -> admin, /pos, /pos/* -> pos,
 #                       else storefront
+#
+# Central auth (Phase 3): every host that serves a tenant frontend also
+# proxies /api/better-auth/* SAME-ORIGIN to auth-service:4200, BEFORE its
+# catch-all /api/* handler (handle blocks are first-match-wins — the
+# override must come first or the catch-all swallows it). The auth
+# service resolves its baseURL from the forwarded Host, so the proxy
+# must forward the original Host unchanged (Caddy's default: no host
+# rewriting) — a rewritten Host makes every proxied call fail closed.
+#
+# Trusted client IP (Phase 1 §5 finding 3): Caddy's reverse_proxy
+# APPENDS the peer IP to X-Forwarded-For by default — do NOT overwrite
+# it with {http.request.remote.host}: an upstream proxy (Cloudflare
+# fronts faah.net for caching) would then mask the real client IP.
+# The auth service reads X-Forwarded-For via advanced.ipAddress; when
+# an upstream proxy fronts Caddy, deploy MUST set the service's
+# AUTH_TRUSTED_PROXIES to that proxy's egress ranges (Cloudflare's
+# published ranges) so the chain walk resolves the client IP instead
+# of falling back to one shared per-path rate-limit bucket.
 #
 # The host split is load-bearing: platform-admin's default same-origin /api
 # would hit the TENANT backend under path-only routing. On the saas. host,
@@ -77,6 +96,15 @@
 }
 
 {$PLATFORM_ADMIN_HOST:saas.ecomate.bd} {
+	# Central auth (Phase 3): same-origin /api/better-auth/* goes to the
+	# auth service, BEFORE the catch-all /api/* below (first-match-wins).
+	# Host is forwarded unchanged; X-Forwarded-For is Caddy's default
+	# append (see the routing-shape comment at the top of this file).
+	@better_auth path /api/better-auth /api/better-auth/*
+	handle @better_auth {
+		reverse_proxy auth-service:4200
+	}
+
 	handle /api/* {
 		reverse_proxy platform-api:4100
 	}
@@ -113,8 +141,27 @@
 		reverse_proxy backend:4000
 	}
 
+	# Central auth (Phase 3): same-origin /api/better-auth/* goes to the
+	# auth service. Placed AFTER the store handlers above (they keep their
+	# precedence — none of them overlap /api/better-auth/*) and BEFORE the
+	# catch-all handle below (first-match-wins).
+	@better_auth path /api/better-auth /api/better-auth/*
+	handle @better_auth {
+		reverse_proxy auth-service:4200
+	}
+
 	handle {
 		reverse_proxy platform-api:4100
+	}
+}
+
+# Central auth service host (Phase 3): plain automatic TLS, like the
+# other platform hosts. No /api/better-auth override needed here — the
+# whole host IS the auth service. AUTH_HOST comes from the caddy service
+# env in compose (staging: auth.staging.em.commercians.com).
+{$AUTH_HOST:auth.em.commercians.com} {
+	handle {
+		reverse_proxy auth-service:4200
 	}
 }
 
@@ -125,6 +172,17 @@
 :443 {
 	tls {
 		on_demand
+	}
+
+	# Central auth (Phase 3): same-origin /api/better-auth/* goes to the
+	# auth service, BEFORE the catch-all /api/* below (first-match-wins).
+	# Without this, tenant-host auth calls still land on backend:4000
+	# (whose Fastify hijack Phase 3 deletes). Host is forwarded
+	# unchanged; X-Forwarded-For is Caddy's default append (see the
+	# routing-shape comment at the top of this file).
+	@better_auth path /api/better-auth /api/better-auth/*
+	handle @better_auth {
+		reverse_proxy auth-service:4200
 	}
 
 	# /api answers on canonical AND alias hosts (aliases are not redirected

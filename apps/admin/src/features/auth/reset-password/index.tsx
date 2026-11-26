@@ -1,4 +1,4 @@
-import { Link, useLocation } from '@tanstack/react-router'
+import { Link, useSearch } from '@tanstack/react-router'
 import {
   Card,
   CardContent,
@@ -11,11 +11,12 @@ import { AuthLayout } from '../auth-layout'
 import { ResetPasswordForm } from './components/reset-password-form'
 
 export function ResetPassword() {
-  // The reset JWT arrives in router state from the OTP page (never in the
-  // URL, so it stays out of browser history). A direct visit or a refresh
-  // has no token — the 5-minute token is spent, so restart the flow.
-  const state = useLocation().state as { resetToken?: string } | undefined
-  const resetToken = state?.resetToken
+  // BA native reset (D7=B): the emailed link lands here as
+  // `/reset-password?token=…` (or `?error=INVALID_TOKEN` when the token is
+  // spent). The token lives in the URL by design — the service mints a
+  // single-use token for exactly this page.
+  const { token, error } = useSearch({ from: '/(auth)/reset-password' })
+  const resetToken = token && !error ? token : undefined
 
   return (
     <AuthLayout>
@@ -42,7 +43,7 @@ export function ResetPassword() {
               </CardTitle>
               <CardDescription>
                 This reset link is no longer valid. It may have expired, or
-                the page was reloaded — please request a new code.
+                it was already used — please request a new link.
               </CardDescription>
             </CardHeader>
             <CardFooter>
@@ -51,7 +52,7 @@ export function ResetPassword() {
                   to='/forgot-password'
                   className='underline underline-offset-4 hover:text-primary'
                 >
-                  Request a new code
+                  Request a new link
                 </Link>
                 .
               </p>

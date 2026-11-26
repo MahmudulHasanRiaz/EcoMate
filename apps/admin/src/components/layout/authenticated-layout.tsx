@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Outlet, useNavigate, useLocation } from '@tanstack/react-router'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
+import { authClient } from '@/lib/better-auth-client'
 import { apiClient } from '@/lib/api-client'
 import { useEntitlementsStore } from '@/stores/entitlements-store'
 import { LayoutProvider } from '@/context/layout-provider'
@@ -10,6 +11,7 @@ import { SearchProvider } from '@/context/search-provider'
 import { PanelProvider } from '@/context/panel-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
+import { ImpersonationBanner } from '@/components/layout/impersonation-banner'
 import { AttendanceClock } from '@/features/hr-attendance/components/attendance-clock'
 import { PurgeAllCacheButton } from '@/features/cache-purge/components/purge-all-cache-button'
 import { SkipToMain } from '@/components/skip-to-main'
@@ -19,18 +21,40 @@ type AuthenticatedLayoutProps = {
   children?: React.ReactNode
 }
 
+/**
+ * Authenticated layout — Phase 3 central Better Auth cutover.
+ *
+ * The BA session (`authClient.useSession()`) is the source of truth for
+ * "signed in". The tenant profile (role, permissions, names) is enriched
+ * once per session from the backend `GET /auth/me` — the central session
+ * user carries no tenant role/permissions (the service has no
+ * `customSession` enrichment), so that one call stays. What is gone:
+ * the access-token cookie, the localStorage user cache, the `/auth/me`
+ * prefetch entry, and the 5-minute keepalive poll (the BA session
+ * refreshes server-side via `updateAge`).
+ *
+ * KEPT VERBATIM (survey §9): the customer bounce out of admin and the
+ * packing_assistant force-route.
+ */
 export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   const defaultOpen = getCookie('sidebar_state') !== 'false'
   const navigate = useNavigate()
   const location = useLocation()
-  const accessToken = useAuthStore((s) => s.auth.accessToken)
   const user = useAuthStore((s) => s.auth.user)
+  const isSignedIn = useAuthStore((s) => s.auth.isSignedIn)
+  const { data: session, isPending: sessionPending } = authClient.useSession()
+  const { data: organizations } = authClient.useListOrganizations()
+  const { data: activeOrganization } = authClient.useActiveOrganization()
+  const defaultOrgAppliedRef = useRef(false)
 
+  // Session bridge: a live BA session signs the store in; no session signs
+  // it out and bounces to sign-in. The bounce marker preserves the
+  // customer explanation across the redirect.
   useEffect(() => {
-    if (!accessToken) {
-      // A customer session bounce sets this marker so the plain sign-in
-      // redirect (which fires when the token is cleared) carries the
-      // explanatory message instead of silently dropping it.
+    if (sessionPending) return
+    if (!session) {
+      const { reset } = useAuthStore.getState().auth
+      reset()
       const bounce = sessionStorage.getItem('admin_customer_bounce')
       sessionStorage.removeItem('admin_customer_bounce')
       navigate({
@@ -38,8 +62,34 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         ...(bounce ? { search: { customer: '1' } as const } : {}),
         replace: true,
       })
+      return
     }
-  }, [accessToken, navigate])
+    const { setSignedIn, setImpersonatedBy } = useAuthStore.getState().auth
+    setSignedIn(true)
+    setImpersonatedBy(session.session.impersonatedBy ?? null)
+  }, [session, sessionPending, navigate])
+
+  // Default active org = the org matching the current host on sign-in.
+  // BA leaves `activeOrganizationId` null after sign-in; a user with one
+  // org gets that org. Runs once per mount — `setActive` refetches the
+  // session, which flips `activeOrganization` and stops the effect.
+  useEffect(() => {
+    if (!session || defaultOrgAppliedRef.current) return
+    if (!organizations || organizations.length === 0) return
+    if (activeOrganization) return
+    const hostSlug = window.location.hostname.split('.')[0]
+    const match =
+      organizations.find((o) => o.slug === hostSlug) ??
+      (organizations.length === 1 ? organizations[0] : undefined)
+    if (!match) return
+    defaultOrgAppliedRef.current = true
+    authClient.organization
+      .setActive({ organizationId: match.id })
+      .catch(() => {
+        // Non-fatal: the user can still pick a store from the switcher.
+        defaultOrgAppliedRef.current = false
+      })
+  }, [session, organizations, activeOrganization])
 
   // A customer account must never use the admin app. Any customer session —
   // however it got here — is cleared and bounced to sign-in with an
@@ -52,23 +102,18 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     navigate({ to: '/sign-in', search: { customer: '1' }, replace: true })
   }, [user?.role, navigate])
 
+  // Enrich the tenant profile once per session: role + permissions + names
+  // come from the backend, which reads them off the central session.
   useEffect(() => {
-    if (!accessToken) return
-    const { user, setUser, reset } = useAuthStore.getState().auth
-    // The login response carries no `permissions` key, so a cached user can exist
-    // while every permission-gated surface reads `undefined`. Only skip the
-    // /auth/me round-trip once permissions are actually present.
-    if (user?.permissions?.length) return
+    if (!session) return
+    const { user: cachedUser, setUser, reset } = useAuthStore.getState().auth
+    if (cachedUser?.permissions?.length) return
 
-    const applyUser = (u: {
-      id: string
-      email: string
-      role: string
-      permissions?: string[]
-      firstName?: string
-      lastName?: string
-      username?: string
-    }) => {
+    let cancelled = false
+    apiClient.get('/auth/me').then(r => {
+      if (cancelled) return
+      const u = r.data?.user || r.data
+      if (!u) return
       setUser({
         id: u.id,
         email: u.email,
@@ -82,70 +127,19 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         const isOnPacking = window.location.pathname.startsWith('/op/packing')
         if (!isOnPacking) navigate({ to: '/op/packing', replace: true })
       }
-    }
-
-    // Prefetched by the inline script during bundle download — apply instantly.
-    try {
-      const raw = sessionStorage.getItem('admin_prefetch')
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (parsed.authMe) {
-          const u = parsed.authMe.user || parsed.authMe
-          if (u && u.id) {
-            applyUser(u)
-            return
-          }
-        }
-      }
-    } catch { /* fall through to API call */ }
-
-    apiClient.get('/auth/me').then(r => {
-      const u = r.data?.user || r.data
-      if (u) applyUser(u)
     }).catch(() => {
-      // Check if access token still exists — if yes, the interceptor is likely
-      // retrying refresh. Don't reset immediately; let the interceptor handle it.
-      const stillHasToken = !!(useAuthStore.getState().auth.accessToken)
-      if (!stillHasToken) {
+      if (cancelled) return
+      // A session whose profile cannot be read must not sit in the shell.
+      // The 401 interceptor already reset auth on a dead session; this
+      // covers the remaining failure modes.
+      const stillSignedIn = !!useAuthStore.getState().auth.isSignedIn
+      if (!stillSignedIn) {
         reset()
         navigate({ to: '/sign-in', replace: true })
       }
     })
-  }, [accessToken, navigate])
-
-  // Proactive token keepalive: call /auth/me every 5 minutes.
-  // When the access token expires during active use, this triggers the 401
-  // interceptor → exponential backoff refresh → token rotates before the
-  // user hits a real request (like Save on a form they've been editing).
-  // The catch is silent: transient failures are handled by the interceptor
-  // with exponential backoff, and we don't want to disrupt the user here.
-  useEffect(() => {
-    if (!accessToken) return
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await apiClient.get('/auth/me')
-        const u = res.data?.user || res.data
-        if (u) {
-          const { setUser } = useAuthStore.getState().auth
-          setUser({
-            id: u.id,
-            email: u.email,
-            role: u.role,
-            permissions: u.permissions || [],
-            firstName: u.firstName,
-            lastName: u.lastName,
-            username: u.username,
-          })
-        }
-      } catch {
-        // Silent — the interceptor handles 401 with exponential backoff.
-        // A momentary failure here won't redirect or clear auth.
-      }
-    }, 5 * 60 * 1000)
-
-    return () => clearInterval(interval)
-  }, [accessToken])
+    return () => { cancelled = true }
+  }, [session, navigate])
 
   // Enforce redirection for packing_assistant role on path changes
   useEffect(() => {
@@ -158,7 +152,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   }, [user, location.pathname, navigate])
 
   useEffect(() => {
-    if (!accessToken) return
+    if (!isSignedIn) return
 
     const applyEntitlements = (data: { features?: string[] }) => {
       // /entitlements/me returns the effective feature list (`*` opens all).
@@ -203,7 +197,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
       // A transient network failure must NOT look like "no plan": clearing
       // features here used to collapse the whole sidebar on a momentary blip.
     })
-  }, [accessToken])
+  }, [isSignedIn])
 
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
@@ -218,7 +212,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     return () => window.removeEventListener('storage', handleStorage)
   }, [])
 
-  if (!accessToken) {
+  if (sessionPending || !session) {
     return (
       <div
         style={{
@@ -267,6 +261,9 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
               className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950"
             >
               <div className="panel-accent-line" aria-hidden />
+              <div className="px-3 pt-2 empty:hidden">
+                <ImpersonationBanner />
+              </div>
               {children ?? <Outlet />}
             </main>
           </LayoutProvider>
@@ -298,6 +295,9 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
               'peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*4))]'
             )}
           >
+            <div className="px-3 pt-2 empty:hidden">
+              <ImpersonationBanner />
+            </div>
             {children ?? <Outlet />}
           </SidebarInset>
         </SidebarProvider>

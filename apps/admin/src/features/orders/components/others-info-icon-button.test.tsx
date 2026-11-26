@@ -21,11 +21,11 @@ describe('OthersInfoIconButton (Part 6 compact header)', () => {
   })
 
   it('stays hidden for other roles', async () => {
-    const page = await render(<OthersInfoIconButton role='manager' onOpen={vi.fn()} />)
+    const page = await render(<OthersInfoIconButton role='employee' onOpen={vi.fn()} />)
     await expect
       .element(page.getByRole('button', { name: 'Others Information' }))
       .not.toBeInTheDocument()
-    expect(canViewOthersInfo('manager')).toBe(false)
+    expect(canViewOthersInfo('employee')).toBe(false)
     expect(canViewOthersInfo('staff')).toBe(false)
     expect(canViewOthersInfo(null)).toBe(false)
   })

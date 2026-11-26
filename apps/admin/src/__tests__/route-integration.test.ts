@@ -97,7 +97,7 @@ describe('Access Preset Route Integration', () => {
   })
 
   it('hr/presets redirects a non-admin role', () => {
-    signInAs({ role: 'manager', permissions: ['manage_presets'] })
+    signInAs({ role: 'employee', permissions: ['manage_presets'] })
     expectRedirect(HrPresetsRoute.options.beforeLoad)
   })
 

@@ -5,6 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from '@tanstack/react-router'
 import { Loader2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
+import { authClient } from '@/lib/better-auth-client'
+import { baErrorMessage } from '@/lib/ba-auth-errors'
 import { apiClient } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -61,24 +63,39 @@ export function SignUpForm({
     setIsLoading(true)
 
     try {
-      await apiClient.post('/auth/register', {
-        firstName: data.firstName,
-        lastName: data.lastName,
-        username: data.username,
+      // Phase 3: registration goes through the central BA client. BA only
+      // stores name/email/password at sign-up — the tenant profile fields
+      // (first/last name, phone) are saved best-effort to the backend
+      // profile right after, while the fresh session is still alive.
+      // Username has no backend profile field yet; the customer sets it in
+      // the storefront account area.
+      const { error } = await authClient.signUp.email({
+        name: `${data.firstName} ${data.lastName}`.trim(),
         email: data.email,
-        phoneNumber: data.phoneNumber,
         password: data.password,
       })
+      if (error) throw error
 
-      // Registration always creates a CUSTOMER account. Do not store the
+      await apiClient
+        .put('/auth/me', {
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phoneNumber: data.phoneNumber,
+        })
+        .catch(() => {
+          // Best-effort only: the account exists; the customer can fill
+          // in their profile from the storefront.
+        })
+
+      // Registration always creates a CUSTOMER account. Do not keep the
       // returned session — a customer must never land in the admin shell.
-      // Send them to sign-in with an explanatory banner instead.
+      // Sign straight back out and send them to sign-in with an
+      // explanatory banner instead.
+      await authClient.signOut().catch(() => {})
       navigate({ to: '/sign-in', search: { registered: '1' }, replace: true })
       toast.success('Account created successfully!')
     } catch (error: any) {
-      const message =
-        error.response?.data?.message || 'Registration failed'
-      toast.error(message)
+      toast.error(baErrorMessage(error, 'Registration failed'))
     } finally {
       setIsLoading(false)
     }

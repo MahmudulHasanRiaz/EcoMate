@@ -56,7 +56,11 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
               create: jest.fn(),
             },
             userSettings: { create: jest.fn() },
+            // Phase 3 R-8: the ONE loader reads overrides from the BA
+            // row AND the employee link directly from the Employee
+            // table (two separate calls — see permissions-loader.ts).
             betterAuthUser: { findFirst: jest.fn() },
+            employee: { findFirst: jest.fn() },
           },
         },
       ],
@@ -76,8 +80,8 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: [],
       denied_permissions: [],
-      employee: null,
     });
+    (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
 
     const context = makeContext('Bearer <redacted>');
     const result = await guard.canActivate(context);
@@ -91,8 +95,11 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
       select: {
         override_permissions: true,
         denied_permissions: true,
-        employee: { include: { accessPreset: true } },
       },
+    });
+    expect(prisma.employee.findFirst).toHaveBeenCalledWith({
+      where: { betterAuthUserId: 'ba-1' },
+      include: { accessPreset: true },
     });
   });
 
@@ -106,10 +113,10 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: [],
       denied_permissions: [],
-      employee: {
-        accessPresetId: 'preset-1',
-        accessPreset: { permissions: ['view_orders'] },
-      },
+    });
+    (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
+      accessPresetId: 'preset-1',
+      accessPreset: { permissions: ['view_orders'] },
     });
 
     const context = makeContext('Bearer <redacted>');
@@ -130,10 +137,10 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     (prisma.betterAuthUser.findFirst as jest.Mock).mockResolvedValue({
       override_permissions: ['view_orders', 'ghost_key'],
       denied_permissions: [],
-      employee: {
-        accessPresetId: 'preset-1',
-        accessPreset: { permissions: ['view_customers'] },
-      },
+    });
+    (prisma.employee.findFirst as jest.Mock).mockResolvedValue({
+      accessPresetId: 'preset-1',
+      accessPreset: { permissions: ['view_customers'] },
     });
 
     const context = makeContext('Bearer token-1');
@@ -144,8 +151,11 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
       select: {
         override_permissions: true,
         denied_permissions: true,
-        employee: { include: { accessPreset: true } },
       },
+    });
+    expect(prisma.employee.findFirst).toHaveBeenCalledWith({
+      where: { betterAuthUserId: 'ba-1' },
+      include: { accessPreset: true },
     });
     const req = context.switchToHttp().getRequest();
     expect(req.user.permissions).toEqual(['view_customers', 'view_orders']);

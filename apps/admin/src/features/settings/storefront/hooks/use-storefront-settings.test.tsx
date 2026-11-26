@@ -43,10 +43,12 @@ describe('useStorefrontSettings', () => {
     const { result } = await renderHook(() => useStorefrontSettings(), {
       wrapper: createWrapper(),
     })
+    // `isLoading` flips false when the query resolves, but the values are
+    // copied into state by an effect a tick later — wait for the value
+    // itself, not just the loading flag.
     await vi.waitFor(() => {
-      expect(result.current.isLoading).toBe(false)
+      expect(result.current.values.store_name).toBe('EcoMate')
     })
-    expect(result.current.values.store_name).toBe('EcoMate')
   })
 
   it('setValue changes a value and marks it dirty', async () => {

@@ -7,6 +7,8 @@ import {
   BadRequestException,
   ForbiddenException,
   ServiceUnavailableException,
+  HttpException,
+  HttpStatus,
   Logger,
   OnModuleDestroy,
   OnModuleInit,
@@ -20,16 +22,14 @@ import { schedulersEnabled } from '../common/worker-mode';
 import { EmailService } from '../email/email.service';
 import { baPrisma } from '../better-auth/prisma';
 import { hashPassword } from 'better-auth/crypto';
+import { CentralAuthClient } from './central-auth.client';
+import { isCentralAuthMode } from '../common/tenant-auth-mode';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { normalizePhone } from '../common/utils/phone-utils';
-import {
-  computeEffectivePermissions,
-  getRoleDefaultPermissions,
-} from '../common/permissions/effective-permissions';
-import { getAllPermissions } from '../common/permissions/registry';
+import { loadEffectivePermissions } from '../common/permissions/permissions-loader';
 import * as bcrypt from 'bcryptjs';
 import ms from 'ms';
 import type { StringValue } from 'ms';
@@ -52,7 +52,40 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     private readonly emailService: EmailService,
     @Optional()
     private readonly tenantRegistry?: TenantRegistryService,
+    // Central auth client (global module). @Optional so unit tests that
+    // construct the service by hand keep working; in central-ba mode the
+    // client MUST be present (Nest injects it from CentralAuthModule).
+    @Optional()
+    private readonly centralAuth?: CentralAuthClient,
   ) {}
+
+  /**
+   * Central client or a fail-closed 503 (central mode without the client).
+   */
+  private requireCentralAuth(): CentralAuthClient {
+    if (!this.centralAuth) {
+      throw new ServiceUnavailableException(
+        'Central auth client is not configured',
+      );
+    }
+    return this.centralAuth;
+  }
+
+  /**
+   * Phase 3 D7=B: the legacy JWT/OTP auth flows are gone in central-ba
+   * mode — registration, login, token refresh, logout and the OTP
+   * password reset all live on the central service now. They answer 410
+   * Gone (not 404) so a stale client can tell "moved" from "missing".
+   * The routes stay registered so legacy-jwt rollback works unchanged.
+   */
+  private requireLegacyAuthMode(flow: string): void {
+    if (isCentralAuthMode()) {
+      throw new HttpException(
+        `${flow} is handled by the central auth service — use the Better Auth flow instead.`,
+        HttpStatus.GONE,
+      );
+    }
+  }
 
   async onModuleInit() {
     // Worker split (WORKER_MODE): the expired-token sweep is scheduler work
@@ -96,6 +129,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async register(dto: RegisterDto) {
+    this.requireLegacyAuthMode('Registration');
     const existingUser = await this.prisma.userProfile.findFirst({
       where: {
         OR: [{ email: dto.email }, { username: dto.username }],
@@ -193,6 +227,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async login(dto: LoginDto) {
+    this.requireLegacyAuthMode('Login');
     const user = await this.prisma.userProfile.findFirst({
       where: { email: dto.email },
     });
@@ -332,49 +367,23 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Single source of truth for permission computation on the JWT path.
-   * Mirrors DualModeAuthGuard.loadPermissionsFor so the login response and
-   * every request agree. (The controller previously carried its own copy of
-   * this logic — consolidated here.)
+   * Phase 3 R-8: delegates to the ONE permission loader (the same loader
+   * the guards and the BA customSession plugin use), so the login
+   * response and every request agree. DB errors propagate and surface
+   * as 500, exactly as before.
    */
   async computePermissionsForUser(user: {
     role?: string | null;
     betterAuthUserId?: string | null;
   }): Promise<string[]> {
-    const role = user.role || 'customer';
-    // Owner rule 2026-10-24: superadmin is always all-open (Q1). Every
-    // other role goes through the preset-supremacy computation — including
-    // admins, whose linked preset now wins over the old "admin = all".
-    if (role === 'superadmin') {
-      return getAllPermissions();
-    }
-    if (role === 'customer') {
-      return [];
-    }
-    // No BA link means no preset can exist for this account: fall back to
-    // the shared role defaults (admin → all, employee → its four restored
-    // keys, everyone else → nothing). Keep this branch on the helper —
-    // an inline copy here is how the three call sites drifted before.
-    if (!user.betterAuthUserId) {
-      return getRoleDefaultPermissions(role);
-    }
-    const baUser = await this.prisma.betterAuthUser.findFirst({
-      where: { id: user.betterAuthUserId },
-      select: {
-        override_permissions: true,
-        denied_permissions: true,
-        employee: { include: { accessPreset: true } },
-      },
-    });
-    return computeEffectivePermissions({
-      role,
-      employeeLink: baUser?.employee ?? null,
-      overridePermissions: baUser?.override_permissions,
-      deniedPermissions: baUser?.denied_permissions,
+    return loadEffectivePermissions(this.prisma, {
+      role: user.role,
+      betterAuthUserId: user.betterAuthUserId,
     });
   }
 
   async refresh(userId: string, refreshToken: string) {
+    this.requireLegacyAuthMode('Token refresh');
     // Atomically delete-and-check to prevent race conditions where two
     // concurrent refresh calls both pass findUnique before either delete.
     const deleted = await this.prisma.refreshToken
@@ -409,6 +418,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async logout(userId: string, refreshToken?: string, logoutAllDevices?: boolean) {
+    this.requireLegacyAuthMode('Logout');
     if (refreshToken) {
       await this.prisma.refreshToken.deleteMany({
         where: { token: refreshToken, userId },
@@ -505,32 +515,62 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    // Sync to BA
+    // Sync to BA (legacy) or the central service (central-ba). H13:
+    // profile-sync failures warn-and-swallow — they never fail the
+    // response; the tenant row is already saved.
     if (user.betterAuthUserId) {
-      try {
-        const baData: any = {};
-        if (dto.email !== undefined) baData.email = dto.email;
-        if (dto.firstName !== undefined || dto.lastName !== undefined) {
-          baData.name = `${updated.firstName} ${updated.lastName}`;
+      if (isCentralAuthMode()) {
+        try {
+          const centralData: { name?: string; email?: string } = {};
+          if (dto.email !== undefined) centralData.email = dto.email;
+          if (dto.firstName !== undefined || dto.lastName !== undefined) {
+            centralData.name = `${updated.firstName} ${updated.lastName}`;
+          }
+          if (Object.keys(centralData).length > 0) {
+            await this.requireCentralAuth().updateCentralUser(
+              user.betterAuthUserId,
+              centralData,
+            );
+          }
+        } catch (err) {
+          this.logger.warn(
+            `Failed to sync profile to central auth for user ${userId}`,
+            err,
+          );
         }
-        if (Object.keys(baData).length > 0) {
-          await baPrisma.betterAuthUser.update({
-            where: { id: user.betterAuthUserId },
-            data: baData,
-          });
+      } else {
+        try {
+          const baData: any = {};
+          if (dto.email !== undefined) baData.email = dto.email;
+          if (dto.firstName !== undefined || dto.lastName !== undefined) {
+            baData.name = `${updated.firstName} ${updated.lastName}`;
+          }
+          if (Object.keys(baData).length > 0) {
+            await baPrisma.betterAuthUser.update({
+              where: { id: user.betterAuthUserId },
+              data: baData,
+            });
+          }
+        } catch (err) {
+          this.logger.warn(
+            `Failed to sync profile to BA for user ${userId}`,
+            err,
+          );
         }
-      } catch (err) {
-        this.logger.warn(
-          `Failed to sync profile to BA for user ${userId}`,
-          err,
-        );
       }
     }
 
     return updated;
   }
 
-  async changePassword(userId: string, dto: ChangePasswordDto) {
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+    // Central mode only: the caller's session cookie + tenant Host, so
+    // the service can authenticate the change-password call. The
+    // controller forwards them from the request.
+    authContext?: { cookie?: string; host?: string },
+  ) {
     if (dto.currentPassword === dto.newPassword) {
       throw new BadRequestException(
         'New password must be different from current password',
@@ -543,6 +583,37 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     if (!user) {
       throw new UnauthorizedException('User not found');
+    }
+
+    // Phase 3 H9/H10: in central-ba mode the central service is
+    // authoritative for the current-password check — no legacy bcrypt
+    // check (the tenant row may hold a stale hash). The service call
+    // revokes other sessions (revokeOtherSessions: true). The legacy
+    // bcrypt row is still updated, warn-and-swallow (H13 — it is the
+    // rollback path), and the legacy refresh tokens are deleted.
+    if (isCentralAuthMode()) {
+      await this.requireCentralAuth().changeCentralPassword(
+        authContext?.cookie,
+        authContext?.host,
+        dto.currentPassword,
+        dto.newPassword,
+      );
+      try {
+        const hashedPassword = await bcrypt.hash(dto.newPassword, 12);
+        await this.prisma.userProfile.update({
+          where: { id: userId },
+          data: { password: hashedPassword },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to sync changed password to legacy row for user ${userId}`,
+          err,
+        );
+      }
+      await this.prisma.refreshToken.deleteMany({
+        where: { userId },
+      });
+      return { message: 'Password changed successfully' };
     }
 
     const isPasswordValid = await bcrypt.compare(
@@ -583,6 +654,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async forgotPassword(email: string) {
+    // Phase 3 D7=B: the OTP reset flow is dead in central-ba mode —
+    // resets go through BA native reset links (frontend-driven). 410,
+    // same as the other retired legacy flows above.
+    this.requireLegacyAuthMode('Password reset');
     const user = await this.prisma.userProfile.findFirst({
       where: { email },
       select: { id: true },
@@ -610,6 +685,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async verifyOtp(email: string, otp: string) {
+    // Phase 3 D7=B: OTP reset is dead in central-ba mode (see
+    // forgotPassword above). The EMAIL_VERIFICATION OTP flow is a
+    // separate flow and stays live in both modes (open Boss decision).
+    this.requireLegacyAuthMode('OTP verification');
     const tokenRecord = await this.prisma.verificationToken.findFirst({
       where: {
         email,
@@ -670,6 +749,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async resetPassword(token: string, password: string) {
+    this.requireLegacyAuthMode('Password reset');
     let payload: { sub: string; email: string };
     try {
       payload = this.jwtService.verify(token, {
@@ -772,16 +852,33 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (updatedUser.betterAuthUserId) {
-      try {
-        await baPrisma.betterAuthUser.update({
-          where: { id: updatedUser.betterAuthUserId },
-          data: { emailVerified: true },
-        });
-      } catch (err) {
-        this.logger.warn(
-          `Failed to sync email verification to BA for user ${updatedUser.id}`,
-          err,
-        );
+      // EMAIL_VERIFICATION OTP stays live in both modes (open decision):
+      // in central-ba mode the verification is mirrored to the central
+      // user instead of the tenant BA row. Warn-and-swallow (H13).
+      if (isCentralAuthMode()) {
+        try {
+          await this.requireCentralAuth().updateCentralUser(
+            updatedUser.betterAuthUserId,
+            { emailVerified: true },
+          );
+        } catch (err) {
+          this.logger.warn(
+            `Failed to sync email verification to central auth for user ${updatedUser.id}`,
+            err,
+          );
+        }
+      } else {
+        try {
+          await baPrisma.betterAuthUser.update({
+            where: { id: updatedUser.betterAuthUserId },
+            data: { emailVerified: true },
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Failed to sync email verification to BA for user ${updatedUser.id}`,
+            err,
+          );
+        }
       }
     }
 
@@ -867,13 +964,16 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         ? Math.min(configuredTtl, 3_600)
         : 900;
     // `imp` marks the session as impersonated; `impActor` carries the
-    // platform operator identity when the consume response supplies it
-    // (it does not yet — the platform side audits the actor, but the
-    // consume payload only returns tenantId/slug/email today). The
+    // platform operator identity from the consume response — the
+    // platform DOES return it (actorEmail preferred, actorId fallback).
+    // (An earlier comment here claimed it "does not yet" — that was
+    // stale; the consume payload returns the actor.) The
     // DualModeAuthGuard consumes both claims: the flag gates sensitive
     // actions and the security-event emitter stamps them into the tenant
-    // audit trail. When the platform starts returning the actor, it
-    // flows through with no backend change.
+    // audit trail. NOTE: the central guard maps
+    // session.impersonatedBy → impActor = the CENTRAL user id, a
+    // different identity shape from this bridge's operator email — see
+    // BUILD-SUMMARY.md.
     const impersonationActor = payload.actorEmail ?? payload.actorId;
     const accessToken = this.jwtService.sign(
       {

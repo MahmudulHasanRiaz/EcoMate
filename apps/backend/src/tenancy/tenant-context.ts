@@ -9,12 +9,14 @@ export interface TenantContext {
   canonicalHost?: string;
   isAlias?: boolean;
   /**
-   * Set by DualModeAuthGuard when the request authenticates with an
-   * impersonated JWT (`imp: true`). The security-event emitter stamps it
-   * into the tenant audit trail so impersonated actions are attributable.
-   * `actor` is the platform operator identity when the impersonation
-   * exchange supplied one (the platform consume response does not return
-   * it yet, so it is usually null — the flag is always stamped).
+   * Set by the auth guard when the request authenticates as impersonated
+   * (legacy JWT `imp: true`, or a central BA session with
+   * `impersonatedBy`). The security-event emitter stamps it into the
+   * tenant audit trail so impersonated actions are attributable.
+   * `actor` is the platform operator identity: the operator EMAIL on the
+   * legacy bridge, the CENTRAL USER ID on the central guard (Phase 1 §6
+   * — the two guards carry different identity shapes; see
+   * BUILD-SUMMARY.md).
    */
   impersonation?: {
     impersonated: boolean;

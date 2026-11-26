@@ -40,13 +40,13 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
   // firing the call logged-out 401s, which used to drive the 401
   // interceptor's 30s refresh loop and bounce the user to sign-in with
   // "session expired" (reported live 2026-11-22 on the OTP page). Gate on
-  // the access token, like the authenticated layout already does: the
-  // effect re-runs when the token appears at login, and clears stale
+  // the BA session flag, like the authenticated layout already does: the
+  // effect re-runs when the session appears at login, and clears stale
   // entitlements at logout.
-  const accessToken = useAuthStore((s) => s.auth.accessToken)
+  const isSignedIn = useAuthStore((s) => s.auth.isSignedIn)
 
   useEffect(() => {
-    if (!accessToken) {
+    if (!isSignedIn) {
       setFeatures([])
       setPlanName(null)
       setAccessState(null)
@@ -71,7 +71,7 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
       })
     return () => { cancelled = true }
-  }, [accessToken])
+  }, [isSignedIn])
 
   const hasFeature = useCallback(
     (key: string) => features.includes('*') || features.includes(key),

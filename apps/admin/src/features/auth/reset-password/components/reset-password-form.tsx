@@ -5,7 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ArrowRight, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { apiClient } from '@/lib/api-client'
+import { authClient } from '@/lib/better-auth-client'
+import { baErrorMessage } from '@/lib/ba-auth-errors'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -41,13 +42,12 @@ const formSchema = z
     path: ['confirmPassword'],
   })
 
-// The backend's exact BadRequest message for an expired/invalid reset JWT
-// (auth.service.ts resetPassword). Only this failure offers a way back to
-// the start of the flow — a weak-password failure must not.
-const EXPIRED_TOKEN_MESSAGE = 'Invalid or expired reset token'
-
+// BA native reset (D7=B): the token arrives as `?token=` on the emailed
+// link (the service redirects `/reset-password/:token` to this page with
+// `?token=` or `?error=INVALID_TOKEN`). Resetting the password revokes
+// every other session (`revokeSessionsOnPasswordReset`, service-side).
 type ResetPasswordFormProps = React.HTMLAttributes<HTMLFormElement> & {
-  /** 5-minute reset JWT minted by POST /auth/verify-otp. */
+  /** Reset token from the emailed link's `?token=` search param. */
   token: string
 }
 
@@ -70,17 +70,18 @@ export function ResetPasswordForm({
     setServerError(null)
 
     try {
-      await apiClient.post('/auth/reset-password', {
+      const { error } = await authClient.resetPassword({
+        newPassword: data.password,
         token,
-        password: data.password,
       })
+      if (error) throw error
       toast.success('Password has been reset successfully')
       navigate({ to: '/sign-in' })
     } catch (error: any) {
-      const raw = error.response?.data?.message
-      const message =
-        (Array.isArray(raw) ? raw.join(' ') : raw) ||
-        'Could not reset your password. Please try again.'
+      const message = baErrorMessage(
+        error,
+        'Could not reset your password. Please try again.',
+      )
       setServerError(message)
       toast.error(message)
     } finally {
@@ -131,18 +132,13 @@ export function ResetPasswordForm({
         />
         {serverError && (
           <p role='alert' className='text-sm text-destructive'>
-            <span>{serverError}</span>
-            {serverError === EXPIRED_TOKEN_MESSAGE && (
-              <>
-                {' '}
-                <Link
-                  to='/forgot-password'
-                  className='underline underline-offset-4 hover:text-primary'
-                >
-                  Request a new code.
-                </Link>
-              </>
-            )}
+            <span>{serverError}</span>{' '}
+            <Link
+              to='/forgot-password'
+              className='underline underline-offset-4 hover:text-primary'
+            >
+              Request a new link.
+            </Link>
           </p>
         )}
         <Button className='mt-2' disabled={isLoading}>

@@ -2,27 +2,73 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 
 const authState = vi.hoisted(() => ({
-  accessToken: 'tok' as string,
+  isSignedIn: true as boolean,
+  impersonatedBy: null as string | null,
   user: null as null | { id: string; email: string; role: string; permissions?: string[] },
 }))
 
 const setUser = vi.hoisted(() => vi.fn())
+const setSignedIn = vi.hoisted(() => vi.fn())
+const setImpersonatedBy = vi.hoisted(() => vi.fn())
 const reset = vi.hoisted(() => vi.fn())
 const getMe = vi.hoisted(() => vi.fn())
 const getEntitlements = vi.hoisted(() => vi.fn())
+const setActive = vi.hoisted(() => vi.fn())
+
+/** Phase 3: the BA session is the source of truth — mock it, not tokens. */
+const sessionState = vi.hoisted(() => ({
+  session: {
+    user: { id: 'u1', email: 'a@b.c', name: 'Admin' },
+    session: { id: 's1', impersonatedBy: undefined as string | undefined, activeOrganizationId: null },
+  } as any,
+  pending: false,
+  organizations: [] as any[],
+  activeOrganization: null as any,
+}))
 
 vi.mock('@/stores/auth-store', () => ({
   useAuthStore: Object.assign(
     (selector: (s: any) => unknown) =>
       selector({
-        auth: { accessToken: authState.accessToken, user: authState.user, setUser, reset },
+        auth: {
+          isSignedIn: authState.isSignedIn,
+          impersonatedBy: authState.impersonatedBy,
+          user: authState.user,
+          setUser,
+          setSignedIn,
+          setImpersonatedBy,
+          reset,
+        },
       }),
-    { getState: () => ({ auth: { accessToken: authState.accessToken, user: authState.user, setUser, reset } }) }
+    {
+      getState: () => ({
+        auth: {
+          isSignedIn: authState.isSignedIn,
+          impersonatedBy: authState.impersonatedBy,
+          user: authState.user,
+          setUser,
+          setSignedIn,
+          setImpersonatedBy,
+          reset,
+        },
+      }),
+    }
   ),
+}))
+
+vi.mock('@/lib/better-auth-client', () => ({
+  authClient: {
+    useSession: () => ({ data: sessionState.session, isPending: sessionState.pending }),
+    useListOrganizations: () => ({ data: sessionState.organizations }),
+    useActiveOrganization: () => ({ data: sessionState.activeOrganization }),
+    organization: { setActive },
+    admin: { stopImpersonating: vi.fn() },
+  },
 }))
 
 vi.mock('@/lib/api-client', () => ({
   apiClient: { get: (url: string) => (url === '/auth/me' ? getMe() : getEntitlements()) },
+  sessionRedirect: { assign: vi.fn(), reload: vi.fn() },
 }))
 
 vi.mock('@/stores/entitlements-store', () => ({
@@ -72,9 +118,18 @@ import { AuthenticatedLayout } from './authenticated-layout'
 describe('AuthenticatedLayout permission bootstrap', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    authState.accessToken = 'tok'
+    authState.isSignedIn = true
+    authState.impersonatedBy = null
     authState.user = null
+    sessionState.session = {
+      user: { id: 'u1', email: 'a@b.c', name: 'Admin' },
+      session: { id: 's1', impersonatedBy: undefined, activeOrganizationId: null },
+    }
+    sessionState.pending = false
+    sessionState.organizations = []
+    sessionState.activeOrganization = null
     sessionStorage.clear()
+    setActive.mockResolvedValue({})
     getEntitlements.mockResolvedValue({ data: { active: true, features: ['*'] } })
   })
 
@@ -114,9 +169,18 @@ describe('AuthenticatedLayout permission bootstrap', () => {
 describe("AuthenticatedLayout '*' wildcard handling", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    authState.accessToken = 'tok'
+    authState.isSignedIn = true
+    authState.impersonatedBy = null
     authState.user = null
+    sessionState.session = {
+      user: { id: 'u1', email: 'a@b.c', name: 'Admin' },
+      session: { id: 's1', impersonatedBy: undefined, activeOrganizationId: null },
+    }
+    sessionState.pending = false
+    sessionState.organizations = []
+    sessionState.activeOrganization = null
     sessionStorage.clear()
+    setActive.mockResolvedValue({})
     getMe.mockResolvedValue({ data: { id: 'u1', email: 'a@b.c', role: 'superadmin', permissions: ['*'] } })
   })
 
@@ -132,5 +196,93 @@ describe("AuthenticatedLayout '*' wildcard handling", () => {
       expect.objectContaining({ to: '/mon/settings/plan' }),
       undefined
     )
+  })
+})
+
+describe('AuthenticatedLayout session bridge (Phase 3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    authState.isSignedIn = true
+    authState.impersonatedBy = null
+    authState.user = null
+    sessionState.session = {
+      user: { id: 'u1', email: 'a@b.c', name: 'Admin' },
+      session: { id: 's1', impersonatedBy: undefined, activeOrganizationId: null },
+    }
+    sessionState.pending = false
+    sessionState.organizations = []
+    sessionState.activeOrganization = null
+    sessionStorage.clear()
+    setActive.mockResolvedValue({})
+    getMe.mockResolvedValue({ data: { id: 'u1', email: 'a@b.c', role: 'admin', permissions: ['view_hr'] } })
+    getEntitlements.mockResolvedValue({ data: { active: true, features: ['*'] } })
+  })
+
+  it('syncs the store to signed-in when a BA session exists', async () => {
+    render(<AuthenticatedLayout />)
+    await waitFor(() => expect(setSignedIn).toHaveBeenCalledWith(true))
+    expect(setImpersonatedBy).toHaveBeenCalledWith(null)
+    expect(navigate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/sign-in' }),
+    )
+  })
+
+  it('syncs impersonatedBy from the session', async () => {
+    sessionState.session = {
+      user: { id: 'u1', email: 'a@b.c', name: 'Admin' },
+      session: { id: 's1', impersonatedBy: 'operator-9', activeOrganizationId: null },
+    }
+    render(<AuthenticatedLayout />)
+    await waitFor(() => expect(setImpersonatedBy).toHaveBeenCalledWith('operator-9'))
+  })
+
+  it('bounces to sign-in and resets when there is no session', async () => {
+    sessionState.session = null
+    render(<AuthenticatedLayout />)
+    await waitFor(() => expect(reset).toHaveBeenCalled())
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/sign-in', replace: true }),
+    )
+  })
+
+  it('bounces a customer account to sign-in with ?customer=1', async () => {
+    authState.user = { id: 'u9', email: 'shopper@example.com', role: 'customer', permissions: [] }
+    render(<AuthenticatedLayout />)
+    await waitFor(() => expect(reset).toHaveBeenCalled())
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/sign-in', search: { customer: '1' } }),
+    )
+  })
+
+  it('force-routes a packing_assistant to /op/packing', async () => {
+    getMe.mockResolvedValue({
+      data: { id: 'u2', email: 'packer@example.com', role: 'packing_assistant', permissions: [] },
+    })
+    render(<AuthenticatedLayout />)
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        expect.objectContaining({ to: '/op/packing' }),
+      ),
+    )
+  })
+
+  it('sets the default active org matching the current host', async () => {
+    // window.location.hostname is `localhost` in the test browser.
+    sessionState.organizations = [
+      { id: 'org-other', slug: 'other-store', name: 'Other' },
+      { id: 'org-local', slug: 'localhost', name: 'Local' },
+    ]
+    render(<AuthenticatedLayout />)
+    await waitFor(() =>
+      expect(setActive).toHaveBeenCalledWith({ organizationId: 'org-local' }),
+    )
+  })
+
+  it('does not set a default org when one is already active', async () => {
+    sessionState.organizations = [{ id: 'org-local', slug: 'localhost', name: 'Local' }]
+    sessionState.activeOrganization = { id: 'org-local', slug: 'localhost', name: 'Local' }
+    render(<AuthenticatedLayout />)
+    await new Promise((r) => setTimeout(r, 100))
+    expect(setActive).not.toHaveBeenCalled()
   })
 })

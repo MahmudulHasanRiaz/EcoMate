@@ -4,6 +4,8 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   AttendanceMethod,
@@ -14,6 +16,11 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { baPrisma } from '../better-auth/prisma';
+import {
+  CentralAuthClient,
+  mapUserRoleToOrgRole,
+} from '../auth/central-auth.client';
+import { isCentralAuthMode } from '../common/tenant-auth-mode';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { CreateBankAccountDto } from './dto/create-bank-account.dto';
@@ -169,7 +176,24 @@ export const DEFAULT_ACCESS_PRESET_ID = 'system-preset-manager';
 
 @Injectable()
 export class EmployeesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // Central auth client (global module). @Optional so unit tests that
+    // construct the service by hand keep working; in central-ba mode it
+    // MUST be present (Nest injects it from CentralAuthModule).
+    @Optional()
+    private readonly centralAuth?: CentralAuthClient,
+  ) {}
+
+  /** Central client or a fail-closed 503 (central mode without the client). */
+  private requireCentralAuth(): CentralAuthClient {
+    if (!this.centralAuth) {
+      throw new ServiceUnavailableException(
+        'Central auth client is not configured',
+      );
+    }
+    return this.centralAuth;
+  }
 
   /**
    * The preset assigned to a hire when HR does not pick one.
@@ -314,10 +338,26 @@ export class EmployeesService {
   }
 
   async create(dto: CreateEmployeeDto, actorId?: string, actorPermissions?: string[]) {
-    const baUser = await baPrisma.betterAuthUser.findFirst({
-      where: { id: dto.betterAuthUserId },
-    });
-    if (!baUser) throw new BadRequestException('Better Auth user not found');
+    // Phase 3: the BA-user existence check runs against the central
+    // service in central-ba mode (never the tenant BA rows). The user's
+    // name is kept for the bank-account default below (it used to come
+    // from the BA row).
+    let baUserName = '';
+    if (isCentralAuthMode()) {
+      const centralUser = await this.requireCentralAuth().getCentralUserById(
+        dto.betterAuthUserId,
+      );
+      if (!centralUser) {
+        throw new BadRequestException('Better Auth user not found');
+      }
+      baUserName = centralUser.name;
+    } else {
+      const baUser = await baPrisma.betterAuthUser.findFirst({
+        where: { id: dto.betterAuthUserId },
+      });
+      if (!baUser) throw new BadRequestException('Better Auth user not found');
+      baUserName = baUser.name;
+    }
 
     const existing = await this.prisma.employee.findFirst({
       where: { betterAuthUserId: dto.betterAuthUserId },
@@ -363,6 +403,37 @@ export class EmployeesService {
     // mysteriously powerless.
     const accessPresetId =
       dto.accessPresetId || (await this.resolveDefaultPresetId());
+
+    // Phase 3: in central-ba mode the hire demotion (a cashier /
+    // packing_assistant hired as an employee becomes `employee` so the
+    // preset governs them; admin/superadmin are exempt) is applied to
+    // the CENTRAL member row BEFORE the tx, fail-closed — the tx then
+    // only moves the tenant profile role. The legacy tenant-BA role
+    // update inside the tx is skipped in central mode.
+    if (isCentralAuthMode()) {
+      const hireProfile = await this.prisma.userProfile.findFirst({
+        where: { betterAuthUserId: dto.betterAuthUserId },
+        select: { role: true },
+      });
+      if (hireProfile) {
+        const ROLE_EXEMPT_FROM_HIRE_DEMOTION = new Set([
+          'admin',
+          'superadmin',
+        ]);
+        const demote =
+          hireProfile.role !== 'employee' &&
+          !ROLE_EXEMPT_FROM_HIRE_DEMOTION.has(hireProfile.role);
+        const newRole = demote ? 'employee' : hireProfile.role;
+        const orgRole = mapUserRoleToOrgRole(newRole);
+        if (orgRole) {
+          const client = this.requireCentralAuth();
+          await client.updateCentralUser(dto.betterAuthUserId, {
+            organizationId: client.resolveTenantIdForOrg(),
+            orgRole,
+          });
+        }
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
@@ -494,7 +565,7 @@ export class EmployeesService {
           employeeId: employee.id,
           bankName: dto.bankAccount.bankName,
           branchName: dto.bankAccount.branchName ?? null,
-          accountName: dto.bankAccount.accountName || baUser.name || '',
+          accountName: dto.bankAccount.accountName || baUserName || '',
           accountNumber: dto.bankAccount.accountNumber,
           accountType: dto.bankAccount.accountType ?? undefined,
           routingNumber: dto.bankAccount.routingNumber ?? null,
@@ -610,9 +681,10 @@ export class EmployeesService {
       }
 
       // BA copy: keep it in step, and never leave it claiming a role the
-      // UserProfile no longer has.
+      // UserProfile no longer has. Legacy only — central mode moved the
+      // member role before the tx (see above).
       const baRole = shouldDemoteToEmployee ? 'employee' : profile?.role;
-      if (baRole) {
+      if (!isCentralAuthMode() && baRole) {
         await baPrisma.betterAuthUser.update({
           where: { id: dto.betterAuthUserId },
           data: { role: baRole },
@@ -1044,10 +1116,39 @@ export class EmployeesService {
       if (dto.customAccessRemoves !== undefined) {
         baData.denied_permissions = sanitizePermissions(dto.customAccessRemoves);
       }
-      await baPrisma.betterAuthUser.update({
-        where: { id: current.betterAuthUserId },
-        data: baData,
-      });
+      if (isCentralAuthMode()) {
+        // Phase 3: overrides/denied have NO home on the central BA user,
+        // so they stay on the tenant-DB betterAuthUser row (the loader
+        // reads them from there) until Phase 5 moves them to a
+        // tenant-local table. The row is created from the linked profile
+        // when it is missing — post-cutover users have no tenant BA row.
+        // Failure propagates, exactly as the legacy update did.
+        const profile = await this.prisma.userProfile.findFirst({
+          where: { betterAuthUserId: current.betterAuthUserId },
+          select: { firstName: true, lastName: true, email: true, role: true },
+        });
+        if (!profile) {
+          throw new NotFoundException('User profile not found');
+        }
+        await this.prisma.betterAuthUser.upsert({
+          where: { id: current.betterAuthUserId },
+          create: {
+            id: current.betterAuthUserId,
+            name: `${profile.firstName} ${profile.lastName}`.trim(),
+            email: profile.email,
+            emailVerified: false,
+            role: profile.role,
+            override_permissions: baData.override_permissions ?? [],
+            denied_permissions: baData.denied_permissions ?? [],
+          },
+          update: baData,
+        });
+      } else {
+        await baPrisma.betterAuthUser.update({
+          where: { id: current.betterAuthUserId },
+          data: baData,
+        });
+      }
     }
 
     return employee;
@@ -1056,6 +1157,42 @@ export class EmployeesService {
   async remove(id: string, actorId?: string) {
     void actorId; // reserved: employee deletion is not audited in G-19
     const emp = await this.findOne(id);
+
+    // Phase 3: in central-ba mode the member row is removed (or
+    // re-pointed at the restored staff role) BEFORE the tx, fail-closed
+    // — the tx then only moves the tenant profile role and deletes the
+    // Employee row. Mirrors the create() demotion sync. The delete
+    // guard is pre-checked first (same models as the in-tx guard, which
+    // still re-checks for races) so a refused delete never strands a
+    // removed membership behind a surviving Employee row.
+    if (isCentralAuthMode()) {
+      const guardFlags = await Promise.all(
+        DELETE_GUARD_MODELS.map(async (model) => {
+          const count = await (this.prisma as any)[model].count({
+            where: { employeeId: id },
+          });
+          return count > 0;
+        }),
+      );
+      if (guardFlags.some(Boolean)) {
+        throw new ConflictException(
+          'Employee has financial/history records — archive instead of deleting.',
+        );
+      }
+      const removeProfile = await this.prisma.userProfile.findFirst({
+        where: { betterAuthUserId: emp.betterAuthUserId },
+        select: { role: true },
+      });
+      const restoredRole =
+        removeProfile?.role === 'employee'
+          ? 'customer'
+          : removeProfile?.role;
+      const client = this.requireCentralAuth();
+      await client.updateCentralUser(emp.betterAuthUserId, {
+        organizationId: client.resolveTenantIdForOrg(),
+        orgRole: restoredRole ? mapUserRoleToOrgRole(restoredRole) : null,
+      });
+    }
 
     const guard = async (tx: Prisma.TransactionClient) => {
       const flags = await Promise.all(
@@ -1093,10 +1230,12 @@ export class EmployeesService {
         });
       }
 
-      await baPrisma.betterAuthUser.update({
-        where: { id: emp.betterAuthUserId },
-        data: { role: restoredRole ?? 'customer' },
-      });
+      if (!isCentralAuthMode()) {
+        await baPrisma.betterAuthUser.update({
+          where: { id: emp.betterAuthUserId },
+          data: { role: restoredRole ?? 'customer' },
+        });
+      }
       try {
         return await tx.employee.delete({ where: { id } });
       } catch (err) {
@@ -1304,6 +1443,38 @@ export class EmployeesService {
   }
 
   async searchBaUsers(query: string) {
+    // Phase 3: in central-ba mode the picker searches the central
+    // service, then excludes ids that already have an Employee row in
+    // this tenant (the legacy query filtered `employee: null` on the
+    // tenant BA rows) and fills the role from the tenant profile.
+    if (isCentralAuthMode()) {
+      const found = await this.requireCentralAuth().searchCentralUsers(query);
+      const ids = found.map((u) => u.id);
+      const [employed, profiles] = await Promise.all([
+        this.prisma.employee.findMany({
+          where: { betterAuthUserId: { in: ids } },
+          select: { betterAuthUserId: true },
+        }),
+        this.prisma.userProfile.findMany({
+          where: { betterAuthUserId: { in: ids } },
+          select: { betterAuthUserId: true, role: true },
+        }),
+      ]);
+      const employedIds = new Set(
+        employed.map((e) => e.betterAuthUserId),
+      );
+      const roleById = new Map(
+        profiles.map((p) => [p.betterAuthUserId, p.role] as const),
+      );
+      return {
+        data: found
+          .filter((u) => !employedIds.has(u.id))
+          .map((u) => ({
+            ...u,
+            role: roleById.get(u.id) ?? 'customer',
+          })),
+      };
+    }
     const users = await baPrisma.betterAuthUser.findMany({
       where: {
         OR: [

@@ -35,9 +35,16 @@ import {
 import { IpLimiter } from './ip-limits.js';
 import { handleImpersonationIssue } from './impersonation-issue.js';
 import {
+  handleCreateInternalUser,
+  handleDeleteInternalUser,
+  handleGetInternalUserByEmail,
+  handleGetInternalUserById,
   handleProvisionOrganization,
   handleRoleSync,
+  handleSearchInternalUsers,
+  handleUpdateInternalUser,
 } from './internal-routes.js';
+import type { TenantRegistry } from './tenant-registry.js';
 
 export type AuthInstance = ReturnType<typeof betterAuth>;
 
@@ -45,6 +52,14 @@ export interface ServerDeps {
   auth: AuthInstance;
   prisma: PrismaClient;
   config: AuthServiceConfig;
+  /**
+   * Live tenant registry (Phase 3). When present the server refreshes
+   * it on a 60 s timer so the allowedHosts sync converges even with no
+   * auth traffic (a lazy-only refresh could never run for a host that
+   * 500s at baseURL resolution). The timer is unref'd and stops when
+   * the server closes.
+   */
+  registry?: TenantRegistry | null;
 }
 
 const BASE_PATH = '/api/better-auth';
@@ -112,7 +127,15 @@ const AUDIT_RULES: Record<string, AuditRule> = {
 };
 
 export function createServer(deps: ServerDeps): http.Server {
-  const { auth, prisma, config } = deps;
+  const { auth, prisma, config, registry } = deps;
+
+  // Tenant-registry background refresh (Phase 3): keeps the trustedOrigins
+  // snapshot and the allowedHosts sync fresh independent of request
+  // traffic. Stops when the server closes; unref'd so tests that forget
+  // to close still exit.
+  if (registry) {
+    registry.startAutoRefresh();
+  }
 
   // Per-IP guards (in-memory; see src/ip-limits.ts for the scaling note).
   const ipSignIn = new IpLimiter({
@@ -212,19 +235,82 @@ export function createServer(deps: ServerDeps): http.Server {
 
       // --- Internal service routes (NOT Better Auth endpoints) -----------
       // Plain routes handled before BA dispatch. Caddy never routes
-      // /internal/* from any public host; only platform-api calls these
-      // on the internal URL. Each handler enforces the internal secret
-      // itself (503 when unconfigured).
+      // /internal/* from any public host; only platform-api and the
+      // tenant backend call these on the internal URL. Each handler
+      // enforces the internal secret itself (503 when unconfigured).
+      // The three original routes are POST-only (as before); the Phase 3
+      // /internal/users/* routes take GET/PATCH/DELETE as well, and read
+      // query params + the :id path segment (parsed below).
       if (pathname.startsWith('/internal/')) {
+        const query = Object.fromEntries(
+          new URL(req.url ?? '/', 'http://localhost').searchParams,
+        );
+        const internalReq = { body: jsonBody, headers, ip, requestId, query };
+        // Phase 3 user CRUD (tenant backend; internal secret).
+        if (pathname === '/internal/users' && method === 'POST') {
+          const result = await handleCreateInternalUser(
+            { prisma, config },
+            internalReq,
+          );
+          sendJson(result.status, result.json);
+          return;
+        }
+        if (pathname === '/internal/users/by-email' && method === 'GET') {
+          const result = await handleGetInternalUserByEmail(
+            { prisma, config },
+            internalReq,
+          );
+          sendJson(result.status, result.json);
+          return;
+        }
+        if (pathname === '/internal/users/search' && method === 'GET') {
+          const result = await handleSearchInternalUsers(
+            { prisma, config },
+            internalReq,
+          );
+          sendJson(result.status, result.json);
+          return;
+        }
+        const userIdMatch = pathname.match(/^\/internal\/users\/([^/]+)$/);
+        if (userIdMatch) {
+          const userReq = {
+            ...internalReq,
+            params: { userId: decodeURIComponent(userIdMatch[1]) },
+          };
+          if (method === 'GET') {
+            const result = await handleGetInternalUserById(
+              { prisma, config },
+              userReq,
+            );
+            sendJson(result.status, result.json);
+            return;
+          }
+          if (method === 'PATCH') {
+            const result = await handleUpdateInternalUser(
+              { prisma, config },
+              userReq,
+            );
+            sendJson(result.status, result.json);
+            return;
+          }
+          if (method === 'DELETE') {
+            const result = await handleDeleteInternalUser(
+              { prisma, config },
+              userReq,
+            );
+            sendJson(result.status, result.json);
+            return;
+          }
+        }
         if (method !== 'POST') {
           sendJson(404, { error: 'not_found' });
           return;
         }
-        const internalReq = { body: jsonBody, headers, ip, requestId };
+        const internalReqPost = { body: jsonBody, headers, ip, requestId };
         if (pathname === '/internal/impersonation/issue') {
           const result = await handleImpersonationIssue(
             { auth, prisma, config },
-            internalReq,
+            internalReqPost,
           );
           sendJson(result.status, result.json, result.headers);
           return;
@@ -504,6 +590,10 @@ export function createServer(deps: ServerDeps): http.Server {
         res.end();
       }
     });
+  });
+
+  server.on('close', () => {
+    registry?.stopAutoRefresh();
   });
 
   return server;

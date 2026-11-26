@@ -26,8 +26,6 @@ describe('FeaturesProvider session gating', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useAuthStore.getState().auth.reset()
-    document.cookie =
-      'eco_mate_access_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
     apiGet.mockResolvedValue({
       data: {
         features: ['storefront', 'pos_system'],
@@ -51,8 +49,8 @@ describe('FeaturesProvider session gating', () => {
     await expect.element(screen.getByTestId('has-storefront')).toHaveTextContent(/^false$/)
   })
 
-  it('fetches entitlements when a session token is present', async () => {
-    useAuthStore.getState().auth.setAccessToken('session-token')
+  it('fetches entitlements when signed in', async () => {
+    useAuthStore.getState().auth.setSignedIn(true)
     const screen: RenderResult = await render(
       <FeaturesProvider>
         <Probe />
@@ -68,7 +66,7 @@ describe('FeaturesProvider session gating', () => {
     await expect.element(screen.getByTestId('has-storefront')).toHaveTextContent(/^true$/)
   })
 
-  it('fetches when the token appears after mount (login)', async () => {
+  it('fetches when sign-in happens after mount (login)', async () => {
     const screen: RenderResult = await render(
       <FeaturesProvider>
         <Probe />
@@ -77,7 +75,7 @@ describe('FeaturesProvider session gating', () => {
     await expect.element(screen.getByTestId('loading')).toHaveTextContent(/^false$/)
     expect(apiGet).not.toHaveBeenCalled()
 
-    useAuthStore.getState().auth.setAccessToken('session-token')
+    useAuthStore.getState().auth.setSignedIn(true)
 
     await vi.waitFor(() =>
       expect(apiGet).toHaveBeenCalledWith('/entitlements/me'),
@@ -87,8 +85,8 @@ describe('FeaturesProvider session gating', () => {
       .toHaveTextContent(/^storefront,pos_system$/)
   })
 
-  it('clears entitlements when the token is removed (logout)', async () => {
-    useAuthStore.getState().auth.setAccessToken('session-token')
+  it('clears entitlements when signed out (logout)', async () => {
+    useAuthStore.getState().auth.setSignedIn(true)
     const screen: RenderResult = await render(
       <FeaturesProvider>
         <Probe />

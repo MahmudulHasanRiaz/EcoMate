@@ -21,6 +21,7 @@ import {
   RotateCcw,
   CheckCircle2,
   Building,
+  ShieldCheck,
 } from 'lucide-react'
 import { useMyProfileQuery, useMyPerformanceQuery } from './hooks'
 import { PerformanceTab } from './components/performance-tab'
@@ -28,6 +29,7 @@ import { LeaveTab } from './components/leave-tab'
 import { AttendanceTab } from './components/attendance-tab'
 import { CompensationTab } from './components/compensation-tab'
 import { PersonalTab } from './components/personal-tab'
+import { SecurityTab } from './components/security-tab'
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   active: { label: 'Active', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20' },
@@ -291,7 +293,7 @@ export function MyProfilePage() {
           </Card>
         </div>
 
-        {/* 5 Organized Tabs */}
+        {/* 6 Organized Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList
             ref={tabListRef}
@@ -311,6 +313,9 @@ export function MyProfilePage() {
             </TabsTrigger>
             <TabsTrigger value="personal" className="gap-2 text-xs sm:text-sm py-2">
               <User className="h-4 w-4" /> Profile &amp; Details
+            </TabsTrigger>
+            <TabsTrigger value="security" className="gap-2 text-xs sm:text-sm py-2">
+              <ShieldCheck className="h-4 w-4" /> Security
             </TabsTrigger>
           </TabsList>
 
@@ -335,6 +340,10 @@ export function MyProfilePage() {
 
           <TabsContent value="personal">
             <PersonalTab profile={profile} />
+          </TabsContent>
+
+          <TabsContent value="security">
+            <SecurityTab />
           </TabsContent>
         </Tabs>
       </Main>

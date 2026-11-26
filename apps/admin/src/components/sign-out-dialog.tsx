@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
-import { apiClient } from '@/lib/api-client'
+import { authClient } from '@/lib/better-auth-client'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 
 interface SignOutDialogProps {
@@ -15,7 +15,8 @@ export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
 
   const handleSignOut = async () => {
     try {
-      await apiClient.post('/auth/logout')
+      // Ends the BA session server-side (revokes the session cookie).
+      await authClient.signOut()
     } catch {
       // ignore errors on logout
     }

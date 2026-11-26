@@ -212,6 +212,13 @@ services:
       CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: https://${CLIENT_DOMAIN:-mac.riaz.com.bd}
+      # Central auth (Phase 3 tenant cutover): the backend guard calls the
+      # auth service at AUTH_INTERNAL_URL and selects the guard via
+      # TENANT_AUTH_MODE (legacy-jwt = current behaviour, central-ba =
+      # central Better Auth). Both MUST be present here — without them the
+      # canary flag flip silently does nothing (code defaults apply).
+      AUTH_INTERNAL_URL: ${AUTH_INTERNAL_URL:-http://auth-service:4200}
+      TENANT_AUTH_MODE: ${TENANT_AUTH_MODE:-legacy-jwt}
       PORT: 4000
       CORS_ORIGIN: http://localhost:3000,https://${CLIENT_DOMAIN:-mac.riaz.com.bd}
       APP_URL: https://${CLIENT_DOMAIN:-mac.riaz.com.bd}
@@ -681,6 +688,75 @@ services:
         reservations:
           memory: 128M
 
+  # Central Better Auth service (Phase 1 built, Phase 3 wired in).
+  # Image built by build-service-image.yml with `service: auth-service`.
+  # No published port: only Caddy (same-origin /api/better-auth/* proxy)
+  # and the backends (server-to-server getSession) reach it, on the
+  # private network. The database `ecomate_auth` must exist BEFORE the
+  # first start — `migrate deploy` does not create it (see the deploy
+  # checklist: createdb ecomate_auth first).
+  # CORRECTIONS vs the Phase 1 README snippet (verified against this
+  # file, 2026-11-26): AUTH_PLATFORM_API_URL is
+  # http://platform-api:4100/api — the README's :4000 without /api is
+  # wrong (platform-api listens on 4100 with the /api global prefix;
+  # see PLATFORM_API_URL at the backend/worker env, same value).
+  auth-service:
+    image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-saas-auth-service:latest
+    restart: unless-stopped
+    networks:
+      - ecomate-network
+    environment:
+      NODE_ENV: production
+      AUTH_PORT: ${AUTH_PORT:-4200}
+      BETTER_AUTH_SECRET: <redacted>
+      AUTH_DB_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ecomate_auth
+      AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-https://auth.em.commercians.com}
+      AUTH_INTERNAL_URL: ${AUTH_INTERNAL_URL:-http://auth-service:4200}
+      AUTH_ALLOWED_HOSTS: ${AUTH_ALLOWED_HOSTS:-faah.net,*.faah.net,em.commercians.com,ecomate.bd,*.ecomate.bd}
+      AUTH_BASE_PROTOCOL: https
+      AUTH_TRUSTED_HOSTS: ${AUTH_TRUSTED_HOSTS:-faah.net,em.commercians.com,ecomate.bd}
+      # Trusted reverse-proxy IPs/CIDR ranges for advanced.ipAddress
+      # (BA walks the X-Forwarded-For chain right-to-left past these).
+      # Empty = trust single-value X-Forwarded-For only (Caddy as direct
+      # edge). Set to the upstream proxy's egress ranges when one fronts
+      # Caddy (Cloudflare's published ranges for faah.net) — see the
+      # deploy checklist. Comma-separated.
+      AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
+      AUTH_ORG_LIMIT: ${AUTH_ORG_LIMIT:-5}
+      AUTH_PLATFORM_API_URL: ${AUTH_PLATFORM_API_URL:-http://platform-api:4100/api}
+      INTERNAL_SERVICE_SECRET: <redacted>
+      IMPERSONATION_TTL_SECONDS: ${IMPERSONATION_TTL_SECONDS:-900}
+      AUTH_TENANT_PRIMARY_DOMAIN: ${AUTH_TENANT_PRIMARY_DOMAIN:-faah.net}
+      AUTH_SOCIAL_TOTP_STRICT: ${AUTH_SOCIAL_TOTP_STRICT:-false}
+      AUTH_SMTP_HOST: ${SMTP_HOST:-}
+      AUTH_SMTP_PORT: ${SMTP_PORT:-587}
+      AUTH_SMTP_SECURE: ${SMTP_SECURE:-false}
+      AUTH_SMTP_USER: ${SMTP_USER:-}
+      AUTH_SMTP_PASS: ${SMTP_PASS:-}
+      AUTH_SMTP_FROM: ${SMTP_FROM:-EcoMate <no-reply@ecomate.bd>}
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+      AUTH_GITHUB_ID: ${AUTH_GITHUB_ID:-}
+      AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET:-}
+      AUTH_FACEBOOK_ID: ${AUTH_FACEBOOK_ID:-}
+      AUTH_FACEBOOK_SECRET: ${AUTH_FACEBOOK_SECRET:-}
+    depends_on:
+      - postgres
+      - platform-api
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4200/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          memory: 128M
+
   # SaaS platform console (Vite SPA). Served at the root of its own host
   # (saas.ecomate.bd) by Caddy; no published port, no runtime env (the
   # VITE_* vars are build-time, baked in by CI).
@@ -768,10 +844,14 @@ services:
       PLATFORM_LANDING_HOST: ${PLATFORM_LANDING_HOST:-www.ecomate.bd}
       PLATFORM_ADMIN_HOST: ${PLATFORM_ADMIN_HOST:-saas.ecomate.bd}
       PLATFORM_API_HOST: ${PLATFORM_API_HOST:-api.ecomate.bd}
+      # Central auth service host (Phase 3; Caddyfile {$AUTH_HOST} block).
+      # Staging: auth.staging.em.commercians.com.
+      AUTH_HOST: ${AUTH_HOST:-auth.em.commercians.com}
     depends_on:
       - backend
       - storefront
       - platform-api
+      - auth-service
     healthcheck:
       # Admin API on localhost only — port 2019 is NOT published.
       # Probe /config/, NOT /: the admin API root is a 404 in Caddy 2

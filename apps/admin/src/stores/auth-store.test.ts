@@ -1,4 +1,3 @@
-import { clearCookies } from '@/test-utils/cookies'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 async function importAuthStore() {
@@ -12,44 +11,37 @@ const sampleUser = {
   role: 'admin',
 }
 
-/** POST /auth/login omits `permissions`; the store normalises it to []. */
+/**
+ * Phase 3: the BA session cookie is the ONLY credential — the store holds
+ * no access token, no localStorage user cache, and no cookie persistence.
+ * `isSignedIn` / `impersonatedBy` are synced from `useSession()` by the
+ * authenticated layout's session bridge; `user` is the tenant profile
+ * from `GET /auth/me`.
+ */
+
+/** The BA session user carries no `permissions` key; the store fills in []. */
 const normalisedUser = { ...sampleUser, permissions: [] as string[] }
 
-describe('useAuthStore', () => {
+describe('useAuthStore (Phase 3)', () => {
   beforeEach(() => {
-    clearCookies()
     localStorage.clear()
     vi.resetModules()
   })
 
-  it('starts with an empty access token when nothing is persisted', async () => {
+  it('starts signed out, with no user and no impersonation', async () => {
     const useAuthStore = await importAuthStore()
 
-    expect(useAuthStore.getState().auth.accessToken).toBe('')
     expect(useAuthStore.getState().auth.user).toBeNull()
+    expect(useAuthStore.getState().auth.isSignedIn).toBe(false)
+    expect(useAuthStore.getState().auth.impersonatedBy).toBeNull()
   })
 
-  it('persists access token so a new store instance reads it back', async () => {
+  it('persists nothing to localStorage when the user is set', async () => {
     const useAuthStore = await importAuthStore()
-    useAuthStore.getState().auth.setAccessToken('session-token')
+    useAuthStore.getState().auth.setUser({ ...sampleUser })
 
-    vi.resetModules()
-    const useAuthStoreAfterReload = await importAuthStore()
-
-    expect(useAuthStoreAfterReload.getState().auth.accessToken).toBe(
-      'session-token'
-    )
-  })
-
-  it('clears persisted access token when resetAccessToken is used', async () => {
-    const useAuthStore = await importAuthStore()
-    useAuthStore.getState().auth.setAccessToken('to-clear')
-    useAuthStore.getState().auth.resetAccessToken()
-
-    vi.resetModules()
-    const useAuthStoreAfterReload = await importAuthStore()
-
-    expect(useAuthStoreAfterReload.getState().auth.accessToken).toBe('')
+    expect(localStorage.getItem('eco_mate_user')).toBeNull()
+    expect(document.cookie).not.toContain('eco_mate_access_token')
   })
 
   it('updates the signed-in user via setUser', async () => {
@@ -57,8 +49,8 @@ describe('useAuthStore', () => {
 
     useAuthStore.getState().auth.setUser({ ...sampleUser })
 
-    // The login response carries no permissions; the store fills in an array so
-    // consumers never read `undefined`.
+    // The BA session user carries no permissions; the store fills in an
+    // array so consumers never read `undefined`.
     expect(useAuthStore.getState().auth.user).toEqual(normalisedUser)
   })
 
@@ -75,35 +67,36 @@ describe('useAuthStore', () => {
     ])
   })
 
-  it('caches the user in localStorage so a reload renders it instantly', async () => {
+  it('tracks the session flag via setSignedIn', async () => {
     const useAuthStore = await importAuthStore()
-    useAuthStore.getState().auth.setUser({ ...sampleUser })
 
-    expect(localStorage.getItem('eco_mate_user')).toBe(
-      JSON.stringify(normalisedUser)
-    )
+    useAuthStore.getState().auth.setSignedIn(true)
+    expect(useAuthStore.getState().auth.isSignedIn).toBe(true)
 
-    vi.resetModules()
-    const useAuthStoreAfterReload = await importAuthStore()
-
-    expect(useAuthStoreAfterReload.getState().auth.user).toEqual(normalisedUser)
+    useAuthStore.getState().auth.setSignedIn(false)
+    expect(useAuthStore.getState().auth.isSignedIn).toBe(false)
   })
 
-  it('reset clears user and access token and drops persistence', async () => {
+  it('tracks the impersonation actor via setImpersonatedBy', async () => {
     const useAuthStore = await importAuthStore()
-    useAuthStore.getState().auth.setAccessToken('will-be-cleared')
+
+    useAuthStore.getState().auth.setImpersonatedBy('operator-123')
+    expect(useAuthStore.getState().auth.impersonatedBy).toBe('operator-123')
+
+    useAuthStore.getState().auth.setImpersonatedBy(null)
+    expect(useAuthStore.getState().auth.impersonatedBy).toBeNull()
+  })
+
+  it('reset clears user, session flag, and impersonation', async () => {
+    const useAuthStore = await importAuthStore()
+    useAuthStore.getState().auth.setSignedIn(true)
+    useAuthStore.getState().auth.setImpersonatedBy('operator-123')
     useAuthStore.getState().auth.setUser({ ...sampleUser })
 
     useAuthStore.getState().auth.reset()
 
     expect(useAuthStore.getState().auth.user).toBeNull()
-    expect(useAuthStore.getState().auth.accessToken).toBe('')
-    expect(localStorage.getItem('eco_mate_user')).toBeNull()
-
-    vi.resetModules()
-    const useAuthStoreAfterReload = await importAuthStore()
-
-    expect(useAuthStoreAfterReload.getState().auth.user).toBeNull()
-    expect(useAuthStoreAfterReload.getState().auth.accessToken).toBe('')
+    expect(useAuthStore.getState().auth.isSignedIn).toBe(false)
+    expect(useAuthStore.getState().auth.impersonatedBy).toBeNull()
   })
 })

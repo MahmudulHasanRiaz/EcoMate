@@ -15,6 +15,7 @@ import {
 import { BillingService } from '../billing/billing.service';
 import { SubmitProofDto } from '../billing/dto/submit-proof.dto';
 import { InvoiceService } from '../billing/invoice.service';
+import { AuditService } from '../common/audit.service';
 import {
   DomainConfigService,
   type DomainConfig,
@@ -31,6 +32,11 @@ import { resolveEffectivePricing } from '../pricing/pricing-engine';
 import { ImpersonationService } from '../tenants/impersonation.service';
 import { mergePlanLimitsWithOverrides } from '../usage/usage.limits';
 import { ConsumeImpersonationDto } from './dto/consume-impersonation.dto';
+import { ImpersonationConsumedDto } from './dto/impersonation-consumed.dto';
+import {
+  ORGANIZATION_LIMIT_SETTING_KEY,
+  parseOrganizationLimitSetting,
+} from './organization-limit';
 import { SaasSmtpSendDto } from './dto/saas-smtp-send.dto';
 import { InternalServiceGuard } from './internal-service.guard';
 
@@ -44,6 +50,7 @@ export class InternalController {
     private readonly invoices: InvoiceService,
     private readonly emailBalance: EmailBalanceService,
     private readonly domainConfig: DomainConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   @Get('tenants/registry')
@@ -260,6 +267,76 @@ export class InternalController {
   @HttpCode(200)
   consumeImpersonation(@Body() dto: ConsumeImpersonationDto) {
     return this.impersonation.consume(dto.token, dto.tenantId);
+  }
+
+  /**
+   * Central-auth impersonation reconciliation (Phase 3, survey §16.7).
+   * The auth service POSTs this best-effort after a successful D8
+   * consume (`GET /api/better-auth/impersonation/consume`) — it was
+   * silently 404ing until this endpoint landed.
+   *
+   * The handoff row lives in the auth service's database (the platform
+   * has no new-handoff record — the old `ImpersonationSession` table
+   * belongs to the legacy bridge and retires in Phase 4), so the
+   * consumption is recorded as an audit row keyed by `handoffId`.
+   * `adminUserId` is a CENTRAL user id, not a PlatformUser id, so it
+   * goes in the audit `after` JSON — never in `actorId`, whose FK
+   * points at PlatformUser and would reject it. Idempotent: a retried
+   * callback with the same `handoffId` returns `{ duplicate: true }`
+   * without writing a second row. Unknown tenant → 404 (the auth
+   * service logs the failure and still redirects — the callback never
+   * blocks the operator).
+   */
+  @Post('impersonations/consumed')
+  @HttpCode(200)
+  async impersonationConsumed(@Body() dto: ImpersonationConsumedDto) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: dto.organizationId },
+      select: { id: true },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const existing = await this.prisma.auditLog.findFirst({
+      where: {
+        action: 'tenant.impersonate.consumed',
+        entityId: dto.organizationId,
+        after: { path: ['handoffId'], equals: dto.handoffId },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return { ok: true, recorded: false, duplicate: true };
+    }
+    await this.audit.record({
+      tenantId: dto.organizationId,
+      action: 'tenant.impersonate.consumed',
+      entity: 'Tenant',
+      entityId: dto.organizationId,
+      after: {
+        handoffId: dto.handoffId,
+        targetUserId: dto.targetUserId,
+        adminUserId: dto.adminUserId,
+        consumedAt: dto.consumedAt,
+      },
+    });
+    return { ok: true, recorded: true };
+  }
+
+  /**
+   * Organization limit for the central auth service (D12, Phase 3,
+   * survey §16.7). The service fetches this (60 s cache) and falls
+   * back to its `AUTH_ORG_LIMIT` env (default 5) while the endpoint
+   * 404s. Reads the `organization_limit` PlatformSetting row — the
+   * same row the console settings UI will edit in a later phase
+   * (Phase 4); until then the row is managed directly and an absent
+   * or malformed row returns the D12 default. See
+   * `./organization-limit.ts` for the parsing/clamping rules.
+   */
+  @Get('settings/organization-limit')
+  async organizationLimit() {
+    const row = await this.prisma.platformSetting.findUnique({
+      where: { key: ORGANIZATION_LIMIT_SETTING_KEY },
+    });
+    return parseOrganizationLimitSetting(row?.value ?? null);
   }
 
   /** Active payment methods, for the tenant billing page (via the backend). */

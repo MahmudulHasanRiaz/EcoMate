@@ -1,6 +1,7 @@
 import { InternalController } from './internal.controller';
 
 const TENANT_ID = '11111111-1111-4111-8111-111111111111';
+const HANDOFF_ID = '22222222-2222-4222-8222-222222222222';
 
 function makeController() {
   const prisma: any = {
@@ -8,7 +9,14 @@ function makeController() {
       findMany: jest.fn().mockResolvedValue([]),
       findUnique: jest.fn().mockResolvedValue(null),
     },
+    platformSetting: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    auditLog: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
   };
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const domainConfig = {
     getConfig: jest.fn().mockReturnValue({
       primaryDomain: 'ecomate.bd',
@@ -29,6 +37,7 @@ function makeController() {
   return {
     prisma,
     domainConfig,
+    audit,
     // Registry + entitlements only use prisma; the other services are
     // stubs (billing/invoices predate this spec; emailBalance is the
     // SMTP worker's param).
@@ -39,6 +48,7 @@ function makeController() {
       {} as any,
       {} as any,
       domainConfig as any,
+      audit as any,
     ),
   };
 }
@@ -143,6 +153,135 @@ describe('InternalController — effective limits', () => {
     expect(result.overrides).toEqual([
       { key: 'products', value: 7, note: null },
     ]);
+  });
+});
+
+describe('InternalController — organization-limit (Phase 3, D12)', () => {
+  it('returns the stored setting row when present', async () => {
+    const { controller, prisma } = makeController();
+    prisma.platformSetting.findUnique.mockResolvedValue({
+      key: 'organization_limit',
+      value: { limit: 3 },
+    });
+
+    const result = await controller.organizationLimit();
+
+    expect(prisma.platformSetting.findUnique).toHaveBeenCalledWith({
+      where: { key: 'organization_limit' },
+    });
+    expect(result).toEqual({ limit: 3, source: 'setting' });
+  });
+
+  it('accepts a bare JSON number as the stored value', async () => {
+    const { controller, prisma } = makeController();
+    prisma.platformSetting.findUnique.mockResolvedValue({
+      key: 'organization_limit',
+      value: 7,
+    });
+
+    expect(await controller.organizationLimit()).toEqual({
+      limit: 7,
+      source: 'setting',
+    });
+  });
+
+  it('returns the D12 default (5) when no row exists', async () => {
+    const { controller } = makeController();
+    expect(await controller.organizationLimit()).toEqual({
+      limit: 5,
+      source: 'default',
+    });
+  });
+
+  it('returns the default for a malformed row and clamps out-of-range values', async () => {
+    const { controller, prisma } = makeController();
+    prisma.platformSetting.findUnique.mockResolvedValue({
+      key: 'organization_limit',
+      value: { limit: 'abc' },
+    });
+    expect(await controller.organizationLimit()).toEqual({
+      limit: 5,
+      source: 'default',
+    });
+
+    prisma.platformSetting.findUnique.mockResolvedValue({
+      key: 'organization_limit',
+      value: { limit: 0 },
+    });
+    expect(await controller.organizationLimit()).toEqual({
+      limit: 1,
+      source: 'setting',
+    });
+
+    prisma.platformSetting.findUnique.mockResolvedValue({
+      key: 'organization_limit',
+      value: { limit: 2000 },
+    });
+    expect(await controller.organizationLimit()).toEqual({
+      limit: 1000,
+      source: 'setting',
+    });
+  });
+});
+
+describe('InternalController — impersonations/consumed (Phase 3, D8)', () => {
+  const body = {
+    handoffId: HANDOFF_ID,
+    organizationId: TENANT_ID,
+    targetUserId: 'user_target-central-id',
+    adminUserId: 'user_admin-central-id',
+    consumedAt: new Date().toISOString(),
+  };
+
+  it('records the consumption as an audit row and returns recorded:true', async () => {
+    const { controller, prisma, audit } = makeController();
+    prisma.tenant.findUnique.mockResolvedValue({ id: TENANT_ID });
+
+    const result = await controller.impersonationConsumed(body);
+
+    expect(result).toEqual({ ok: true, recorded: true });
+    expect(audit.record).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      action: 'tenant.impersonate.consumed',
+      entity: 'Tenant',
+      entityId: TENANT_ID,
+      after: {
+        handoffId: HANDOFF_ID,
+        targetUserId: 'user_target-central-id',
+        adminUserId: 'user_admin-central-id',
+        consumedAt: body.consumedAt,
+      },
+    });
+    // The central admin id is recorded in `after`, never as actorId
+    // (AuditLog.actorId FKs to PlatformUser, which has no such row).
+    expect(audit.record.mock.calls[0][0].actorId).toBeUndefined();
+  });
+
+  it('is idempotent: a retried callback with the same handoffId writes no second row', async () => {
+    const { controller, prisma, audit } = makeController();
+    prisma.tenant.findUnique.mockResolvedValue({ id: TENANT_ID });
+    prisma.auditLog.findFirst.mockResolvedValue({ id: 'audit-1' });
+
+    const result = await controller.impersonationConsumed(body);
+
+    expect(result).toEqual({ ok: true, recorded: false, duplicate: true });
+    expect(audit.record).not.toHaveBeenCalled();
+    expect(prisma.auditLog.findFirst).toHaveBeenCalledWith({
+      where: {
+        action: 'tenant.impersonate.consumed',
+        entityId: TENANT_ID,
+        after: { path: ['handoffId'], equals: HANDOFF_ID },
+      },
+      select: { id: true },
+    });
+  });
+
+  it('404s for an unknown tenant (no audit row)', async () => {
+    const { controller, audit } = makeController();
+    await expect(controller.impersonationConsumed(body)).rejects.toThrow(
+      'Tenant not found',
+    );
+    expect(audit.record).not.toHaveBeenCalled();
   });
 });
 

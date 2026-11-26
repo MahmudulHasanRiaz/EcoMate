@@ -3,8 +3,16 @@ import { render, type RenderResult } from 'vitest-browser-react'
 import { userEvent, type Locator } from 'vitest/browser'
 import { ResetPasswordForm } from './reset-password-form'
 
+/**
+ * Phase 3 (D7=B): BA native reset — `authClient.resetPassword({
+ * newPassword, token })` with the token from the emailed link's `?token=`.
+ * Resetting revokes every other session (service-side).
+ */
+
 const navigateMock = vi.fn()
-const postMock = vi.hoisted(() => vi.fn())
+const resetPassword = vi.hoisted(() => vi.fn())
+const toastSuccess = vi.hoisted(() => vi.fn())
+const toastError = vi.hoisted(() => vi.fn())
 
 vi.mock('@tanstack/react-router', async (orig) => {
   const actual = await orig<typeof import('@tanstack/react-router')>()
@@ -27,11 +35,15 @@ vi.mock('@tanstack/react-router', async (orig) => {
   }
 })
 
-vi.mock('@/lib/api-client', () => ({
-  apiClient: { post: postMock },
+vi.mock('@/lib/better-auth-client', () => ({
+  authClient: { resetPassword },
 }))
 
-describe('ResetPasswordForm', () => {
+vi.mock('sonner', () => ({
+  toast: { success: toastSuccess, error: toastError },
+}))
+
+describe('ResetPasswordForm (Phase 3)', () => {
   let screen: RenderResult
   let passwordInput: Locator
   let confirmInput: Locator
@@ -39,9 +51,9 @@ describe('ResetPasswordForm', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    postMock.mockResolvedValue({ data: {} })
+    resetPassword.mockResolvedValue({ error: null })
 
-    screen = await render(<ResetPasswordForm token='reset-jwt' />)
+    screen = await render(<ResetPasswordForm token='reset-token-123' />)
     passwordInput = screen.getByLabelText(/^New Password$/i)
     confirmInput = screen.getByLabelText(/^Confirm New Password$/i)
     resetButton = screen.getByRole('button', { name: /^Reset Password$/i })
@@ -57,7 +69,7 @@ describe('ResetPasswordForm', () => {
         screen.getByText(/^Password must be at least 8 characters long\.$/i),
       )
       .toBeInTheDocument()
-    expect(postMock).not.toHaveBeenCalled()
+    expect(resetPassword).not.toHaveBeenCalled()
   })
 
   it('rejects a password without an uppercase letter', async () => {
@@ -70,7 +82,7 @@ describe('ResetPasswordForm', () => {
         screen.getByText(/^Password must include an uppercase letter\.$/i),
       )
       .toBeInTheDocument()
-    expect(postMock).not.toHaveBeenCalled()
+    expect(resetPassword).not.toHaveBeenCalled()
   })
 
   it('rejects a password without a special character', async () => {
@@ -83,7 +95,7 @@ describe('ResetPasswordForm', () => {
         screen.getByText(/^Password must include a special character\.$/i),
       )
       .toBeInTheDocument()
-    expect(postMock).not.toHaveBeenCalled()
+    expect(resetPassword).not.toHaveBeenCalled()
   })
 
   it('rejects mismatched passwords', async () => {
@@ -94,7 +106,7 @@ describe('ResetPasswordForm', () => {
     await expect
       .element(screen.getByText(/^Passwords don't match\.$/i))
       .toBeInTheDocument()
-    expect(postMock).not.toHaveBeenCalled()
+    expect(resetPassword).not.toHaveBeenCalled()
   })
 
   it('resets the password and navigates to /sign-in on success', async () => {
@@ -103,19 +115,20 @@ describe('ResetPasswordForm', () => {
     await userEvent.click(resetButton)
 
     await vi.waitFor(() =>
-      expect(postMock).toHaveBeenCalledWith('/auth/reset-password', {
-        token: 'reset-jwt',
-        password: 'Abcdef1!',
+      expect(resetPassword).toHaveBeenCalledWith({
+        newPassword: 'Abcdef1!',
+        token: 'reset-token-123',
       }),
     )
+    expect(toastSuccess).toHaveBeenCalledWith('Password has been reset successfully')
     await vi.waitFor(() =>
       expect(navigateMock).toHaveBeenCalledWith({ to: '/sign-in' }),
     )
   })
 
   it('shows an expired-token error with a link back to forgot-password', async () => {
-    postMock.mockRejectedValue({
-      response: { data: { message: 'Invalid or expired reset token' } },
+    resetPassword.mockResolvedValue({
+      error: { message: 'Invalid or expired reset token', status: 400 },
     })
 
     await userEvent.fill(passwordInput, 'Abcdef1!')
@@ -126,7 +139,7 @@ describe('ResetPasswordForm', () => {
       .element(screen.getByText(/^Invalid or expired reset token$/i))
       .toBeInTheDocument()
     await expect
-      .element(screen.getByRole('link', { name: /^Request a new code\.$/i }))
+      .element(screen.getByRole('link', { name: /^Request a new link\.$/i }))
       .toBeInTheDocument()
     expect(navigateMock).not.toHaveBeenCalled()
   })

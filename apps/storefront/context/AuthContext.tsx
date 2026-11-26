@@ -10,6 +10,22 @@ import {
 } from "react";
 import type { User } from "@/lib/types";
 import * as authApi from "@/lib/api/auth";
+import { authClient } from "@/lib/better-auth-client";
+
+/**
+ * Customer auth context — Phase 3 central Better Auth cutover.
+ *
+ * The BA session (`authClient.useSession()`) is the source of truth for
+ * "signed in"; the tenant profile (name, phone, role) is read from the
+ * backend `GET /auth/me` once per session. There is no access token in
+ * localStorage anymore, no `auth:token-refreshed` event (no client-side
+ * refresh — the BA session refreshes server-side via `updateAge`), and
+ * no `refreshToken()` call. The `auth:logout` window event is kept: the
+ * api client dispatches it on a 401, and this context clears the user.
+ *
+ * Guest checkout is untouched: `user === null` still checks out as a
+ * guest (see `app/(main)/checkout/page.tsx`) — no session required.
+ */
 
 interface AuthContextValue {
   user: User | null;
@@ -25,6 +41,11 @@ interface AuthContextValue {
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  /** True while the sign-in is waiting on a TOTP / recovery code. */
+  twoFactorRequired: boolean;
+  verifyTwoFactor: (code: string) => Promise<void>;
+  verifyBackupCode: (code: string) => Promise<void>;
+  clearTwoFactor: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -32,6 +53,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false);
+  const { data: session, isPending: sessionPending } = authClient.useSession();
 
   const refreshUser = useCallback(async () => {
     try {
@@ -44,21 +67,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // A live BA session loads the tenant profile; no session clears it.
   useEffect(() => {
-    (async () => {
-      try {
-        const token = localStorage.getItem("token");
-        if (token) {
-          const user = await authApi.getMe();
-          setUser(user);
-        }
-      } catch {
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    if (sessionPending) return;
+    if (!session) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    authApi
+      .getMe()
+      .then((u) => {
+        if (!cancelled) setUser(u);
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, sessionPending]);
 
   useEffect(() => {
     const handleLogout = () => {
@@ -68,20 +101,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("auth:logout", handleLogout);
   }, []);
 
-  useEffect(() => {
-    const handler = (e: CustomEvent) => {
-      if (e.detail) setUser(e.detail);
-    };
-    window.addEventListener("auth:token-refreshed", handler as EventListener);
-    return () =>
-      window.removeEventListener("auth:token-refreshed", handler as EventListener);
-  }, []);
-
   const login = async (email: string, password: string) => {
-    const res = await authApi.login(email, password);
-    localStorage.setItem("token", res.accessToken);
+    try {
+      const res = await authApi.login(email, password);
+      setTwoFactorRequired(false);
+      setUser(res.user);
+    } catch (err) {
+      if (err instanceof authApi.TwoFactorRequiredError) {
+        setTwoFactorRequired(true);
+        return;
+      }
+      throw err;
+    }
+  };
+
+  const verifyTwoFactor = async (code: string) => {
+    const res = await authApi.verifyTotp(code);
+    setTwoFactorRequired(false);
     setUser(res.user);
   };
+
+  const verifyBackupCode = async (code: string) => {
+    const res = await authApi.verifyBackupCode(code);
+    setTwoFactorRequired(false);
+    setUser(res.user);
+  };
+
+  const clearTwoFactor = () => setTwoFactorRequired(false);
 
   const register = async (data: {
     firstName: string;
@@ -92,19 +138,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string;
   }) => {
     const res = await authApi.register(data);
-    localStorage.setItem("token", res.accessToken);
     setUser(res.user);
   };
 
   const logout = async () => {
     await authApi.logout();
-    localStorage.removeItem("token");
     setUser(null);
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, register, logout, refreshUser }}
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        logout,
+        refreshUser,
+        twoFactorRequired,
+        verifyTwoFactor,
+        verifyBackupCode,
+        clearTwoFactor,
+      }}
     >
       {children}
     </AuthContext.Provider>

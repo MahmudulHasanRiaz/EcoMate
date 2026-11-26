@@ -21,22 +21,14 @@ import multipart from '@fastify/multipart';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { initSentry } from './observability/sentry';
 import { registerBullBoard } from './observability/bull-board.setup';
-import { auth } from './better-auth/auth.config';
-import { baPrisma } from './better-auth/prisma';
 import { CacheService } from './cache/cache.service';
 import { PrismaService } from './prisma/prisma.service';
 import { TenantPrismaManager } from './tenancy/tenant-prisma.manager';
-import { TenantRegistryService } from './tenancy/tenant-registry.service';
-import { resolveTenantHost } from './tenancy/tenant-host';
 import { tenantStorage } from './tenancy/tenant-context';
 import { setBaPrismaResolver } from './better-auth/prisma';
+import { getTenantAuthMode } from './common/tenant-auth-mode';
 import { randomUUID } from 'crypto';
 import { parseWorkerMode } from './common/worker-mode';
-
-// BA brute-force attempt log (F5): key `${ip}:${endpoint}` → attempt
-// timestamps (60s window); lockouts key → locked-until ms.
-const baAttemptLog = new Map<string, number[]>();
-const baLockouts = new Map<string, number>();
 
 async function bootstrap() {
   // Load .env — try project root, backend root, then cwd
@@ -100,7 +92,6 @@ async function bootstrap() {
   const cacheService = app.get(CacheService);
   const prismaService = app.get(PrismaService);
   const tenantManager = app.get(TenantPrismaManager);
-  const tenantRegistry = app.get(TenantRegistryService);
   // The hardcoded fallback tenant is TEST-ONLY (same gating as
   // tenant-job.ts): in production a Better Auth call without tenant
   // context fails closed instead of silently scoping to the fallback
@@ -111,15 +102,23 @@ async function bootstrap() {
     (process.env.NODE_ENV === 'test'
       ? '00000000-0000-4000-8000-000000000000'
       : undefined);
-  setBaPrismaResolver(() => {
-    const tenantId = tenantStorage.getStore()?.tenantId || defaultTenantId;
-    if (!tenantId) {
-      throw new Error(
-        'Better Auth requires a tenant context (no tenant in context and no DEFAULT_TENANT_ID configured)',
-      );
-    }
-    return tenantManager.getClient(tenantId);
-  });
+  // Phase 3: the tenant Better Auth instance (baPrisma + this resolver)
+  // is LEGACY-JWT ONLY. In central-ba mode no code path touches the
+  // tenant BA instance — sessions are verified over HTTP by
+  // CentralSessionAuthGuard and BA rows are written by the central
+  // service — so the resolver install is skipped and a stray baPrisma
+  // use fails loudly instead of silently scoping to the wrong tenant.
+  if (getTenantAuthMode() === 'legacy-jwt') {
+    setBaPrismaResolver(() => {
+      const tenantId = tenantStorage.getStore()?.tenantId || defaultTenantId;
+      if (!tenantId) {
+        throw new Error(
+          'Better Auth requires a tenant context (no tenant in context and no DEFAULT_TENANT_ID configured)',
+        );
+      }
+      return tenantManager.getClient(tenantId);
+    });
+  }
   let durableMaintenanceMemo: {
     expiresAt: number;
     value?: { mode: 'full_backup' | 'restore' };
@@ -418,272 +417,16 @@ async function bootstrap() {
   // Phase 8 Stage 2 item 20: Bull Board queue dashboard (superadmin-only).
   await registerBullBoard(app);
 
-  const fastifyInstance = app.getHttpAdapter().getInstance();
-
-  // BA: intercept via onRequest hook with hijack
-  const corsOrigins = process.env['CORS_ORIGIN']
-    ? process.env['CORS_ORIGIN'].split(',').map((o) => o.trim())
-    : [
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'https://mac.riaz.com.bd',
-      ];
-  fastifyInstance.addHook('onRequest', async (request, reply) => {
-    if (!request.url.startsWith('/api/better-auth/')) return;
-    // SECURITY (2026-10-25, F5): per-IP brute-force limiter for the
-    // credential endpoints, applied BEFORE the hijack (the hijacked BA
-    // handler runs outside Nest guards/rate-limiters). 10 attempts per
-    // IP per endpoint per minute, then 429 for 15 minutes. In-memory
-    // (single-instance API); a lockout here never blocks legitimate
-    // traffic from other IPs. Email-keyed limiting is intentionally NOT
-    // done here — it would require consuming the request body before
-    // the hijacked handler reads it.
-    if (
-      request.method === 'POST' &&
-      (request.url.startsWith('/api/better-auth/sign-in/email') ||
-        request.url.startsWith('/api/better-auth/sign-up/email'))
-    ) {
-      // Fastify runs with trustProxy: true, so request.ip already follows
-      // the edge's X-Forwarded-For. (Residual: if the edge does not strip
-      // client-sent XFF, this key is spoofable — same caveat as the rest
-      // of the app's IP handling; the edge must overwrite XFF.)
-      const ip = request.ip || 'unknown';
-      const key = `${ip}:${request.url.split('?')[0]}`;
-      const now = Date.now();
-      const attempts = (baAttemptLog.get(key) || []).filter(
-        (t) => now - t < 60_000,
-      );
-      attempts.push(now);
-      baAttemptLog.set(key, attempts);
-      const lockedUntil = baLockouts.get(key);
-      if (lockedUntil && now < lockedUntil) {
-        reply.code(429).send({
-          message: 'Too many sign-in attempts. Try again later.',
-        });
-        return;
-      }
-      if (attempts.length > 10) {
-        baLockouts.set(key, now + 15 * 60_000);
-        reply.code(429).send({
-          message: 'Too many sign-in attempts. Try again later.',
-        });
-        return;
-      }
-    }
-    try {
-      reply.hijack();
-      // Resolve the tenant from the Host (or the dev default) before any
-      // Better Auth adapter query runs. baPrisma reads this ALS context.
-      const baHost = String(request.headers.host ?? '');
-      const baResolution = resolveTenantHost(
-        baHost,
-        tenantRegistry.getDomainConfig(),
-      );
-      let baTenant:
-        | {
-            tenantId: string;
-            slug: string;
-            status?: string;
-            canonicalHost?: string;
-            baseDomain?: string;
-            isAlias?: boolean;
-          }
-        | undefined;
-      if (baResolution.kind === 'tenant') {
-        const tenant = tenantRegistry.resolveBySlug(baResolution.slug);
-        if (tenant) {
-          baTenant = {
-            tenantId: tenant.id,
-            slug: tenant.slug,
-            status: tenant.status,
-            canonicalHost: baResolution.canonicalHost,
-            baseDomain: baResolution.baseDomain,
-            isAlias: baResolution.isAlias,
-          };
-        }
-      } else if (baResolution.kind === 'custom') {
-        const tenant = tenantRegistry.resolveByHost(baHost);
-        if (tenant) {
-          baTenant = {
-            tenantId: tenant.id,
-            slug: tenant.slug,
-            status: tenant.status,
-            canonicalHost: baHost,
-          };
-        }
-      }
-      if (
-        !baTenant &&
-        process.env.NODE_ENV !== 'production' &&
-        process.env.DEFAULT_TENANT_ID
-      ) {
-        baTenant = {
-          tenantId: process.env.DEFAULT_TENANT_ID,
-          slug: process.env.DEFAULT_TENANT_SLUG || 'default',
-          status: 'active',
-        };
-      }
-      if (!baTenant) {
-        reply.raw.statusCode = 403;
-        reply.raw.setHeader('content-type', 'application/json');
-        reply.raw.end(
-          JSON.stringify({ message: 'Tenant context is required' }),
-        );
-        return;
-      }
-      tenantStorage.enterWith(baTenant);
-      const rawBody = await new Promise<string>((resolve) => {
-        if (['GET', 'HEAD', 'DELETE'].includes(request.method))
-          return resolve('');
-        const chunks: Buffer[] = [];
-        const raw = request.raw;
-        raw.on('data', (chunk: Buffer) => chunks.push(chunk));
-        raw.on('end', () => resolve(Buffer.concat(chunks).toString()));
-        raw.on('error', () => resolve(''));
-        const timer = setTimeout(
-          () => resolve(Buffer.concat(chunks).toString()),
-          1000,
-        );
-        raw.on('end', () => clearTimeout(timer));
-      });
-      const url = new URL(request.url, `http://${request.headers.host}`);
-      const headers = new Headers();
-      for (const [key, value] of Object.entries(request.headers)) {
-        if (typeof value === 'string') headers.set(key, value);
-        else if (Array.isArray(value)) headers.set(key, value.join(', '));
-      }
-
-      const req = new Request(url.toString(), {
-        method: request.method,
-        headers,
-        body: rawBody || undefined,
-      });
-      const response = await auth.handler(req);
-      const res = reply.raw;
-      const body = await response.text();
-      res.statusCode = response.status;
-      const setCookieHeaders: string[] = [];
-      response.headers.forEach((value, key) => {
-        if (key.toLowerCase() === 'set-cookie') setCookieHeaders.push(value);
-        else res.setHeader(key, value);
-      });
-      if (setCookieHeaders.length)
-        res.setHeader('set-cookie', setCookieHeaders);
-      // CORS: since hijack bypasses @fastify/cors, set headers manually
-      const origin = request.headers.origin;
-      if (origin && corsOrigins.includes(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader(
-          'Access-Control-Allow-Methods',
-          'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-        );
-        res.setHeader(
-          'Access-Control-Allow-Headers',
-          'Content-Type,Authorization',
-        );
-      }
-      // BA -> UserProfile sync: reuse baPrisma singleton instead of creating new connections
-      if (response.status === 200 && rawBody && request.method === 'POST') {
-        const urlPath = url.pathname;
-        try {
-          const parsedBody = JSON.parse(rawBody);
-
-          if (urlPath.endsWith('/change-password') && parsedBody.newPassword) {
-            const { fromNodeHeaders } = await import('better-auth/node');
-            const bHeaders = fromNodeHeaders(request.headers);
-            const session = await auth.api.getSession({ headers: bHeaders });
-            if (session?.user?.id) {
-              const profile = await baPrisma.userProfile.findFirst({
-                where: { betterAuthUserId: session.user.id },
-                select: { id: true, betterAuthUserId: true },
-              });
-              if (profile?.betterAuthUserId) {
-                const bcrypt = await import('bcryptjs');
-                const hashedPassword = await bcrypt.hash(
-                  parsedBody.newPassword,
-                  12,
-                );
-                await baPrisma.userProfile.update({
-                  where: { id: profile.id },
-                  data: { password: hashedPassword },
-                });
-              }
-              // SECURITY (2026-10-25): a password change revokes every
-              // OTHER session (the current one stays, so the user who just
-              // changed their password is not logged out). Stolen sessions
-              // must not survive a password change. Reset-password revokes
-              // ALL sessions via revokeSessionsOnPasswordReset in
-              // auth.config.ts; sign-out already deletes its own session.
-              try {
-                const currentToken = (session as any)?.session?.token;
-                await baPrisma.betterAuthSession.deleteMany({
-                  where: {
-                    userId: session.user.id,
-                    ...(currentToken
-                      ? { token: { not: currentToken } }
-                      : {}),
-                  },
-                });
-              } catch (revokeErr) {
-                console.error(
-                  '[BA-sync] Failed to revoke other sessions after password change:',
-                  revokeErr,
-                );
-              }
-            }
-          }
-
-          if (urlPath.endsWith('/change-email') && parsedBody.newEmail) {
-            const { fromNodeHeaders } = await import('better-auth/node');
-            const bHeaders = fromNodeHeaders(request.headers);
-            const session = await auth.api.getSession({ headers: bHeaders });
-            if (session?.user?.id) {
-              const profile = await baPrisma.userProfile.findFirst({
-                where: { betterAuthUserId: session.user.id },
-                select: { id: true, betterAuthUserId: true },
-              });
-              if (profile?.betterAuthUserId) {
-                await baPrisma.userProfile.update({
-                  where: { id: profile.id },
-                  data: {
-                    email: parsedBody.newEmail,
-                    emailVerified: session.user.emailVerified,
-                  },
-                });
-              }
-            }
-          }
-        } catch (syncErr) {
-          console.error(
-            '[BA-sync] Failed to sync BA change to UserProfile:',
-            syncErr,
-          );
-        }
-      }
-
-      res.end(body);
-    } catch (error) {
-      request.log.error(error);
-      try {
-        reply.raw.statusCode = 500;
-        reply.raw.setHeader('content-type', 'application/json');
-        if (
-          request.headers.origin &&
-          corsOrigins.includes(request.headers.origin)
-        ) {
-          reply.raw.setHeader(
-            'Access-Control-Allow-Origin',
-            request.headers.origin,
-          );
-          reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
-        }
-        reply.raw.end(JSON.stringify({ error: 'Authentication error' }));
-      } catch {
-        /* ignore */
-      }
-    }
-  });
+  // Phase 3 central-auth cutover: the Fastify BA hijack that used to
+  // live here (main.ts:431-686, the onRequest hook that intercepted
+  // /api/better-auth/*, resolved the tenant from Host, and ran the
+  // tenant BA handler in-process) is RETIRED. Caddy now proxies
+  // /api/better-auth/* to the central auth service on every host, so
+  // the hijack has no traffic in the deployed stack — and the frontends
+  // are BA-only, so a hijack-level rollback would serve no client.
+  // Each of its 13 behaviours (H1-H13) has an explicit new home; the
+  // table lives in the Phase 3 evidence
+  // (central-auth-phase3-backend-verify/BUILD-SUMMARY.md).
 
   const port = process.env['PORT'] || 4000;
   await app.listen(port, '0.0.0.0');

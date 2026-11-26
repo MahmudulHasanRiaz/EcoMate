@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useSessionStore } from '../stores/session-store';
 import { API_BASE_URL } from '../lib/api-base';
+import { authClient } from '../lib/better-auth-client';
 import { buildAnalyticsQuery } from '../lib/analytics-range';
 import { buildReceiptFromPosOrder, type ReceiptData, type ReceiptContext } from '../lib/receipt';
 
@@ -10,21 +11,21 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Shared promise to deduplicate concurrent refresh calls within the same tab
-let refreshPromise: Promise<{ accessToken: string }> | null = null
-
-// Retry delays for refresh: 2s + 4s + 8s + 16s = 30s total coverage.
-// Covers typical backend deployment/restart windows (5-30s) and transient issues.
-// The first attempt is immediate (delay 0), so the full sequence covers
-// 0s + 2s + 4s + 8s + 16s = 30s from the initial 401.
-const REFRESH_RETRY_DELAYS = [0, 2000, 4000, 8000, 16000]
-const MAX_REFRESH_RETRIES = REFRESH_RETRY_DELAYS.length
-
+/**
+ * Phase 3 central Better Auth cutover.
+ *
+ * Auth is the BA session cookie now (httpOnly, set by the central service
+ * via the same-origin `/api/better-auth/*` proxy, sent with
+ * `withCredentials`). There is NO Bearer token anymore, and NO refresh
+ * machinery: the BA session refreshes server-side (`updateAge`), so a
+ * 401/403 means the session is gone — sign out and return to the login
+ * screen. The request is never replayed.
+ *
+ * UNTOUCHED: the `x-pos-session-id` header below is the BUSINESS POS
+ * session (open drawer), not an auth session — it stays on every request
+ * exactly as before.
+ */
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('pos_access_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
   const sessionId = useSessionStore.getState().sessionId;
   if (sessionId) {
     config.headers['x-pos-session-id'] = sessionId;
@@ -35,71 +36,27 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
-    const originalRequest = error.config
-
     // Not a 401/403 → let error propagate
     if (error.response?.status !== 401 && error.response?.status !== 403) {
       return Promise.reject(error);
     }
 
-    // Already retried → give up
-    if (originalRequest._retry) {
-      // Clear tokens only on final failure, not intermediate
-      localStorage.removeItem('pos_access_token');
-      window.location.href = '/pos/';
+    // Already handled → give up (no replay: there is no client-side
+    // refresh under BA — a 401/403 means the session is gone).
+    if (error.config?._retry) {
       return Promise.reject(error);
     }
-    originalRequest._retry = true
+    if (error.config) error.config._retry = true
 
-    // If a refresh is already in flight, wait for it and retry
-    if (refreshPromise) {
-      try {
-        const { accessToken } = await refreshPromise
-        localStorage.setItem('pos_access_token', accessToken)
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`
-        return api(originalRequest)
-      } catch {
-        return Promise.reject(error)
-      }
-    }
-
-    // Exponential backoff: retry refresh up to MAX_REFRESH_RETRIES times
-    for (let attempt = 0; attempt < MAX_REFRESH_RETRIES; attempt++) {
-      const delay = REFRESH_RETRY_DELAYS[attempt]
-      if (delay > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delay))
-      }
-
-      try {
-        refreshPromise = axios
-          .post<{ accessToken: string }>(
-            `${api.defaults.baseURL}/auth/refresh`,
-            {},
-            { withCredentials: true },
-          )
-          .then((res) => res.data)
-
-        const data = await refreshPromise
-        localStorage.setItem('pos_access_token', data.accessToken)
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
-        return api(originalRequest)
-      } catch {
-        // Refresh attempt failed — continue to next retry
-        refreshPromise = null
-      }
-    }
-
-    // All retries exhausted
-    localStorage.removeItem('pos_access_token');
+    // End the BA session (best-effort — the cookie may already be dead)
+    // and return to the login screen.
+    await authClient.signOut().catch(() => {});
     window.location.href = '/pos/';
     return Promise.reject(error);
   },
 );
 
 export default api;
-
-export const loginApi = (email: string, password: string) =>
-  api.post('/auth/login', { email, password });
 
 export const openSession = (showroomId: string, openingBalance: number) =>
   api.post('/pos/sessions', { showroomId, openingBalance });

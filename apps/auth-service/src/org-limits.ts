@@ -53,9 +53,10 @@ export async function resolveOrganizationLimit(
   }
   const platformApiUrl = opts.platformApiUrl || '';
   if (!platformApiUrl || !opts.internalSecret) {
-    // No platform-api to ask (Phase 4 endpoint not built yet, or no
-    // secret configured): the env fallback rules. Not an error — the
-    // fetch 404s until the endpoint exists, by design.
+    // No platform-api to ask (no URL / secret configured): the env
+    // fallback rules. Not an error — the endpoint exists since Phase 3
+    // (platform-api GET /internal/settings/organization-limit); this
+    // branch only fires when the service is not configured to reach it.
     cachedLimit = fallback;
     cachedAt = now;
     return fallback;

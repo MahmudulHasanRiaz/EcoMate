@@ -26,7 +26,10 @@ npm test         # node --import tsx --test "tests/*.test.ts"
 
 Tests need the scratch `ecomate_auth` database on the VM Postgres
 cluster (port 55432) — see `~/workspace/ecomate-review/test-env-setup.sh`
-(idempotent). They boot the real server in-process on ports 4311–4314.
+(idempotent). They boot the real server in-process on ports 4311–4319
+(tenant-registry tests also run a fake platform-api registry on 4335;
+social-totp also uses 4318 for its strict-mode server and 4331 for its
+fake IdP — pick a fresh port for any new test file).
 
 ## Configuration
 
@@ -273,24 +276,58 @@ login inside 10 s 429'd (proven by probe: 3× 200/404 then 429 with
 fix (parity, not a relaxation). All counters above are **in-memory**
 (BA default storage is also memory) — see "Scaling notes".
 
-**Shared-bucket warning (pre-existing, not fixed here):** BA logs
+**Shared-bucket warning — FIXED in Phase 3 (2026-11-26):** BA logs
 "Rate limiting could not determine a client IP and is falling back to
-a single shared per-path bucket" — no trusted IP header reaches the
-service in this setup, so every rate-limit bucket (and the IP-based
-lockout logic) is effectively global per path, not per client. In
-production Caddy must forward a trusted client-IP header and the
-service must set `advanced.ipAddress.ipAddressHeaders` /
-`trustedProxies` so `getIP` resolves real client IPs. Until then, a
-burst from one NAT can 429 unrelated users on the same path.
+a single shared per-path bucket" whenever no IP header resolves. The
+fix has two halves, both landed: (1) Caddy forwards the client IP in
+`X-Forwarded-For` (its `reverse_proxy` appends the peer IP by default
+— do NOT overwrite it with `{http.request.remote.host}`: Cloudflare
+fronts faah.net for caching, and overwriting would mask the client IP
+with the Cloudflare edge IP); (2) the service sets
+`advanced.ipAddress: { ipAddressHeaders: ["x-forwarded-for"],
+trustedProxies? }` (`src/auth-options.ts`, `AUTH_TRUSTED_PROXIES`
+env). BA 1.7.28 `getIP` trusts a single-value header with no trusted
+proxies configured (exactly what Caddy sends as the direct edge), and
+walks a multi-value chain right-to-left past `trustedProxies` —
+**deploy MUST set `AUTH_TRUSTED_PROXIES` to the upstream proxy's
+egress ranges (Cloudflare's published ranges) when one fronts Caddy**,
+or multi-value chains resolve to no IP and the shared bucket returns.
+Proven by `tests/tenant-registry.test.ts` ("per-IP rate-limit
+buckets…": 10 failures from one X-Forwarded-For IP 429 the 11th from
+that IP while a second IP still gets 401 — a shared bucket would 429
+both). The service's own `IpLimiter`/`getClientIp` (`src/server.ts`)
+already read `x-forwarded-for` the same way.
 
 ## Origin gating
 
-`trustedOrigins` is an async function (`src/auth-options.ts`) validating
-the request Origin against the config-driven allowlist
-(`AUTH_TRUSTED_HOSTS`). **Phase 3 swap:** replace the allowlist lookup
-inside that function with a live platform-registry query (verified custom
-domains + tenant subdomains) — the call sites do not change; never echo
-the request origin blindly.
+`trustedOrigins` is an async function (`src/auth-options.ts`) trusting
+an origin iff its host is in the config allowlist
+(`AUTH_TRUSTED_HOSTS`) **or** in the live platform tenant registry
+(tenant subdomains + VERIFIED/ACTIVE custom domains — **Phase 3 swap,
+done 2026-11-26**, `src/tenant-registry.ts`). The registry is fetched
+from platform-api `GET /internal/tenants/registry` (internal-secret
+auth, 60 s cache, last-good snapshot on fetch failure); with no
+registry configured the allowlist alone applies. The allowlist stays
+as the base layer because the console/platform hosts are not tenant
+domains and never appear in the registry.
+
+**`allowedHosts` vs custom domains — RESOLVED in Phase 3 (survey §11
+open question):** `trustedOrigins`-only is NOT sufficient. BA 1.7.28's
+`DynamicBaseURLConfig.allowedHosts` is a static `string[]` (no
+function form), and an unmatched request host throws BEFORE
+`trustedOrigins` runs (500 `auth_handler_error`). The registry
+therefore ALSO syncs its hosts into the shared `allowedHosts` array
+in place on every refresh (plus a 60 s background timer in
+`src/server.ts`, so the array converges even with no auth traffic).
+This relies on BA keeping the config object by reference and
+resolving the baseURL per request (verified in
+`dist/context/helpers.mjs` `resolveRequestContext`); the test
+"allowedHosts sync" in `tests/tenant-registry.test.ts` proves the
+post-boot mutation takes effect (unlisted custom host 500s, then
+200s after a refresh) and MUST pass on any Better Auth upgrade. A
+newly verified custom domain is usable for auth within one refresh
+interval (60 s) of verification. Never echo the request origin
+blindly.
 
 Two BA 1.7.28 behaviours worth knowing (both verified live 2026-11-26):
 
@@ -360,8 +397,10 @@ The limit resolves from a platform setting fetched from platform-api
 (`GET {AUTH_PLATFORM_API_URL}/internal/settings/organization-limit`,
 60 s in-memory cache, clamped [1, 1000]) with env `AUTH_ORG_LIMIT`
 (default 5) as fallback; fetch failure / 404 / non-numeric keeps the
-last good value and warns. The Phase 4 endpoint does not exist yet —
-until it does, the env fallback is the effective limit. Note:
+last good value and warns. The endpoint landed in Phase 3 (platform-api
+`GET /internal/settings/organization-limit`, reading the
+`organization_limit` PlatformSetting row; the console settings UI for
+the row lands in a later phase). Note:
 `allowUserToCreateOrganization: false` fires BEFORE the limit check,
 so a session-authenticated `createOrganization` 403 comes from the
 allow-create gate, not the limit — the limit itself is proven via the
@@ -482,7 +521,8 @@ docker exec <auth-service container> sh -c 'cd /app && npx prisma migrate deploy
       AUTH_BASE_PROTOCOL: https
       AUTH_TRUSTED_HOSTS: ${AUTH_TRUSTED_HOSTS:-faah.net,em.commercians.com,ecomate.bd}
       AUTH_ORG_LIMIT: ${AUTH_ORG_LIMIT:-5}
-      AUTH_PLATFORM_API_URL: ${AUTH_PLATFORM_API_URL:-http://platform-api:4000}
+      AUTH_PLATFORM_API_URL: ${AUTH_PLATFORM_API_URL:-http://platform-api:4100/api}
+      AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
       INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:?INTERNAL_SERVICE_SECRET is required}
       IMPERSONATION_TTL_SECONDS: ${IMPERSONATION_TTL_SECONDS:-900}
       AUTH_TENANT_PRIMARY_DOMAIN: ${AUTH_TENANT_PRIMARY_DOMAIN:-faah.net}
@@ -517,3 +557,25 @@ Staging values: `AUTH_PUBLIC_URL=https://auth.staging.em.commercians.com`,
 `AUTH_HOST=auth.staging.em.commercians.com`. No traffic routes to the
 service until the Phase 3 wiring lands; the backends keep their current
 auth until then.
+
+**Phase 3 deploy notes (2026-11-26):**
+
+- `AUTH_PLATFORM_API_URL` was corrected above to
+  `http://platform-api:4100/api` — the old `http://platform-api:4000`
+  was wrong on both port and path (platform-api listens on 4100 with
+  the `/api` prefix). The registry client (`src/tenant-registry.ts`)
+  and the org-limit resolver both read this URL; a wrong value leaves
+  the registry unconfigured (allowlist-only origins, warning-accept
+  consume) instead of failing loudly.
+- `AUTH_TRUSTED_PROXIES`: set to the upstream proxy's egress ranges
+  (Cloudflare's published ranges when Cloudflare fronts Caddy) so BA
+  resolves real client IPs from multi-value `X-Forwarded-For` chains.
+  Empty = Caddy is the direct edge (single-value header, no walk
+  needed). Without it behind Cloudflare, rate-limit buckets fall back
+  to one shared per-path bucket (safe, not wrong).
+- `INTERNAL_SERVICE_SECRET` rotation invalidates in-flight
+  impersonation handoff tokens by design (they are encrypted with it);
+  TTL is 900 s, so rotate in a quiet window.
+- The compose file in the repo root is the source of truth for the
+  deployed stack; the snippet above is kept in sync with it
+  (change-completeness rule).
