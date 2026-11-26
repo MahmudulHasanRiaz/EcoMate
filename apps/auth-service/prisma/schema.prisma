@@ -1,0 +1,212 @@
+
+// Central auth database schema — `ecomate_auth` (D2=A).
+//
+// GENERATED (BA core + organization + twoFactor + admin) by:
+//   AUTH_DB_URL=... BETTER_AUTH_SECRET=... npx auth generate \
+//     --config auth-generate.config.ts --adapter prisma \
+//     --dialect postgresql --output prisma/schema.prisma
+// against Better Auth 1.7.28. Regenerating overwrites this file — the
+// hand-added `LoginLockout` and `ImpersonationHandoff` models below must
+// be re-applied after any regeneration (they are the service's own tables,
+// not Better Auth models).
+//
+// Conventions: default BA model/table names (no modelName remapping —
+// unlike the tenant backend, there is no legacy table to map onto);
+// global email uniqueness (@@unique([email])) — the one-user-per-email
+// model replaces the old per-tenant uniqueness.
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7: the connection URL lives in prisma.config.ts, not here.
+}
+
+model User {
+  id               String       @id
+  name             String
+  email            String
+  emailVerified    Boolean      @default(false)
+  image            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  twoFactorEnabled Boolean?     @default(false)
+  platformRole     String?
+  role             String?
+  banned           Boolean?     @default(false)
+  banReason        String?
+  banExpires       DateTime?
+  sessions         Session[]
+  accounts         Account[]
+  members          Member[]
+  invitations      Invitation[]
+  twofactors       TwoFactor[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id                   String   @id
+  expiresAt            DateTime
+  token                String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganizationId String?
+  impersonatedBy       String?
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Organization {
+  id                String             @id
+  name              String
+  slug              String
+  logo              String?
+  createdAt         DateTime
+  metadata          String?
+  organizationroles OrganizationRole[]
+  members           Member[]
+  invitations       Invitation[]
+
+  @@unique([slug])
+  @@map("organization")
+}
+
+model OrganizationRole {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           String
+  permission     String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime?    @updatedAt
+
+  @@index([organizationId])
+  @@index([role])
+  @@map("organizationRole")
+}
+
+model Member {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("member")
+  createdAt      DateTime
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("member")
+}
+
+model Invitation {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String       @default("pending")
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitation")
+}
+
+model TwoFactor {
+  id                      String    @id
+  secret                  String
+  backupCodes             String
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verified                Boolean?  @default(true)
+  failedVerificationCount Int?      @default(0)
+  lockedUntil             DateTime?
+
+  @@index([secret])
+  @@index([userId])
+  @@map("twoFactor")
+}
+
+// Service-owned (NOT a Better Auth model — hand-added; see file header).
+// Sign-in account lockout, tenant parity (auth.service.ts:220-250): the
+// 4th consecutive failed login locks the account for 15 minutes; a
+// successful login clears the row. Keyed by lower-cased email.
+model LoginLockout {
+  email          String    @id
+  failedAttempts Int       @default(0)
+  lockoutUntil   DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  @@map("login_lockout")
+}
+
+// Service-owned (NOT a Better Auth model — hand-added; see file header).
+// D8 impersonation handoff (design §4.2): one-time token rows. Only the
+// SHA-256 hash is stored; the raw token appears only inside the issue
+// response URL. adminSessionTokenEnc holds the operator's BA session token
+// encrypted with BA's symmetricEncrypt (key = BETTER_AUTH_SECRET) so
+// consume can set the admin_session cookie for stop-impersonating.
+// Rows are retained 30 days for audit, then purged by handoffSweeper().
+model ImpersonationHandoff {
+  id                   String    @id @default(uuid())
+  tokenHash            String    @unique // SHA-256 hex of the raw token
+  organizationId       String // tenant UUID == organization.id
+  targetUserId         String // central user id of the tenant owner
+  adminUserId          String // central user id of the console operator
+  adminSessionTokenEnc String    @db.Text // symmetricEncrypt(admin session token)
+  expiresAt            DateTime
+  usedAt               DateTime?
+  consumedIp           String?
+  consumedUserAgent    String?
+  createdAt            DateTime  @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([expiresAt])
+  @@map("impersonation_handoff")
+}

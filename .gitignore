@@ -57,6 +57,8 @@ query_*.js
 # Legacy directory name, still read when it already exists
 .license-data/
 apps/platform-api/src/generated/
+apps/auth-service/src/generated/
+apps/auth-service/dist/
 apps/platform-api/dist/
 __pycache__/
 *.pyc
