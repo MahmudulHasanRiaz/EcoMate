@@ -12,6 +12,17 @@ RUN --mount=type=cache,target=/root/.npm npm install
 # (resize serves originals) instead of breaking the build.
 RUN npm install --package-lock=false --no-save --os=linux --libc=musl --cpu=x64 \
     @img/sharp-linuxmusl-x64@0.35.5 @img/sharp-libvips-linuxmusl-x64@1.3.4 2>/dev/null || true
+# Flatten workspace-nested modules into the root node_modules. npm nests
+# better-auth under apps/backend/node_modules (the lockfile records no root
+# copy — verified in package-lock.json and in a builder-context repro), but
+# the runner carries only the root node_modules, so without this the service
+# would crash-loop at boot with ERR_MODULE_NOT_FOUND for better-auth
+# (dist/src/better-auth/auth.config.js, loaded via BetterAuthModule in
+# AppModule). Same failure mode + fix as apps/platform-api (@fastify/helmet,
+# proven live) and apps/auth-service (better-auth, run #48 image). Placed
+# after the last npm install above so nothing re-nests afterwards. The
+# builder context has no other app workspace, so flattening cannot conflict.
+RUN if [ -d apps/backend/node_modules ]; then cp -r apps/backend/node_modules/. node_modules/; fi
 RUN npx tsc -p packages/shared-types/tsconfig.json && \
     npx tsc -p packages/feature-flags/tsconfig.json
 # Dereference workspace symlinks so Docker COPY produces real directories
@@ -45,6 +56,14 @@ COPY --from=builder /app/apps/backend/src/orders/order-transitions.ts ./src/orde
 COPY --from=builder /app/apps/backend/prisma.config.ts ./
 COPY --from=builder /app/apps/backend/package.json ./
 COPY --from=builder /app/apps/backend/public ./public
+# Runtime-presence gate: a green build must mean a runnable image. Import
+# every external package dist/ needs at boot (derived from the built dist
+# imports — better-auth + its subpaths first, then the rest) from the runner
+# layout (/app/node_modules only). If any is missing — e.g. a dep npm nests
+# under a workspace instead of hoisting to the root — the build FAILS here,
+# before the image is pushed. This is the check that would have caught the
+# better-auth crash-loop at build time instead of on staging.
+RUN node --input-type=module -e "for (const m of ['better-auth', 'better-auth/adapters/prisma', 'better-auth/crypto', 'better-auth/node', 'better-auth/plugins', '@aws-sdk/client-s3', '@aws-sdk/lib-storage', '@bull-board/api', '@bull-board/api/bullMQAdapter', '@bull-board/fastify', '@ecomate/feature-flags', '@ecomate/shared-types', '@fastify/compress', '@fastify/cookie', '@fastify/helmet', '@fastify/multipart', '@fastify/static', '@nestjs/bullmq', '@nestjs/common', '@nestjs/config', '@nestjs/core', '@nestjs/jwt', '@nestjs/mapped-types', '@nestjs/passport', '@nestjs/platform-express', '@nestjs/platform-fastify', '@prisma/adapter-pg', '@prisma/client', '@sentry/node', 'bcryptjs', 'bullmq', 'class-transformer', 'class-validator', 'cron-parser', 'dotenv', 'dotenv/config', 'exceljs', 'fastify', 'ioredis', 'ipaddr.js', 'ms', 'multer', 'nestjs-pino', 'nodemailer', 'papaparse', 'passport-jwt', 'pg', 'prisma/config', 'prom-client', 'reflect-metadata', 'rxjs', 'sharp', 'tar', 'uuid']) { await import(m); console.log('runtime dep ok:', m); }"
 COPY apps/backend/startup.sh ./startup.sh
 COPY apps/backend/scripts/resolve-failed-migrations.sh ./resolve-failed-migrations.sh
 COPY apps/backend/scripts/reconcile-hr-base.sql ./reconcile-hr-base.sql
