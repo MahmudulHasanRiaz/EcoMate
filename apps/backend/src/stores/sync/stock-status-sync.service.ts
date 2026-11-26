@@ -10,9 +10,12 @@
  * quantity — see desiredState).
  * - Own ERP Website (NATIVE): unchanged, never a sync target (BR-20).
  * - Custom + WooCommerce (`faithful` + quantity-capable): ERP > threshold →
- *   IN_STOCK status only (no quantity ever — the remote tracks nothing
- *   countable, so oversell is impossible); 1–5 → ACTUAL quantity in real
- *   time; 0 → OUT_OF_STOCK (forced + read-back verify).
+ *   IN_STOCK via untick+status (`manage_stock: false` + `stock_status`, no
+ *   quantity ever — WooCommerce re-derives the status from quantity 0
+ *   while a product manages stock, so the status write must disarm
+ *   management to stick; the remote tracks nothing countable, so oversell
+ *   is impossible); 1–5 → ACTUAL quantity in real time; 0 → OUT_OF_STOCK
+ *   (forced + read-back verify).
  * - Shopify (`quantized-capped`): ERP > threshold → capped quantity
  *   (threshold, default 5) via InventoryLevel (tracked, deny policy);
  *   1–5 → actual quantity real-time; 0 → quantity 0 (selling stops).

@@ -1070,16 +1070,124 @@ describe('stock-refill fix (OUT → IN flip above threshold + explicit sync)', (
     });
   });
 
-  it('refill 0→10 above threshold pushes on faithful (Woo): remote OUT → IN_STOCK status', async () => {
+  it('refill 0→10 above threshold pushes on faithful (Woo): untick+status flips remote OUT → IN_STOCK', async () => {
     const s = setup({ managedStockQuantity: 10, reservedStock: 0 });
     seedRemote(s, 'OUT_OF_STOCK');
+    // The remote sits in the trap state: the zero-band push armed
+    // management at quantity 0.
+    expect(s.fake.getProduct('remote-1')?.manageStock).toBe(true);
+    expect(s.fake.getProduct('remote-1')?.stockQuantity).toBe(0);
     // Projected before (lastEvaluatedVersion set, older than the refill
     // version) — without the fix this is an ABOVE_THRESHOLD skip.
     mapped(s, '000000000000001:000000000000000');
     const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    // Status plan (NOT the quantity plan): verification stays a status
+    // read-back, so the run records PUSH_VERIFIED, not PUSH_VERIFIED_QTY.
     expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED' });
     expect(s.fake.getProduct('remote-1')?.stockState).toBe('IN_STOCK');
+    // The flip disarms management (manage_stock: false) instead of writing
+    // a quantity — that is what makes the write stick on Woo.
+    expect(s.fake.getProduct('remote-1')?.manageStock).toBe(false);
+    expect(s.fake.getProduct('remote-1')?.stockQuantity).toBeNull();
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockState')).toHaveLength(1);
     expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(0);
+  });
+
+  it('trap: a status-only write on a managed-0 remote does NOT flip (Woo re-derives the status)', async () => {
+    const s = setup({ managedStockQuantity: 10, reservedStock: 0 });
+    seedRemote(s, 'OUT_OF_STOCK');
+    const record = s.fake.getProduct('remote-1')!;
+    expect(record.manageStock).toBe(true);
+    expect(record.stockQuantity).toBe(0);
+    // Legacy shape: status-only, management left armed (manage_stock: true).
+    await s.fake.publishStockState({} as any, { providerId: 'remote-1' }, 'IN_STOCK', true);
+    expect(s.fake.getProduct('remote-1')?.stockState).toBe('OUT_OF_STOCK');
+    expect(s.fake.getProduct('remote-1')?.stockQuantity).toBe(0);
+    await expect(s.fake.readStockState({} as any, { providerId: 'remote-1' })).resolves.toBe(
+      'OUT_OF_STOCK',
+    );
+  });
+
+  it('trap: an untick+status write on a managed-0 remote flips to IN (manage_stock: false)', async () => {
+    const s = setup({ managedStockQuantity: 10, reservedStock: 0 });
+    seedRemote(s, 'OUT_OF_STOCK');
+    await s.fake.publishStockState({} as any, { providerId: 'remote-1' }, 'IN_STOCK');
+    expect(s.fake.getProduct('remote-1')?.stockState).toBe('IN_STOCK');
+    expect(s.fake.getProduct('remote-1')?.manageStock).toBe(false);
+    expect(s.fake.getProduct('remote-1')?.stockQuantity).toBeNull();
+  });
+
+  it('trap (variant): status-only write on a managed-0 variation does NOT flip; untick+status does', async () => {
+    const s = setup({ managedStockQuantity: 0, reservedStock: 0 });
+    s.fake.directSeed('remote-parent', { sku: 'VAR-PARENT' }, 'IN_STOCK', 'published', [
+      { sku: 'VAR-1' } as any,
+    ]);
+    const parent = s.fake.getProduct('remote-parent') as any;
+    let variantProviderId = '';
+    let slot: any;
+    for (const sl of parent.variants.values()) {
+      variantProviderId = sl.ref.providerId;
+      slot = sl;
+    }
+    // Stage the trap state on the variation: managed at quantity 0, OUT.
+    slot.stockState = 'OUT_OF_STOCK';
+    slot.stockQuantity = 0;
+    slot.manageStock = true;
+    const parentRef = { providerId: 'remote-parent' };
+    const variantRef = { providerId: variantProviderId };
+    await s.fake.publishVariantStockState({} as any, parentRef, variantRef, 'IN_STOCK', true);
+    expect(slot.stockState).toBe('OUT_OF_STOCK');
+    expect(slot.stockQuantity).toBe(0);
+    await s.fake.publishVariantStockState({} as any, parentRef, variantRef, 'IN_STOCK');
+    expect(slot.stockState).toBe('IN_STOCK');
+    expect(slot.manageStock).toBe(false);
+    expect(slot.stockQuantity).toBeNull();
+  });
+
+  it('variant refill 0→10 above threshold flips via untick+status (variation, not parent)', async () => {
+    const s = setup({
+      type: 'variable',
+      managedStockQuantity: 10,
+      variants: [
+        {
+          id: VARIANT_ID,
+          productId: PRODUCT_ID,
+          managedStockQuantity: 10,
+          reservedStock: 0,
+          isActive: true,
+          updatedAt: new Date('2026-09-20T00:00:00Z'),
+        },
+      ],
+    });
+    s.fake.directSeed('remote-parent', { sku: 'VAR-PARENT' }, 'IN_STOCK', 'published', [
+      { sku: 'VAR-1' } as any,
+    ]);
+    const parent = s.fake.getProduct('remote-parent') as any;
+    let variantProviderId = '';
+    let slot: any;
+    for (const sl of parent.variants.values()) {
+      variantProviderId = sl.ref.providerId;
+      slot = sl;
+    }
+    // Trap state on the variation: managed at quantity 0, OUT.
+    slot.stockState = 'OUT_OF_STOCK';
+    slot.stockQuantity = 0;
+    slot.manageStock = true;
+    s.setMapping({ storeId: STORE_ID, productId: PRODUCT_ID, externalId: 'remote-parent', lastEvaluatedVersion: null });
+    s.setVariantMapping({
+      storeId: STORE_ID,
+      productId: PRODUCT_ID,
+      variantId: VARIANT_ID,
+      externalId: variantProviderId,
+      lastEvaluatedVersion: null,
+    });
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, VARIANT_ID, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED' });
+    expect(slot.stockState).toBe('IN_STOCK');
+    expect(slot.manageStock).toBe(false);
+    expect(s.fake.calls.filter((c) => c.method === 'publishVariantStockState')).toHaveLength(1);
+    expect(s.fake.calls.filter((c) => c.method === 'publishVariantStockQuantity')).toHaveLength(0);
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockState')).toHaveLength(0);
   });
 
   it('refill 0→10 above threshold pushes on quantized-capped (Shopify): remote 0 → cap 5', async () => {

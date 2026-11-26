@@ -13,10 +13,14 @@
  * publicationState→status (publish/draft), customFields→meta_data
  * (allowlisted keys only, never secrets). Cost/seo never pushed (BR-23,
  * seo:false plugin-only). Stock is the P13 ERP projection (faithful):
- * ERP > threshold → status-only `stock_status` (remote management
- * quantities NEVER enabled on that path); 1–5 → `manage_stock=true +
- * stock_quantity=N` in real time; 0 → `outofstock`. Verified by read-back
- * in the engine.
+ * ERP > threshold → untick+status: `manage_stock=false` + `stock_status`
+ * (WooCommerce re-derives stock_status from stock_quantity on save while
+ * a product manages stock, so a status write on a managed-0 product is
+ * overwritten on save — the write must disarm management to stick; no
+ * stock_quantity is ever sent on that path); 1–5 → `manage_stock=true +
+ * stock_quantity=N` in real time; 0 → `outofstock` (management left
+ * armed). The product therefore flaps managed (low/zero) ↔ unmanaged
+ * (above) by design. Verified by read-back in the engine.
  */
 import { Injectable } from '@nestjs/common';
 import { ProviderError, ProviderErrorCategory } from '../../marketing/ad-provider.adapter';
@@ -237,7 +241,7 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     orderStatusUpdate: true,
     orderStatusUpdateTargets: ['cancelled', 'completed', 'on-hold'],
     stockStatusFidelity: 'faithful',
-    stockQuantity: true, // P13: exact qty in the 1–5 band; status-only above
+    stockQuantity: true, // P13: exact qty in the 1–5 band; untick+status above
     contactCheckExposure: true,
     categoryModel: 'taxonomy',
     seoModel: 'plugin-meta',
@@ -531,10 +535,17 @@ export class WooCommerceProvider extends BaseCommerceProvider {
   }
 
   override async publishStockState(store: StoreWithSecrets, ref: RemoteRef, state: StockState): Promise<PushResult> {
-    // P13 above-band path: status ONLY — never manage_stock/stock_quantity.
-    // Remote tracks nothing countable here, so oversell is impossible. The
-    // exact-quantity band travels via publishStockQuantity below.
+    // P13 above-band path: untick+status — `manage_stock: false` alongside
+    // the status, in BOTH directions. WooCommerce's
+    // WC_Product::validate_props() re-derives stock_status from
+    // stock_quantity on every save while the product manages stock, so a
+    // status-only write against a managed-0 product is accepted (HTTP 200)
+    // and immediately overwritten back to outofstock. With management
+    // disarmed, validate_props() early-returns and the written status
+    // sticks. Never send stock_quantity on this path; the exact-quantity
+    // band travels via publishStockQuantity below.
     await this.woo(store, 'PUT', `/products/${encodeURIComponent(ref.providerId)}`, {
+      manage_stock: false,
       stock_status: state === 'IN_STOCK' ? 'instock' : 'outofstock',
     });
     return { ok: true, ref };
@@ -558,11 +569,13 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     variantRef: RemoteRef,
     state: StockState,
   ): Promise<PushResult> {
-    // P13 above-band path: status ONLY (see publishStockState).
+    // P13 above-band path: untick+status (see publishStockState) — the
+    // variation disarms management the same way, or Woo re-derives the
+    // written status from its quantity 0 on save.
     await this.woo(
       store, 'PUT',
       `/products/${encodeURIComponent(parentRef.providerId)}/variations/${encodeURIComponent(variantRef.providerId)}`,
-      { stock_status: state === 'IN_STOCK' ? 'instock' : 'outofstock' },
+      { manage_stock: false, stock_status: state === 'IN_STOCK' ? 'instock' : 'outofstock' },
     );
     return { ok: true, ref: variantRef };
   }

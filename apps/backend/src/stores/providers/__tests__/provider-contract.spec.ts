@@ -553,7 +553,7 @@ describe('provider contract suite (P2 §13)', () => {
 
   // ── Stock projection (P13: exact/capped qty; zero-write ONLY unsupported) ─
   describe('stock projection (P13)', () => {
-    it('faithful Fake: status-only above band (detail { ref, state }, NO quantity); quantity band carries exact units', async () => {
+    it('faithful Fake: untick+status above band (detail { ref, state }, NO quantity); quantity band carries exact units', async () => {
       const { fake, store } = seededFake();
       const ref = await fake.upsertProduct(
         store,
@@ -562,11 +562,18 @@ describe('provider contract suite (P2 §13)', () => {
       );
       await fake.publishStockState(store, ref, 'OUT_OF_STOCK');
       await expect(fake.readStockState(store, ref)).resolves.toBe('OUT_OF_STOCK');
+      // The status write disarms management (Woo untick+status): the record
+      // is unmanaged afterwards, so a later status write can stick.
+      expect(fake.getProduct(ref.providerId)?.manageStock).toBe(false);
       await fake.publishStockQuantity(store, ref, 3);
       await expect(fake.readStockQuantity(store, ref)).resolves.toBe(3);
       await expect(fake.readStockState(store, ref)).resolves.toBe('IN_STOCK');
       await fake.publishStockQuantity(store, ref, 0);
       await expect(fake.readStockState(store, ref)).resolves.toBe('OUT_OF_STOCK');
+      // The zero-band quantity push re-arms management at quantity 0 — the
+      // trap state a later status-only write cannot escape.
+      expect(fake.getProduct(ref.providerId)?.manageStock).toBe(true);
+      expect(fake.getProduct(ref.providerId)?.stockQuantity).toBe(0);
 
       const statusPushes = fake.calls.filter((c) => c.method === 'publishStockState');
       expect(statusPushes.length).toBeGreaterThan(0);
@@ -624,7 +631,7 @@ describe('provider contract suite (P2 §13)', () => {
       expect(narrowMock.calls.filter((c) => (c.init?.method ?? 'GET') !== 'GET')).toHaveLength(0);
     });
 
-    it('WooCommerce P4/P13: above-band publishStockState writes status-only (zero qty keys); quantity band writes exact units', async () => {
+    it('WooCommerce P4/P13: above-band publishStockState unticks manage_stock then sends status (zero qty keys); quantity band writes exact units', async () => {
       const mock = new MockFetch();
       mock.onAll(() => jsonResponse(200, { id: 55, stock_status: 'outofstock' }));
       const woo = new WooCommerceProvider(mock.fetch);
@@ -633,8 +640,18 @@ describe('provider contract suite (P2 §13)', () => {
       expect(res.ok).toBe(true);
       expect(mock.calls).toHaveLength(1);
       const body = JSON.parse(String(mock.calls[0]?.init?.body ?? '{}'));
-      expect(body).toEqual({ stock_status: 'outofstock' });
-      expect(JSON.stringify(body)).not.toMatch(/quantity/i);
+      expect(body).toEqual({ manage_stock: false, stock_status: 'outofstock' });
+      expect(body).not.toHaveProperty('stock_quantity');
+
+      // The IN direction disarms the same way — the write must stick on a
+      // managed-0 product in both directions.
+      mock.calls.length = 0;
+      await woo.publishStockState(store, { providerId: '55' }, 'IN_STOCK');
+      expect(mock.calls).toHaveLength(1);
+      expect(JSON.parse(String(mock.calls[0]?.init?.body ?? '{}'))).toEqual({
+        manage_stock: false,
+        stock_status: 'instock',
+      });
 
       mock.calls.length = 0;
       await woo.publishStockQuantity(store, { providerId: '55' }, 3);

@@ -66,7 +66,14 @@ interface FakeRemoteProduct {
   stockState: StockState;
   /** P13: remote countable units (exact band / capped band / 0). */
   stockQuantity: number | null;
-  variants: Map<string, { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState; stockQuantity: number | null }>;
+  /**
+   * Woo `manage_stock`: true once a quantity push arms management (zero /
+   * low band), false after an untick+status write. A status write against
+   * a managed-0 record is re-derived back to OUT (the live trap) — see
+   * publishStockState.
+   */
+  manageStock: boolean;
+  variants: Map<string, { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState; stockQuantity: number | null; manageStock: boolean }>;
 }
 
 function skuOf(input: Record<string, unknown>): string {
@@ -192,6 +199,9 @@ export class FakeProvider implements CommerceProvider {
       publication,
       stockState,
       stockQuantity: stockState === 'IN_STOCK' ? null : 0,
+      // An OUT seed is the trap state: the zero-band push armed management
+      // at quantity 0. An IN seed is unmanaged (above-band state).
+      manageStock: stockState !== 'IN_STOCK',
       variants: new Map(),
     };
     for (const v of variants) {
@@ -201,6 +211,7 @@ export class FakeProvider implements CommerceProvider {
         data: { ...v },
         stockState: 'IN_STOCK',
         stockQuantity: null,
+        manageStock: false,
       });
     }
     this.products.set(providerId, record);
@@ -402,6 +413,7 @@ export class FakeProvider implements CommerceProvider {
       publication: 'draft',
       stockState: 'IN_STOCK',
       stockQuantity: null,
+      manageStock: false,
       variants: new Map(),
     });
     this.productsBySku.set(sku, ref.providerId);
@@ -436,6 +448,7 @@ export class FakeProvider implements CommerceProvider {
           data: {},
           stockState: 'IN_STOCK',
           stockQuantity: null,
+          manageStock: false,
         };
         record.variants.set(sku, slot);
       }
@@ -537,10 +550,23 @@ export class FakeProvider implements CommerceProvider {
     return record.stockState;
   }
 
+  /**
+   * Woo untick+status model (Boss-approved fix, 2026-11-26). The 4th arg is
+   * the wire `manage_stock` the provider sends with the status write.
+   * Default `false` — the Woo provider's untick+status shape: management is
+   * disarmed, the written status sticks, the quantity is cleared.
+   * `true` — the legacy status-only write, which leaves management armed:
+   * WooCommerce re-derives the status from the quantity on save
+   * (WC_Product::validate_props, default notify threshold 0, backorders
+   * off), so a managed-0 record keeps OUT_OF_STOCK no matter what status
+   * was written, and a managed record with qty > 0 keeps IN_STOCK. The
+   * quantity is never wiped by a status write.
+   */
   async publishStockState(
     store: StoreWithSecrets,
     ref: RemoteRef,
     state: StockState,
+    manageStock = false,
   ): Promise<PushResult> {
     void store;
     this.maybeFail('publishStockState');
@@ -552,10 +578,19 @@ export class FakeProvider implements CommerceProvider {
         this.slug,
       );
     }
-    // Above-band path: status ONLY — the logged detail carries { ref, state }
-    // and MUST never carry a quantity (asserted by the P13 matrix suite).
-    record.stockState = state;
-    record.stockQuantity = null;
+    // Above-band path: the logged detail carries { ref, state } and MUST
+    // never carry a quantity (asserted by the P13 matrix suite). The disarm
+    // itself is asserted on the record (manageStock === false).
+    if (manageStock === true) {
+      // Status-only write on an armed record: Woo re-derives the status.
+      record.manageStock = true;
+      record.stockState = (record.stockQuantity ?? 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK';
+    } else {
+      // Untick+status: disarm management, the written status sticks.
+      record.manageStock = false;
+      record.stockQuantity = null;
+      record.stockState = state;
+    }
     this.log('publishStockState', { ref, state });
     return { ok: true, ref };
   }
@@ -585,6 +620,9 @@ export class FakeProvider implements CommerceProvider {
       this.fidelityOverride === 'quantized-capped' ? Math.min(n, this.capQty) : n;
     record.stockQuantity = effective;
     record.stockState = effective > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK';
+    // A quantity push arms management (as the real Woo triple does) — the
+    // zero-band push is what later traps a status-only flip.
+    record.manageStock = true;
     this.log('publishStockQuantity', { ref, qty: effective });
     return { ok: true, ref };
   }
@@ -603,6 +641,7 @@ export class FakeProvider implements CommerceProvider {
       this.fidelityOverride === 'quantized-capped' ? Math.min(n, this.capQty) : n;
     slot.stockQuantity = effective;
     slot.stockState = effective > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK';
+    slot.manageStock = true;
     this.log('publishVariantStockQuantity', { parentRef, variantRef, qty: effective });
     return { ok: true, ref: variantRef };
   }
@@ -654,14 +693,24 @@ export class FakeProvider implements CommerceProvider {
     parentRef: RemoteRef,
     variantRef: RemoteRef,
     state: StockState,
+    manageStock = false,
   ): Promise<PushResult> {
     void store;
     this.maybeFail('publishVariantStockState');
     const slot = this.findVariantSlot(parentRef, variantRef);
     // Above-band path: { parentRef, variantRef, state } MUST never carry a
-    // quantity (P13 matrix suite).
-    slot.stockState = state;
-    slot.stockQuantity = null;
+    // quantity (P13 matrix suite). Same Woo derivation as publishStockState:
+    // `manageStock: true` leaves management armed and the status is
+    // re-derived from the quantity; default (false) disarms and the written
+    // status sticks.
+    if (manageStock === true) {
+      slot.manageStock = true;
+      slot.stockState = (slot.stockQuantity ?? 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK';
+    } else {
+      slot.manageStock = false;
+      slot.stockQuantity = null;
+      slot.stockState = state;
+    }
     this.log('publishVariantStockState', { parentRef, variantRef, state });
     return { ok: true, ref: variantRef };
   }
@@ -669,7 +718,7 @@ export class FakeProvider implements CommerceProvider {
   private findVariantSlot(
     parentRef: RemoteRef,
     variantRef: RemoteRef,
-  ): { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState; stockQuantity: number | null } {
+  ): { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState; stockQuantity: number | null; manageStock: boolean } {
     const record = this.products.get(parentRef.providerId);
     for (const slot of record?.variants.values() ?? []) {
       if (slot.ref.providerId === variantRef.providerId) return slot;

@@ -95,14 +95,15 @@ describe('WooCommerceProvider live HTTP (P4)', () => {
     expect(mock.calls[1]?.init?.method).toBe('DELETE');
   });
 
-  it('P13 projection: above-band publish is status-only (zero qty keys); quantity band writes exact units', async () => {
+  it('P13 projection: above-band publish unticks manage_stock + sends status (zero qty keys); quantity band writes exact units', async () => {
     const mock = new MockFetch();
     mock.onAll(() => jsonResponse(200, { id: 101, stock_status: 'outofstock' }));
     const woo = new WooCommerceProvider(mock.fetch);
     expect(await woo.readStockState(STORE(), { providerId: '101' })).toBe('OUT_OF_STOCK');
     await woo.publishStockState(STORE(), { providerId: '101' }, 'IN_STOCK');
     const body = JSON.parse(String(mock.calls[1]?.init?.body));
-    expect(body).toEqual({ stock_status: 'instock' });
+    expect(body).toEqual({ manage_stock: false, stock_status: 'instock' });
+    expect(body).not.toHaveProperty('stock_quantity');
 
     mock.calls.length = 0;
     await woo.publishStockQuantity(STORE(), { providerId: '101' }, 3);
