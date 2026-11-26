@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CreateLandingContentDto } from './dto/create-landing-content.dto';
@@ -24,7 +24,7 @@ import { LandingContentService } from './landing-content.service';
  * the public site); reads follow the platform READ_ROLES convention.
  */
 @Controller('landing-content')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class LandingContentController {
   constructor(private readonly content: LandingContentService) {}
 

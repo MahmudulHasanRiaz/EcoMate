@@ -9,12 +9,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { ConsoleAuthModeGuard } from './console-auth-mode.guard';
 import { CurrentPlatformUser } from './current-platform-user.decorator';
 import { MfaCodeDto } from './dto/mfa-code.dto';
 import { MfaChallengeDto } from './dto/mfa-challenge.dto';
+import { LegacyAuthOnlyGuard } from './legacy-auth-only.guard';
 import { MfaPendingGuard } from './mfa-pending.guard';
 import { MfaService } from './mfa.service';
-import { PlatformAuthGuard } from './platform-auth.guard';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 
 function requestMeta(req: any) {
@@ -32,6 +33,15 @@ function requestMeta(req: any) {
  * short-lived MFA token, so a SUPERADMIN without MFA can enroll mid-login;
  * when verify is called with an MFA token it also completes the login and
  * returns session tokens.
+ *
+ * Phase 4: the six routes below are LEGACY-ONLY — they return 410 in
+ * central-ba mode (LegacyAuthOnlyGuard, first in the guard list), where
+ * the BA two-factor plugin owns enrolment/challenge/recovery codes.
+ * The files themselves are KEPT (not deleted) so the `custom-jwt`
+ * rollback keeps its MFA. The two `backup-codes-*` routes at the bottom
+ * are the exception: they stay live in central-ba mode — they are the
+ * "presented" marker for the fresh-BA-backup-codes screen at first
+ * central-ba login (survey §7.4).
  */
 @Controller('auth/mfa')
 export class MfaController {
@@ -42,21 +52,21 @@ export class MfaController {
   ) {}
 
   @Get('status')
-  @UseGuards(PlatformAuthGuard)
+  @UseGuards(LegacyAuthOnlyGuard, ConsoleAuthModeGuard)
   status(@CurrentPlatformUser() user: { id: string }) {
     return this.mfa.status(user.id);
   }
 
   @Post('setup')
   @HttpCode(200)
-  @UseGuards(MfaPendingGuard)
+  @UseGuards(LegacyAuthOnlyGuard, MfaPendingGuard)
   setup(@CurrentPlatformUser() user: { id: string }) {
     return this.mfa.setup(user.id);
   }
 
   @Post('verify')
   @HttpCode(200)
-  @UseGuards(MfaPendingGuard)
+  @UseGuards(LegacyAuthOnlyGuard, MfaPendingGuard)
   async verify(
     @CurrentPlatformUser() user: { id: string },
     @Body() dto: MfaCodeDto,
@@ -75,7 +85,7 @@ export class MfaController {
 
   @Post('disable')
   @HttpCode(200)
-  @UseGuards(PlatformAuthGuard)
+  @UseGuards(LegacyAuthOnlyGuard, ConsoleAuthModeGuard)
   disable(
     @CurrentPlatformUser() user: { id: string },
     @Body() dto: MfaCodeDto,
@@ -85,7 +95,7 @@ export class MfaController {
 
   @Post('recovery-codes')
   @HttpCode(200)
-  @UseGuards(PlatformAuthGuard)
+  @UseGuards(LegacyAuthOnlyGuard, ConsoleAuthModeGuard)
   regenerate(
     @CurrentPlatformUser() user: { id: string },
     @Body() dto: MfaCodeDto,
@@ -101,6 +111,7 @@ export class MfaController {
    */
   @Post('challenge')
   @HttpCode(200)
+  @UseGuards(LegacyAuthOnlyGuard)
   async challenge(@Body() dto: MfaChallengeDto, @Req() req: any) {
     const userId = await this.auth.verifyMfaToken(dto.mfaToken);
     const user = await this.prisma.platformUser.findUnique({
@@ -117,5 +128,29 @@ export class MfaController {
       throw new UnauthorizedException('Invalid verification code');
     }
     return this.auth.completeMfaLogin(userId, meta);
+  }
+
+  /**
+   * Fresh-BA-backup-codes marker — READ. Live in both modes: in
+   * central-ba mode the console checks this before deciding whether
+   * to call BA `generate-backup-codes` and show the one-time codes
+   * screen at login. `{ presented: false }` means "show the screen".
+   */
+  @Get('backup-codes-status')
+  @UseGuards(ConsoleAuthModeGuard)
+  backupCodesStatus(@CurrentPlatformUser() user: { id: string }) {
+    return this.mfa.backupCodesPresentedStatus(user.id);
+  }
+
+  /**
+   * Fresh-BA-backup-codes marker — MARK. Live in both modes. The
+   * console calls this after it has shown the fresh codes once;
+   * idempotent (a second call returns the original timestamp).
+   */
+  @Post('backup-codes-presented')
+  @HttpCode(200)
+  @UseGuards(ConsoleAuthModeGuard)
+  markBackupCodesPresented(@CurrentPlatformUser() user: { id: string }) {
+    return this.mfa.markBackupCodesPresented(user.id);
   }
 }

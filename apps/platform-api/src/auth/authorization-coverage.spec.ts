@@ -50,6 +50,8 @@ const PUBLIC_CONTROLLERS: Record<string, string> = {
   PrometheusMetricsController:
     'Prometheus scrape endpoint (Phase 8 Stage 2) — operational metrics only, no tenant data; restricted to the private network in production',
   InternalController: 'service-token guard (InternalServiceGuard)',
+  PublicAuthModeController:
+    'public runtime auth-mode endpoint (GET /public/auth-mode — no auth, no PII, cacheable)',
   InternalDomainsController:
     'service-token guard (InternalServiceGuard) — tenant self-service domains (custom-domains subagent)',
   InternalPlanChangeRequestsController:
@@ -81,14 +83,17 @@ const HANDLERS_WITHOUT_ROLES: Record<string, { reason: string; guard: string | n
     reason: 'public token revocation (valid refresh token required)',
     guard: null,
   },
-  'AuthController.me': { reason: 'own profile', guard: 'PlatformAuthGuard' },
+  'AuthController.me': {
+    reason: 'own profile',
+    guard: 'ConsoleAuthModeGuard',
+  },
   'AuthController.updateMe': {
     reason: 'own profile (avatar only)',
-    guard: 'PlatformAuthGuard',
+    guard: 'ConsoleAuthModeGuard',
   },
   'AuthController.changePassword': {
     reason: 'own profile',
-    guard: 'PlatformAuthGuard',
+    guard: 'ConsoleAuthModeGuard',
   },
   'MfaController.challenge': {
     reason: 'login second step (short-lived MFA token required)',
@@ -96,7 +101,7 @@ const HANDLERS_WITHOUT_ROLES: Record<string, { reason: string; guard: string | n
   },
   'MfaController.status': {
     reason: 'own MFA status',
-    guard: 'PlatformAuthGuard',
+    guard: 'ConsoleAuthModeGuard',
   },
   'MfaController.setup': {
     reason: 'own MFA setup (session or MFA token)',
@@ -108,11 +113,22 @@ const HANDLERS_WITHOUT_ROLES: Record<string, { reason: string; guard: string | n
   },
   'MfaController.disable': {
     reason: 'own MFA disable',
-    guard: 'PlatformAuthGuard',
+    guard: 'ConsoleAuthModeGuard',
   },
   'MfaController.regenerate': {
     reason: 'own MFA recovery codes',
-    guard: 'PlatformAuthGuard',
+    guard: 'ConsoleAuthModeGuard',
+  },
+  // Phase 4: the backup-codes marker stays live in central-ba mode (the
+  // six routes above 410 there) — it is the "presented" marker for the
+  // fresh-BA-backup-codes screen at first central-ba login.
+  'MfaController.backupCodesStatus': {
+    reason: 'own MFA backup-codes marker (read)',
+    guard: 'ConsoleAuthModeGuard',
+  },
+  'MfaController.markBackupCodesPresented': {
+    reason: 'own MFA backup-codes marker (write)',
+    guard: 'ConsoleAuthModeGuard',
   },
   'UsersController.accept': {
     reason: 'public invite accept (72h hashed token required)',
@@ -235,6 +251,7 @@ describe('authorization coverage', () => {
       'PlansController',
       'PricingController',
       'PrometheusMetricsController',
+      'PublicAuthModeController',
       'PublicAvatarController',
       'PublicBlogController',
       'PublicBrandingController',
@@ -267,7 +284,12 @@ describe('authorization coverage', () => {
     expect(missing).toEqual([]);
   });
 
-  it('every non-public handler is behind PlatformAuthGuard (or its named guard)', () => {
+  // Phase 4: every protected handler carries the delegating
+  // ConsoleAuthModeGuard (which picks the legacy PlatformAuthGuard or
+  // the central session guard per CONSOLE_AUTH_MODE) + RolesGuard.
+  // The legacy guard name must not appear here: no controller
+  // references PlatformAuthGuard directly anymore.
+  it('every non-public handler is behind ConsoleAuthModeGuard (or its named guard)', () => {
     const unguarded: string[] = [];
     for (const h of handlers) {
       if (PUBLIC_CONTROLLERS[h.controller]) continue;
@@ -283,7 +305,7 @@ describe('authorization coverage', () => {
         }
         continue;
       }
-      if (!h.guards.includes('PlatformAuthGuard')) {
+      if (!h.guards.includes('ConsoleAuthModeGuard')) {
         unguarded.push(`${h.controller}.${h.method} (${h.path})`);
       }
       if (!h.guards.includes('RolesGuard')) {

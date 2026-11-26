@@ -4,25 +4,44 @@ import { useAuth } from '../auth';
 import { QrCode } from '../components/qr-code';
 import { ErrorNote, Modal, PageHeader, Skeleton, StatusBadge } from '../components/ui';
 import { errorMessage, readJson } from '../lib/api';
+import type { BaClientError } from '../lib/ba-auth-errors';
+import { baErrorMessage } from '../lib/ba-auth-errors';
+import { authClient } from '../lib/better-auth-client';
 import { formatDateTime } from '../lib/format';
-import { groupSecret } from '../lib/mfa';
+import { extractTotpSecret, groupSecret } from '../lib/mfa';
 import { roleLabel } from '../lib/users';
 import type { PlatformUser } from '../types';
 
 interface MfaStatus {
   enabled: boolean;
   required: boolean;
-  recoveryCodesRemaining: number;
+  /** Legacy mode only — BA exposes no backup-code count. */
+  recoveryCodesRemaining?: number;
+}
+
+/** Throw a readable error when a BA client call came back with `error`. */
+function throwBaError(
+  error: unknown,
+  fallback: string,
+): void {
+  if (error) throw new Error(baErrorMessage(error as BaClientError, fallback));
 }
 
 export function AccountPage() {
-  const { api, session } = useAuth();
+  const { api, session, isCentralBa } = useAuth();
   const [profile, setProfile] = useState<PlatformUser | null>(null);
   const [mfaStatus, setMfaStatus] = useState<MfaStatus | null>(null);
   const [mfaSetup, setMfaSetup] = useState<{
     secret: string;
     otpauthUrl: string;
   } | null>(null);
+  // Central-ba mode: BA's enable/disable/regenerate calls need password
+  // proof (not a TOTP code), so the forms ask for a password instead.
+  const [setupPassword, setSetupPassword] = useState('');
+  const [regenPassword, setRegenPassword] = useState('');
+  const [disablePassword, setDisablePassword] = useState('');
+  // Backup codes issued by `twoFactor.enable`, shown after verify.
+  const [pendingBackupCodes, setPendingBackupCodes] = useState<string[]>([]);
   const [mfaCode, setMfaCode] = useState('');
   const [disableOpen, setDisableOpen] = useState(false);
   const [disableCode, setDisableCode] = useState('');
@@ -45,6 +64,16 @@ export function AccountPage() {
         readJson<PlatformUser>(r),
       );
       setProfile(next);
+      if (isCentralBa) {
+        // Central-ba mode: GET /auth/mfa/status is 410 (the legacy MFA
+        // controller is gated off). /auth/me is the status source — the
+        // shim derives mfaEnabled from BA twoFactorEnabled.
+        setMfaStatus({
+          enabled: next.mfaEnabled ?? false,
+          required: next.mfaRequired ?? false,
+        });
+        return;
+      }
       const status = await api('/auth/mfa/status').then((r) =>
         readJson<MfaStatus>(r),
       );
@@ -54,7 +83,7 @@ export function AccountPage() {
     } finally {
       setBusy(null);
     }
-  }, [api]);
+  }, [api, isCentralBa]);
 
   useEffect(() => {
     void load();
@@ -90,7 +119,9 @@ export function AccountPage() {
       setNewPassword('');
       setConfirmPassword('');
       setNotice(
-        'Password changed. All other sessions were signed out; this session keeps working until its access token expires.',
+        isCentralBa
+          ? 'Password changed. All other sessions were signed out; this session keeps working.'
+          : 'Password changed. All other sessions were signed out; this session keeps working until its access token expires.',
       );
     } catch (err) {
       setError(errorMessage(err));
@@ -107,6 +138,29 @@ export function AccountPage() {
     setNotice(null);
     setMfaRecoveryCodes([]);
     try {
+      if (isCentralBa) {
+        // BA `twoFactor.enable` needs password proof and returns the
+        // TOTP URI + the one-time backup codes in one call.
+        if (!setupPassword) {
+          setError('Enter your password to start two-factor setup.');
+          return;
+        }
+        const { data, error } = await authClient.twoFactor.enable({
+          password: setupPassword,
+        });
+        throwBaError(error, 'Could not start two-factor setup.');
+        if (!data || data.method !== 'totp') {
+          throw new Error('Could not start two-factor setup.');
+        }
+        setPendingBackupCodes(data.backupCodes ?? []);
+        setMfaSetup({
+          secret: extractTotpSecret(data.totpURI),
+          otpauthUrl: data.totpURI,
+        });
+        setSetupPassword('');
+        setMfaCode('');
+        return;
+      }
       const next = await api('/auth/mfa/setup', { method: 'POST' }).then((r) =>
         readJson<{ secret: string; otpauthUrl: string }>(r),
       );
@@ -125,6 +179,21 @@ export function AccountPage() {
     setError(null);
     setNotice(null);
     try {
+      if (isCentralBa) {
+        // Verifying the code completes enrolment; the backup codes came
+        // from `enable` and are shown once here.
+        const { error } = await authClient.twoFactor.verifyTotp({
+          code: mfaCode.trim(),
+        });
+        throwBaError(error, 'Invalid code. Please try again.');
+        setMfaRecoveryCodes(pendingBackupCodes);
+        setPendingBackupCodes([]);
+        setMfaSetup(null);
+        setMfaCode('');
+        setNotice('Two-factor authentication is now enabled.');
+        await load();
+        return;
+      }
       const result = await api('/auth/mfa/verify', {
         method: 'POST',
         body: JSON.stringify({ code: mfaCode.trim() }),
@@ -151,6 +220,21 @@ export function AccountPage() {
     setError(null);
     setNotice(null);
     try {
+      if (isCentralBa) {
+        // BA `twoFactor.disable` needs password proof, not a code.
+        // The SUPERADMIN button is hidden by the UI below (server-side
+        // enforcement of that rule does not exist on the BA side — see
+        // BUILD-SUMMARY).
+        const { error } = await authClient.twoFactor.disable({
+          password: disablePassword,
+        });
+        throwBaError(error, 'Could not disable two-factor authentication.');
+        setDisablePassword('');
+        setDisableOpen(false);
+        setNotice('Two-factor authentication is now disabled.');
+        await load();
+        return;
+      }
       await api('/auth/mfa/disable', {
         method: 'POST',
         body: JSON.stringify({ code: disableCode.trim() }),
@@ -172,6 +256,23 @@ export function AccountPage() {
     setError(null);
     setNotice(null);
     try {
+      if (isCentralBa) {
+        // BA `generateBackupCodes` needs password proof, not a code.
+        if (!regenPassword) {
+          setError('Enter your password to issue new recovery codes.');
+          return;
+        }
+        const { data, error } =
+          await authClient.twoFactor.generateBackupCodes({
+            password: regenPassword,
+          });
+        throwBaError(error, 'Could not issue new recovery codes.');
+        setMfaRecoveryCodes(data?.backupCodes ?? []);
+        setRegenPassword('');
+        setNotice('New recovery codes issued. The old ones no longer work.');
+        await load();
+        return;
+      }
       const result = await api('/auth/mfa/recovery-codes', {
         method: 'POST',
         body: JSON.stringify({ code: mfaCode.trim() }),
@@ -239,13 +340,27 @@ export function AccountPage() {
           <>
             <p className="muted-note">
               {mfaStatus.enabled
-                ? `Enabled. ${mfaStatus.recoveryCodesRemaining} recovery code${mfaStatus.recoveryCodesRemaining === 1 ? '' : 's'} left.`
+                ? mfaStatus.recoveryCodesRemaining !== undefined
+                  ? `Enabled. ${mfaStatus.recoveryCodesRemaining} recovery code${mfaStatus.recoveryCodesRemaining === 1 ? '' : 's'} left.`
+                  : 'Enabled.'
                 : mfaStatus.required
                   ? 'Not enabled yet — superadmin accounts must enroll before they can sign in.'
                   : 'Not enabled. Optional for your role, recommended for everyone with console access.'}
             </p>
             {!mfaStatus.enabled && !mfaSetup ? (
               <div className="form-actions">
+                {isCentralBa ? (
+                  <label>
+                    Your password (to confirm it is you)
+                    <input
+                      type="password"
+                      value={setupPassword}
+                      onChange={(e) => setSetupPassword(e.target.value)}
+                      autoComplete="current-password"
+                      placeholder="••••••••••••"
+                    />
+                  </label>
+                ) : null}
                 <button type="button" className="button button--accent" onClick={() => void startSetup()} disabled={busy === 'mfa-setup'}>
                   {busy === 'mfa-setup' ? 'Starting…' : 'Set up two-factor authentication'}
                 </button>
@@ -302,18 +417,32 @@ export function AccountPage() {
             {mfaStatus.enabled ? (
               <>
                 <form className="inline-form" onSubmit={regenerateCodes}>
-                  <label>
-                    Current code (to issue new recovery codes)
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      value={mfaCode}
-                      onChange={(e) => setMfaCode(e.target.value)}
-                      required
-                      placeholder="123456"
-                    />
-                  </label>
+                  {isCentralBa ? (
+                    <label>
+                      Your password (to issue new recovery codes)
+                      <input
+                        type="password"
+                        value={regenPassword}
+                        onChange={(e) => setRegenPassword(e.target.value)}
+                        required
+                        autoComplete="current-password"
+                        placeholder="••••••••••••"
+                      />
+                    </label>
+                  ) : (
+                    <label>
+                      Current code (to issue new recovery codes)
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        value={mfaCode}
+                        onChange={(e) => setMfaCode(e.target.value)}
+                        required
+                        placeholder="123456"
+                      />
+                    </label>
+                  )}
                   <div className="form-actions">
                     <button type="submit" className="button button--accent" disabled={busy === 'mfa-codes'}>
                       {busy === 'mfa-codes'
@@ -365,27 +494,46 @@ export function AccountPage() {
         onClose={() => setDisableOpen(false)}
       >
         <p className="muted-note">
-          Your account will no longer require a code at sign-in. Enter a
-          code from your authenticator app to confirm.
+          Your account will no longer require a code at sign-in.{' '}
+          {isCentralBa
+            ? 'Enter your password to confirm.'
+            : 'Enter a code from your authenticator app to confirm.'}
         </p>
         <form className="inline-form" onSubmit={disableMfa}>
-          <label>
-            Current code
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={disableCode}
-              onChange={(e) => setDisableCode(e.target.value)}
-              required
-              placeholder="123456"
-            />
-          </label>
+          {isCentralBa ? (
+            <label>
+              Your password
+              <input
+                type="password"
+                value={disablePassword}
+                onChange={(e) => setDisablePassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                placeholder="••••••••••••"
+              />
+            </label>
+          ) : (
+            <label>
+              Current code
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={disableCode}
+                onChange={(e) => setDisableCode(e.target.value)}
+                required
+                placeholder="123456"
+              />
+            </label>
+          )}
           <div className="form-actions">
             <button
               type="submit"
               className="button button--danger-solid"
-              disabled={busy === 'mfa-disable' || !disableCode.trim()}
+              disabled={
+                busy === 'mfa-disable' ||
+                (isCentralBa ? !disablePassword.trim() : !disableCode.trim())
+              }
             >
               {busy === 'mfa-disable'
                 ? 'Disabling…'

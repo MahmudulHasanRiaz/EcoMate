@@ -56,9 +56,60 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Phase 4 central-auth cutover — the login credential is mode-dependent:
+ * legacy mode returns the platform JWT (a string, sent as `Bearer`),
+ * central-ba mode returns the BA session cookies (an object, sent as
+ * `Cookie`). Callers pass the credential opaquely through `apiCall` /
+ * `resolveTenant` / `downloadToFile` — they never inspect it.
+ */
+export type PlatformCredential = string | { cookie: string };
+
+export function authHeaders(
+  credential: PlatformCredential | null | undefined,
+): Record<string, string> {
+  if (!credential) return {};
+  if (typeof credential === 'string') {
+    return { authorization: `Bearer ${credential}` };
+  }
+  return { cookie: credential.cookie };
+}
+
+/**
+ * Minimal cookie jar for the BA sign-in flow: `set-cookie` headers are
+ * collected per response and serialised as one `Cookie` header.
+ */
+export class CookieJar {
+  private readonly cookies = new Map<string, string>();
+
+  addFromResponse(response: Response): void {
+    const setCookie: string[] =
+      typeof (response.headers as any).getSetCookie === 'function'
+        ? (response.headers as any).getSetCookie()
+        : [];
+    for (const header of setCookie) {
+      const pair = header.split(';', 1)[0];
+      const eq = pair.indexOf('=');
+      if (eq > 0) {
+        this.cookies.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+      }
+    }
+  }
+
+  header(): string {
+    return [...this.cookies.entries()]
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ');
+  }
+
+  get size(): number {
+    return this.cookies.size;
+  }
+}
+
 export async function apiCall(
   base: string,
-  token: string | null,
+  token: PlatformCredential | null,
   method: string,
   path: string,
   body?: unknown,
@@ -67,7 +118,7 @@ export async function apiCall(
     method,
     headers: {
       'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...authHeaders(token),
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
@@ -93,14 +144,24 @@ export async function apiCall(
 
 /**
  * Logs in as a platform user (BILLING or SUPERADMIN for export/purge).
- * When the account has TOTP MFA, the login returns an mfaToken and this
- * completes it with the --totp code (or PLATFORM_TOTP). Without a code
- * the script fails with instructions instead of hanging.
+ *
+ * Mode-aware (Phase 4): `GET {base}/public/auth-mode` decides the flow.
+ * - `custom-jwt` (default): legacy POST /auth/login; when the account
+ *   has TOTP MFA the login returns an mfaToken and this completes it
+ *   with the --totp code (or PLATFORM_TOTP). Without a code the script
+ *   fails with instructions instead of hanging. Returns the JWT string.
+ * - `central-ba`: BA sign-in at the console host
+ *   (`PLATFORM_ADMIN_URL` else `AUTH_PUBLIC_URL`, path
+ *   `/api/better-auth/sign-in/email`); `twoFactorRedirect` → POST
+ *   `/two-factor/verify-totp` with --totp/PLATFORM_TOTP. Returns a
+ *   `{ cookie }` credential — the BA session cookies, sent as `Cookie`
+ *   on every later call. The host used to reach platform-api must be in
+ *   the auth service's allowed-hosts, or the session verification 500s.
  */
 export async function login(
   base: string,
   args: CliArgs,
-): Promise<string> {
+): Promise<PlatformCredential> {
   const email = argString(args, 'email') || process.env.PLATFORM_EMAIL;
   const password =
     argString(args, 'password') || process.env.PLATFORM_PASSWORD;
@@ -111,6 +172,27 @@ export async function login(
         'show up in `ps`).',
     );
   }
+  let mode = 'custom-jwt';
+  try {
+    const modeRes = await fetch(`${base}/public/auth-mode`);
+    if (modeRes.ok) {
+      const modeJson = (await modeRes.json()) as { mode?: string };
+      if (modeJson?.mode) mode = modeJson.mode;
+    }
+  } catch {
+    // Unreachable auth-mode endpoint (old build) — fall through to the
+    // legacy flow, which is the pre-Phase-4 behaviour.
+  }
+  if (mode === 'central-ba') return loginCentral(email, password, args);
+  return loginLegacy(base, email, password, args);
+}
+
+async function loginLegacy(
+  base: string,
+  email: string,
+  password: string,
+  args: CliArgs,
+): Promise<string> {
   const result = await apiCall(base, null, 'POST', '/auth/login', {
     email,
     password,
@@ -143,6 +225,68 @@ export async function login(
   throw new Error('Login did not return an access token');
 }
 
+async function loginCentral(
+  email: string,
+  password: string,
+  args: CliArgs,
+): Promise<{ cookie: string }> {
+  const consoleHost = (
+    process.env.PLATFORM_ADMIN_URL || process.env.AUTH_PUBLIC_URL ||
+    ''
+  ).replace(/\/+$/, '');
+  if (!consoleHost) {
+    throw new Error(
+      'Central-ba mode requires PLATFORM_ADMIN_URL (or AUTH_PUBLIC_URL) ' +
+        'so the script can sign in against the central auth service.',
+    );
+  }
+  const jar = new CookieJar();
+  const signIn = await fetch(
+    `${consoleHost}/api/better-auth/sign-in/email`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    },
+  );
+  jar.addFromResponse(signIn);
+  const signInJson: any = await signIn.json().catch(() => null);
+  if (!signIn.ok) {
+    throw new Error(
+      `Central sign-in failed: HTTP ${signIn.status} ` +
+        `${JSON.stringify(signInJson)?.slice(0, 200)}`,
+    );
+  }
+  if (signInJson?.twoFactorRedirect) {
+    const code = argString(args, 'totp') || process.env.PLATFORM_TOTP;
+    if (!code) {
+      throw new Error(
+        'This account requires TOTP MFA. Re-run with --totp <6-digit code> ' +
+          '(or PLATFORM_TOTP).',
+      );
+    }
+    const verify = await fetch(`${consoleHost}/two-factor/verify-totp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: jar.header(),
+      },
+      body: JSON.stringify({ code }),
+    });
+    jar.addFromResponse(verify);
+    if (!verify.ok) {
+      const text = await verify.text().catch(() => '');
+      throw new Error(
+        `TOTP verification failed: HTTP ${verify.status} ${text.slice(0, 200)}`,
+      );
+    }
+  }
+  if (jar.size === 0) {
+    throw new Error('Central sign-in did not set a session cookie');
+  }
+  return { cookie: jar.header() };
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -152,7 +296,7 @@ const UUID_RE =
  */
 export async function resolveTenant(
   base: string,
-  token: string,
+  token: PlatformCredential | null,
   idOrSlug: string,
 ): Promise<{ id: string; slug: string; status: string; [k: string]: any }> {
   if (UUID_RE.test(idOrSlug)) {

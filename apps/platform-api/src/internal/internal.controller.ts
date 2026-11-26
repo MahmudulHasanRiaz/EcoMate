@@ -29,9 +29,7 @@ import {
   resolveVersionPricing,
 } from '../pricing/pricing-document';
 import { resolveEffectivePricing } from '../pricing/pricing-engine';
-import { ImpersonationService } from '../tenants/impersonation.service';
 import { mergePlanLimitsWithOverrides } from '../usage/usage.limits';
-import { ConsumeImpersonationDto } from './dto/consume-impersonation.dto';
 import { ImpersonationConsumedDto } from './dto/impersonation-consumed.dto';
 import {
   ORGANIZATION_LIMIT_SETTING_KEY,
@@ -45,7 +43,6 @@ import { InternalServiceGuard } from './internal-service.guard';
 export class InternalController {
   constructor(
     private readonly prisma: PlatformPrismaService,
-    private readonly impersonation: ImpersonationService,
     private readonly billing: BillingService,
     private readonly invoices: InvoiceService,
     private readonly emailBalance: EmailBalanceService,
@@ -261,12 +258,6 @@ export class InternalController {
         };
       }),
     };
-  }
-
-  @Post('impersonations/consume')
-  @HttpCode(200)
-  consumeImpersonation(@Body() dto: ConsumeImpersonationDto) {
-    return this.impersonation.consume(dto.token, dto.tenantId);
   }
 
   /**

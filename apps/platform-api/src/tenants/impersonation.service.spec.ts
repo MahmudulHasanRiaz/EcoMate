@@ -1,6 +1,6 @@
-import { createHash } from 'crypto';
 import {
   BadRequestException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ImpersonationService } from './impersonation.service';
@@ -10,151 +10,98 @@ const tenant = {
   id: TENANT_ID,
   slug: 'acme',
   status: 'TRIAL',
-  ownerEmail: 'owner@example.com',
 };
-const session = {
-  id: 'session-1',
-  platformUserId: 'platform-1',
-  tenantId: TENANT_ID,
-  tokenJti: 'hash',
-  expiresAt: new Date(Date.now() + 60_000),
-  revokedAt: null,
-  tenant,
-  platformUser: { id: 'platform-1', email: 'admin@example.com' },
+const ISSUED = {
+  url: 'https://acme.staging.faah.net/api/better-auth/impersonation/consume?token=abc',
+  expiresAt: new Date(Date.now() + 900_000).toISOString(),
+  expiresInSeconds: 900,
 };
 
 function makeService() {
   const prisma: any = {
     tenant: { findUnique: jest.fn().mockResolvedValue(tenant) },
-    impersonationSession: {
-      create: jest.fn().mockResolvedValue(session),
-      findUnique: jest.fn().mockResolvedValue(session),
-      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-    },
   };
-  const domainConfig = {
-    absoluteUrl: (slug: string, path: string) =>
-      `https://${slug}.ecomate.bd${path}`,
+  const central = {
+    issueImpersonation: jest.fn().mockResolvedValue(ISSUED),
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  const req = {
+    headers: {
+      cookie: 'better-auth.session_token=abc',
+      host: 'em.commercians.com',
+      origin: 'https://em.commercians.com',
+    },
+  };
   return {
     prisma,
-    domainConfig,
+    central,
     audit,
+    req,
     service: new ImpersonationService(
       prisma as any,
-      domainConfig as any,
+      central as any,
       audit as any,
     ),
   };
 }
 
 describe('ImpersonationService', () => {
-  it('issues a one-time token URL and stores only its hash', async () => {
-    const { service, prisma, audit } = makeService();
+  it('issues a BA handoff via the central service and returns its URL shape', async () => {
+    const { service, central, audit, req } = makeService();
 
-    const result = await service.create(TENANT_ID, 'platform-1');
-    const token = new URL(result.url).searchParams.get('token')!;
+    const result = await service.create(TENANT_ID, 'platform-1', req);
 
-    expect(token).toMatch(/^[0-9a-f]{64}$/);
-    expect(result.url).toContain('https://acme.ecomate.bd/api/auth/impersonate');
-    expect(prisma.impersonationSession.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        platformUserId: 'platform-1',
-        tenantId: TENANT_ID,
-        tokenJti: createHash('sha256').update(token).digest('hex'),
-      }),
+    expect(result.url).toBe(ISSUED.url);
+    expect(result.expiresInSeconds).toBe(900);
+    expect(result.expiresAt).toBeInstanceOf(Date);
+    expect(central.issueImpersonation).toHaveBeenCalledWith(TENANT_ID, {
+      cookie: 'better-auth.session_token=abc',
+      host: 'em.commercians.com',
+      origin: 'https://em.commercians.com',
     });
-    expect(prisma.impersonationSession.create.mock.calls[0][0].data.tokenJti).not.toBe(token);
     expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'tenant.impersonate.create' }),
+      expect.objectContaining({
+        actorId: 'platform-1',
+        action: 'tenant.impersonate.create',
+        entityId: TENANT_ID,
+      }),
     );
   });
 
-  it('refuses to impersonate a deleted tenant', async () => {
+  it('refuses to impersonate without a platform actor', async () => {
+    const { service } = makeService();
+    await expect(service.create(TENANT_ID)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
+  it('refuses a missing tenant and a deleted tenant', async () => {
     const { service, prisma } = makeService();
+    prisma.tenant.findUnique.mockResolvedValue(null);
+    await expect(
+      service.create(TENANT_ID, 'platform-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
     prisma.tenant.findUnique.mockResolvedValue({
       ...tenant,
       status: 'DELETED',
     });
-    await expect(service.create(TENANT_ID, 'platform-1')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.create(TENANT_ID, 'platform-1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('consumes a token once for the matching tenant', async () => {
-    const { service, prisma, audit } = makeService();
-    const token = 'a'.repeat(64);
-
-    const result = await service.consume(token, TENANT_ID);
-
-    expect(prisma.impersonationSession.findUnique).toHaveBeenCalledWith({
-      where: {
-        tokenJti: createHash('sha256').update(token).digest('hex'),
-      },
-      include: {
-        tenant: {
-          select: {
-            id: true,
-            slug: true,
-            status: true,
-            ownerEmail: true,
-          },
-        },
-        platformUser: {
-          select: { id: true, email: true },
-        },
-      },
-    });
-    expect(prisma.impersonationSession.updateMany).toHaveBeenCalledWith({
-      where: {
-        id: 'session-1',
-        revokedAt: null,
-        expiresAt: { gt: expect.any(Date) },
-      },
-      data: { revokedAt: expect.any(Date) },
-    });
-    expect(result).toEqual({
-      tenantId: TENANT_ID,
-      slug: 'acme',
-      email: 'owner@example.com',
-      actorId: 'platform-1',
-      actorEmail: 'admin@example.com',
-    });
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'tenant.impersonate.consume' }),
-    );
+  it('forwards the central service failure as-is (no 500 translation)', async () => {
+    const { service, central, req } = makeService();
+    const err = new UnauthorizedException('operator not authorized');
+    central.issueImpersonation.mockRejectedValue(err);
+    await expect(
+      service.create(TENANT_ID, 'platform-1', req),
+    ).rejects.toBe(err);
   });
 
-  it('rejects a token issued for another tenant', async () => {
+  it('has no consume() anymore — the legacy bridge is retired in Phase 4', () => {
     const { service } = makeService();
-    await expect(
-      service.consume('b'.repeat(64), '22222222-2222-4222-8222-222222222222'),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-  });
-
-  it('rejects expired, revoked and replayed tokens', async () => {
-    const { service, prisma } = makeService();
-    prisma.impersonationSession.findUnique.mockResolvedValue({
-      ...session,
-      expiresAt: new Date(Date.now() - 1_000),
-    });
-    await expect(
-      service.consume('c'.repeat(64), TENANT_ID),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-
-    prisma.impersonationSession.findUnique.mockResolvedValue({
-      ...session,
-      revokedAt: new Date(),
-    });
-    await expect(
-      service.consume('d'.repeat(64), TENANT_ID),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-
-    prisma.impersonationSession.findUnique.mockResolvedValue(session);
-    prisma.impersonationSession.updateMany.mockResolvedValue({ count: 0 });
-    await expect(
-      service.consume('e'.repeat(64), TENANT_ID),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect((service as any).consume).toBeUndefined();
   });
 });

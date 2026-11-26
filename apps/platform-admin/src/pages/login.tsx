@@ -14,16 +14,28 @@ type Step =
   | 'recovery';
 
 export function LoginPage() {
-  const { session, login, completeMfa, startMfaSetup, verifyMfaSetup } =
-    useAuth();
+  const {
+    session,
+    isCentralBa,
+    login,
+    completeMfa,
+    startMfaSetup,
+    verifyMfaSetup,
+    acknowledgeBackupCodes,
+  } = useAuth();
   const { platformName, logoUrl } = useBranding();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [setup, setSetup] = useState<MfaSetup | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  // Enrolment codes come from the setup flow; fresh codes are issued
+  // once for a migrated MFA operator at first central-ba login (their
+  // old recovery codes stop working — the copy says so).
+  const [recoveryKind, setRecoveryKind] = useState<
+    'enrolment' | 'fresh-codes' | null
+  >(null);
   const [copied, setCopied] = useState(false);
   const [step, setStep] = useState<Step>('password');
   const [error, setError] = useState<string | null>(null);
@@ -44,17 +56,27 @@ export function LoginPage() {
     try {
       const outcome = await login(email.trim(), password);
       if (outcome.kind === 'session') {
+        // Central-ba first login for a migrated MFA operator: fresh
+        // backup codes were issued — show them once before entering.
+        // The session is held until the operator continues (see the
+        // recovery step), so the redirect guard above cannot fire yet.
+        if (outcome.recoveryCodes && outcome.recoveryCodes.length > 0) {
+          setRecoveryCodes(outcome.recoveryCodes);
+          setRecoveryKind('fresh-codes');
+          setStep('recovery');
+          return;
+        }
         await navigate({ to: '/' });
         return;
       }
-      setMfaToken(outcome.mfaToken);
       setCode('');
       if (!outcome.mfaSetupRequired) {
         setStep('code');
         return;
       }
-      // SUPERADMIN without MFA: enroll before proceeding.
-      const next = await startMfaSetup(outcome.mfaToken);
+      // SUPERADMIN without MFA: enroll before proceeding. The password
+      // just typed is passed through: BA's twoFactor.enable needs it.
+      const next = await startMfaSetup(password);
       setSetup(next);
       setStep('setup');
     } catch (err) {
@@ -66,11 +88,19 @@ export function LoginPage() {
 
   async function submitCode(event: FormEvent) {
     event.preventDefault();
-    if (busy || !mfaToken) return;
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      await completeMfa(mfaToken, code.trim());
+      // The password rides along so the first-login fresh-codes screen
+      // can issue codes (BA needs password proof to generate them).
+      const result = await completeMfa(code.trim(), password);
+      if (result.recoveryCodes && result.recoveryCodes.length > 0) {
+        setRecoveryCodes(result.recoveryCodes);
+        setRecoveryKind('fresh-codes');
+        setStep('recovery');
+        return;
+      }
       await navigate({ to: '/' });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : errorMessage(err));
@@ -81,13 +111,21 @@ export function LoginPage() {
 
   async function submitSetupCode(event: FormEvent) {
     event.preventDefault();
-    if (busy || !mfaToken) return;
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await verifyMfaSetup(mfaToken, code.trim());
-      setRecoveryCodes(result.recoveryCodes);
-      setStep('recovery');
+      const result = await verifyMfaSetup(code.trim());
+      if (result.recoveryCodes.length > 0) {
+        setRecoveryCodes(result.recoveryCodes);
+        setRecoveryKind('enrolment');
+        setStep('recovery');
+        return;
+      }
+      // Enrolment verified but no codes came back (should not happen):
+      // release the hold and enter.
+      acknowledgeBackupCodes();
+      await navigate({ to: '/' });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : errorMessage(err));
     } finally {
@@ -107,7 +145,6 @@ export function LoginPage() {
 
   function backToPassword() {
     setStep('password');
-    setMfaToken(null);
     setSetup(null);
     setCode('');
     setError(null);
@@ -330,11 +367,20 @@ export function LoginPage() {
           <div className="card login-card">
             <p className="eyebrow">Two-factor authentication</p>
             <h2>Save your recovery codes</h2>
-            <p className="muted-note">
-              MFA is on. Keep these codes somewhere safe — each one signs you
-              in once if you lose your authenticator. They are shown only this
-              once.
-            </p>
+            {recoveryKind === 'fresh-codes' ? (
+              <p className="muted-note">
+                These are new recovery codes for your account. Your old
+                recovery codes no longer work — keep these somewhere safe.
+                Each one signs you in once if you lose your authenticator.
+                They are shown only this once.
+              </p>
+            ) : (
+              <p className="muted-note">
+                MFA is on. Keep these codes somewhere safe — each one signs
+                you in once if you lose your authenticator. They are shown
+                only this once.
+              </p>
+            )}
             <ul className="recovery-codes">
               {recoveryCodes.map((rc) => (
                 <li key={rc}>{rc}</li>
@@ -343,7 +389,12 @@ export function LoginPage() {
             <button
               type="button"
               className="button button--primary"
-              onClick={() => void navigate({ to: '/' })}
+              onClick={() => {
+                // Central-ba mode holds the session until the codes have
+                // been seen; release it, then enter the console.
+                if (isCentralBa) acknowledgeBackupCodes();
+                void navigate({ to: '/' });
+              }}
             >
               Continue to the console
             </button>

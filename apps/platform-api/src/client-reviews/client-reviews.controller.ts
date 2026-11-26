@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ClientReviewsService } from './client-reviews.service';
@@ -26,7 +26,7 @@ import { UpdateClientReviewDto } from './dto/update-client-review.dto';
  * public-client-reviews.controller.ts.
  */
 @Controller('client-reviews')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class ClientReviewsController {
   constructor(private readonly reviews: ClientReviewsService) {}
 

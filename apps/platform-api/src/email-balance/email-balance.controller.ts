@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdjustBalanceDto } from './dto/adjust-balance.dto';
@@ -23,7 +23,7 @@ import { EmailBalanceService } from './email-balance.service';
  * and carries the payment amounts.
  */
 @Controller('tenants/:tenantId')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class EmailBalanceController {
   constructor(private readonly emailBalance: EmailBalanceService) {}
 
@@ -73,7 +73,7 @@ export class EmailBalanceController {
 
 /** Console overview widget data (GET /email-balance/overview). */
 @Controller('email-balance')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class EmailBalanceOverviewController {
   constructor(private readonly emailBalance: EmailBalanceService) {}
 

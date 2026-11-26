@@ -11,6 +11,7 @@ import { createHash, randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { AuditService } from '../common/audit.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
+import { CentralAuthClient } from './central-auth.client';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -77,7 +78,23 @@ export class AuthService {
     private readonly prisma: PlatformPrismaService,
     private readonly jwt: JwtService,
     private readonly audit: AuditService,
+    private readonly centralAuth?: CentralAuthClient,
   ) {}
+
+  /**
+   * The central client is optional in the constructor so unit specs can
+   * construct the service without it; every central-mode method throws
+   * a clear error when it is absent (the Nest module always provides
+   * it — see AuthModule).
+   */
+  private requireCentral(): CentralAuthClient {
+    if (!this.centralAuth) {
+      throw new Error(
+        'Central auth client is not configured (CONSOLE_AUTH_MODE=central-ba needs it)',
+      );
+    }
+    return this.centralAuth;
+  }
 
   private accessSecret(): string {
     const secret = process.env.PLATFORM_JWT_SECRET;
@@ -447,7 +464,98 @@ export class AuthService {
     return { success: true };
   }
 
-  async me(userId: string) {
+  /**
+   * Central-ba mode change-password: BA `changePassword` first (with
+   * revoke-other-sessions), then the local bcrypt update + local
+   * refresh-token revoke in the same step, so a rollback to custom-jwt
+   * still sees the new password. A BA failure (wrong current password
+   * → 401) leaves the local row untouched. Audits the same action as
+   * the legacy path.
+   */
+  async changePasswordCentral(
+    userId: string,
+    dto: ChangePasswordDto,
+    cookie: string | undefined,
+    host: string | undefined,
+  ) {
+    const user = await this.prisma.platformUser.findUnique({
+      where: { id: userId },
+    });
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Platform account is not active');
+    }
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException(
+        'New password must be different from the current password',
+      );
+    }
+
+    await this.requireCentral().changeCentralPassword(
+      cookie,
+      host,
+      dto.currentPassword,
+      dto.newPassword,
+    );
+
+    await this.prisma.$transaction([
+      this.prisma.platformUser.update({
+        where: { id: userId },
+        data: { passwordHash: await bcrypt.hash(dto.newPassword, 12) },
+      }),
+      this.prisma.platformRefreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    await this.audit.record({
+      actorId: userId,
+      action: 'auth.password.change',
+      entity: 'PlatformUser',
+      entityId: userId,
+      after: { sessionsRevoked: true },
+    });
+    return { success: true };
+  }
+
+  /**
+   * Central-ba mode logout shim (scripts + the legacy branch): signs
+   * the BA session out via the forwarded cookies and revokes any local
+   * refresh tokens for the same user. Best-effort on the BA side — an
+   * auth-service outage still revokes the local tokens and reports
+   * success (the console's own logout path in central mode is BA
+   * `signOut` from the browser, not this shim). No cookie → nothing to
+   * revoke, still `{ success: true }` (idempotent, like the legacy
+   * path).
+   */
+  async logoutCentral(cookie: string | undefined, host: string | undefined) {
+    const central = this.requireCentral();
+    let userId: string | undefined;
+    try {
+      const session = await central.getSession(cookie, host);
+      userId = session?.user?.id;
+      if (userId) {
+        await central.signOutCentral(cookie, host);
+      }
+    } catch (err) {
+      // Outage: the BA session cannot be revoked right now; the local
+      // tokens below are still revoked, and the caller reports success.
+      // Logged (not swallowed silently) so an operator can see it.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[auth] central logout: BA sign-out failed (${err instanceof Error ? err.message : String(err)}); local tokens still revoked`,
+      );
+    }
+    if (userId) {
+      await this.prisma.platformRefreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
+    return { success: true };
+  }
+
+  async me(userId: string, twoFactorEnabled?: boolean) {
     const user = await this.prisma.platformUser.findUnique({
       where: { id: userId },
       select: {
@@ -470,7 +578,13 @@ export class AuthService {
       status: user.status,
       avatarKey: user.avatarKey,
       lastLoginAt: user.lastLoginAt,
-      mfaEnabled: !!user.mfaEnabledAt,
+      // In central-ba mode the caller passes BA's `twoFactorEnabled`
+      // (the guard stashed the verified session); otherwise the local
+      // enrolment flag. The response shape is unchanged either way.
+      mfaEnabled:
+        twoFactorEnabled !== undefined
+          ? twoFactorEnabled
+          : !!user.mfaEnabledAt,
       mfaRequired: user.role === 'SUPERADMIN',
     };
   }

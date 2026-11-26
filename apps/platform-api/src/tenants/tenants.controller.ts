@@ -8,12 +8,13 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { createReadStream } from 'fs';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { DomainsService } from '../domains/domains.service';
@@ -29,7 +30,7 @@ import { ImpersonationService } from './impersonation.service';
 import { TenantsService } from './tenants.service';
 
 @Controller('tenants')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class TenantsController {
   constructor(
     private readonly tenants: TenantsService,
@@ -126,8 +127,11 @@ export class TenantsController {
   impersonate(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentPlatformUser() user?: { id: string },
+    @Req() req?: any,
   ) {
-    return this.impersonation.create(id, user?.id);
+    // The D8 issue call needs the operator's BA session headers
+    // verbatim (Cookie + Host + Origin) — forwarded from this request.
+    return this.impersonation.create(id, user?.id, req);
   }
 
   @Post(':id/reset-owner-password')

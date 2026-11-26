@@ -25,11 +25,11 @@ type UserConfirm =
   | { kind: 'status'; user: PlatformUser }
   | { kind: 'revoke'; invite: PlatformUserInvite }
   | { kind: 'revokeSession'; user: PlatformUser; session: PlatformSession }
-  | { kind: 'resetTotp'; user: PlatformUser }
+  | { kind: 'resetMfa'; user: PlatformUser }
   | null;
 
 export function UsersPage() {
-  const { api, session } = useAuth();
+  const { api, session, isCentralBa } = useAuth();
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [invites, setInvites] = useState<PlatformUserInvite[]>([]);
   const [roles, setRoles] = useState<RoleMatrixEntry[]>([]);
@@ -53,7 +53,7 @@ export function UsersPage() {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
   const [confirm, setConfirm] = useState<UserConfirm>(null);
-  const [totpReason, setTotpReason] = useState('');
+  const [mfaResetReason, setMfaResetReason] = useState('');
 
   // Per-operator sessions (CMS item 15): one expanded user at a time.
   const [sessionsUser, setSessionsUser] = useState<PlatformUser | null>(null);
@@ -307,17 +307,26 @@ export function UsersPage() {
     }
   }
 
-  async function resetTotp(user: PlatformUser, reason: string) {
-    setBusy(`reset-totp-${user.id}`);
+  async function resetMfa(user: PlatformUser, reason: string) {
+    setBusy(`reset-mfa-${user.id}`);
     setError(null);
     setNotice(null);
     try {
-      await api(`/users/${user.id}/totp/reset`, {
+      // Phase 4 unification (plan line 317): the two reset endpoints
+      // are unified into one `mfa/reset` — the platform-api half
+      // DELETED `totp/reset` in both modes, so legacy mode must call
+      // `mfa/reset` too (its service runs the local clearMfa branch
+      // when not in central-ba mode). The optional reason is kept on
+      // the unified endpoint (survey §1.5).
+      const endpoint = `/users/${user.id}/mfa/reset`;
+      await api(endpoint, {
         method: 'POST',
         body: JSON.stringify({ reason: reason.trim() || undefined }),
       }).then((r) => readJson(r));
       setNotice(
-        `TOTP reset for ${user.email}. They must re-enroll their authenticator at next sign-in.`,
+        isCentralBa
+          ? `MFA reset for ${user.email}. They must re-enroll their authenticator at next sign-in.`
+          : `TOTP reset for ${user.email}. They must re-enroll their authenticator at next sign-in.`,
       );
     } catch (err) {
       setError(errorMessage(err));
@@ -426,14 +435,14 @@ export function UsersPage() {
                       title={
                         user.id === session?.user.id
                           ? 'Manage your own MFA from your account page'
-                          : 'Clear their TOTP enrollment — they re-enroll at next sign-in'
+                          : 'Clear their MFA enrollment — they re-enroll at next sign-in'
                       }
                       onClick={() => {
-                        setTotpReason('');
-                        setConfirm({ kind: 'resetTotp', user });
+                        setMfaResetReason('');
+                        setConfirm({ kind: 'resetMfa', user });
                       }}
                     >
-                      Reset TOTP
+                      {isCentralBa ? 'Reset MFA' : 'Reset TOTP'}
                     </button>
                     <button
                       type="button"
@@ -813,8 +822,10 @@ export function UsersPage() {
                     : `Disable ${confirm.user.email}?`
                   : confirm.kind === 'revokeSession'
                     ? `Revoke this session for ${confirm.user.email}?`
-                    : confirm.kind === 'resetTotp'
-                      ? `Reset TOTP for ${confirm.user.email}?`
+                    : confirm.kind === 'resetMfa'
+                      ? isCentralBa
+                        ? `Reset MFA for ${confirm.user.email}?`
+                        : `Reset TOTP for ${confirm.user.email}?`
                       : `Revoke the invite for ${confirm.invite.email}?`
           }
           body={
@@ -828,7 +839,7 @@ export function UsersPage() {
                     : 'The account is signed out and can no longer sign in until re-enabled.'
                   : confirm.kind === 'revokeSession'
                     ? `The ${sessionDeviceLabel(confirm.session.userAgent)} session (${confirm.session.ipAddress ?? 'unknown IP'}) is signed out immediately.`
-                    : confirm.kind === 'resetTotp'
+                    : confirm.kind === 'resetMfa'
                       ? (
                           <span>
                             Their authenticator enrollment and recovery codes
@@ -841,11 +852,11 @@ export function UsersPage() {
                               </span>
                               <textarea
                                 aria-label="Reason"
-                                value={totpReason}
+                                value={mfaResetReason}
                                 maxLength={500}
                                 rows={2}
                                 onChange={(e) =>
-                                  setTotpReason(e.target.value)
+                                  setMfaResetReason(e.target.value)
                                 }
                                 placeholder="e.g. Lost authenticator device"
                               />
@@ -865,14 +876,16 @@ export function UsersPage() {
                     : 'Disable account'
                   : confirm.kind === 'revokeSession'
                     ? 'Revoke session'
-                    : confirm.kind === 'resetTotp'
-                      ? 'Reset TOTP'
+                    : confirm.kind === 'resetMfa'
+                      ? isCentralBa
+                        ? 'Reset MFA'
+                        : 'Reset TOTP'
                       : 'Revoke invite'
           }
           danger={
             confirm.kind === 'delete' ||
             confirm.kind === 'revokeSession' ||
-            confirm.kind === 'resetTotp' ||
+            confirm.kind === 'resetMfa' ||
             (confirm.kind === 'status' &&
               confirm.user.status !== 'DISABLED')
           }
@@ -885,21 +898,21 @@ export function UsersPage() {
                   ? busy === `delete-${confirm.user.id}`
                   : confirm.kind === 'revokeSession'
                     ? busy === `revoke-session-${confirm.session.id}`
-                    : confirm.kind === 'resetTotp'
-                      ? busy === `reset-totp-${confirm.user.id}`
+                    : confirm.kind === 'resetMfa'
+                      ? busy === `reset-mfa-${confirm.user.id}`
                       : busy === `status-${confirm.user.id}`
           }
           onConfirm={async () => {
             const current = confirm;
-            const reason = totpReason;
+            const reason = mfaResetReason;
             setConfirm(null);
             if (current.kind === 'reset') await resetPassword(current.user);
             else if (current.kind === 'delete') await deleteUser(current.user);
             else if (current.kind === 'status') await toggleStatus(current.user);
             else if (current.kind === 'revokeSession')
               await revokeSession(current.user, current.session);
-            else if (current.kind === 'resetTotp')
-              await resetTotp(current.user, reason);
+            else if (current.kind === 'resetMfa')
+              await resetMfa(current.user, reason);
             else await revokeInvite(current.invite);
           }}
           onClose={() => setConfirm(null)}

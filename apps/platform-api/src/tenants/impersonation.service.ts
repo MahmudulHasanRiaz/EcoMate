@@ -1,4 +1,3 @@
-import { randomBytes, createHash } from 'crypto';
 import {
   BadRequestException,
   Injectable,
@@ -7,12 +6,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuditService } from '../common/audit.service';
-import { DomainConfigService } from '../config/domain-config.service';
+import { CentralAuthClient } from '../auth/central-auth.client';
 import { PlatformPrismaService } from '../prisma/prisma.service';
-
-function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
 
 function ttlSeconds(): number {
   const raw = Number(process.env.IMPERSONATION_TTL_SECONDS);
@@ -20,12 +15,41 @@ function ttlSeconds(): number {
 }
 
 /**
- * One-time platform → tenant impersonation.
+ * One-time platform → tenant impersonation (Phase 4, D8=B — BA-native
+ * handoff).
  *
- * The platform issues an opaque 64-char token, stores only its SHA-256, and
- * returns a tenant-host URL. The tenant backend exchanges it server-to-server
- * with the platform, which atomically revokes it, then mints a short tenant
- * access token for the owner. Raw tokens are never logged or stored.
+ * `create()` calls the central auth service's
+ * `POST /internal/impersonation/issue` with the internal secret and the
+ * operator's BA session headers forwarded verbatim from the console
+ * request (Cookie + Host + Origin), body `{ organizationId }`. The
+ * service verifies the session, checks `platformRole` ∈
+ * {SUPERADMIN, SUPPORT}, resolves the tenant owner, and returns
+ * `{ url, expiresAt, expiresInSeconds: 900 }` — the same public shape
+ * the console button reads, so the button needs no change. Only the
+ * URL's path changes (from `/api/auth/impersonate?token=…` to
+ * `/api/better-auth/impersonation/consume?token=…`, slug host, never a
+ * custom domain). The service's 401/403/409/429 are forwarded as-is
+ * (never translated into a generic 500).
+ *
+ * The old bridge is RETIRED in this PR: `consume()` and
+ * `POST /internal/impersonations/consume` are deleted, and no
+ * `ImpersonationSession` row is written anymore. The TABLE itself is
+ * kept until Phase 5 (rows are single-use ≤900 s TTL; the drop is a
+ * separate, clearly-marked migration) — and the tenant export/purge
+ * include keeps working against it. KNOWN BREAK (recorded, task-ordered):
+ * the backend's `GET /api/auth/impersonate` still calls the deleted
+ * consume route (backend auth.service.ts:920) — the old bridge stops
+ * working in BOTH modes until the backend companion deletion lands in
+ * the same push. In central-ba mode it was already non-functional (the
+ * legacy tenant JWT it minted is ignored by the central guard); the
+ * rollback to `custom-jwt` restores the legacy login but NOT legacy
+ * impersonation.
+ *
+ * Identifier change (R-11): the old consume payload returned
+ * `actorEmail` (operator email); the new session carries
+ * `session.impersonatedBy` = the operator's CENTRAL user id. Anything
+ * rendering the actor must resolve the id to an email, never assume
+ * the string is an email.
  */
 @Injectable()
 export class ImpersonationService {
@@ -33,11 +57,11 @@ export class ImpersonationService {
 
   constructor(
     private readonly prisma: PlatformPrismaService,
-    private readonly domainConfig: DomainConfigService,
+    private readonly centralAuth: CentralAuthClient,
     private readonly audit: AuditService,
   ) {}
 
-  async create(tenantId: string, platformUserId?: string) {
+  async create(tenantId: string, platformUserId?: string, req?: any) {
     if (!platformUserId) {
       throw new UnauthorizedException('Platform actor is required');
     }
@@ -52,22 +76,12 @@ export class ImpersonationService {
       );
     }
 
-    const rawToken = randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + ttlSeconds() * 1_000);
-    await this.prisma.impersonationSession.create({
-      data: {
-        platformUserId,
-        tenantId,
-        tokenJti: sha256(rawToken),
-        expiresAt,
-      },
+    const issued = await this.centralAuth.issueImpersonation(tenantId, {
+      cookie: req?.headers?.cookie,
+      host: req?.headers?.host,
+      origin: req?.headers?.origin,
     });
-
-    const base = this.domainConfig.absoluteUrl(
-      tenant.slug,
-      '/api/auth/impersonate',
-    );
-    const url = `${base}?token=${rawToken}`;
+    const expiresAt = new Date(issued.expiresAt);
 
     await this.audit.record({
       actorId: platformUserId,
@@ -77,63 +91,12 @@ export class ImpersonationService {
       entityId: tenantId,
       after: { expiresAt: expiresAt.toISOString() },
     });
-    this.logger.log(`Impersonation token issued for ${tenant.slug}`);
-
-    return { url, expiresAt, expiresInSeconds: ttlSeconds() };
-  }
-
-  async consume(rawToken: string, tenantId: string) {
-    const token = String(rawToken || '').trim();
-    if (!/^[0-9a-f]{64}$/i.test(token)) {
-      throw new UnauthorizedException('Invalid impersonation token');
-    }
-
-    const session = await this.prisma.impersonationSession.findUnique({
-      where: { tokenJti: sha256(token.toLowerCase()) },
-      include: {
-        tenant: { select: { id: true, slug: true, status: true, ownerEmail: true } },
-        // The backend mints the creating platform admin as the `impActor`
-        // claim on the tenant JWT, so tenant-side audit carries the actor —
-        // not just the impersonation flag.
-        platformUser: { select: { id: true, email: true } },
-      },
-    });
-    if (
-      !session ||
-      session.tenantId !== tenantId ||
-      session.tenant.status === 'DELETED' ||
-      session.revokedAt ||
-      session.expiresAt.getTime() <= Date.now()
-    ) {
-      throw new UnauthorizedException('Invalid or expired impersonation token');
-    }
-
-    const claimed = await this.prisma.impersonationSession.updateMany({
-      where: {
-        id: session.id,
-        revokedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      data: { revokedAt: new Date() },
-    });
-    if (claimed.count === 0) {
-      throw new UnauthorizedException('Impersonation token was already used');
-    }
-
-    await this.audit.record({
-      actorId: session.platformUserId,
-      tenantId,
-      action: 'tenant.impersonate.consume',
-      entity: 'Tenant',
-      entityId: tenantId,
-    });
+    this.logger.log(`Impersonation handoff issued for ${tenant.slug}`);
 
     return {
-      tenantId: session.tenant.id,
-      slug: session.tenant.slug,
-      email: session.tenant.ownerEmail,
-      actorId: session.platformUser.id,
-      actorEmail: session.platformUser.email,
+      url: issued.url,
+      expiresAt,
+      expiresInSeconds: issued.expiresInSeconds ?? ttlSeconds(),
     };
   }
 }

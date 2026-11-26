@@ -650,4 +650,54 @@ describe('SettingsService', () => {
     });
     expect(service.isMaintenanceEnabled()).toBe(false);
   });
+
+  // Phase 4 (D12): the organization limit — default 5, stored as the
+  // `organization_limit` row, console range 1–100.
+  it('defaults the organization limit to 5 and exposes it in getAll', async () => {
+    const { service } = buildService();
+    await service.onModuleInit();
+    expect(service.getOrganizationLimit()).toEqual({
+      limit: 5,
+      source: 'default',
+    });
+    expect(service.getAll().organizationLimit).toEqual({
+      limit: 5,
+      source: 'default',
+    });
+  });
+
+  it('loads a stored organization limit at boot', async () => {
+    const { service } = buildService({ organization_limit: { limit: 20 } });
+    await service.onModuleInit();
+    expect(service.getOrganizationLimit()).toEqual({
+      limit: 20,
+      source: 'setting',
+    });
+  });
+
+  it('updates the organization limit and persists the row', async () => {
+    const { service, stored } = buildService();
+    await service.onModuleInit();
+    const result = await service.updateOrganizationLimit(50);
+    expect(result).toEqual({ limit: 50, source: 'setting' });
+    expect(stored.organization_limit).toEqual({ limit: 50 });
+    expect(service.getOrganizationLimit()).toEqual({
+      limit: 50,
+      source: 'setting',
+    });
+  });
+
+  it('rejects organization limits outside 1–100', async () => {
+    const { service } = buildService();
+    await service.onModuleInit();
+    await expect(service.updateOrganizationLimit(0)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(service.updateOrganizationLimit(101)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(service.updateOrganizationLimit(2.5)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
 });

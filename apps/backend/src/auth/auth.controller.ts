@@ -6,7 +6,6 @@ import {
   Body,
   Res,
   Req,
-  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -192,34 +191,6 @@ export class AuthController {
       cookie: typeof cookie === 'string' ? cookie : undefined,
       host: typeof host === 'string' ? host : undefined,
     });
-  }
-
-  @Public()
-  @RateLimitPolicy('auth')
-  @Get('impersonate')
-  async impersonate(
-    @Query('token') token: string | undefined,
-    @Res() res: FastifyReply,
-  ) {
-    try {
-      const result = await this.authService.impersonate(token ?? '');
-      // The admin SPA reads this cookie (it is intentionally not httpOnly,
-      // matching the normal login contract), then /auth/me confirms identity.
-      res.cookie('eco_mate_access_token', result.accessToken, {
-        httpOnly: false,
-        secure: process.env['NODE_ENV'] === 'production',
-        sameSite: 'lax',
-        maxAge: result.expiresIn * 1_000,
-        path: '/',
-      });
-      res.code(302).header('location', '/admin/').send();
-      return;
-    } catch {
-      res.code(302)
-        .header('location', '/admin/sign-in?impersonation=failed')
-        .send();
-      return;
-    }
   }
 
   @Public()

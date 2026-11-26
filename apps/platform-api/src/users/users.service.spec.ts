@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
@@ -78,6 +79,36 @@ function makeService() {
   };
   const mfa = { clearMfa: jest.fn().mockResolvedValue(undefined) };
   const domainConfig = { adminUrl: () => 'https://saas.ecomate.test' };
+  // Central client mock (Phase 4): no-ops by default; individual
+  // central-mode tests override the methods they exercise. The
+  // service is constructed with it always, so central-mode tests only
+  // need to flip CONSOLE_AUTH_MODE via process.env (restored in
+  // afterEach below).
+  const central = {
+    createCentralUser: jest.fn().mockResolvedValue({ id: USER_ID }),
+    getCentralUserByEmail: jest
+      .fn()
+      .mockResolvedValue({ id: USER_ID, emailVerified: true }),
+    updateCentralUser: jest.fn().mockResolvedValue({}),
+    deleteCentralUser: jest.fn().mockResolvedValue({}),
+    roleSync: jest.fn().mockResolvedValue({}),
+    resetMfaCentral: jest.fn().mockResolvedValue({}),
+    revokeAllSessions: jest.fn().mockResolvedValue({ revokedCount: 3 }),
+    listCentralSessions: jest.fn().mockResolvedValue({
+      data: [
+        {
+          id: 'sess-1',
+          userAgent: 'Mozilla/5.0',
+          ipAddress: '203.0.113.9',
+          createdAt: new Date('2026-11-19T10:00:00Z'),
+          lastUsedAt: new Date('2026-11-19T10:00:00Z'),
+          expiresAt: new Date('2026-11-26T10:00:00Z'),
+          revoked: false,
+        },
+      ],
+    }),
+    revokeCentralSession: jest.fn().mockResolvedValue({}),
+  };
   return {
     prisma,
     audit,
@@ -85,17 +116,27 @@ function makeService() {
     mfa,
     admin,
     domainConfig,
+    central,
     service: new UsersService(
       prisma as any,
       audit as any,
       mail as any,
       mfa as any,
       domainConfig as any,
+      central as any,
     ),
   };
 }
 
 describe('UsersService', () => {
+  const modeBefore = process.env.CONSOLE_AUTH_MODE;
+  afterEach(() => {
+    if (modeBefore === undefined) {
+      delete process.env.CONSOLE_AUTH_MODE;
+    } else {
+      process.env.CONSOLE_AUTH_MODE = modeBefore;
+    }
+  });
 
   it('lists users with filters and page meta', async () => {
     const { service, prisma } = makeService();
@@ -434,14 +475,14 @@ describe('UsersService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('resets TOTP for another user, audits the reason, never returns a secret', async () => {
+  it('resets MFA for another user with a reason, audits it, never returns a secret', async () => {
     const { service, prisma, audit, mfa, admin } = makeService();
     prisma.platformUser.findUnique.mockResolvedValue({
       ...admin,
       id: USER_ID,
     });
 
-    const result = await service.resetTotp(USER_ID, ADMIN_ID, {
+    const result = await service.resetMfa(USER_ID, ADMIN_ID, {
       reason: 'Lost authenticator device',
     });
 
@@ -451,7 +492,7 @@ describe('UsersService', () => {
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: ADMIN_ID,
-        action: 'users.totp.reset',
+        action: 'users.mfa.reset',
         entityId: USER_ID,
         after: {
           sessionsRevoked: true,
@@ -461,17 +502,155 @@ describe('UsersService', () => {
     );
   });
 
-  it('refuses a TOTP self-reset with 403 and a missing user with 404', async () => {
+  it('refuses an MFA self-reset with 400 and a missing user with 404', async () => {
     const { service, prisma, admin } = makeService();
     prisma.platformUser.findUnique.mockResolvedValue(admin);
     await expect(
-      service.resetTotp(ADMIN_ID, ADMIN_ID, {}),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+      service.resetMfa(ADMIN_ID, ADMIN_ID, {}),
+    ).rejects.toBeInstanceOf(BadRequestException);
 
     prisma.platformUser.findUnique.mockResolvedValue(null);
     await expect(
-      service.resetTotp(USER_ID, ADMIN_ID, {}),
+      service.resetMfa(USER_ID, ADMIN_ID, {}),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('in central-ba mode the unified MFA reset clears the central TOTP first', async () => {
+    process.env.CONSOLE_AUTH_MODE = 'central-ba';
+    const { service, prisma, audit, mfa, admin, central } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+
+    const result = await service.resetMfa(USER_ID, ADMIN_ID, {
+      reason: 'Lost device',
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(central.resetMfaCentral).toHaveBeenCalledWith(USER_ID);
+    expect(central.revokeAllSessions).toHaveBeenCalledWith(USER_ID);
+    expect(mfa.clearMfa).toHaveBeenCalledWith(USER_ID);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'users.mfa.reset' }),
+    );
+  });
+
+  it('in central-ba mode create dual-writes the central user first and keeps the central id', async () => {
+    process.env.CONSOLE_AUTH_MODE = 'central-ba';
+    const { service, prisma, audit, central } = makeService();
+
+    const result = await service.create(
+      {
+        email: 'central@ecomate.test',
+        name: 'Central User',
+        role: 'BILLING',
+        password: 'temp-password-123',
+      } as any,
+      ADMIN_ID,
+    );
+
+    expect(central.createCentralUser).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'central@ecomate.test' }),
+    );
+    expect(central.roleSync).toHaveBeenCalledWith(USER_ID, 'BILLING');
+    expect(prisma.platformUser.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ id: USER_ID }),
+      }),
+    );
+    expect(result.id).toBe(USER_ID);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'users.create',
+        entityId: USER_ID,
+      }),
+    );
+  });
+
+  it('in central-ba mode a role change role-syncs, and a role-sync failure 500s + audits', async () => {
+    process.env.CONSOLE_AUTH_MODE = 'central-ba';
+    const { service, prisma, central, admin, audit } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+      role: 'SUPPORT',
+    });
+    central.roleSync.mockRejectedValueOnce(
+      new Error('central unavailable'),
+    );
+
+    // The local row is updated FIRST and the sync runs after it, so a
+    // sync failure leaves the local row at the new role — the 500 +
+    // `users.role-sync.failed` audit tells the operator to re-apply
+    // the change (which retries the sync). This is the implemented
+    // order; see BUILD-SUMMARY.
+    await expect(
+      service.update(USER_ID, { role: 'BILLING' } as any, ADMIN_ID),
+    ).rejects.toBeInstanceOf(InternalServerErrorException);
+    expect(prisma.platformUser.update).toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'users.role-sync.failed' }),
+    );
+  });
+
+  it('in central-ba mode remove deletes the central user first', async () => {
+    process.env.CONSOLE_AUTH_MODE = 'central-ba';
+    const { service, prisma, central, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+      status: 'DISABLED',
+    });
+
+    await service.remove(USER_ID, ADMIN_ID);
+
+    expect(central.deleteCentralUser).toHaveBeenCalledWith(USER_ID);
+    expect(prisma.platformUser.delete).toHaveBeenCalledWith({
+      where: { id: USER_ID },
+    });
+  });
+
+  it('in central-ba mode listSessions returns BA sessions with no tokenCount', async () => {
+    process.env.CONSOLE_AUTH_MODE = 'central-ba';
+    const { service, prisma, central, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+
+    const result = await service.listSessions(USER_ID);
+
+    expect(central.listCentralSessions).toHaveBeenCalledWith(USER_ID);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({ id: 'sess-1', revoked: false }),
+    );
+    expect(result.data[0]).not.toHaveProperty('tokenCount');
+  });
+
+  it('in central-ba mode revokeSession calls the central route and audits the Session entity', async () => {
+    process.env.CONSOLE_AUTH_MODE = 'central-ba';
+    const { service, prisma, central, audit, admin } = makeService();
+    prisma.platformUser.findUnique.mockResolvedValue({
+      ...admin,
+      id: USER_ID,
+    });
+
+    const result = await service.revokeSession(USER_ID, 'sess-1', ADMIN_ID);
+
+    expect(result).toEqual({ success: true, revokedCount: 1 });
+    expect(central.revokeCentralSession).toHaveBeenCalledWith(
+      USER_ID,
+      'sess-1',
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'users.session.revoke',
+        entity: 'Session',
+        entityId: 'sess-1',
+      }),
+    );
   });
 
   it('invites a user, replaces a pending invite and emails the accept link', async () => {

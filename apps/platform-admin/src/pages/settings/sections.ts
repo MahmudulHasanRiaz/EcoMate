@@ -9,6 +9,7 @@ import {
   Palette,
   Percent,
   Send,
+  Users,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import { BrandingSection } from './branding';
 import { LandingSection } from './landing';
 import { MaintenanceSection } from './maintenance';
 import { MediaSection } from './media';
+import { OrganizationLimitSection } from './organization-limit';
 import { PaymentMethodsSection } from './payment-methods';
 import { SaasSmtpSection } from './saas-smtp';
 import { SmtpSection } from './smtp';
@@ -68,6 +70,13 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     icon: Clock,
     group: 'General',
     component: TrialSection,
+  },
+  {
+    id: 'organization-limit',
+    label: 'Organization limit',
+    icon: Users,
+    group: 'General',
+    component: OrganizationLimitSection,
   },
   {
     id: 'payment-methods',

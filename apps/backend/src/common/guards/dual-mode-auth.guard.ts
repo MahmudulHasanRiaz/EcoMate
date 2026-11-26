@@ -46,13 +46,18 @@ export class DualModeAuthGuard {
           if (user.lockoutUntil && user.lockoutUntil > new Date()) {
             throw new UnauthorizedException('Account is temporarily locked');
           }
-          // Impersonated sessions mint `imp: true` (see
-          // AuthService.impersonate). Surface it on the request user so
-          // handlers can restrict sensitive actions, and stamp it into
-          // the ALS tenant context so the security-event emitter records
-          // it in the tenant audit trail for every audited action taken
-          // with this token. `impActor` carries the platform operator
-          // identity when the impersonation exchange supplied one.
+          // Impersonated sessions carry `imp: true` on the JWT (Phase 4
+          // deleted AuthService.impersonate, so no NEW impersonated JWT
+          // can be minted — only a token minted before the cutover, inside
+          // its <=900 s TTL, can still arrive here). Surface it on the
+          // request user so handlers can restrict sensitive actions, and
+          // stamp it into the ALS tenant context so the security-event
+          // emitter records it in the tenant audit trail for every
+          // audited action taken with this token. `impActor` carries the
+          // platform operator identity when the impersonation exchange
+          // supplied one. In central-ba mode the central guard maps
+          // session.impersonatedBy -> imp/impActor instead (central user
+          // id, not operator email).
           const impersonated = (payload as any)?.imp === true;
           const impersonationActor =
             (payload as any)?.impActor ?? null;

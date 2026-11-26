@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { SetBlockingOverrideDto } from './dto/blocking-override.dto';
@@ -26,7 +26,7 @@ import { PurchasesService } from './purchases.service';
  * existing /tenants and /plans prefixes.
  */
 @Controller()
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class PricingController {
   constructor(
     private readonly pricing: PricingService,

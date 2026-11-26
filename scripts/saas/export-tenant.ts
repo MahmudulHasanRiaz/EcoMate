@@ -30,12 +30,14 @@ import {
   apiBase,
   apiCall,
   argString,
+  authHeaders,
   decryptExport,
   isEncryptedExport,
   login,
   parseArgs,
   resolveTenant,
   sleep,
+  type PlatformCredential,
 } from './platform-client';
 
 const POLL_INTERVAL_MS = 5_000;
@@ -49,12 +51,12 @@ function usage(): never {
 
 async function downloadToFile(
   base: string,
-  token: string,
+  token: PlatformCredential,
   path: string,
   outPath: string,
 ): Promise<void> {
   const response = await fetch(`${base}${path}`, {
-    headers: { authorization: `Bearer ${token}` },
+    headers: authHeaders(token),
   });
   if (!response.ok) {
     const text = await response.text().catch(() => '');

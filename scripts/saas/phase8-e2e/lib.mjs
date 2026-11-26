@@ -26,6 +26,11 @@ export const config = {
   platformApiUrl: normalisePlatformApiUrl(
     process.env.PLATFORM_API_URL || 'http://localhost:4100/api',
   ),
+  // Central-auth (Phase 4): the console host the script signs in against
+  // in central-ba mode. PLATFORM_ADMIN_URL wins; AUTH_PUBLIC_URL is the
+  // auth service's own public URL.
+  platformAdminUrl: process.env.PLATFORM_ADMIN_URL || '',
+  authPublicUrl: process.env.AUTH_PUBLIC_URL || '',
   backendUrl: process.env.BACKEND_URL || 'http://localhost:4000',
   storefrontUrl: process.env.STOREFRONT_URL || 'http://localhost:3000',
   adminUrl: process.env.ADMIN_URL || 'http://localhost:5173',
@@ -111,7 +116,7 @@ export async function req(base, method, path, { token, body, headers } = {}) {
       // Fastify rejects an empty body when content-type is application/json,
       // so only send the header when there actually is a body.
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...authHeaders(token),
       ...headers,
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -124,6 +129,50 @@ export async function req(base, method, path, { token, body, headers } = {}) {
     data = null;
   }
   return { status: response.status, data, text, headers: response.headers };
+}
+
+/**
+ * Phase 4 central-auth cutover — the platform credential is
+ * mode-dependent: a legacy JWT string (sent as `Bearer`) or a
+ * `{ cookie }` object holding the BA session cookies (sent as `Cookie`).
+ * Every `req()` caller passes the credential opaquely; only this helper
+ * and platformLogin know the shape.
+ */
+export function authHeaders(credential) {
+  if (!credential) return {};
+  if (typeof credential === 'string') {
+    return { authorization: `Bearer ${credential}` };
+  }
+  return { cookie: credential.cookie };
+}
+
+/** Minimal cookie jar for the BA sign-in flow (see platform-client.ts). */
+export class CookieJar {
+  #cookies = new Map();
+
+  addFromResponse(response) {
+    const setCookie =
+      typeof response.headers.getSetCookie === 'function'
+        ? response.headers.getSetCookie()
+        : [];
+    for (const header of setCookie) {
+      const pair = header.split(';', 1)[0];
+      const eq = pair.indexOf('=');
+      if (eq > 0) {
+        this.#cookies.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+      }
+    }
+  }
+
+  header() {
+    return [...this.#cookies.entries()]
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ');
+  }
+
+  get size() {
+    return this.#cookies.size;
+  }
 }
 
 export async function reqOk(base, method, path, opts = {}) {
@@ -326,7 +375,29 @@ export function extractVerifyToken(emailBody) {
 // Platform API client
 // ---------------------------------------------------------------------------
 
+/**
+ * Mode-aware platform login (Phase 4). `GET /public/auth-mode` decides:
+ * - `custom-jwt`: legacy POST /auth/login (+ /auth/mfa/challenge with the
+ *   TOTP code when mfaRequired). Returns the JWT string.
+ * - `central-ba`: BA sign-in at the console host (PLATFORM_ADMIN_URL else
+ *   AUTH_PUBLIC_URL); `twoFactorRedirect` → POST /two-factor/verify-totp.
+ *   Returns a `{ cookie }` credential — the BA session cookies.
+ * The host used to reach platform-api must be in the auth service's
+ * allowed-hosts, or session verification 500s.
+ */
 export async function platformLogin(email, password, totp) {
+  let mode = 'custom-jwt';
+  try {
+    const modeRes = await req(config.platformApiUrl, 'GET', '/public/auth-mode');
+    if (modeRes.status === 200 && modeRes.data?.mode) mode = modeRes.data.mode;
+  } catch {
+    // Unreachable auth-mode endpoint (old build) — legacy flow.
+  }
+  if (mode === 'central-ba') return platformLoginCentral(email, password, totp);
+  return platformLoginLegacy(email, password, totp);
+}
+
+async function platformLoginLegacy(email, password, totp) {
   const res = await req(config.platformApiUrl, 'POST', '/auth/login', {
     body: { email, password },
   });
@@ -349,6 +420,47 @@ export async function platformLogin(email, password, totp) {
     return challenge.data.accessToken;
   }
   throw new Error('Login did not return an access token');
+}
+
+async function platformLoginCentral(email, password, totp) {
+  const consoleHost = (config.platformAdminUrl || config.authPublicUrl || '').replace(/\/+$/, '');
+  if (!consoleHost) {
+    throw new Error(
+      'Central-ba mode requires PLATFORM_ADMIN_URL (or AUTH_PUBLIC_URL) for the BA sign-in.',
+    );
+  }
+  const jar = new CookieJar();
+  const signIn = await fetch(`${consoleHost}/api/better-auth/sign-in/email`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  jar.addFromResponse(signIn);
+  const signInJson = await signIn.json().catch(() => null);
+  if (!signIn.ok) {
+    throw new Error(
+      `Central sign-in failed: HTTP ${signIn.status} ${JSON.stringify(signInJson)?.slice(0, 200)}`,
+    );
+  }
+  if (signInJson?.twoFactorRedirect) {
+    if (!totp) {
+      throw new Error('Platform account requires TOTP MFA; set PLATFORM_TOTP');
+    }
+    const verify = await fetch(`${consoleHost}/two-factor/verify-totp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: jar.header() },
+      body: JSON.stringify({ code: totp }),
+    });
+    jar.addFromResponse(verify);
+    if (!verify.ok) {
+      const text = await verify.text().catch(() => '');
+      throw new Error(`TOTP verification failed: HTTP ${verify.status} ${text.slice(0, 200)}`);
+    }
+  }
+  if (jar.size === 0) {
+    throw new Error('Central sign-in did not set a session cookie');
+  }
+  return { cookie: jar.header() };
 }
 
 /** Points the platform SMTP settings at the catcher (env-wins may override). */

@@ -12,13 +12,13 @@ import {
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
 import type { PlatformRequestUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
-import { ResetTotpDto } from './dto/reset-totp.dto';
+import { ResetMfaDto } from './dto/reset-mfa.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
@@ -29,14 +29,14 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Get('roles')
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   roles() {
     return this.users.getRoles();
   }
 
   @Get()
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   list(
     @Query()
@@ -52,21 +52,21 @@ export class UsersController {
   }
 
   @Get('invites')
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   invites() {
     return this.users.listInvites();
   }
 
   @Get(':id')
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   detail(@Param('id') id: string) {
     return this.users.detail(id);
   }
 
   @Post()
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   create(
     @Body() dto: CreateUserDto,
@@ -76,7 +76,7 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   update(
     @Param('id') id: string,
@@ -87,7 +87,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   remove(
     @Param('id') id: string,
@@ -98,7 +98,7 @@ export class UsersController {
 
   @Post(':id/reset-password')
   @HttpCode(200)
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   resetPassword(
     @Param('id') id: string,
@@ -109,24 +109,25 @@ export class UsersController {
 
   @Post(':id/mfa/reset')
   @HttpCode(200)
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   resetMfa(
     @Param('id') id: string,
+    @Body() dto: ResetMfaDto,
     @CurrentPlatformUser() user: PlatformRequestUser,
   ) {
-    return this.users.resetMfa(id, user.id);
+    return this.users.resetMfa(id, user.id, dto ?? {});
   }
 
   @Get(':id/sessions')
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   listSessions(@Param('id') id: string) {
     return this.users.listSessions(id);
   }
 
   @Delete(':id/sessions/:sessionId')
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   revokeSession(
     @Param('id') id: string,
@@ -136,20 +137,8 @@ export class UsersController {
     return this.users.revokeSession(id, sessionId, user.id);
   }
 
-  @Post(':id/totp/reset')
-  @HttpCode(200)
-  @UseGuards(PlatformAuthGuard, RolesGuard)
-  @Roles('SUPERADMIN')
-  resetTotp(
-    @Param('id') id: string,
-    @Body() dto: ResetTotpDto,
-    @CurrentPlatformUser() user: PlatformRequestUser,
-  ) {
-    return this.users.resetTotp(id, user.id, dto ?? {});
-  }
-
   @Post('invite')
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   invite(
     @Body() dto: InviteUserDto,
@@ -159,7 +148,7 @@ export class UsersController {
   }
 
   @Delete('invites/:id')
-  @UseGuards(PlatformAuthGuard, RolesGuard)
+  @UseGuards(ConsoleAuthModeGuard, RolesGuard)
   @Roles('SUPERADMIN')
   revokeInvite(
     @Param('id') id: string,

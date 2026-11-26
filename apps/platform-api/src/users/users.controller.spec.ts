@@ -48,8 +48,10 @@ describe('UsersController', () => {
     expect(users.resetPassword).toHaveBeenCalledWith('u1', 'admin-1');
     expect(reset.temporaryPassword).toBe('temp-123456789012');
 
-    const mfaReset = await controller.resetMfa('u1', ACTOR);
-    expect(users.resetMfa).toHaveBeenCalledWith('u1', 'admin-1');
+    const mfaReset = await controller.resetMfa('u1', { reason: 'lost' } as any, ACTOR);
+    expect(users.resetMfa).toHaveBeenCalledWith('u1', 'admin-1', {
+      reason: 'lost',
+    });
     expect(mfaReset).toEqual({ success: true });
   });
 

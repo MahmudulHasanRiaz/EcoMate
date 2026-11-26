@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CaseStudiesService } from './case-studies.service';
@@ -25,7 +25,7 @@ import { UpdateCaseStudyDto } from './dto/update-case-study.dto';
  * service. The public reads live in public-case-studies.controller.ts.
  */
 @Controller('case-studies')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class CaseStudiesController {
   constructor(private readonly studies: CaseStudiesService) {}
 

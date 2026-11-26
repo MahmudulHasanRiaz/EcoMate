@@ -4,6 +4,10 @@
 //   POST /internal/users, GET /internal/users/:id,
 //   GET /internal/users/by-email, GET /internal/users/search,
 //   PATCH /internal/users/:id, DELETE /internal/users/:id
+//   POST /internal/users/:id/mfa/reset (Phase 4 — unified console MFA reset)
+//   POST /internal/users/:id/sessions/revoke-all (Phase 4)
+//   GET /internal/users/:id/sessions (Phase 4)
+//   DELETE /internal/users/:id/sessions/:sessionId (Phase 4)
 // All require `x-platform-service-token` == INTERNAL_SERVICE_SECRET
 // (503 when the secret is unconfigured). Caddy never routes /internal/*
 // from any public host; only platform-api and the tenant backend call
@@ -654,4 +658,193 @@ export async function handleDeleteInternalUser(
     userId,
   });
   return { status: 200, json: { id: userId, deleted: true } };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 (console cutover) — MFA reset + session management for console
+// operators. platform-api calls these with the internal secret; the
+// console never touches them directly. The two mandated routes
+// (mfa/reset, sessions/revoke-all) are joined by list + revoke-one,
+// because BA's `list-sessions` is self-only and the operator BA role
+// cannot list/revoke ANOTHER operator's sessions — without service-owned
+// routes the console's Users → Sessions page could not work in
+// central-ba mode (see platform-api BUILD-SUMMARY).
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /internal/users/:id/mfa/reset — unified console MFA reset.
+ * Deletes the user's TwoFactor rows (secret + backup codes) and clears
+ * `user.twoFactorEnabled`. The operator re-enrols on next login. 200
+ * { userId, reset: true, twoFactorEnabled: false }; 404 user_not_found.
+ * Audited; the platform-api caller revokes the operator's sessions
+ * itself (revoke-all below) so the reset also kills live sessions.
+ */
+export async function handleResetUserMfa(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const userId = req.params?.['userId'];
+  if (!userId) {
+    return { status: 400, json: { error: 'userId_required' } };
+  }
+  const existing = await deps.prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!existing) {
+    return { status: 404, json: { error: 'user_not_found' } };
+  }
+  await deps.prisma.twoFactor.deleteMany({ where: { userId } });
+  await deps.prisma.user.update({
+    where: { id: userId },
+    data: { twoFactorEnabled: false },
+  });
+  logger.audit('auth.user.mfa_reset', {
+    requestId: req.requestId,
+    userId,
+  });
+  return {
+    status: 200,
+    json: { userId, reset: true, twoFactorEnabled: false },
+  };
+}
+
+/**
+ * POST /internal/users/:id/sessions/revoke-all — revoke every BA session
+ * for the user (disable / password reset / MFA reset). 200
+ * { userId, revokedCount }; 404 user_not_found.
+ */
+export async function handleRevokeAllUserSessions(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const userId = req.params?.['userId'];
+  if (!userId) {
+    return { status: 400, json: { error: 'userId_required' } };
+  }
+  const existing = await deps.prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!existing) {
+    return { status: 404, json: { error: 'user_not_found' } };
+  }
+  const { count } = await deps.prisma.session.deleteMany({
+    where: { userId },
+  });
+  logger.audit('auth.user.sessions_revoked', {
+    requestId: req.requestId,
+    userId,
+    revokedCount: count,
+  });
+  return { status: 200, json: { userId, revokedCount: count } };
+}
+
+/**
+ * GET /internal/users/:id/sessions — list a user's BA sessions for the
+ * console Users → Sessions page. Tokens are NEVER returned (the
+ * `token` column is not selected). 200
+ * { data: [{ id, userAgent, ipAddress, createdAt, lastUsedAt,
+ *            expiresAt, revoked }] }.
+ *
+ * `revoked` has no BA column behind it: a BA session row is either
+ * present (live) or deleted (revoked). The only in-row signal is
+ * expiry, so `revoked` means `expiresAt < now` — an expired row the
+ * service has not pruned yet. Live rows report `revoked: false`.
+ */
+export async function handleListUserSessions(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const userId = req.params?.['userId'];
+  if (!userId) {
+    return { status: 400, json: { error: 'userId_required' } };
+  }
+  const existing = await deps.prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!existing) {
+    return { status: 404, json: { error: 'user_not_found' } };
+  }
+  const now = new Date();
+  const rows = await deps.prisma.session.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      userAgent: true,
+      ipAddress: true,
+      createdAt: true,
+      updatedAt: true,
+      expiresAt: true,
+    },
+  });
+  return {
+    status: 200,
+    json: {
+      data: rows.map((row) => ({
+        id: row.id,
+        userAgent: row.userAgent ?? null,
+        ipAddress: row.ipAddress ?? null,
+        createdAt: row.createdAt.toISOString(),
+        // BA has no last-used column; updatedAt moves on session
+        // refresh and is the closest signal.
+        lastUsedAt: row.updatedAt.toISOString(),
+        expiresAt: row.expiresAt.toISOString(),
+        revoked: row.expiresAt < now,
+      })),
+    },
+  };
+}
+
+/**
+ * DELETE /internal/users/:id/sessions/:sessionId — revoke one BA session.
+ * 200 { userId, sessionId, revoked: true }; 404 user_not_found or
+ * session_not_found (the session must belong to the user).
+ */
+export async function handleRevokeUserSession(
+  deps: InternalUserDeps,
+  req: InternalRouteRequest,
+): Promise<InternalRouteResult> {
+  const denied = checkInternalSecret(deps.config, req.headers);
+  if (denied) return denied;
+  const userId = req.params?.['userId'];
+  const sessionId = req.params?.['sessionId'];
+  if (!userId) {
+    return { status: 400, json: { error: 'userId_required' } };
+  }
+  if (!sessionId) {
+    return { status: 400, json: { error: 'sessionId_required' } };
+  }
+  const existing = await deps.prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!existing) {
+    return { status: 404, json: { error: 'user_not_found' } };
+  }
+  const session = await deps.prisma.session.findFirst({
+    where: { id: sessionId, userId },
+    select: { id: true },
+  });
+  if (!session) {
+    return { status: 404, json: { error: 'session_not_found' } };
+  }
+  await deps.prisma.session.delete({ where: { id: sessionId } });
+  logger.audit('auth.user.session_revoked', {
+    requestId: req.requestId,
+    userId,
+    sessionId,
+  });
+  return {
+    status: 200,
+    json: { userId, sessionId, revoked: true },
+  };
 }

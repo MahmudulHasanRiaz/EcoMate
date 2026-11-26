@@ -12,7 +12,7 @@ import {
   StreamableFile,
   UseGuards,
 } from '@nestjs/common';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -26,7 +26,7 @@ import { UpdateCouponDto } from './dto/update-coupon.dto';
 import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 
 @Controller('billing')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class BillingController {
   constructor(private readonly billing: BillingService) {}
 

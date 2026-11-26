@@ -39,7 +39,11 @@ import {
   handleDeleteInternalUser,
   handleGetInternalUserByEmail,
   handleGetInternalUserById,
+  handleListUserSessions,
   handleProvisionOrganization,
+  handleResetUserMfa,
+  handleRevokeAllUserSessions,
+  handleRevokeUserSession,
   handleRoleSync,
   handleSearchInternalUsers,
   handleUpdateInternalUser,
@@ -271,6 +275,39 @@ export function createServer(deps: ServerDeps): http.Server {
           sendJson(result.status, result.json);
           return;
         }
+        // Phase 4 session routes (must precede the single-segment
+        // /internal/users/:id match below — these have more segments).
+        const sessionsMatch = pathname.match(
+          /^\/internal\/users\/([^/]+)\/sessions$/,
+        );
+        if (sessionsMatch && method === 'GET') {
+          const result = await handleListUserSessions(
+            { prisma, config },
+            {
+              ...internalReq,
+              params: { userId: decodeURIComponent(sessionsMatch[1]) },
+            },
+          );
+          sendJson(result.status, result.json);
+          return;
+        }
+        const sessionMatch = pathname.match(
+          /^\/internal\/users\/([^/]+)\/sessions\/([^/]+)$/,
+        );
+        if (sessionMatch && method === 'DELETE') {
+          const result = await handleRevokeUserSession(
+            { prisma, config },
+            {
+              ...internalReq,
+              params: {
+                userId: decodeURIComponent(sessionMatch[1]),
+                sessionId: decodeURIComponent(sessionMatch[2]),
+              },
+            },
+          );
+          sendJson(result.status, result.json);
+          return;
+        }
         const userIdMatch = pathname.match(/^\/internal\/users\/([^/]+)$/);
         if (userIdMatch) {
           const userReq = {
@@ -319,6 +356,40 @@ export function createServer(deps: ServerDeps): http.Server {
           const result = await handleRoleSync(
             { prisma, config },
             { body: jsonBody, headers, requestId },
+          );
+          sendJson(result.status, result.json);
+          return;
+        }
+        // Phase 4: unified MFA reset + revoke-all-sessions (POST-only,
+        // user id in the path).
+        const mfaResetMatch = pathname.match(
+          /^\/internal\/users\/([^/]+)\/mfa\/reset$/,
+        );
+        if (mfaResetMatch) {
+          const result = await handleResetUserMfa(
+            { prisma, config },
+            {
+              body: jsonBody,
+              headers,
+              requestId,
+              params: { userId: decodeURIComponent(mfaResetMatch[1]) },
+            },
+          );
+          sendJson(result.status, result.json);
+          return;
+        }
+        const revokeAllMatch = pathname.match(
+          /^\/internal\/users\/([^/]+)\/sessions\/revoke-all$/,
+        );
+        if (revokeAllMatch) {
+          const result = await handleRevokeAllUserSessions(
+            { prisma, config },
+            {
+              body: jsonBody,
+              headers,
+              requestId,
+              params: { userId: decodeURIComponent(revokeAllMatch[1]) },
+            },
           );
           sendJson(result.status, result.json);
           return;

@@ -1,7 +1,13 @@
 import type { Session } from '../types';
 
 /**
- * Console session persistence (R-SESSION).
+ * Console session persistence (R-SESSION) — CUSTOM-JWT MODE ONLY.
+ *
+ * Phase 4 keeps this file for the legacy branch: `custom-jwt` mode
+ * still stores `{ accessToken, refreshToken, user }` here. In
+ * `central-ba` mode nothing is stored (BA cookie session); AuthProvider
+ * clears this key on first central-ba boot and never reads it again.
+ * Phase 5 deletes this file together with the legacy mode.
  *
  * The session lives in localStorage, mirroring the tenant admin: the admin
  * keeps its access token in a persistent cookie (`eco_mate_access_token`,

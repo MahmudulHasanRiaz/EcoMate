@@ -231,9 +231,12 @@ export interface PlatformUser {
   mfaRequired?: boolean;
 }
 
-/** One operator session = one refresh-token rotation family (CMS item 15). */
+/** One operator session = one refresh-token rotation family (CMS item 15).
+ * In central-ba mode the id is the BA session id (one row per login, not
+ * per rotation family) and there is no rotation family — `tokenCount`
+ * has no BA equivalent and is omitted (survey §10 Q7). */
 export interface PlatformSession {
-  /** The rotation family id — the session id for revoke. */
+  /** The rotation family id (custom-jwt) or BA session id (central-ba) — the session id for revoke. */
   id: string;
   userAgent?: string | null;
   ipAddress?: string | null;
@@ -241,7 +244,8 @@ export interface PlatformSession {
   lastUsedAt?: string | null;
   expiresAt?: string | null;
   revoked: boolean;
-  tokenCount: number;
+  /** Rotation-family size; custom-jwt mode only. */
+  tokenCount?: number;
 }
 
 export interface PlatformUserInvite {
@@ -632,8 +636,10 @@ export interface MetricsOverview {
 }
 
 export interface Session {
-  accessToken: string;
-  refreshToken: string;
+  /** custom-jwt mode only — absent in central-ba mode (cookie session). */
+  accessToken?: string;
+  /** custom-jwt mode only — absent in central-ba mode (cookie session). */
+  refreshToken?: string;
   user: PlatformUser;
 }
 
@@ -719,6 +725,16 @@ export interface PlatformSettings {
   saasSmtp: SaasSmtpSettings;
   /** Per-platform ad tracking config (CMS batch 2, item 21). */
   adTracking: AdTrackingSettings;
+  /**
+   * Organization limit (D12): max organizations (stores) one user may
+   * own. Optional — absent until the platform API reports it (the
+   * `GET /settings` shape gains the field with the Phase 4 platform-api
+   * half); the settings section falls back to the platform default (5).
+   */
+  organizationLimit?: {
+    limit: number;
+    source: 'setting' | 'default';
+  };
 }
 
 export type AdTrackingMode = 'instant' | 'validated';

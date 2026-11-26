@@ -40,10 +40,11 @@ function makeController() {
     audit,
     // Registry + entitlements only use prisma; the other services are
     // stubs (billing/invoices predate this spec; emailBalance is the
-    // SMTP worker's param).
+    // SMTP worker's param). Phase 4 removed the ImpersonationService
+    // constructor param (the consume route is deleted), so the
+    // positional args start at billing.
     controller: new InternalController(
       prisma,
-      {} as any,
       {} as any,
       {} as any,
       {} as any,

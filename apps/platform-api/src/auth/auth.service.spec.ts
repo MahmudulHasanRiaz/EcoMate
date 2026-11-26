@@ -733,4 +733,116 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
+
+  // Phase 4 central-ba mode: the service is constructed with a central
+  // client mock (the module-level `service` has none — requireCentral()
+  // throws without it, which is itself a covered behaviour).
+  describe('central-ba mode', () => {
+    const central: any = {
+      getSession: jest.fn(),
+      changeCentralPassword: jest.fn(),
+      signOutCentral: jest.fn(),
+    };
+    const centralService = new AuthService(prisma, jwt, audit, central);
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      prisma.platformUser.update.mockResolvedValue({});
+      prisma.platformRefreshToken.updateMany.mockResolvedValue({ count: 1 });
+      central.getSession.mockResolvedValue({
+        session: { id: 'sess-1', userId: 'user-1' },
+        user: { id: 'user-1', platformRole: 'SUPERADMIN' },
+      });
+      central.changeCentralPassword.mockResolvedValue(undefined);
+      central.signOutCentral.mockResolvedValue(undefined);
+    });
+
+    it('me() takes twoFactorEnabled from the BA session over the local flag', async () => {
+      prisma.platformUser.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'admin@ecomate.test',
+        name: 'Platform Admin',
+        role: 'SUPERADMIN',
+        status: 'ACTIVE',
+        lastLoginAt: null,
+        mfaEnabledAt: null,
+      });
+      await expect(centralService.me('user-1', true)).resolves.toMatchObject({
+        mfaEnabled: true,
+      });
+      await expect(centralService.me('user-1', false)).resolves.toMatchObject({
+        mfaEnabled: false,
+      });
+    });
+
+    it('changePasswordCentral changes BA first, then the local hash + revokes local tokens', async () => {
+      prisma.platformUser.findUnique.mockResolvedValue(
+        activeUser({ passwordHash: await bcrypt.hash('OldPass123', 4) }),
+      );
+      const result = await centralService.changePasswordCentral(
+        'user-1',
+        { currentPassword: 'OldPass123', newPassword: 'NewPass456' } as any,
+        'better-auth.session_token=tok',
+        'em.commercians.com',
+      );
+      expect(result).toEqual({ success: true });
+      expect(central.changeCentralPassword).toHaveBeenCalledWith(
+        'better-auth.session_token=tok',
+        'em.commercians.com',
+        'OldPass123',
+        'NewPass456',
+      );
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'auth.password.change' }),
+      );
+    });
+
+    it('changePasswordCentral leaves the local row untouched when BA rejects the current password', async () => {
+      prisma.platformUser.findUnique.mockResolvedValue(activeUser());
+      central.changeCentralPassword.mockRejectedValueOnce(
+        new UnauthorizedException('Invalid password'),
+      );
+      await expect(
+        centralService.changePasswordCentral(
+          'user-1',
+          { currentPassword: 'Wrong', newPassword: 'NewPass456' } as any,
+          'cookie',
+          'em.commercians.com',
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('logoutCentral signs out of BA and revokes local tokens, and still succeeds on BA outage', async () => {
+      const result = await centralService.logoutCentral(
+        'better-auth.session_token=tok',
+        'em.commercians.com',
+      );
+      expect(result).toEqual({ success: true });
+      expect(central.signOutCentral).toHaveBeenCalled();
+      expect(
+        prisma.platformRefreshToken.updateMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 'user-1', revokedAt: null } }),
+      );
+
+      central.getSession.mockRejectedValueOnce(new Error('auth down'));
+      await expect(
+        centralService.logoutCentral('cookie', 'em.commercians.com'),
+      ).resolves.toEqual({ success: true });
+    });
+
+    it('throws a clear error when the central client is missing in central mode', async () => {
+      prisma.platformUser.findUnique.mockResolvedValue(activeUser());
+      await expect(
+        service.changePasswordCentral(
+          'user-1',
+          { currentPassword: 'a', newPassword: 'b' } as any,
+          'cookie',
+          'h',
+        ),
+      ).rejects.toThrow(/central/i);
+    });
+  });
 });

@@ -29,6 +29,12 @@ function makeController() {
       seoIndexingEnabled: false,
       seoIndexingSource: 'setting',
     }),
+    getOrganizationLimit: jest
+      .fn()
+      .mockReturnValue({ limit: 5, source: 'default' }),
+    updateOrganizationLimit: jest
+      .fn()
+      .mockResolvedValue({ limit: 20, source: 'setting' }),
   };
   const mail: any = {
     refresh: jest.fn(),
@@ -232,5 +238,28 @@ describe('SettingsController', () => {
       seoIndexingEnabled: false,
       seoIndexingSource: 'setting',
     });
+  });
+
+  // Phase 4 (D12): the organization limit is a SUPERADMIN-only PATCH
+  // that audits the change against the `organization_limit` row.
+  it('updates the organization limit and audits it', async () => {
+    const { controller, settings, audit } = makeController();
+
+    const result = await controller.updateOrganizationLimit({ limit: 20 } as any, {
+      id: 'admin-1',
+    } as any);
+
+    expect(settings.updateOrganizationLimit).toHaveBeenCalledWith(20);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-1',
+        action: 'settings.organization-limit.update',
+        entity: 'PlatformSetting',
+        entityId: 'organization_limit',
+        before: { limit: 5, source: 'default' },
+        after: { limit: 20, source: 'setting' },
+      }),
+    );
+    expect(result).toEqual({ limit: 20, source: 'setting' });
   });
 });

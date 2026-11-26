@@ -86,6 +86,19 @@ async function seedPlatformAdmin(): Promise<void> {
     throw new Error('PLATFORM_ADMIN_PASSWORD must be at least 12 characters');
   }
 
+  // Central-ba mode (Phase 4, survey Q3): the seeded operator also needs
+  // a central user, created FIRST so the PlatformUser row can take the
+  // central id (the Phase 2 invariant PlatformUser.id == central user
+  // id). An existing central user is looked up by email instead of
+  // created. Role-sync is mandatory (POST /internal/users takes no
+  // platformRole). A failure here is fatal — a seed that only writes
+  // the local row would leave an operator who cannot sign in after
+  // cutover. Legacy mode is unchanged (local row only).
+  let centralId: string | undefined;
+  if (process.env.CONSOLE_AUTH_MODE === 'central-ba') {
+    centralId = await ensureCentralSuperadmin({ email, name, password });
+  }
+
   const passwordHash = await bcrypt.hash(password, 12);
   const user = await prisma.platformUser.upsert({
     where: { email },
@@ -96,6 +109,7 @@ async function seedPlatformAdmin(): Promise<void> {
       status: 'ACTIVE',
     },
     create: {
+      ...(centralId ? { id: centralId } : {}),
       email,
       name,
       passwordHash,
@@ -103,8 +117,93 @@ async function seedPlatformAdmin(): Promise<void> {
       status: 'ACTIVE',
     },
   });
+  if (centralId && user.id !== centralId) {
+    // A pre-existing local row keeps its id (changing a PK would break
+    // FKs); the Phase 2 migration owns reconciling such a row. Loud on
+    // purpose — the invariant is broken until it is reconciled.
+    console.warn(
+      `[seed] platform admin ${email} has local id ${user.id} != central id ${centralId}; run the Phase 2 id reconciliation`,
+    );
+  }
 
   console.log(`[seed] platform admin ready: ${user.email}`);
+}
+
+/**
+ * Central superadmin for a fresh seed: resolve-or-create the central
+ * user via the auth service's internal routes, then role-sync to
+ * SUPERADMIN. Uses the same env the services use (AUTH_INTERNAL_URL,
+ * INTERNAL_SERVICE_SECRET). Throws on any failure — the seed must not
+ * pretend the operator exists centrally when it does not.
+ */
+async function ensureCentralSuperadmin(input: {
+  email: string;
+  name: string;
+  password: string;
+}): Promise<string> {
+  const base = (process.env.AUTH_INTERNAL_URL || 'http://auth-service:4200').replace(
+    /\/+$/,
+    '',
+  );
+  const secret = process.env.INTERNAL_SERVICE_SECRET;
+  if (!secret) {
+    throw new Error(
+      '[seed] INTERNAL_SERVICE_SECRET is required when CONSOLE_AUTH_MODE=central-ba',
+    );
+  }
+  const headers = {
+    'content-type': 'application/json',
+    'x-platform-service-token': secret,
+  };
+  const byEmail = await fetch(
+    `${base}/internal/users/by-email?email=${encodeURIComponent(input.email)}`,
+    { headers },
+  );
+  if (byEmail.ok) {
+    const existing = (await byEmail.json()) as { id: string };
+    await roleSyncCentral(base, headers, existing.id);
+    return existing.id;
+  }
+  if (byEmail.status !== 404) {
+    throw new Error(
+      `[seed] central user lookup failed (HTTP ${byEmail.status})`,
+    );
+  }
+  const createdRes = await fetch(`${base}/internal/users`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      email: input.email,
+      name: input.name,
+      password: input.password,
+      emailVerified: true,
+    }),
+  });
+  if (!createdRes.ok) {
+    throw new Error(
+      `[seed] central user create failed (HTTP ${createdRes.status}): ${(await createdRes.text()).slice(0, 200)}`,
+    );
+  }
+  const created = (await createdRes.json()) as { id: string };
+  await roleSyncCentral(base, headers, created.id);
+  return created.id;
+}
+
+async function roleSyncCentral(
+  base: string,
+  headers: Record<string, string>,
+  userId: string,
+): Promise<void> {
+  const res = await fetch(`${base}/internal/users/role-sync`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ userId, platformRole: 'SUPERADMIN' }),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `[seed] central role-sync failed (HTTP ${res.status}): ${(await res.text()).slice(0, 200)}`,
+    );
+  }
 }
 
 async function seedFeatureCatalog(): Promise<void> {

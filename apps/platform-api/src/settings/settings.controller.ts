@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AuditService } from '../common/audit.service';
@@ -23,6 +23,7 @@ import { UpdateAdTrackingSettingsDto } from './dto/update-ad-tracking-settings.d
 import { UpdateBrandingSettingsDto } from './dto/update-branding-settings.dto';
 import { UpdateLandingSettingsDto } from './dto/update-landing-settings.dto';
 import { UpdateMaintenanceSettingsDto } from './dto/update-maintenance-settings.dto';
+import { UpdateOrganizationLimitSettingsDto } from './dto/update-organization-limit-settings.dto';
 import { UpdateSaasSmtpSettingsDto } from './dto/update-saas-smtp-settings.dto';
 import { UpdateSmtpSettingsDto } from './dto/update-smtp-settings.dto';
 import { UpdateTaxSettingsDto } from './dto/update-tax-settings.dto';
@@ -31,7 +32,7 @@ import { SettingsService } from './settings.service';
 
 
 @Controller('settings')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class SettingsController {
   constructor(
     private readonly settings: SettingsService,
@@ -186,6 +187,31 @@ export class SettingsController {
       action: 'settings.landing.update',
       entity: 'PlatformSetting',
       entityId: 'landing',
+      before,
+      after: next,
+    });
+    return next;
+  }
+
+  /**
+   * Organization limit (D12) — max organizations per user. The auth
+   * service reads the same `organization_limit` row through the
+   * internal endpoint (60 s cache, AUTH_ORG_LIMIT fallback), so a
+   * change here takes effect without a restart or redeploy.
+   */
+  @Patch('organization-limit')
+  @Roles('SUPERADMIN')
+  async updateOrganizationLimit(
+    @Body() dto: UpdateOrganizationLimitSettingsDto,
+    @CurrentPlatformUser() user?: { id: string },
+  ) {
+    const before = this.settings.getOrganizationLimit();
+    const next = await this.settings.updateOrganizationLimit(dto.limit);
+    await this.audit.record({
+      actorId: user?.id,
+      action: 'settings.organization-limit.update',
+      entity: 'PlatformSetting',
+      entityId: 'organization_limit',
       before,
       after: next,
     });

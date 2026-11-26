@@ -4,9 +4,12 @@ import { ForbiddenException } from '@nestjs/common';
  * Impersonation helpers (Phase 8).
  *
  * DualModeAuthGuard sets `request.user.impersonated = true` when the
- * request authenticates with an impersonated JWT (`imp: true`, minted by
- * AuthService.impersonate). Handlers for actions that must never run
- * during an impersonated session — changing the owner's password, or
+ * request authenticates with an impersonated JWT (`imp: true` — minted by
+ * the old AuthService.impersonate bridge, deleted in Phase 4; no new
+ * impersonated JWTs are minted) or, in central-ba mode, when the central
+ * guard maps `session.impersonatedBy` onto the request user. Handlers for
+ * actions that must never run during an impersonated session — changing
+ * the owner's password, or
  * bulk-exporting tenant data — call assertNotImpersonated.
  */
 

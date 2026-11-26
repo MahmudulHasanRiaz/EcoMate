@@ -634,6 +634,13 @@ services:
       PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
       PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
       PLATFORM_ADMIN_NAME: ${PLATFORM_ADMIN_NAME:-Platform Admin}
+      # Console auth mode (Phase 4 central Better Auth cutover):
+      # custom-jwt (default) = legacy platform JWT login; central-ba =
+      # verify console sessions against the central auth service.
+      # AUTH_INTERNAL_URL is the auth service internal URL (same value
+      # the backend uses). The flag flip takes effect without a restart.
+      CONSOLE_AUTH_MODE: ${CONSOLE_AUTH_MODE:-custom-jwt}
+      AUTH_INTERNAL_URL: ${AUTH_INTERNAL_URL:-http://auth-service:4200}
       # First deploy only: seeds the superadmin + feature catalog + free
       # trial plan. The seed is idempotent (upserts), but leave it false
       # after the first deploy.

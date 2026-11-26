@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Injectable,
 } from '@nestjs/common';
+import { isCentralAuthMode } from '../../auth/console-auth-mode';
 import { RedisRateLimitService } from './redis-rate-limit.service';
 
 interface RoutePolicy {
@@ -78,6 +79,18 @@ function clientIp(request: any): string {
   );
 }
 
+/**
+ * The legacy credential paths below are dead in central-ba mode (they
+ * 410 — the real sign-in path is `/api/better-auth/sign-in/email`,
+ * proxied by Caddy straight to the auth service, which has its own
+ * limits). Their policies therefore apply in `custom-jwt` mode only.
+ */
+const LEGACY_AUTH_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/refresh',
+  '/api/auth/mfa/challenge',
+]);
+
 @Injectable()
 export class RateLimitGuard implements CanActivate {
   constructor(private readonly limiter: RedisRateLimitService) {}
@@ -91,6 +104,9 @@ export class RateLimitGuard implements CanActivate {
       (p) => p.method === method && p.path === pathname,
     );
     if (!policy) return true;
+    if (LEGACY_AUTH_PATHS.has(policy.path) && isCentralAuthMode()) {
+      return true;
+    }
 
     const allowed = await this.limiter.consume(
       `guard:${policy.method}:${policy.path}:${clientIp(request)}`,

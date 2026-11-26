@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AuditService } from '../common/audit.service';
@@ -30,7 +30,7 @@ import { LeadsService } from './leads.service';
  * SUPERADMIN/BILLING only (bulk PII — same rule as the audit export).
  */
 @Controller('leads')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class LeadsController {
   constructor(
     private readonly leads: LeadsService,

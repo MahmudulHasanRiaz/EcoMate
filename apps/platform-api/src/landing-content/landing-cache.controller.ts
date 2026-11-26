@@ -1,6 +1,6 @@
 import { Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AuditService } from '../common/audit.service';
@@ -11,7 +11,7 @@ import { LandingCacheService } from './landing-cache.service';
  * revalidates the public site's cached content immediately. Audited.
  */
 @Controller('landing-cache')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class LandingCacheController {
   constructor(
     private readonly cache: LandingCacheService,

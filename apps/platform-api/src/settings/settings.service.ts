@@ -16,6 +16,11 @@ import {
   type SaasSmtpSettings,
 } from '../email-balance/email-balance.utils';
 import { LeadStatus } from '../generated/prisma/client';
+import {
+  DEFAULT_ORGANIZATION_LIMIT,
+  ORGANIZATION_LIMIT_SETTING_KEY,
+  parseOrganizationLimitSetting,
+} from '../internal/organization-limit';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import {
   BRANDING_IMAGE_MAX_LENGTH,
@@ -156,6 +161,8 @@ export interface AllSettings {
   landing: LandingSettings;
   saasSmtp: SaasSmtpSettings;
   adTracking: AdTrackingSettingsPublic;
+  /** Max organizations per user (D12) — the `organization_limit` row. */
+  organizationLimit: { limit: number; source: 'setting' | 'default' };
 }
 
 export const DEFAULT_TRIAL_DAYS = 14;
@@ -309,6 +316,17 @@ export class SettingsService implements OnModuleInit {
     expiry: { ...DEFAULT_SAAS_SMTP.expiry },
   };
   private adTracking: AdTrackingSettingsInternal = defaultAdTracking();
+  /**
+   * Organization limit (D12) — cached like every other setting (loaded
+   * at boot, refreshed on update). The auth service reads the same row
+   * directly through GET /internal/settings/organization-limit, so a
+   * change takes effect there without a restart; a direct DB edit of
+   * the row (bypassing this API) shows here only after a restart.
+   */
+  private organizationLimit: { limit: number; source: 'setting' | 'default' } = {
+    limit: DEFAULT_ORGANIZATION_LIMIT,
+    source: 'default',
+  };
 
   constructor(
     private readonly prisma: PlatformPrismaService,
@@ -330,6 +348,7 @@ export class SettingsService implements OnModuleInit {
       landing: { ...this.landing },
       saasSmtp: this.getSaasSmtp(),
       adTracking: this.getAdTracking(),
+      organizationLimit: this.getOrganizationLimit(),
     };
   }
 
@@ -429,6 +448,30 @@ export class SettingsService implements OnModuleInit {
   /** Effective search-indexing flag for the public landing. */
   isSeoIndexingEnabled(): boolean {
     return this.landing.seoIndexingEnabled;
+  }
+
+  /** Max organizations per user (D12) — the `organization_limit` row. */
+  getOrganizationLimit(): { limit: number; source: 'setting' | 'default' } {
+    return { ...this.organizationLimit };
+  }
+
+  /**
+   * Update the organization limit. The console UI range is 1–100 (a
+   * value above 100 from the console is a 400, not a silent clamp —
+   * survey Q9); the stored value is clamped server-side to [1, 1000]
+   * via the shared helper, matching the internal read endpoint.
+   */
+  async updateOrganizationLimit(
+    limit: number,
+  ): Promise<{ limit: number; source: 'setting' | 'default' }> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new BadRequestException(
+        'limit must be an integer between 1 and 100',
+      );
+    }
+    await this.store(ORGANIZATION_LIMIT_SETTING_KEY, { limit });
+    this.organizationLimit = parseOrganizationLimitSetting({ limit });
+    return this.getOrganizationLimit();
   }
 
   async updateSmtp(input: {
@@ -881,6 +924,10 @@ export class SettingsService implements OnModuleInit {
     await this.loadLanding();
     await this.loadSaasSmtp();
     await this.loadAdTracking();
+    const organizationLimit = await this.readStored(
+      ORGANIZATION_LIMIT_SETTING_KEY,
+    );
+    this.organizationLimit = parseOrganizationLimitSetting(organizationLimit);
   }
 
   /**

@@ -55,6 +55,9 @@ describe('MfaService', () => {
       platformRefreshToken: {
         updateMany: jest.fn(async () => ({ count: 2 })),
       },
+      auditLog: {
+        findFirst: jest.fn(async () => null),
+      },
       $transaction: jest.fn(async (input: any) => Promise.all(input)),
     };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
@@ -245,5 +248,45 @@ describe('MfaService', () => {
     expect(await service.verifyLoginCode(user, totpCode(first.secret))).toBe(
       false,
     );
+  });
+
+  // Phase 4: the backup-codes "presented" marker — the console shows
+  // fresh BA backup codes at first central-ba login and records that
+  // the operator saw them, so it never shows them again.
+  it('backup-codes marker is false until marked, then true with a timestamp', async () => {
+    await expect(service.backupCodesPresentedStatus('user-1')).resolves.toEqual({
+      presented: false,
+      presentedAt: null,
+    });
+
+    const marked = await service.markBackupCodesPresented('user-1');
+    expect(marked.presented).toBe(true);
+    expect(marked.presentedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'user-1',
+        action: 'auth.mfa.backup-codes.presented',
+        entityId: 'user-1',
+      }),
+    );
+
+    // The marker now reads back from the audit row.
+    prisma.auditLog.findFirst.mockResolvedValue({
+      createdAt: new Date(marked.presentedAt!),
+    });
+    await expect(service.backupCodesPresentedStatus('user-1')).resolves.toEqual({
+      presented: true,
+      presentedAt: marked.presentedAt,
+    });
+  });
+
+  it('marking backup codes a second time is idempotent (no second audit row)', async () => {
+    const first = await service.markBackupCodesPresented('user-1');
+    prisma.auditLog.findFirst.mockResolvedValue({
+      createdAt: new Date(first.presentedAt!),
+    });
+    const second = await service.markBackupCodesPresented('user-1');
+    expect(second).toEqual(first);
+    expect(audit.record).toHaveBeenCalledTimes(1);
   });
 });

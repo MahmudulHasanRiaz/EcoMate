@@ -19,6 +19,17 @@ import {
 
 /** Recovery codes per enrollment; each is single-use. */
 export const MFA_RECOVERY_CODE_COUNT = 10;
+/**
+ * Audit action marking that fresh BA backup codes were presented to an
+ * operator at first central-ba login (survey §7.4 / Q5). BA has no
+ * "codes never displayed" flag and `generate-backup-codes` issues a
+ * fresh set on every call (invalidating the previous set), so the
+ * console must call it once per operator and record the presentation.
+ * The marker lives in the platform DB as an AuditLog row — no schema
+ * change — and the check happens before the generate call, not after.
+ */
+export const BACKUP_CODES_PRESENTED_ACTION =
+  'auth.mfa.backup-codes.presented';
 /** Per-user cap on MFA verification attempts (TOTP guessing backstop). */
 const VERIFY_LIMIT = 10;
 const VERIFY_WINDOW_MS = 10 * 60_000;
@@ -316,5 +327,48 @@ export class MfaService {
     });
     if (!user) throw new NotFoundException('Platform user not found');
     return user;
+  }
+
+  /**
+   * Fresh-BA-backup-codes marker (Phase 4, survey §7.4): has this
+   * operator already been shown fresh backup codes at a central-ba
+   * login? Reads the `auth.mfa.backup-codes.presented` AuditLog row.
+   * Migrated MFA users arrive with an encrypted EMPTY backup-code set,
+   * so the console shows the fresh-codes screen when this is false.
+   */
+  async backupCodesPresentedStatus(
+    userId: string,
+  ): Promise<{ presented: boolean; presentedAt: string | null }> {
+    const row = await this.prisma.auditLog.findFirst({
+      where: { actorId: userId, action: BACKUP_CODES_PRESENTED_ACTION },
+      select: { createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return {
+      presented: !!row,
+      presentedAt: row ? row.createdAt.toISOString() : null,
+    };
+  }
+
+  /**
+   * Record the presentation (idempotent — a second call is a no-op and
+   * returns the original timestamp). Called by the console AFTER it
+   * has shown the fresh codes once; the next login then skips the
+   * screen instead of churning a new set.
+   */
+  async markBackupCodesPresented(
+    userId: string,
+  ): Promise<{ presented: boolean; presentedAt: string | null }> {
+    const existing = await this.backupCodesPresentedStatus(userId);
+    if (existing.presented) return existing;
+    const presentedAt = new Date().toISOString();
+    await this.audit.record({
+      actorId: userId,
+      action: BACKUP_CODES_PRESENTED_ACTION,
+      entity: 'PlatformUser',
+      entityId: userId,
+      after: { presentedAt },
+    });
+    return { presented: true, presentedAt };
   }
 }

@@ -8,7 +8,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { PlatformAuthGuard } from '../auth/platform-auth.guard';
+import { ConsoleAuthModeGuard } from '../auth/console-auth-mode.guard';
 import { CurrentPlatformUser } from '../auth/current-platform-user.decorator';
 import { READ_ROLES, Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -18,7 +18,7 @@ import { UpdatePlanDto } from './dto/update-plan.dto';
 import { PlansService } from './plans.service';
 
 @Controller('plans')
-@UseGuards(PlatformAuthGuard, RolesGuard)
+@UseGuards(ConsoleAuthModeGuard, RolesGuard)
 export class PlansController {
   constructor(private readonly plans: PlansService) {}
 

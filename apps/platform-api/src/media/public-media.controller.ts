@@ -6,7 +6,7 @@ import { MediaService } from './media.service';
  * PUBLIC media bytes — no auth by design. Library files are landing /
  * branding assets (logos, landing images) that the public landing
  * renders for anonymous visitors; the library itself (list / upload /
- * manage) stays behind PlatformAuthGuard in MediaController.
+ * manage) stays behind ConsoleAuthModeGuard in MediaController.
  *
  * Bytes at an id NEVER change (a re-upload creates a new row), so the
  * response is immutable + long-cached. SVG is sanitized at upload AND

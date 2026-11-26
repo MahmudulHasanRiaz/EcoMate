@@ -226,6 +226,20 @@ session headers, redirects the operator's browser to the returned
 POSTs the latter after a consume — 5 s timeout, never blocks the
 redirect). Do not touch platform-api in this phase.
 
+**Phase 4 operator MFA/session routes (built here):** the unified
+console MFA reset and session management need service-owned routes
+because BA's `list-sessions` is self-only and the operator BA role
+cannot touch another operator's sessions:
+`POST /internal/users/:id/mfa/reset` (deletes TwoFactor rows +
+clears `twoFactorEnabled` → `{userId, reset: true, twoFactorEnabled: false}`),
+`POST /internal/users/:id/sessions/revoke-all` (`{userId, revokedCount}`),
+`GET /internal/users/:id/sessions` (`{data: [...]}` — token NEVER
+returned, `revoked` = `expiresAt < now`, `lastUsedAt` = `updatedAt`),
+`DELETE /internal/users/:id/sessions/:sessionId` (404
+`session_not_found` when the session is absent or belongs to another
+user). All four require the internal secret and return 404
+`user_not_found` for an unknown user.
+
 ## Social sign-in TOTP gate (Q11)
 
 `databaseHooks.session.create.before` (`src/auth-options.ts`) acts

@@ -1,22 +1,25 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
 import { AuditService } from '../common/audit.service';
 import { PlatformMailService } from '../common/platform-mail.service';
+import { CentralAuthClient, CentralAuthError } from '../auth/central-auth.client';
+import { isCentralAuthMode } from '../auth/console-auth-mode';
 import { MfaService } from '../auth/mfa.service';
 import { DomainConfigService } from '../config/domain-config.service';
 import { PlatformPrismaService } from '../prisma/prisma.service';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
-import { ResetTotpDto } from './dto/reset-totp.dto';
+import { ResetMfaDto } from './dto/reset-mfa.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ROLE_MATRIX } from './role-matrix';
 
@@ -50,7 +53,41 @@ export class UsersService {
     private readonly mail: PlatformMailService,
     private readonly mfa: MfaService,
     private readonly domainConfig: DomainConfigService,
+    private readonly centralAuth?: CentralAuthClient,
   ) {}
+
+  /**
+   * The central client is optional in the constructor so unit specs can
+   * construct the service without it; every central-mode call throws a
+   * clear error when it is absent (the Nest module always provides it
+   * — AuthModule is @Global and exports CentralAuthClient).
+   */
+  private requireCentral(): CentralAuthClient {
+    if (!this.centralAuth) {
+      throw new Error(
+        'Central auth client is not configured (CONSOLE_AUTH_MODE=central-ba needs it)',
+      );
+    }
+    return this.centralAuth;
+  }
+
+  /**
+   * Map a central-service failure onto the console-facing exception.
+   * 409 (email already a central user) → Conflict; transport/5xx →
+   * 503; anything else → 500 with the service's message (a desynced
+   * operator must surface as failed, never as silent success).
+   */
+  private centralError(err: unknown, action: string): Error {
+    if (err instanceof CentralAuthError && err.status === 409) {
+      return new ConflictException(
+        `A central user with this email already exists (${action})`,
+      );
+    }
+    if (err instanceof ServiceUnavailableException) return err;
+    return new InternalServerErrorException(
+      `Central auth ${action} failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   getRoles() {
     return { roles: ROLE_MATRIX };
@@ -117,8 +154,33 @@ export class UsersService {
       throw new ConflictException('A platform user with this email exists');
     }
 
+    // Central-ba mode: the central user is created FIRST (its id is
+    // server-generated), role-synced, and the PlatformUser row is then
+    // created WITH id = the central id — preserving the Phase 2
+    // invariant PlatformUser.id == central user id (AuditLog.actorId
+    // relies on it). If the central create fails, no PlatformUser row
+    // is created (no orphan). POST /internal/users takes no
+    // platformRole, so the role-sync call is mandatory, not optional.
+    let centralId: string | undefined;
+    if (isCentralAuthMode()) {
+      const central = this.requireCentral();
+      try {
+        const created = await central.createCentralUser({
+          email,
+          name: dto.name.trim(),
+          password: dto.password,
+          emailVerified: true,
+        });
+        centralId = created.id;
+        await central.roleSync(created.id, dto.role);
+      } catch (err) {
+        throw this.centralError(err, 'create user');
+      }
+    }
+
     const user = await this.prisma.platformUser.create({
       data: {
+        ...(centralId ? { id: centralId } : {}),
         email,
         name: dto.name.trim(),
         role: dto.role,
@@ -184,6 +246,49 @@ export class UsersService {
       },
       after: { name: user.name, role: user.role, status: user.status },
     });
+
+    // Central-ba mode: a role change must reach the central user the
+    // same call (the BA `role` — operator vs user — gates impersonation,
+    // so a desynced operator can or cannot impersonate wrongly). A
+    // failed sync surfaces as a 500 + audit — never silent success.
+    // A disable also revokes the operator's central sessions (a
+    // disabled operator must not keep a live BA session).
+    if (isCentralAuthMode()) {
+      const central = this.requireCentral();
+      if (demotes) {
+        try {
+          await central.roleSync(id, user.role);
+        } catch (err) {
+          await this.audit.record({
+            actorId,
+            action: 'users.role-sync.failed',
+            entity: 'PlatformUser',
+            entityId: id,
+            after: {
+              role: user.role,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          });
+          throw this.centralError(err, 'sync role');
+        }
+      }
+      if (disables && dto.status === 'DISABLED') {
+        try {
+          await central.revokeAllSessions(id);
+        } catch (err) {
+          await this.audit.record({
+            actorId,
+            action: 'users.sessions.revoke.failed',
+            entity: 'PlatformUser',
+            entityId: id,
+            after: {
+              error: err instanceof Error ? err.message : String(err),
+            },
+          });
+          throw this.centralError(err, 'revoke sessions');
+        }
+      }
+    }
     return user;
   }
 
@@ -199,6 +304,19 @@ export class UsersService {
       throw new ConflictException(
         'Disable the account first, then delete it',
       );
+    }
+
+    // Central-ba mode: delete the central user FIRST, then the platform
+    // row — so a failure leaves the operator visible, not half-deleted.
+    // A central 404 is tolerated (already gone). Central delete cascades
+    // the user's BA sessions at the DB level, so no separate revoke-all
+    // is needed here.
+    if (isCentralAuthMode()) {
+      try {
+        await this.requireCentral().deleteCentralUser(id);
+      } catch (err) {
+        throw this.centralError(err, 'delete user');
+      }
     }
 
     await this.prisma.platformUser.delete({ where: { id } });
@@ -228,6 +346,20 @@ export class UsersService {
     }
 
     const temporaryPassword = randomBytes(12).toString('base64url');
+    // Central-ba mode: the temp password lands centrally FIRST (so a
+    // central failure leaves the local password untouched and the call
+    // fails cleanly), then the local bcrypt update + local token revoke.
+    // BA's revoke-on-password-reset only fires for BA-native resets,
+    // so the central sessions are revoked explicitly afterwards.
+    if (isCentralAuthMode()) {
+      const central = this.requireCentral();
+      try {
+        await central.updateCentralUser(id, { password: temporaryPassword });
+        await central.revokeAllSessions(id);
+      } catch (err) {
+        throw this.centralError(err, 'reset password');
+      }
+    }
     await this.prisma.$transaction([
       this.prisma.platformUser.update({
         where: { id },
@@ -251,12 +383,22 @@ export class UsersService {
   }
 
   /**
-   * SUPERADMIN-only MFA reset for a lost device / locked-out operator.
-   * Clears all MFA state and revokes sessions; a SUPERADMIN target must
-   * re-enroll at next login (enforced), other roles log in without MFA
-   * until they enroll again. Self-reset is refused — use the account page.
+   * Unified SUPERADMIN-only MFA reset for a lost device / locked-out
+   * operator (Phase 4: the old `POST /users/:id/totp/reset` is folded
+   * into this endpoint; the `totp/reset` route and `resetTotp()` are
+   * deleted). Clears all MFA state and revokes sessions; a SUPERADMIN
+   * target must re-enroll at next login (enforced), other roles log in
+   * without MFA until they enroll again. Self-reset is refused with
+   * 400 — use the account page. The optional `reason` is audit metadata
+   * only (kept from the old totp/reset body — the users page sends it).
+   *
+   * Central-ba mode: the BA-side reset
+   * (`POST /internal/users/:id/mfa/reset` — clears the twoFactor row +
+   * `twoFactorEnabled = false`) runs first, plus a central revoke-all;
+   * the local `clearMfa` still runs so the legacy columns stay in sync
+   * for a rollback.
    */
-  async resetMfa(id: string, actorId: string) {
+  async resetMfa(id: string, actorId: string, dto: ResetMfaDto = {}) {
     const current = await this.prisma.platformUser.findUnique({
       where: { id },
     });
@@ -267,31 +409,77 @@ export class UsersService {
       );
     }
 
+    if (isCentralAuthMode()) {
+      const central = this.requireCentral();
+      try {
+        await central.resetMfaCentral(id);
+        await central.revokeAllSessions(id);
+      } catch (err) {
+        throw this.centralError(err, 'reset MFA');
+      }
+    }
+
     await this.mfa.clearMfa(id);
+    const reason = dto.reason?.trim();
     await this.audit.record({
       actorId,
       action: 'users.mfa.reset',
       entity: 'PlatformUser',
       entityId: id,
-      after: { sessionsRevoked: true },
+      after: {
+        sessionsRevoked: true,
+        ...(reason ? { reason } : {}),
+      },
     });
     return { success: true };
   }
 
   /**
-   * Per-operator session list (CMS item 15). A session is one refresh-token
-   * rotation family (familyId): one login mints a family, every refresh
-   * keeps it. Rows are grouped per family; device/IP come from the newest
-   * row that carries them, lastUsedAt is the newest activity, expiry is
-   * the newest live token's expiry (or the newest overall when revoked).
-   * SUPERADMIN only (controller) — sessions reveal device/IP, so they stay
-   * with the role that already manages users.
+   * Per-operator session list (CMS item 15).
+   *
+   * Legacy mode: a session is one refresh-token rotation family
+   * (familyId): one login mints a family, every refresh keeps it. Rows
+   * are grouped per family; device/IP come from the newest row that
+   * carries them, lastUsedAt is the newest activity, expiry is the
+   * newest live token's expiry (or the newest overall when revoked).
+   *
+   * Central-ba mode: the BA session list (one login = one row, no
+   * rotation family). `id` is the BA session id (the revoke key) and
+   * `tokenCount` has no BA equivalent, so it is dropped. SUPERADMIN
+   * only (controller) — sessions reveal device/IP, so they stay with
+   * the role that already manages users.
    */
   async listSessions(id: string) {
     const user = await this.prisma.platformUser.findUnique({
       where: { id },
     });
     if (!user) throw new NotFoundException('Platform user not found');
+
+    if (isCentralAuthMode()) {
+      let rows: Awaited<
+        ReturnType<CentralAuthClient['listCentralSessions']>
+      >;
+      try {
+        rows = await this.requireCentral().listCentralSessions(id);
+      } catch (err) {
+        throw this.centralError(err, 'list sessions');
+      }
+      const sessions = (rows.data ?? []).map((s) => ({
+        id: s.id,
+        userAgent: s.userAgent ?? null,
+        ipAddress: s.ipAddress ?? null,
+        createdAt: s.createdAt,
+        lastUsedAt: s.lastUsedAt ?? null,
+        expiresAt: s.expiresAt,
+        revoked: s.revoked ?? false,
+      }));
+      sessions.sort(
+        (a, b) =>
+          (b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0) -
+          (a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0),
+      );
+      return { data: sessions };
+    }
 
     const rows = await this.prisma.platformRefreshToken.findMany({
       where: { userId: id },
@@ -349,68 +537,60 @@ export class UsersService {
   }
 
   /**
-   * Revoke one session: kills the WHOLE rotation family (consistent with
-   * the replay-revokes-family rule in AuthService.refresh), so every token
-   * minted by that login stops working. Audited. Idempotent: revoking an
-   * already-revoked family succeeds with revokedCount 0.
+   * Revoke one session.
+   *
+   * Legacy mode: kills the WHOLE rotation family (consistent with the
+   * replay-revokes-family rule in AuthService.refresh), so every token
+   * minted by that login stops working. Audited. Idempotent: revoking
+   * an already-revoked family succeeds with revokedCount 0.
+   *
+   * Central-ba mode: revokes the single BA session by id. A 404 from
+   * the central service (unknown session) surfaces as NotFound.
    */
-  async revokeSession(id: string, familyId: string, actorId: string) {
+  async revokeSession(id: string, sessionId: string, actorId: string) {
     const user = await this.prisma.platformUser.findUnique({
       where: { id },
     });
     if (!user) throw new NotFoundException('Platform user not found');
+
+    if (isCentralAuthMode()) {
+      try {
+        await this.requireCentral().revokeCentralSession(id, sessionId);
+      } catch (err) {
+        if (err instanceof CentralAuthError && err.status === 404) {
+          throw new NotFoundException('Session not found');
+        }
+        throw this.centralError(err, 'revoke session');
+      }
+      await this.audit.record({
+        actorId,
+        action: 'users.session.revoke',
+        entity: 'Session',
+        entityId: sessionId,
+        after: { userId: id, revokedCount: 1 },
+      });
+      return { success: true, revokedCount: 1 };
+    }
+
     const rows = await this.prisma.platformRefreshToken.findMany({
-      where: { userId: id, familyId },
+      where: { userId: id, familyId: sessionId },
       select: { id: true },
     });
     if (rows.length === 0) {
       throw new NotFoundException('Session not found');
     }
     const { count } = await this.prisma.platformRefreshToken.updateMany({
-      where: { userId: id, familyId, revokedAt: null },
+      where: { userId: id, familyId: sessionId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
     await this.audit.record({
       actorId,
       action: 'users.session.revoke',
       entity: 'PlatformRefreshToken',
-      entityId: familyId,
+      entityId: sessionId,
       after: { userId: id, revokedCount: count },
     });
     return { success: true, revokedCount: count };
-  }
-
-  /**
-   * Admin TOTP reset (CMS item 16): superadmin-only, audited, never
-   * returns a secret, no self-reset (403). Clears the whole enrollment
-   * (secret, pending secret, enabled-at, recovery codes — via
-   * MfaService.clearMfa, which also revokes all sessions). A SUPERADMIN
-   * target must re-enroll at next login (AuthService.login returns
-   * mfaSetupRequired); other roles log in without MFA until they enroll
-   * again. The optional reason is audit metadata only.
-   */
-  async resetTotp(id: string, actorId: string, dto: ResetTotpDto = {}) {
-    const current = await this.prisma.platformUser.findUnique({
-      where: { id },
-    });
-    if (!current) throw new NotFoundException('Platform user not found');
-    if (id === actorId) {
-      throw new ForbiddenException('You cannot reset your own TOTP enrollment');
-    }
-
-    await this.mfa.clearMfa(id);
-    const reason = dto.reason?.trim();
-    await this.audit.record({
-      actorId,
-      action: 'users.totp.reset',
-      entity: 'PlatformUser',
-      entityId: id,
-      after: {
-        sessionsRevoked: true,
-        ...(reason ? { reason } : {}),
-      },
-    });
-    return { success: true };
   }
 
   async invite(dto: InviteUserDto, actorId: string) {
@@ -535,9 +715,35 @@ export class UsersService {
       throw new ConflictException('A platform user with this email exists');
     }
 
+    // Central-ba mode: the central user is created FIRST (its id is
+    // server-generated), role-synced, and the PlatformUser row is then
+    // created WITH id = the central id (same invariant as create()).
+    // If the central create fails, no PlatformUser row is created and
+    // the invite stays unused, so the invitee can retry.
+    let centralId: string | undefined;
+    if (isCentralAuthMode()) {
+      const central = this.requireCentral();
+      try {
+        const created = await central.createCentralUser({
+          email: invite.email,
+          name: (dto.name ?? invite.name).trim(),
+          password: dto.password,
+          emailVerified: true,
+        });
+        centralId = created.id;
+        await central.roleSync(created.id, invite.role);
+      } catch (err) {
+        throw this.centralError(err, 'create user');
+      }
+    }
+
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.platformUser.create({
         data: {
+          // Central-ba mode: the central user was created first (above)
+          // and the PlatformUser row takes its id — the Phase 2
+          // invariant. Legacy mode: the id is generated as before.
+          ...(centralId ? { id: centralId } : {}),
           email: invite.email,
           name: (dto.name ?? invite.name).trim(),
           role: invite.role,
