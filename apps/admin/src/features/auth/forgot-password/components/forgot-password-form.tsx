@@ -25,6 +25,8 @@ import {
   InputOTPSeparator,
   InputOTPSlot,
 } from '@/components/ui/input-otp'
+import { PasswordStrengthMeter } from '../../password-strength-meter'
+import { useResendCooldown } from '../../use-resend-cooldown'
 
 const emailSchema = z.object({
   email: z.email({
@@ -32,16 +34,19 @@ const emailSchema = z.object({
   }),
 })
 
+const codeSchema = z.object({
+  otp: z
+    .string()
+    .min(6, 'Please enter the 6-digit code.')
+    .max(6, 'Please enter the 6-digit code.'),
+})
+
 // Mirrors the backend StrongPasswordConstraint
 // (apps/backend/src/auth/validators/password.validator.ts) exactly, so the
 // user gets the failure here instead of a round-trip: min 8 chars, one
 // uppercase, one lowercase, one number, one special character.
-const resetSchema = z
+const passwordSchema = z
   .object({
-    otp: z
-      .string()
-      .min(6, 'Please enter the 6-digit code.')
-      .max(6, 'Please enter the 6-digit code.'),
     password: z
       .string()
       .min(8, 'Password must be at least 8 characters long.')
@@ -59,6 +64,8 @@ const resetSchema = z
     path: ['confirmPassword'],
   })
 
+type Step = 'email' | 'code' | 'password'
+
 /**
  * Forgot password — D7 flip (2026-11-26): OTP flow replaces the Phase 3
  * BA native reset LINKS. Email → 6-digit code (`emailOtp.requestPasswordReset`)
@@ -67,16 +74,25 @@ const resetSchema = z
  * The response is generic by design (anti-enumeration) — the same
  * confirmation shows whether or not the email exists.
  *
- * The old link-based `/reset-password?token=…` page stays as a fallback
- * for links already emailed, but no UI sends a link anymore.
+ * Login redesign (Step 1): the flow is split into three visible steps in
+ * one widget — email, then the code on its own step, then the new
+ * password (with a strength meter). The code is verified together with
+ * the password submit (the service has no verify-only call); a wrong
+ * code surfaces there, with a link back to the code step. The old
+ * link-based `/reset-password?token=…` page stays as a fallback for
+ * links already emailed, but no UI sends a link anymore.
  */
 export function ForgotPasswordForm({
   className,
   ...props
 }: React.HTMLAttributes<HTMLFormElement>) {
   const [isLoading, setIsLoading] = useState(false)
+  const [step, setStep] = useState<Step>('email')
   const [sentTo, setSentTo] = useState<string | null>(null)
+  const [code, setCode] = useState('')
   const [serverError, setServerError] = useState<string | null>(null)
+  const [shake, setShake] = useState(false)
+  const resendCooldown = useResendCooldown(30)
   const navigate = useNavigate()
 
   const emailForm = useForm<z.infer<typeof emailSchema>>({
@@ -84,12 +100,18 @@ export function ForgotPasswordForm({
     defaultValues: { email: '' },
   })
 
-  const resetForm = useForm<z.infer<typeof resetSchema>>({
-    resolver: zodResolver(resetSchema),
-    defaultValues: { otp: '', password: '', confirmPassword: '' },
+  const codeForm = useForm<z.infer<typeof codeSchema>>({
+    resolver: zodResolver(codeSchema),
+    defaultValues: { otp: '' },
   })
 
-  const otpCode = resetForm.watch('otp')
+  const passwordForm = useForm<z.infer<typeof passwordSchema>>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: { password: '', confirmPassword: '' },
+  })
+
+  const otpCode = codeForm.watch('otp')
+  const newPassword = passwordForm.watch('password')
 
   async function onEmailSubmit(data: z.infer<typeof emailSchema>) {
     setIsLoading(true)
@@ -106,6 +128,10 @@ export function ForgotPasswordForm({
     }
     emailForm.reset()
     setSentTo(data.email)
+    setCode('')
+    codeForm.reset()
+    resendCooldown.start()
+    setStep('code')
     setIsLoading(false)
   }
 
@@ -119,6 +145,7 @@ export function ForgotPasswordForm({
         email: sentTo,
       })
       if (error) throw error
+      resendCooldown.start()
       toast.success('A new code has been sent to your email')
     } catch {
       toast.success('If the email exists, a reset code has been sent')
@@ -127,7 +154,13 @@ export function ForgotPasswordForm({
     }
   }
 
-  async function onResetSubmit(data: z.infer<typeof resetSchema>) {
+  function onCodeSubmit(data: z.infer<typeof codeSchema>) {
+    setCode(data.otp)
+    setServerError(null)
+    setStep('password')
+  }
+
+  async function onPasswordSubmit(data: z.infer<typeof passwordSchema>) {
     if (!sentTo) return
     setIsLoading(true)
     setServerError(null)
@@ -135,7 +168,7 @@ export function ForgotPasswordForm({
     try {
       const { error } = await authClient.emailOtp.resetPassword({
         email: sentTo,
-        otp: data.otp,
+        otp: code,
         password: data.password,
       })
       if (error) throw error
@@ -148,17 +181,49 @@ export function ForgotPasswordForm({
       )
       setServerError(message)
       toast.error(message)
+      setShake(true)
     } finally {
       setIsLoading(false)
     }
   }
 
-  if (sentTo) {
+  function backToEmail() {
+    setStep('email')
+    setSentTo(null)
+    setServerError(null)
+    setCode('')
+    codeForm.reset()
+    passwordForm.reset()
+  }
+
+  const otpSlots = (
+    <>
+      <InputOTPGroup>
+        <InputOTPSlot index={0} />
+        <InputOTPSlot index={1} />
+      </InputOTPGroup>
+      <InputOTPSeparator />
+      <InputOTPGroup>
+        <InputOTPSlot index={2} />
+        <InputOTPSlot index={3} />
+      </InputOTPGroup>
+      <InputOTPSeparator />
+      <InputOTPGroup>
+        <InputOTPSlot index={4} />
+        <InputOTPSlot index={5} />
+      </InputOTPGroup>
+    </>
+  )
+
+  if (step === 'code') {
     return (
-      <div className={cn('grid gap-3', className)}>
+      <div
+        className={cn('auth-step grid gap-3', className)}
+        onAnimationEnd={() => setShake(false)}
+      >
         <div
           role='status'
-          className='flex items-start gap-2 rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200'
+          className='flex items-start gap-2 rounded-[3px] border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200'
         >
           <CircleCheck className='h-4 w-4 mt-0.5 shrink-0' />
           <span>
@@ -167,13 +232,13 @@ export function ForgotPasswordForm({
             spam folder).
           </span>
         </div>
-        <Form {...resetForm}>
+        <Form {...codeForm}>
           <form
-            onSubmit={resetForm.handleSubmit(onResetSubmit)}
+            onSubmit={codeForm.handleSubmit(onCodeSubmit)}
             className='grid gap-2'
           >
             <FormField
-              control={resetForm.control}
+              control={codeForm.control}
               name='otp'
               render={({ field }) => (
                 <FormItem>
@@ -182,72 +247,20 @@ export function ForgotPasswordForm({
                     <InputOTP
                       maxLength={6}
                       {...field}
-                      containerClassName='justify-between sm:[&>[data-slot="input-otp-group"]>div]:w-12'
+                      containerClassName='justify-between'
                     >
-                      <InputOTPGroup>
-                        <InputOTPSlot index={0} />
-                        <InputOTPSlot index={1} />
-                      </InputOTPGroup>
-                      <InputOTPSeparator />
-                      <InputOTPGroup>
-                        <InputOTPSlot index={2} />
-                        <InputOTPSlot index={3} />
-                      </InputOTPGroup>
-                      <InputOTPSeparator />
-                      <InputOTPGroup>
-                        <InputOTPSlot index={4} />
-                        <InputOTPSlot index={5} />
-                      </InputOTPGroup>
+                      {otpSlots}
                     </InputOTP>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <FormField
-              control={resetForm.control}
-              name='password'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>New Password</FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      autoComplete='new-password'
-                      placeholder='********'
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={resetForm.control}
-              name='confirmPassword'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Confirm New Password</FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      autoComplete='new-password'
-                      placeholder='********'
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {serverError && (
-              <p role='alert' className='text-sm text-destructive'>
-                {serverError}
-              </p>
-            )}
             <Button
-              className='mt-2'
+              className='auth-btn auth-btn-primary mt-2'
               disabled={isLoading || otpCode.length < 6}
             >
-              Reset Password
+              Continue
               {isLoading ? (
                 <Loader2 className='animate-spin' />
               ) : (
@@ -260,19 +273,17 @@ export function ForgotPasswordForm({
           <button
             type='button'
             onClick={onResend}
-            disabled={isLoading}
-            className='font-medium text-muted-foreground underline underline-offset-4 hover:text-primary disabled:opacity-50'
+            disabled={isLoading || resendCooldown.remaining > 0}
+            className='auth-link min-h-0 font-medium underline underline-offset-4 disabled:opacity-50'
           >
-            Resend code
+            {resendCooldown.remaining > 0
+              ? `Resend code (${resendCooldown.remaining}s)`
+              : 'Resend code'}
           </button>
           <button
             type='button'
-            onClick={() => {
-              setSentTo(null)
-              setServerError(null)
-              resetForm.reset()
-            }}
-            className='font-medium text-muted-foreground underline underline-offset-4 hover:text-primary'
+            onClick={backToEmail}
+            className='auth-link min-h-0 font-medium underline underline-offset-4'
           >
             Send to a different email
           </button>
@@ -281,11 +292,98 @@ export function ForgotPasswordForm({
     )
   }
 
+  if (step === 'password') {
+    return (
+      <div
+        className={cn('auth-step grid gap-3', shake && 'auth-shake', className)}
+        onAnimationEnd={() => setShake(false)}
+      >
+        <p className='text-sm text-muted-foreground'>
+          Choose a new password for {sentTo}.
+        </p>
+        <Form {...passwordForm}>
+          <form
+            onSubmit={passwordForm.handleSubmit(onPasswordSubmit)}
+            className='grid gap-2'
+          >
+            <FormField
+              control={passwordForm.control}
+              name='password'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>New Password</FormLabel>
+                  <FormControl>
+                    <PasswordInput
+                      autoComplete='new-password'
+                      placeholder='********'
+                      className='auth-field'
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                  <PasswordStrengthMeter password={newPassword} />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={passwordForm.control}
+              name='confirmPassword'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Confirm New Password</FormLabel>
+                  <FormControl>
+                    <PasswordInput
+                      autoComplete='new-password'
+                      placeholder='********'
+                      className='auth-field'
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {serverError && (
+              <p role='alert' className='text-sm text-destructive'>
+                {serverError}{' '}
+                <button
+                  type='button'
+                  onClick={() => {
+                    setStep('code')
+                    setServerError(null)
+                  }}
+                  className='auth-link font-medium underline underline-offset-4'
+                >
+                  Check the code again.
+                </button>
+              </p>
+            )}
+            <Button className='auth-btn auth-btn-primary mt-2' disabled={isLoading}>
+              Reset Password
+              {isLoading ? (
+                <Loader2 className='animate-spin' />
+              ) : (
+                <ArrowRight />
+              )}
+            </Button>
+          </form>
+        </Form>
+        <button
+          type='button'
+          onClick={() => setStep('code')}
+          className='auth-link min-h-0 self-start text-sm font-medium underline underline-offset-4'
+        >
+          Back to the code
+        </button>
+      </div>
+    )
+  }
+
   return (
     <Form {...emailForm}>
       <form
         onSubmit={emailForm.handleSubmit(onEmailSubmit)}
-        className={cn('grid gap-2', className)}
+        className={cn('auth-step grid gap-2', className)}
         {...props}
       >
         <FormField
@@ -301,6 +399,7 @@ export function ForgotPasswordForm({
                   type='email'
                   autoComplete='email'
                   placeholder='name@example.com'
+                  className='auth-field'
                   {...field}
                 />
               </FormControl>
@@ -308,7 +407,7 @@ export function ForgotPasswordForm({
             </FormItem>
           )}
         />
-        <Button className='mt-2' disabled={isLoading}>
+        <Button className='auth-btn auth-btn-primary mt-2' disabled={isLoading}>
           Send reset code
           {isLoading ? <Loader2 className='animate-spin' /> : <ArrowRight />}
         </Button>

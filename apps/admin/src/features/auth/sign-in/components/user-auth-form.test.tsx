@@ -66,7 +66,7 @@ async function fillAndSubmit(email: string, password: string): Promise<RenderRes
   const screen = await render(<UserAuthForm />)
   await userEvent.fill(screen.getByLabelText('Email'), email)
   await userEvent.fill(screen.getByLabelText('Password'), password)
-  await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
   return screen
 }
 
@@ -87,7 +87,7 @@ describe('UserAuthForm (Phase 3)', () => {
 
   it('shows validation errors when submitting an empty form', async () => {
     const screen = await render(<UserAuthForm />)
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
 
     await expect.element(screen.getByText('Please enter your email.')).toBeInTheDocument()
     await expect.element(screen.getByText('Please enter your password.')).toBeInTheDocument()
@@ -98,7 +98,7 @@ describe('UserAuthForm (Phase 3)', () => {
     const screen = await render(<UserAuthForm />)
     await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
     await userEvent.fill(screen.getByLabelText('Password'), 'abc')
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
 
     await expect
       .element(screen.getByText('Password must be at least 6 characters long.'))
@@ -139,7 +139,7 @@ describe('UserAuthForm (Phase 3)', () => {
     const screen = await render(<UserAuthForm redirectTo='/op/orders' />)
     await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
     await userEvent.fill(screen.getByLabelText('Password'), 'correct horse battery')
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
 
     expect(navigate).toHaveBeenCalledWith({ to: '/op/orders', replace: true })
   })
@@ -219,14 +219,15 @@ describe('UserAuthForm (Phase 3)', () => {
   it('renders the three social buttons and wires Google to signIn.social', async () => {
     const screen = await render(<UserAuthForm />)
 
-    await expect.element(screen.getByText('Google')).toBeInTheDocument()
-    await expect.element(screen.getByText('GitHub')).toBeInTheDocument()
-    await expect.element(screen.getByText('Facebook')).toBeInTheDocument()
+    // Icon-only row: provider names live in the accessible names only.
+    await expect.element(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument()
+    await expect.element(screen.getByRole('button', { name: 'Continue with GitHub' })).toBeInTheDocument()
+    await expect.element(screen.getByRole('button', { name: 'Continue with Facebook' })).toBeInTheDocument()
     await expect
       .element(screen.getByText(/Social sign-in works on your store's main address/))
       .toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Google' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }))
     expect(signInSocial).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'google' }),
     )
@@ -237,10 +238,10 @@ describe('UserAuthForm (Phase 3)', () => {
 
   it('OTP login: sends a code, verifies it, and completes sign-in', async () => {
     const screen = await render(<UserAuthForm />)
-    await userEvent.click(screen.getByRole('button', { name: 'OTP diye login' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Email code' }))
 
     await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
-    await userEvent.click(screen.getByRole('button', { name: 'Send OTP' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
     expect(sendVerificationOtp).toHaveBeenCalledWith({
       email: 'admin@example.com',
       type: 'sign-in',
@@ -259,15 +260,28 @@ describe('UserAuthForm (Phase 3)', () => {
     expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
   })
 
-  it('OTP login: resend requests a fresh code', async () => {
+  it('OTP login: resend starts a 30-second cooldown, then requests a fresh code', async () => {
     const screen = await render(<UserAuthForm />)
-    await userEvent.click(screen.getByRole('button', { name: 'OTP diye login' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Email code' }))
     await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
-    await userEvent.click(screen.getByRole('button', { name: 'Send OTP' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
     await vi.waitFor(() =>
       expect(sendVerificationOtp).toHaveBeenCalledTimes(1),
     )
 
+    // Cooldown engages immediately: the button is disabled with a countdown.
+    const resend = screen.getByRole('button', { name: /Resend code/ })
+    await expect.element(resend).toBeDisabled()
+    await expect.element(screen.getByText(/Resend code \(\d+s\)/)).toBeInTheDocument()
+
+    // After the cooldown elapses the same button resends (rotates the code).
+    await vi.waitFor(
+      async () => {
+        const btn = screen.getByRole('button', { name: /Resend code/ })
+        await expect.element(btn).not.toBeDisabled()
+      },
+      { timeout: 34000 },
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Resend code' }))
     await vi.waitFor(() =>
       expect(sendVerificationOtp).toHaveBeenCalledTimes(2),
@@ -276,5 +290,28 @@ describe('UserAuthForm (Phase 3)', () => {
       email: 'admin@example.com',
       type: 'sign-in',
     })
+  }, 45000)
+
+  it('renders Password and Email code tabs only — no Phone tab (no SMS provider)', async () => {
+    const screen = await render(<UserAuthForm />)
+
+    const tabs = await screen.getByRole('tab').all()
+    expect(tabs.length).toBe(2)
+    await expect.element(screen.getByRole('tab', { name: 'Password' })).toBeInTheDocument()
+    await expect.element(screen.getByRole('tab', { name: 'Email code' })).toBeInTheDocument()
+    const phoneTabs = await screen.getByRole('tab', { name: 'Phone code' }).all()
+    expect(phoneTabs.length).toBe(0)
+  })
+
+  it('moves between method tabs with the arrow keys', async () => {
+    const screen = await render(<UserAuthForm />)
+
+    const emailTab = screen.getByRole('tab', { name: 'Email code' })
+    await userEvent.click(screen.getByRole('tab', { name: 'Password' }))
+    await userEvent.keyboard('{ArrowRight}')
+    await expect.element(emailTab).toHaveAttribute('aria-selected', 'true')
+    await expect
+      .element(screen.getByText(/We'll send a 6-digit code to your email/))
+      .toBeInTheDocument()
   })
 })

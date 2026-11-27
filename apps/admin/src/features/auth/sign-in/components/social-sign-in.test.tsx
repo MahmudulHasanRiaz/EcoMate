@@ -29,9 +29,10 @@ describe('SocialSignIn (Phase 3)', () => {
   it('renders all three provider buttons and the fixed-host caption', async () => {
     const screen = await render(<SocialSignIn />)
 
-    await expect.element(screen.getByRole('button', { name: 'Google' })).toBeInTheDocument()
-    await expect.element(screen.getByRole('button', { name: 'GitHub' })).toBeInTheDocument()
-    await expect.element(screen.getByRole('button', { name: 'Facebook' })).toBeInTheDocument()
+    // Icon-only buttons: the provider name lives in the accessible name.
+    await expect.element(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument()
+    await expect.element(screen.getByRole('button', { name: 'Continue with GitHub' })).toBeInTheDocument()
+    await expect.element(screen.getByRole('button', { name: 'Continue with Facebook' })).toBeInTheDocument()
     await expect
       .element(screen.getByText(/Social sign-in works on your store's main address/))
       .toBeInTheDocument()
@@ -40,7 +41,7 @@ describe('SocialSignIn (Phase 3)', () => {
   it('starts Google sign-in with the sign-in callback URLs', async () => {
     const screen = await render(<SocialSignIn redirectTo='/op/orders' />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Google' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }))
 
     expect(signInSocial).toHaveBeenCalledWith({
       provider: 'google',
@@ -52,7 +53,7 @@ describe('SocialSignIn (Phase 3)', () => {
   it('wires GitHub to its provider', async () => {
     const screen = await render(<SocialSignIn />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'GitHub' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }))
     expect(signInSocial).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'github' }),
     )
@@ -63,7 +64,7 @@ describe('SocialSignIn (Phase 3)', () => {
     // provider), so each provider gets its own render.
     const screen = await render(<SocialSignIn />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Facebook' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with Facebook' }))
     expect(signInSocial).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'facebook' }),
     )
@@ -73,7 +74,7 @@ describe('SocialSignIn (Phase 3)', () => {
     signInSocial.mockResolvedValue({ error: { message: 'provider down' } })
     const screen = await render(<SocialSignIn />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Google' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }))
 
     expect(toastError).toHaveBeenCalledWith(
       'Could not start google sign-in. Please try email sign-in instead.',

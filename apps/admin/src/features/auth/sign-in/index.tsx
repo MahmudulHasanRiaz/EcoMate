@@ -11,6 +11,14 @@ import { CircleAlert } from 'lucide-react'
 import { AuthLayout } from '../auth-layout'
 import { UserAuthForm } from './components/user-auth-form'
 
+/**
+ * Tenant admin sign-in (login redesign Step 1): Clerk-style compact
+ * widget — one 400px card, a single-line title, minimal copy. The
+ * tenant brand header lives in AuthLayout; this card only carries the
+ * form. All banners from the old card are kept (?error= social
+ * failure, ?expired=1 session expiry, ?customer=1 customer bounce,
+ * ?registered=1 new customer account).
+ */
 export function SignIn() {
   const { redirect, expired, customer, registered, error } = useSearch({
     from: '/(auth)/sign-in',
@@ -18,26 +26,24 @@ export function SignIn() {
 
   return (
     <AuthLayout>
-      <Card className='max-w-sm gap-4'>
-        <CardHeader>
-          <CardTitle className='text-lg tracking-tight'>Sign in</CardTitle>
+      <Card className='w-full max-w-[400px] gap-4 rounded-[3px]'>
+        <CardHeader className='px-5 pb-0'>
+          <CardTitle className='text-base tracking-tight'>Sign in</CardTitle>
           <CardDescription>
-            Enter your email and password below to log into{' '}
-            <br className='max-sm:hidden' /> your account. Don't have an
-            account?{' '}
+            Sign in to your account. Don&apos;t have an account?{' '}
             <Link
               to='/sign-up'
-              className='text-nowrap underline underline-offset-4 hover:text-primary'
+              className='auth-link text-nowrap underline underline-offset-4'
             >
               Sign Up
             </Link>
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className='px-5'>
           {error && (
             <div
               role='alert'
-              className='mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+              className='mb-4 flex items-start gap-2 rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
             >
               <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
               <span>
@@ -50,7 +56,7 @@ export function SignIn() {
           {expired === '1' && (
             <div
               role='status'
-              className='mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+              className='mb-4 flex items-start gap-2 rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
             >
               <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
               <span>Your session has expired. Please sign in again.</span>
@@ -59,7 +65,7 @@ export function SignIn() {
           {customer === '1' && (
             <div
               role='alert'
-              className='mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+              className='mb-4 flex items-start gap-2 rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
             >
               <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
               <span>
@@ -71,7 +77,7 @@ export function SignIn() {
           {registered === '1' && (
             <div
               role='status'
-              className='mb-4 flex items-start gap-2 rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'
+              className='mb-4 flex items-start gap-2 rounded-[3px] border border-green-300 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'
             >
               <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
               <span>
@@ -83,23 +89,22 @@ export function SignIn() {
           )}
           <UserAuthForm redirectTo={redirect} />
         </CardContent>
-        <CardFooter>
-          <p className='px-8 text-center text-sm text-muted-foreground'>
-            By clicking sign in, you agree to our{' '}
+        <CardFooter className='border-t px-5 pt-3'>
+          <p className='mx-auto text-center text-xs text-muted-foreground'>
+            Secured by EcoMate ·{' '}
             <a
               href='/terms'
               className='underline underline-offset-4 hover:text-primary'
             >
               Terms of Service
             </a>{' '}
-            and{' '}
+            ·{' '}
             <a
               href='/privacy'
               className='underline underline-offset-4 hover:text-primary'
             >
               Privacy Policy
             </a>
-            .
           </p>
         </CardFooter>
       </Card>

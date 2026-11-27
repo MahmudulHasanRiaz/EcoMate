@@ -59,7 +59,6 @@ export function buildSessionExpiredRedirect(pathname: string, search: string): s
  */
 const PUBLIC_AUTH_PATHS = new Set([
   '/sign-in',
-  '/sign-in-2',
   '/sign-up',
   '/forgot-password',
   '/reset-password',

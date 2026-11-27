@@ -21,7 +21,7 @@ export function TenantBrandMark({ mark }: { mark: BrandMark }) {
       <img
         src={mediaUrl(mark.src)}
         alt={mark.name ? `${mark.name} logo` : 'Store logo'}
-        className='h-12 w-auto max-w-60 object-contain'
+        className='h-10 w-auto max-w-60 object-contain'
         onError={() => setImgFailed(true)}
       />
     )
@@ -29,11 +29,11 @@ export function TenantBrandMark({ mark }: { mark: BrandMark }) {
 
   if (mark.kind === 'favicon' && mark.src && !imgFailed) {
     return (
-      <span className='flex size-12 items-center justify-center rounded border bg-background'>
+      <span className='flex size-10 items-center justify-center rounded-[3px] border bg-background'>
         <img
           src={mediaUrl(mark.src)}
           alt={mark.name ? `${mark.name} icon` : 'Store icon'}
-          className='size-8 object-contain'
+          className='size-7 object-contain'
           onError={() => setImgFailed(true)}
         />
       </span>
@@ -43,7 +43,9 @@ export function TenantBrandMark({ mark }: { mark: BrandMark }) {
   if (mark.initials) {
     return (
       <span
-        className='flex size-12 items-center justify-center rounded bg-primary text-lg font-semibold text-primary-foreground'
+        // Brand tile: the tenant's own colour (scoped --auth-brand from
+        // AuthLayout), not the admin's fixed --primary.
+        className='flex size-10 items-center justify-center rounded-[3px] bg-(--auth-brand) text-base font-semibold text-white'
         aria-hidden
       >
         {mark.initials}
@@ -52,8 +54,8 @@ export function TenantBrandMark({ mark }: { mark: BrandMark }) {
   }
 
   return (
-    <span className='flex size-12 items-center justify-center rounded border bg-background'>
-      <Logo className='size-6' />
+    <span className='flex size-10 items-center justify-center rounded-[3px] border bg-background'>
+      <Logo className='size-5' />
     </span>
   )
 }

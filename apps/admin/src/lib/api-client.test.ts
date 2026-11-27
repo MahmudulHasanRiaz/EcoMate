@@ -236,7 +236,6 @@ describe('apiClient session expiry helpers (Phase 3)', () => {
     // the OTP flow), so `/otp` is NOT public anymore.
     for (const path of [
       '/admin/sign-in',
-      '/admin/sign-in-2',
       '/admin/sign-up',
       '/admin/forgot-password',
       '/admin/reset-password',

@@ -116,6 +116,70 @@ describe('SystemSettingsController', () => {
     });
   });
 
+  describe('getPublicBranding colours (login redesign Step 1)', () => {
+    function mockController(
+      settings: { key: string; value: string }[] = [],
+    ) {
+      const prisma = {
+        systemSetting: { findMany: jest.fn().mockResolvedValue(settings) },
+      };
+      return new SystemSettingsController(
+        prisma as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+      );
+    }
+
+    it('returns the storefront-default colour family when no brand keys are set', async () => {
+      const branding = await mockController().getPublicBranding();
+      expect(branding.colors).toEqual({
+        primary: '#0089CD',
+        primaryDark: '#006da3',
+        accent: '#E77250',
+        text: '#0a0a0a',
+        background: '#FFFFFF',
+        success: '#22C55E',
+        danger: '#EF4444',
+        border: '#E5E7EB',
+      });
+    });
+
+    it('returns the configured brand colours', async () => {
+      const branding = await mockController([
+        { key: 'brand_primary', value: '#123456' },
+        { key: 'brand_accent', value: '#abcdef' },
+      ]).getPublicBranding();
+      expect(branding.colors.primary).toBe('#123456');
+      expect(branding.colors.accent).toBe('#abcdef');
+      // Untouched keys keep their defaults.
+      expect(branding.colors.primaryDark).toBe('#006da3');
+    });
+
+    it('falls back on invalid stored hex instead of passing it through', async () => {
+      const branding = await mockController([
+        { key: 'brand_primary', value: 'red' },
+        { key: 'brand_accent', value: '#12' },
+        { key: 'brand_text', value: 'javascript:alert(1)' },
+      ]).getPublicBranding();
+      expect(branding.colors.primary).toBe('#0089CD');
+      expect(branding.colors.accent).toBe('#E77250');
+      expect(branding.colors.text).toBe('#0a0a0a');
+    });
+
+    it('keeps the existing non-colour fields unchanged', async () => {
+      const branding = await mockController([
+        { key: 'store_name', value: 'My Shop' },
+        { key: 'admin_tagline', value: 'Back office' },
+      ]).getPublicBranding();
+      expect(branding.storeName).toBe('My Shop');
+      expect(branding.adminTagline).toBe('Back office');
+    });
+  });
+
   describe('POST :key payments.* admin-only guard', () => {
     function mockSetController() {
       const prisma = {

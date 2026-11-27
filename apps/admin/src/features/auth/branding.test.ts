@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   brandingInitials,
+  DEFAULT_BRAND_COLORS,
+  isValidHexColor,
+  normalizeBrandColors,
   resolveBrandMark,
   type PublicBranding,
 } from './branding'
@@ -16,6 +19,7 @@ function makeBranding(overrides: Partial<PublicBranding>): PublicBranding {
     storeLogo: '',
     seoTitle: '',
     seoDescription: '',
+    colors: DEFAULT_BRAND_COLORS,
     ...overrides,
   }
 }
@@ -104,5 +108,54 @@ describe('resolveBrandMark', () => {
       expect(mark.name).toBe('')
       expect(mark.initials).toBe('')
     }
+  })
+})
+
+describe('normalizeBrandColors (login redesign Step 1)', () => {
+  it('returns the storefront defaults when nothing is provided', () => {
+    expect(normalizeBrandColors(undefined)).toEqual(DEFAULT_BRAND_COLORS)
+    expect(normalizeBrandColors(null)).toEqual(DEFAULT_BRAND_COLORS)
+    expect(normalizeBrandColors({})).toEqual(DEFAULT_BRAND_COLORS)
+  })
+
+  it('keeps valid configured hex colours', () => {
+    const colors = normalizeBrandColors({
+      primary: '#123456',
+      accent: '#abcdef',
+    })
+    expect(colors.primary).toBe('#123456')
+    expect(colors.accent).toBe('#abcdef')
+    expect(colors.primaryDark).toBe(DEFAULT_BRAND_COLORS.primaryDark)
+  })
+
+  it('falls back per-key on invalid values instead of passing them through', () => {
+    const colors = normalizeBrandColors({
+      primary: 'red',
+      accent: '#12',
+      text: 'javascript:alert(1)',
+      border: 123,
+    })
+    expect(colors.primary).toBe(DEFAULT_BRAND_COLORS.primary)
+    expect(colors.accent).toBe(DEFAULT_BRAND_COLORS.accent)
+    expect(colors.text).toBe(DEFAULT_BRAND_COLORS.text)
+    expect(colors.border).toBe(DEFAULT_BRAND_COLORS.border)
+  })
+
+  it('accepts 3-digit hex', () => {
+    expect(normalizeBrandColors({ primary: '#abc' }).primary).toBe('#abc')
+  })
+})
+
+describe('isValidHexColor', () => {
+  it('accepts #RGB and #RRGGBB only', () => {
+    expect(isValidHexColor('#0089CD')).toBe(true)
+    expect(isValidHexColor('#abc')).toBe(true)
+    expect(isValidHexColor('#0089CD ')).toBe(true)
+    expect(isValidHexColor('0089CD')).toBe(false)
+    expect(isValidHexColor('red')).toBe(false)
+    expect(isValidHexColor('#12')).toBe(false)
+    expect(isValidHexColor('')).toBe(false)
+    expect(isValidHexColor(undefined)).toBe(false)
+    expect(isValidHexColor(123)).toBe(false)
   })
 })

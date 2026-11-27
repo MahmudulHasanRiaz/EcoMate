@@ -355,6 +355,23 @@ export class SystemSettingsController {
     return map;
   }
 
+  /**
+   * Login redesign (Step 1, tenant admin): a stored brand colour must be
+   * a valid hex colour, otherwise the login widget falls back to the
+   * storefront default — an invalid stored value must never break the
+   * page or inject an arbitrary CSS value.
+   */
+  private brandColor(
+    map: Record<string, string>,
+    key: string,
+    fallback: string,
+  ): string {
+    const value = (map[key] || '').trim();
+    return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value)
+      ? value
+      : fallback;
+  }
+
   @Public()
   @Get('branding')
   async getPublicBranding() {
@@ -371,6 +388,14 @@ export class SystemSettingsController {
             'store_logo',
             'seo_title',
             'seo_description',
+            'brand_primary',
+            'brand_primary_dark',
+            'brand_accent',
+            'brand_text',
+            'brand_bg',
+            'brand_success',
+            'brand_danger',
+            'brand_border',
           ],
         },
       },
@@ -387,6 +412,20 @@ export class SystemSettingsController {
       storeLogo: map['store_logo'] || '',
       seoTitle: map['seo_title'] || '',
       seoDescription: map['seo_description'] || '',
+      // Login redesign (Step 1): the tenant's own brand colours, served
+      // unauthenticated so the admin login can theme itself before
+      // sign-in. Same keys + defaults as GET /storefront — one default
+      // family everywhere, never a per-endpoint guess.
+      colors: {
+        primary: this.brandColor(map, 'brand_primary', '#0089CD'),
+        primaryDark: this.brandColor(map, 'brand_primary_dark', '#006da3'),
+        accent: this.brandColor(map, 'brand_accent', '#E77250'),
+        text: this.brandColor(map, 'brand_text', '#0a0a0a'),
+        background: this.brandColor(map, 'brand_bg', '#FFFFFF'),
+        success: this.brandColor(map, 'brand_success', '#22C55E'),
+        danger: this.brandColor(map, 'brand_danger', '#EF4444'),
+        border: this.brandColor(map, 'brand_border', '#E5E7EB'),
+      },
     };
   }
 
@@ -816,7 +855,7 @@ export class SystemSettingsController {
         start_url: '/admin/',
         display: 'browser',
         background_color: '#ffffff',
-        theme_color: '#2563eb',
+        theme_color: '#0089CD',
       };
     }
     const settings = await this.prisma.systemSetting.findMany({
@@ -836,7 +875,7 @@ export class SystemSettingsController {
       display: 'standalone',
       display_override: ['window-controls-overlay', 'standalone'],
       background_color: map['brand_bg'] || '#ffffff',
-      theme_color: map['brand_primary'] || '#2563eb',
+      theme_color: this.brandColor(map, 'brand_primary', '#0089CD'),
       orientation: 'portrait-primary',
       categories: ['business', 'ecommerce'],
       lang: 'en',
@@ -860,7 +899,7 @@ export class SystemSettingsController {
         start_url: '/pos/',
         display: 'browser',
         background_color: '#ffffff',
-        theme_color: '#2563eb',
+        theme_color: '#0089CD',
       };
     }
     const settings = await this.prisma.systemSetting.findMany({
@@ -880,7 +919,7 @@ export class SystemSettingsController {
       display: 'standalone',
       display_override: ['window-controls-overlay', 'standalone'],
       background_color: map['brand_bg'] || '#ffffff',
-      theme_color: map['brand_primary'] || '#2563eb',
+      theme_color: this.brandColor(map, 'brand_primary', '#0089CD'),
       orientation: 'portrait-primary',
       categories: ['business', 'ecommerce'],
       lang: 'en',

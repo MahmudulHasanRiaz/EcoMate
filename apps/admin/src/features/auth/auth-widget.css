@@ -1,0 +1,156 @@
+/**
+ * Clerk-style compact auth widget (login redesign Step 1, tenant admin).
+ *
+ * EVERY rule here is scoped under `.auth-widget` (set on the AuthLayout
+ * wrapper) and unlayered, so it overrides Tailwind's layered utilities
+ * only inside the auth pages. The global `--primary` (#4f6bf2) and
+ * `--radius` tokens are never touched — the logged-in admin keeps its
+ * fixed brand. Brand colours arrive as `--auth-brand*` inline vars from
+ * AuthLayout (tenant colours from GET /system-settings/branding, with
+ * storefront defaults); the values below are the same defaults, so the
+ * widget is correct even before the fetch resolves.
+ *
+ * Tokens (from the preview): 34px field/button height, 3px radius,
+ * 150ms single ease, active scale 0.98 (kept from the Button base).
+ */
+.auth-widget {
+  --auth-brand: #0089cd;
+  --auth-brand-dark: #006da3;
+  --auth-accent: #e77250;
+  --auth-border: #e5e7eb;
+  --auth-danger: #ef4444;
+  --auth-success: #22c55e;
+}
+
+/* ---- 34px fields & buttons, 3px radius ---- */
+.auth-widget .auth-field {
+  border-radius: 3px;
+}
+.auth-widget input.auth-field,
+.auth-widget .auth-field input {
+  height: 34px;
+  min-height: 34px;
+}
+.auth-widget .auth-btn {
+  height: 34px;
+  min-height: 34px;
+  border-radius: 3px;
+}
+
+/* ---- Brand primary button (scoped; the global Button stays #4f6bf2) ---- */
+.auth-widget .auth-btn-primary {
+  background-color: var(--auth-brand);
+  color: #fff;
+}
+.auth-widget .auth-btn-primary:hover {
+  background-color: color-mix(in srgb, var(--auth-brand) 88%, #000);
+}
+.auth-widget .auth-btn-primary:focus-visible {
+  outline-color: var(--auth-brand);
+}
+
+/* ---- Brand-tinted focus rings on auth fields ---- */
+.auth-widget .auth-field:focus-visible {
+  --tw-ring-color: color-mix(in oklab, var(--auth-brand) 50%, transparent);
+  outline-color: var(--auth-brand);
+}
+.auth-widget .auth-btn:focus-visible {
+  --tw-ring-color: color-mix(in oklab, var(--auth-brand) 50%, transparent);
+  outline-color: var(--auth-brand);
+}
+
+/* ---- Brand links inside the widget (forgot / sign-up / back links) ---- */
+.auth-widget .auth-link {
+  color: var(--auth-brand);
+}
+.auth-widget .auth-link:hover {
+  color: var(--auth-brand-dark);
+}
+
+/* ---- Method tabs: Password / Email code (no phone tab — phone OTP
+   does not exist yet; see user-auth-form.tsx) ---- */
+.auth-widget .auth-tab {
+  height: 28px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.auth-widget .auth-tab:hover {
+  color: var(--color-foreground);
+  background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+}
+.auth-widget .auth-tab[aria-selected='true'] {
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+  box-shadow: 0 1px 2px rgb(15 22 48 / 0.08);
+}
+.auth-widget .auth-tab:focus-visible {
+  outline-color: var(--auth-brand);
+}
+
+/* ---- Icon-only social buttons: 36px squares, brand hover ---- */
+.auth-widget .auth-social {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  border-radius: 3px;
+  padding: 0;
+}
+.auth-widget .auth-social:hover {
+  border-color: var(--auth-brand);
+  background-color: color-mix(in srgb, var(--auth-brand) 6%, transparent);
+}
+.auth-widget .auth-social:focus-visible {
+  --tw-ring-color: color-mix(in oklab, var(--auth-brand) 50%, transparent);
+  outline-color: var(--auth-brand);
+}
+
+/* ---- OTP slots: 38px boxes, 3px radius, brand active border ---- */
+.auth-widget [data-slot='input-otp-slot'] {
+  height: 38px;
+  width: 38px;
+  border-radius: 3px;
+}
+.auth-widget [data-slot='input-otp-slot'][data-active='true'] {
+  border-color: var(--auth-brand);
+}
+
+/* ---- Auth card: low radius like the rest of the widget ---- */
+.auth-widget [data-slot='card'] {
+  border-radius: 3px;
+}
+
+/* ---- Submit-error shake: 300ms, one 4px shake, submit errors only ---- */
+@keyframes auth-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+.auth-widget .auth-shake {
+  animation: auth-shake 300ms ease-in-out 1;
+}
+
+/* ---- Step swap: 150ms fade + 4px rise, no layout shift ---- */
+@keyframes auth-step-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.auth-widget .auth-step {
+  animation: auth-step-in 150ms ease;
+}
+
+/* ---- Reduced motion: no movement anywhere in the widget ---- */
+@media (prefers-reduced-motion: reduce) {
+  .auth-widget *,
+  .auth-widget *::before,
+  .auth-widget *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

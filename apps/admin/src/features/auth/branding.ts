@@ -17,6 +17,62 @@
  * sets only an admin favicon gets the favicon tile.
  */
 
+/**
+ * The tenant's brand colours (login redesign Step 1). Same keys +
+ * defaults as `GET /system-settings/storefront` — one default family
+ * everywhere. The admin login reads them from
+ * `GET /system-settings/branding` (unauthenticated, pre-login) and
+ * applies them as SCOPED CSS vars on the auth wrapper only; the global
+ * `--primary` (#4f6bf2) is never touched, so the logged-in admin keeps
+ * its fixed brand.
+ */
+export interface BrandColors {
+  primary: string
+  primaryDark: string
+  accent: string
+  text: string
+  background: string
+  success: string
+  danger: string
+  border: string
+}
+
+export const DEFAULT_BRAND_COLORS: BrandColors = {
+  primary: '#0089CD',
+  primaryDark: '#006da3',
+  accent: '#E77250',
+  text: '#0a0a0a',
+  background: '#FFFFFF',
+  success: '#22C55E',
+  danger: '#EF4444',
+  border: '#E5E7EB',
+}
+
+/** A stored colour must be a valid hex value — anything else is a fallback. */
+export function isValidHexColor(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value.trim())
+  )
+}
+
+/** Fail-soft: a partial/invalid payload degrades per-key to the defaults. */
+export function normalizeBrandColors(data: unknown): BrandColors {
+  const record = (data ?? {}) as Record<string, unknown>
+  const pick = (key: keyof BrandColors): string =>
+    isValidHexColor(record[key]) ? (record[key] as string).trim() : DEFAULT_BRAND_COLORS[key]
+  return {
+    primary: pick('primary'),
+    primaryDark: pick('primaryDark'),
+    accent: pick('accent'),
+    text: pick('text'),
+    background: pick('background'),
+    success: pick('success'),
+    danger: pick('danger'),
+    border: pick('border'),
+  }
+}
+
 export interface PublicBranding {
   storeName: string
   adminTitle: string
@@ -27,6 +83,7 @@ export interface PublicBranding {
   storeLogo: string
   seoTitle: string
   seoDescription: string
+  colors: BrandColors
 }
 
 export type BrandMarkKind = 'logo' | 'favicon' | 'initials' | 'generic'

@@ -18,6 +18,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { PasswordInput } from '@/components/password-input'
+import { PasswordStrengthMeter } from '../../password-strength-meter'
 
 // Mirrors the backend StrongPasswordConstraint
 // (apps/backend/src/auth/validators/password.validator.ts) exactly, so the
@@ -59,11 +60,14 @@ export function ResetPasswordForm({
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  const [shake, setShake] = useState(false)
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: { password: '', confirmPassword: '' },
   })
+
+  const newPassword = form.watch('password')
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
     setIsLoading(true)
@@ -84,6 +88,7 @@ export function ResetPasswordForm({
       )
       setServerError(message)
       toast.error(message)
+      setShake(true)
     } finally {
       setIsLoading(false)
     }
@@ -93,7 +98,8 @@ export function ResetPasswordForm({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-2', className)}
+        className={cn('auth-step grid gap-2', shake && 'auth-shake', className)}
+        onAnimationEnd={() => setShake(false)}
         {...props}
       >
         <FormField
@@ -106,10 +112,12 @@ export function ResetPasswordForm({
                 <PasswordInput
                   autoComplete='new-password'
                   placeholder='********'
+                  className='auth-field'
                   {...field}
                 />
               </FormControl>
               <FormMessage />
+              <PasswordStrengthMeter password={newPassword} />
             </FormItem>
           )}
         />
@@ -123,6 +131,7 @@ export function ResetPasswordForm({
                 <PasswordInput
                   autoComplete='new-password'
                   placeholder='********'
+                  className='auth-field'
                   {...field}
                 />
               </FormControl>
@@ -135,13 +144,13 @@ export function ResetPasswordForm({
             <span>{serverError}</span>{' '}
             <Link
               to='/forgot-password'
-              className='underline underline-offset-4 hover:text-primary'
+              className='auth-link underline underline-offset-4'
             >
               Request a new link.
             </Link>
           </p>
         )}
-        <Button className='mt-2' disabled={isLoading}>
+        <Button className='auth-btn auth-btn-primary mt-2' disabled={isLoading}>
           Reset Password
           {isLoading ? <Loader2 className='animate-spin' /> : <ArrowRight />}
         </Button>

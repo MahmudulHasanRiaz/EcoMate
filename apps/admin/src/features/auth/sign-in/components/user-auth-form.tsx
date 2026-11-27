@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Loader2, LogIn, CircleAlert } from 'lucide-react'
+import { Loader2, CircleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import { authClient } from '@/lib/better-auth-client'
@@ -31,6 +31,7 @@ import {
   InputOTPSlot,
 } from '@/components/ui/input-otp'
 import { SocialSignIn } from './social-sign-in'
+import { useResendCooldown } from '../../use-resend-cooldown'
 
 const formSchema = z.object({
   email: z.email({
@@ -70,8 +71,21 @@ interface UserAuthFormProps extends React.HTMLAttributes<HTMLFormElement> {
   redirectTo?: string
 }
 
+type SignInMethod = 'password' | 'email-code'
+
+const METHODS: { id: SignInMethod; label: string }[] = [
+  { id: 'password', label: 'Password' },
+  { id: 'email-code', label: 'Email code' },
+]
+// NOTE — no Phone tab: phone OTP does not exist (no SMS provider yet).
+// A Phone tab must stay out of this list until a phone-OTP flow is real;
+// rendering one now would be a fake button (login redesign Step 1).
+
 /**
- * Admin sign-in — Phase 3 central Better Auth cutover.
+ * Admin sign-in — Phase 3 central Better Auth cutover, reskinned in the
+ * login redesign (Step 1) as a Clerk-style compact widget: icon-only
+ * social row, Password / Email code method tabs, and the OTP code step
+ * inside the same card (email → Continue → 6-digit code boxes).
  *
  * Email sign-in goes through `authClient.signIn.email()` (same-origin
  * `/api/better-auth/*` proxy → central service). There is no access token
@@ -88,7 +102,7 @@ interface UserAuthFormProps extends React.HTMLAttributes<HTMLFormElement> {
  * no session (Phase 1 Q11) — the form switches to the challenge screen
  * instead of erroring out.
  *
- * OTP login (D7 flip, 2026-11-26): "OTP diye login" sends a 6-digit code
+ * OTP login (D7 flip, 2026-11-26): "Email code" sends a 6-digit code
  * to the email (`emailOtp.sendVerificationOtp`, type `sign-in`) and signs
  * in with it (`signIn.emailOtp`) — no password needed. The code is valid
  * 15 minutes; 5 wrong tries lock that code (TOO_MANY_ATTEMPTS). Note:
@@ -108,10 +122,16 @@ export function UserAuthForm({
   const [stage, setStage] = useState<
     'password' | 'challenge' | 'otp-email' | 'otp-code'
   >('password')
+  const [method, setMethod] = useState<SignInMethod>('password')
   const [useBackupCode, setUseBackupCode] = useState(false)
   const [otpEmail, setOtpEmail] = useState('')
   const [otpSentTo, setOtpSentTo] = useState('')
   const [otpError, setOtpError] = useState('')
+  // Submit-error shake (300ms, one 4px shake — see auth-widget.css).
+  // Set on submit failure, cleared when the animation ends.
+  const [shake, setShake] = useState(false)
+  const resendCooldown = useResendCooldown(30)
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   const navigate = useNavigate()
   const { auth } = useAuthStore()
   // The BA client's session cache is refreshed explicitly after sign-in
@@ -151,6 +171,26 @@ export function UserAuthForm({
   const challengeCode = challengeForm.watch('code')
   const otpCode = otpCodeForm.watch('code')
 
+  function selectMethod(next: SignInMethod) {
+    setMethod(next)
+    setCustomerBlocked('')
+    setOtpError('')
+    setStage(next === 'email-code' ? 'otp-email' : 'password')
+  }
+
+  function onTabKeyDown(event: React.KeyboardEvent) {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    event.preventDefault()
+    const current = METHODS.findIndex((m) => m.id === method)
+    const next =
+      METHODS[
+        (current + (event.key === 'ArrowRight' ? 1 : METHODS.length - 1)) %
+          METHODS.length
+      ]
+    selectMethod(next.id)
+    tabRefs.current[METHODS.findIndex((m) => m.id === next.id)]?.focus()
+  }
+
   async function onOtpEmailSubmit(data: z.infer<typeof otpEmailSchema>) {
     setIsLoading(true)
     setOtpError('')
@@ -163,11 +203,13 @@ export function UserAuthForm({
       setOtpEmail(data.email)
       setOtpSentTo(data.email)
       otpCodeForm.reset()
+      resendCooldown.start()
       setStage('otp-code')
     } catch (error: any) {
       setOtpError(
         baErrorMessage(error, 'Could not send the code. Please try again.'),
       )
+      setShake(true)
     } finally {
       setIsLoading(false)
     }
@@ -190,6 +232,7 @@ export function UserAuthForm({
       )
       otpCodeForm.setError('code', { message })
       setOtpError(message)
+      setShake(true)
     } finally {
       setIsLoading(false)
     }
@@ -207,6 +250,7 @@ export function UserAuthForm({
       })
       if (error) throw error
       otpCodeForm.reset()
+      resendCooldown.start()
       toast.success('A new code has been sent to your email')
     } catch (error: any) {
       setOtpError(
@@ -251,6 +295,7 @@ export function UserAuthForm({
         'You are signed in with a customer account. Customer accounts cannot access the admin application.',
       )
       setStage('password')
+      setMethod('password')
       return
     }
 
@@ -316,6 +361,7 @@ export function UserAuthForm({
       }
     } catch (error: any) {
       toast.error(baErrorMessage(error, 'Sign-in failed. Please try again.'))
+      setShake(true)
     } finally {
       setIsLoading(false)
     }
@@ -332,11 +378,13 @@ export function UserAuthForm({
         const message = baErrorMessage(error, 'Invalid code. Please try again.')
         challengeForm.setError('code', { message })
         toast.error(message)
+        setShake(true)
         return
       }
       await completeSignIn()
     } catch {
       toast.error('Could not verify the code. Please try again.')
+      setShake(true)
     } finally {
       setIsLoading(false)
     }
@@ -355,19 +403,43 @@ export function UserAuthForm({
         )
         backupForm.setError('code', { message })
         toast.error(message)
+        setShake(true)
         return
       }
       await completeSignIn()
     } catch {
       toast.error('Could not verify the recovery code. Please try again.')
+      setShake(true)
     } finally {
       setIsLoading(false)
     }
   }
 
+  const otpSlots = (keyPrefix: string) => (
+    <>
+      <InputOTPGroup key={`${keyPrefix}-g1`}>
+        <InputOTPSlot index={0} />
+        <InputOTPSlot index={1} />
+      </InputOTPGroup>
+      <InputOTPSeparator key={`${keyPrefix}-s1`} />
+      <InputOTPGroup key={`${keyPrefix}-g2`}>
+        <InputOTPSlot index={2} />
+        <InputOTPSlot index={3} />
+      </InputOTPGroup>
+      <InputOTPSeparator key={`${keyPrefix}-s2`} />
+      <InputOTPGroup key={`${keyPrefix}-g3`}>
+        <InputOTPSlot index={4} />
+        <InputOTPSlot index={5} />
+      </InputOTPGroup>
+    </>
+  )
+
   if (stage === 'challenge') {
     return (
-      <div className={cn('grid gap-3', className)}>
+      <div
+        className={cn('auth-step grid gap-3', shake && 'auth-shake', className)}
+        onAnimationEnd={() => setShake(false)}
+      >
         <p className='text-sm text-muted-foreground'>
           Two-factor authentication is on for this account. Enter the 6-digit
           code from your authenticator app to continue.
@@ -388,22 +460,9 @@ export function UserAuthForm({
                       <InputOTP
                         maxLength={6}
                         {...field}
-                        containerClassName='justify-between sm:[&>[data-slot="input-otp-group"]>div]:w-12'
+                        containerClassName='justify-between'
                       >
-                        <InputOTPGroup>
-                          <InputOTPSlot index={0} />
-                          <InputOTPSlot index={1} />
-                        </InputOTPGroup>
-                        <InputOTPSeparator />
-                        <InputOTPGroup>
-                          <InputOTPSlot index={2} />
-                          <InputOTPSlot index={3} />
-                        </InputOTPGroup>
-                        <InputOTPSeparator />
-                        <InputOTPGroup>
-                          <InputOTPSlot index={4} />
-                          <InputOTPSlot index={5} />
-                        </InputOTPGroup>
+                        {otpSlots('challenge')}
                       </InputOTP>
                     </FormControl>
                     <FormMessage />
@@ -411,7 +470,7 @@ export function UserAuthForm({
                 )}
               />
               <Button
-                className='mt-2'
+                className='auth-btn auth-btn-primary mt-2'
                 disabled={challengeCode.length < 6 || isLoading}
               >
                 {isLoading ? <Loader2 className='animate-spin' /> : null}
@@ -435,6 +494,7 @@ export function UserAuthForm({
                       <Input
                         autoComplete='one-time-code'
                         placeholder='XXXXX-XXXXX'
+                        className='auth-field'
                         {...field}
                       />
                     </FormControl>
@@ -442,7 +502,7 @@ export function UserAuthForm({
                   </FormItem>
                 )}
               />
-              <Button className='mt-2' disabled={isLoading}>
+              <Button className='auth-btn auth-btn-primary mt-2' disabled={isLoading}>
                 {isLoading ? <Loader2 className='animate-spin' /> : null}
                 Verify and sign in
               </Button>
@@ -453,7 +513,7 @@ export function UserAuthForm({
           <button
             type='button'
             onClick={() => setUseBackupCode((v) => !v)}
-            className='font-medium text-muted-foreground underline underline-offset-4 hover:text-primary'
+            className='auth-link min-h-0 font-medium underline underline-offset-4'
           >
             {useBackupCode
               ? 'Use authenticator code instead'
@@ -463,9 +523,10 @@ export function UserAuthForm({
             type='button'
             onClick={() => {
               setStage('password')
+              setMethod('password')
               setUseBackupCode(false)
             }}
-            className='font-medium text-muted-foreground underline underline-offset-4 hover:text-primary'
+            className='auth-link min-h-0 font-medium underline underline-offset-4'
           >
             Back to sign-in
           </button>
@@ -474,219 +535,231 @@ export function UserAuthForm({
     )
   }
 
-  if (stage === 'otp-email') {
-    return (
-      <div className={cn('grid gap-3', className)}>
-        <p className='text-sm text-muted-foreground'>
-          Apnar email-e ekta 6-digit code pathano hobe. Code diye sign in
-          korun — password lagbe na.
-        </p>
-        {otpError && (
-          <p role='alert' className='text-sm text-destructive'>
-            {otpError}
-          </p>
-        )}
-        <Form {...otpEmailForm}>
-          <form
-            onSubmit={otpEmailForm.handleSubmit(onOtpEmailSubmit)}
-            className='grid gap-2'
-          >
-            <FormField
-              control={otpEmailForm.control}
-              name='email'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input
-                      type='email'
-                      autoComplete='email'
-                      placeholder='name@example.com'
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button className='mt-2' disabled={isLoading}>
-              {isLoading ? <Loader2 className='animate-spin' /> : null}
-              Send OTP
-            </Button>
-          </form>
-        </Form>
-        <button
-          type='button'
-          onClick={() => setStage('password')}
-          className='text-sm font-medium text-muted-foreground underline underline-offset-4 hover:text-primary'
-        >
-          Back to password sign-in
-        </button>
-      </div>
-    )
-  }
-
-  if (stage === 'otp-code') {
-    return (
-      <div className={cn('grid gap-3', className)}>
-        <p className='text-sm text-muted-foreground'>
-          {otpSentTo} — ei email-e 6-digit code pathano hoyeche. Code-ti 15
-          minute porjonto valid.
-        </p>
-        {otpError && (
-          <p role='alert' className='text-sm text-destructive'>
-            {otpError}
-          </p>
-        )}
-        <Form {...otpCodeForm}>
-          <form
-            onSubmit={otpCodeForm.handleSubmit(onOtpCodeSubmit)}
-            className='grid gap-2'
-          >
-            <FormField
-              control={otpCodeForm.control}
-              name='code'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className='sr-only'>Login code</FormLabel>
-                  <FormControl>
-                    <InputOTP
-                      maxLength={6}
-                      {...field}
-                      containerClassName='justify-between sm:[&>[data-slot="input-otp-group"]>div]:w-12'
-                    >
-                      <InputOTPGroup>
-                        <InputOTPSlot index={0} />
-                        <InputOTPSlot index={1} />
-                      </InputOTPGroup>
-                      <InputOTPSeparator />
-                      <InputOTPGroup>
-                        <InputOTPSlot index={2} />
-                        <InputOTPSlot index={3} />
-                      </InputOTPGroup>
-                      <InputOTPSeparator />
-                      <InputOTPGroup>
-                        <InputOTPSlot index={4} />
-                        <InputOTPSlot index={5} />
-                      </InputOTPGroup>
-                    </InputOTP>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button
-              className='mt-2'
-              disabled={otpCode.length < 6 || isLoading}
-            >
-              {isLoading ? <Loader2 className='animate-spin' /> : null}
-              Verify and sign in
-            </Button>
-          </form>
-        </Form>
-        <div className='flex items-center justify-between text-sm'>
-          <button
-            type='button'
-            onClick={onOtpResend}
-            disabled={isLoading}
-            className='font-medium text-muted-foreground underline underline-offset-4 hover:text-primary disabled:opacity-50'
-          >
-            Resend code
-          </button>
-          <button
-            type='button'
-            onClick={() => setStage('otp-email')}
-            className='font-medium text-muted-foreground underline underline-offset-4 hover:text-primary'
-          >
-            Use a different email
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <Form {...form}>
-      <form
-        onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-3', className)}
-        {...props}
+    <div
+      className={cn('grid gap-4', shake && 'auth-shake', className)}
+      onAnimationEnd={() => setShake(false)}
+    >
+      <SocialSignIn redirectTo={redirectTo} />
+
+      <div
+        role='tablist'
+        aria-label='Sign-in method'
+        onKeyDown={onTabKeyDown}
+        className='flex gap-0.5 rounded-[3px] bg-muted p-0.5'
       >
-        {customerBlocked && (
-          <div
-            role='alert'
-            className='flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+        {METHODS.map((m, i) => (
+          <button
+            key={m.id}
+            ref={(el) => {
+              tabRefs.current[i] = el
+            }}
+            type='button'
+            role='tab'
+            aria-selected={method === m.id}
+            tabIndex={method === m.id ? 0 : -1}
+            onClick={() => selectMethod(m.id)}
+            className='auth-tab flex-1'
           >
-            <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
-            <span>{customerBlocked}</span>
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      <div key={stage} className='auth-step'>
+        {stage === 'otp-email' && (
+          <div className='grid gap-3'>
+            <p className='text-sm text-muted-foreground'>
+              We&apos;ll send a 6-digit code to your email. No password
+              needed.
+            </p>
+            {otpError && (
+              <p role='alert' className='text-sm text-destructive'>
+                {otpError}
+              </p>
+            )}
+            <Form {...otpEmailForm}>
+              <form
+                onSubmit={otpEmailForm.handleSubmit(onOtpEmailSubmit)}
+                className='grid gap-2'
+              >
+                <FormField
+                  control={otpEmailForm.control}
+                  name='email'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input
+                          type='email'
+                          autoComplete='email'
+                          placeholder='name@example.com'
+                          className='auth-field'
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  className='auth-btn auth-btn-primary mt-2'
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Loader2 className='animate-spin' /> : null}
+                  Continue
+                </Button>
+              </form>
+            </Form>
           </div>
         )}
-        {/*
-          R-BITWARDEN: explicit autocomplete tokens on the login fields.
-          Without them, password managers (Bitwarden) cannot identify the
-          form and warn that the page is "interfering" — the console had
-          the same gap until fix round #1. username + current-password
-          is the standard login pairing.
-        */}
-        <FormField
-          control={form.control}
-          name='email'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Email</FormLabel>
-              <FormControl>
-                <Input
-                  type='email'
-                  autoComplete='username'
-                  placeholder='name@example.com'
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name='password'
-          render={({ field }) => (
-            <FormItem className='relative'>
-              <FormLabel>Password</FormLabel>
-              <FormControl>
-                <PasswordInput
-                  autoComplete='current-password'
-                  placeholder='********'
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-              <Link
-                to='/forgot-password'
-                className='absolute inset-e-0 -top-0.5 text-sm font-medium text-muted-foreground hover:opacity-75'
+
+        {stage === 'otp-code' && (
+          <div className='grid gap-3'>
+            <p className='text-sm text-muted-foreground'>
+              {otpSentTo} — a 6-digit code was sent to this email. It expires
+              in 15 minutes.
+            </p>
+            {otpError && (
+              <p role='alert' className='text-sm text-destructive'>
+                {otpError}
+              </p>
+            )}
+            <Form {...otpCodeForm}>
+              <form
+                onSubmit={otpCodeForm.handleSubmit(onOtpCodeSubmit)}
+                className='grid gap-2'
               >
-                Forgot password?
-              </Link>
-            </FormItem>
-          )}
-        />
-        <Button className='mt-2' disabled={isLoading}>
-          {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
-          Sign in
-        </Button>
-        <Button
-          type='button'
-          variant='outline'
-          disabled={isLoading}
-          onClick={() => {
-            setCustomerBlocked('')
-            setOtpError('')
-            setStage('otp-email')
-          }}
-        >
-          OTP diye login
-        </Button>
-        <SocialSignIn redirectTo={redirectTo} />
-      </form>
-    </Form>
+                <FormField
+                  control={otpCodeForm.control}
+                  name='code'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className='sr-only'>Login code</FormLabel>
+                      <FormControl>
+                        <InputOTP
+                          maxLength={6}
+                          {...field}
+                          containerClassName='justify-between'
+                        >
+                          {otpSlots('otp')}
+                        </InputOTP>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  className='auth-btn auth-btn-primary mt-2'
+                  disabled={otpCode.length < 6 || isLoading}
+                >
+                  {isLoading ? <Loader2 className='animate-spin' /> : null}
+                  Verify and sign in
+                </Button>
+              </form>
+            </Form>
+            <div className='flex items-center justify-between text-sm'>
+              <button
+                type='button'
+                onClick={onOtpResend}
+                disabled={isLoading || resendCooldown.remaining > 0}
+                className='auth-link min-h-0 font-medium underline underline-offset-4 disabled:opacity-50'
+              >
+                {resendCooldown.remaining > 0
+                  ? `Resend code (${resendCooldown.remaining}s)`
+                  : 'Resend code'}
+              </button>
+              <button
+                type='button'
+                onClick={() => {
+                  setStage('otp-email')
+                  setOtpError('')
+                }}
+                className='auth-link min-h-0 font-medium underline underline-offset-4'
+              >
+                Use a different email
+              </button>
+            </div>
+          </div>
+        )}
+
+        {stage === 'password' && (
+          <Form {...form}>
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className='grid gap-3'
+              {...props}
+            >
+              {customerBlocked && (
+                <div
+                  role='alert'
+                  className='flex items-start gap-2 rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                >
+                  <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
+                  <span>{customerBlocked}</span>
+                </div>
+              )}
+              {/*
+                R-BITWARDEN: explicit autocomplete tokens on the login fields.
+                Without them, password managers (Bitwarden) cannot identify the
+                form and warn that the page is "interfering" — the console had
+                the same gap until fix round #1. username + current-password
+                is the standard login pairing.
+              */}
+              <FormField
+                control={form.control}
+                name='email'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='email'
+                        autoComplete='username'
+                        placeholder='name@example.com'
+                        className='auth-field'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='password'
+                render={({ field }) => (
+                  <FormItem className='relative'>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <PasswordInput
+                        autoComplete='current-password'
+                        placeholder='********'
+                        className='auth-field'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    <Link
+                      to='/forgot-password'
+                      className='auth-link absolute inset-e-0 -top-0.5 text-sm font-medium'
+                    >
+                      Forgot password?
+                    </Link>
+                  </FormItem>
+                )}
+              />
+              <Button
+                className='auth-btn auth-btn-primary mt-2'
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className='animate-spin' /> : null}
+                Continue
+              </Button>
+            </form>
+          </Form>
+        )}
+      </div>
+    </div>
   )
 }

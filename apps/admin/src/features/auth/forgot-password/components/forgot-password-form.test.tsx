@@ -59,7 +59,7 @@ describe('ForgotPasswordForm (D7 flip — OTP)', () => {
     expect(requestPasswordReset).not.toHaveBeenCalled()
   })
 
-  it('requests a reset code and shows the OTP + new-password step', async () => {
+  it('requests a reset code and shows the code step (password comes next)', async () => {
     await userEvent.fill(emailInput, 'a@b.com')
     await userEvent.click(sendButton)
 
@@ -77,6 +77,9 @@ describe('ForgotPasswordForm (D7 flip — OTP)', () => {
     await expect
       .element(screen.getByRole('button', { name: /Resend code/i }))
       .toBeInTheDocument()
+    // The new-password fields live on the next step, not the code step.
+    const passwords = await screen.getByLabelText(/^New Password$/i).all()
+    expect(passwords.length).toBe(0)
   })
 
   it('shows the same confirmation when the request fails (anti-enumeration)', async () => {
@@ -107,6 +110,10 @@ describe('ForgotPasswordForm (D7 flip — OTP)', () => {
     )
     expect(codeInput).not.toBeNull()
     await userEvent.fill(codeInput as HTMLInputElement, '123456')
+    await userEvent.click(screen.getByRole('button', { name: /^Continue$/i }))
+    await expect
+      .element(screen.getByLabelText(/^New Password$/i))
+      .toBeInTheDocument()
     await userEvent.fill(
       screen.getByLabelText(/^New Password$/i),
       'NewPass1!',
