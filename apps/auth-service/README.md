@@ -88,9 +88,10 @@ Env-driven, see `.env.example`. Highlights:
   `overrideDefaultEmailVerification` is UNSET — email verification
   stays LINK-based; the EMAIL_VERIFICATION OTP decision is still open
   for Phase 5. Mailer: `Mailer.sendVerificationOTP(to, otp, type)`
-  (`src/mailer.ts`, nodemailer SMTP, same env shape as the reset /
-  verification mails; per-type subjects so a login code cannot be
-  mistaken for a reset code). Client: `emailOTPClient()` in the three
+  (`src/mailer.ts`, Option 2 — no SMTP in this service: it POSTs
+  `{AUTH_PLATFORM_API_URL}/internal/auth-mail/send` and platform-api
+  renders + sends through the console-configured SMTP; per-type subjects
+  so a login code cannot be mistaken for a reset code). Client: `emailOTPClient()` in the three
   tenant frontends (`authClient.signIn.emailOtp()`,
   `authClient.emailOtp.{sendVerificationOtp,requestPasswordReset,
   resetPassword}`). Endpoints: `POST /sign-in/email-otp`,
@@ -586,12 +587,6 @@ docker exec <auth-service container> sh -c 'cd /app && npx prisma migrate deploy
       IMPERSONATION_TTL_SECONDS: ${IMPERSONATION_TTL_SECONDS:-900}
       AUTH_TENANT_PRIMARY_DOMAIN: ${AUTH_TENANT_PRIMARY_DOMAIN:-faah.net}
       AUTH_SOCIAL_TOTP_STRICT: ${AUTH_SOCIAL_TOTP_STRICT:-false}
-      AUTH_SMTP_HOST: ${SMTP_HOST:-}
-      AUTH_SMTP_PORT: ${SMTP_PORT:-587}
-      AUTH_SMTP_SECURE: ${SMTP_SECURE:-false}
-      AUTH_SMTP_USER: ${SMTP_USER:-}
-      AUTH_SMTP_PASS: ${SMTP_PASS:-}
-      AUTH_SMTP_FROM: ${SMTP_FROM:-EcoMate <no-reply@ecomate.bd>}
       AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
       AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
       AUTH_GITHUB_ID: ${AUTH_GITHUB_ID:-}

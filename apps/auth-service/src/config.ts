@@ -91,16 +91,7 @@ export interface AuthServiceConfig {
   organizationLimit: number;
   /** Max members per organization (staff only — customers are never members, D4). */
   membershipLimit: number;
-  /** SMTP settings for verification + reset mail (see src/mailer.ts). */
-  smtp: {
-    host: string;
-    port: number;
-    secure: boolean;
-    user: string;
-    pass: string;
-    from: string;
-  };
-  /** Mail mode: `smtp` sends via SMTP; `test` captures the URL instead of sending. */
+  /** Mail mode: `smtp` sends via the platform auth-mail endpoint; `test` captures the URL instead of sending. */
   mailMode: 'smtp' | 'test';
   /** Social providers (D9=B). Empty id/secret = disabled (same shape as the backend today). */
   social: {
@@ -207,16 +198,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AuthServiceCon
     trustedProxies: splitList(env.AUTH_TRUSTED_PROXIES, []),
     organizationLimit: parseIntEnv('AUTH_ORG_LIMIT', 5),
     membershipLimit: parseIntEnv('AUTH_MEMBERSHIP_LIMIT', 100),
-    smtp: {
-      host: env.AUTH_SMTP_HOST || '',
-      port: parseIntEnv('AUTH_SMTP_PORT', 587),
-      secure:
-        env.AUTH_SMTP_SECURE === 'true' ||
-        parseIntEnv('AUTH_SMTP_PORT', 587) === 465,
-      user: env.AUTH_SMTP_USER || '',
-      pass: env.AUTH_SMTP_PASS || '',
-      from: env.AUTH_SMTP_FROM || 'EcoMate <no-reply@ecomate.bd>',
-    },
     mailMode: env.AUTH_MAIL_MODE === 'test' ? 'test' : 'smtp',
     social: {
       google: {

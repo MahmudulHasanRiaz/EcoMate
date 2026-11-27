@@ -1,14 +1,17 @@
 import {
+  BadGatewayException,
   Body,
   Controller,
   Get,
   Header,
   HttpCode,
+  Logger,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
+  ServiceUnavailableException,
   StreamableFile,
   UseGuards,
 } from '@nestjs/common';
@@ -16,6 +19,11 @@ import { BillingService } from '../billing/billing.service';
 import { SubmitProofDto } from '../billing/dto/submit-proof.dto';
 import { InvoiceService } from '../billing/invoice.service';
 import { AuditService } from '../common/audit.service';
+import {
+  PlatformMailService,
+  sanitizeMailErrorMessage,
+} from '../common/platform-mail.service';
+import { RedisRateLimitService } from '../common/rate-limit/redis-rate-limit.service';
 import {
   DomainConfigService,
   type DomainConfig,
@@ -35,12 +43,33 @@ import {
   ORGANIZATION_LIMIT_SETTING_KEY,
   parseOrganizationLimitSetting,
 } from './organization-limit';
+import {
+  assertValidAuthMailRequest,
+  AuthMailSendDto,
+} from './dto/auth-mail-send.dto';
 import { SaasSmtpSendDto } from './dto/saas-smtp-send.dto';
 import { InternalServiceGuard } from './internal-service.guard';
+
+/**
+ * Auth-mail rate limits (Option 2, 2026-11-27) — sliding 60 s windows
+ * on the shared Redis limiter (in-memory fallback per replica when Redis
+ * is down). Per-recipient 20/min stops one mailbox being flooded;
+ * global 200/min bounds the endpoint's total volume. 429 beyond.
+ * These sit BEHIND the InternalServiceGuard: the only legitimate caller
+ * is the auth service, so a limit hit means a bug or a leaked service
+ * token, never a normal user. The limits are deliberately tighter than
+ * the auth service's own OTP request limits — this endpoint is the
+ * last hop before real mail leaves the platform.
+ */
+const AUTH_MAIL_PER_RECIPIENT_LIMIT = 20;
+const AUTH_MAIL_GLOBAL_LIMIT = 200;
+const AUTH_MAIL_WINDOW_MS = 60_000;
 
 @Controller('internal')
 @UseGuards(InternalServiceGuard)
 export class InternalController {
+  private readonly logger = new Logger(InternalController.name);
+
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly billing: BillingService,
@@ -48,6 +77,8 @@ export class InternalController {
     private readonly emailBalance: EmailBalanceService,
     private readonly domainConfig: DomainConfigService,
     private readonly audit: AuditService,
+    private readonly platformMail: PlatformMailService,
+    private readonly rateLimit: RedisRateLimitService,
   ) {}
 
   @Get('tenants/registry')
@@ -402,6 +433,107 @@ export class InternalController {
   @HttpCode(200)
   async saasSmtpSend(@Body() dto: SaasSmtpSendDto) {
     return this.emailBalance.relaySend(dto);
+  }
+
+  /**
+   * Central-auth mail (Option 2, 2026-11-27): the auth service's OTP /
+   * verification / reset mail, sent through the console-configured SMTP.
+   * The auth service has no SMTP of its own (its env SMTP was removed
+   * because the staging stack never had SMTP_HOST — every OTP was
+   * silently dropped while the UI said "sent"); it POSTs here and this
+   * endpoint renders + sends via PlatformMailService.
+   *
+   * Security, all sides:
+   * - InternalServiceGuard (class-level): timing-safe service token;
+   *   no token / wrong token → 401. No public route exists for this.
+   * - The caller names only `to` + `kind` (+ OTP / link). Subject, body
+   *   and links render server-side; the global ValidationPipe strips
+   *   any undeclared field (subject/html/text never reach a template).
+   * - Link URLs must be https on the auth host (`auth.<appDomain>`) or
+   *   a tenant host under a configured base domain — see
+   *   assertValidAuthMailRequest. No credentials in the URL, ever.
+   * - Rate limits: 20/min per recipient, 200/min global (429 beyond).
+   * - NO tenant email-balance consume: platform auth mail is platform
+   *   cost, not tenant cost.
+   * - The SMTP password never leaves PlatformMailService; the OTP value
+   *   and the link URL are never logged. The audit row carries only
+   *   {to, kind, sent, reason}.
+   *
+   * Failure contract (the auth-service mailer maps these): SMTP
+   * unconfigured → 503; transport failure → 502; rate limit → 429;
+   * bad body → 400. The auth service never throws on mail failure —
+   * it logs `auth.mail.not_sent` and the OTP endpoint still answers
+   * success to the user (anti-enumeration), exactly as before.
+   */
+  @Post('auth-mail/send')
+  @HttpCode(200)
+  async authMailSend(@Body() dto: AuthMailSendDto) {
+    const domains = this.domainConfig.getConfig();
+    assertValidAuthMailRequest(dto, {
+      authHost: `auth.${domains.appDomain ?? domains.primaryDomain}`,
+      tenantBaseDomains: domains.baseDomains,
+    });
+
+    await this.rateLimit.assert(
+      `auth-mail:to:${dto.to.toLowerCase()}`,
+      AUTH_MAIL_PER_RECIPIENT_LIMIT,
+      AUTH_MAIL_WINDOW_MS,
+      'Too many auth emails for this address. Try again later.',
+    );
+    await this.rateLimit.assert(
+      'auth-mail:global',
+      AUTH_MAIL_GLOBAL_LIMIT,
+      AUTH_MAIL_WINDOW_MS,
+      'Too many auth emails. Try again later.',
+    );
+
+    try {
+      await this.platformMail.sendAuthMail({
+        to: dto.to,
+        kind: dto.kind,
+        otp: dto.otp,
+        url: dto.url,
+      });
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) {
+        // SMTP unconfigured — the operator fix is in console settings.
+        await this.audit.record({
+          action: 'platform.auth_mail.send',
+          entity: 'AuthMail',
+          after: {
+            to: dto.to,
+            kind: dto.kind,
+            sent: false,
+            reason: 'platform_smtp_unconfigured',
+          },
+        });
+        throw err;
+      }
+      // Transport failure (auth/connect/TLS/...) — 502, not 503, so the
+      // auth-service mailer logs send_failed, not smtp_unconfigured.
+      // The raw error is sanitized: credentials never reach the log.
+      this.logger.warn(
+        `Auth mail send failed for kind=${dto.kind}: ${sanitizeMailErrorMessage(err)}`,
+      );
+      await this.audit.record({
+        action: 'platform.auth_mail.send',
+        entity: 'AuthMail',
+        after: {
+          to: dto.to,
+          kind: dto.kind,
+          sent: false,
+          reason: 'send_failed',
+        },
+      });
+      throw new BadGatewayException('Email delivery failed.');
+    }
+
+    await this.audit.record({
+      action: 'platform.auth_mail.send',
+      entity: 'AuthMail',
+      after: { to: dto.to, kind: dto.kind, sent: true },
+    });
+    return { delivered: true };
   }
 
   /** Email balance summary for the tenant admin, proxied by the backend. Counts only. */

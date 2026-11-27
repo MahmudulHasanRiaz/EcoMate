@@ -641,4 +641,111 @@ describe('PlatformMailService', () => {
       expect(mail.html).not.toContain('<!DOCTYPE html>');
     });
   });
+
+  describe('sendAuthMail (Option 2, central-auth mail)', () => {
+    // Templates must carry the EXACT wording of the old auth-service
+    // mailer (apps/auth-service/src/mailer.ts) — subjects, intros,
+    // expiry lines. Only the HTML wrapper is the shared branded layout.
+    it('sends an OTP sign-in code with the exact login wording', async () => {
+      const { service } = makeService();
+      const result = await service.sendAuthMail({
+        to: 'owner@test.com',
+        kind: 'otp-sign-in',
+        otp: '123456',
+      });
+
+      expect(result).toEqual({ delivered: true });
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: '"EcoMate" <noreply@example.test>',
+          to: 'owner@test.com',
+          subject: 'Your EcoMate login code',
+        }),
+      );
+      const mail = mockSendMail.mock.calls[0][0];
+      expect(mail.text).toBe(
+        'Use this code to sign in to EcoMate. Your code is 123456. ' +
+          'It expires in 15 minutes. If you did not request this code, you can ignore this email.',
+      );
+      expect(mail.html).toContain('Use this code to sign in to EcoMate.');
+      expect(mail.html).toContain('123456');
+      expect(mail.html).toContain('The code expires in 15 minutes.');
+      expect(mail.html).toContain('<!DOCTYPE html>');
+    });
+
+    it('keeps the OTP kinds distinct so a code cannot be mistaken', async () => {
+      const { service } = makeService();
+      await service.sendAuthMail({
+        to: 'owner@test.com',
+        kind: 'otp-forget-password',
+        otp: '654321',
+      });
+      let mail = mockSendMail.mock.calls[0][0];
+      expect(mail.subject).toBe('Your EcoMate password reset code');
+      expect(mail.text).toContain(
+        'Use this code to reset your EcoMate password.',
+      );
+      expect(mail.text).toContain('654321');
+
+      jest.clearAllMocks();
+      await service.sendAuthMail({
+        to: 'owner@test.com',
+        kind: 'otp-email-verification',
+        otp: '000001',
+      });
+      mail = mockSendMail.mock.calls[0][0];
+      expect(mail.subject).toBe('Your EcoMate verification code');
+      expect(mail.text).toContain(
+        'Use this code to verify your EcoMate email address.',
+      );
+    });
+
+    it('sends verification / reset links with the exact link wording', async () => {
+      const { service } = makeService();
+      await service.sendAuthMail({
+        to: 'owner@test.com',
+        kind: 'verification',
+        url: 'https://auth.staging.em.commercians.com/api/better-auth/verify-email?token=abc',
+      });
+      let mail = mockSendMail.mock.calls[0][0];
+      expect(mail.subject).toBe('Verify your EcoMate email');
+      expect(mail.text).toBe(
+        'Verify your EcoMate email address (link expires in 24 hours): ' +
+          'https://auth.staging.em.commercians.com/api/better-auth/verify-email?token=abc',
+      );
+      expect(mail.html).toContain('>Verify my email</a>');
+      expect(mail.html).toContain(
+        'https://auth.staging.em.commercians.com/api/better-auth/verify-email?token=abc',
+      );
+
+      jest.clearAllMocks();
+      await service.sendAuthMail({
+        to: 'owner@test.com',
+        kind: 'reset',
+        url: 'https://auth.staging.em.commercians.com/api/better-auth/reset-password/abc',
+      });
+      mail = mockSendMail.mock.calls[0][0];
+      expect(mail.subject).toBe('Reset your EcoMate password');
+      expect(mail.text).toBe(
+        'Reset your EcoMate password (link expires in 15 minutes): ' +
+          'https://auth.staging.em.commercians.com/api/better-auth/reset-password/abc',
+      );
+      expect(mail.html).toContain('>Reset my password</a>');
+      expect(mail.html).toContain(
+        'If you did not request this, you can ignore this email',
+      );
+    });
+
+    it('fails closed (503) when SMTP is unconfigured, in any env', async () => {
+      const { service } = makeService(null);
+      await expect(
+        service.sendAuthMail({
+          to: 'owner@test.com',
+          kind: 'otp-sign-in',
+          otp: '123456',
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(mockSendMail).not.toHaveBeenCalled();
+    });
+  });
 });

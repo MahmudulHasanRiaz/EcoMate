@@ -13,6 +13,35 @@ import {
   renderEmailLayout,
   type EmailBrand,
 } from './mail/email-layout';
+import {
+  isOtpAuthMailKind,
+  type AuthMailKind,
+} from '../internal/dto/auth-mail-send.dto';
+
+/**
+ * Central-auth OTP mail copy — EXACT wording of the old auth-service
+ * mailer (apps/auth-service/src/mailer.ts, OTP_SUBJECTS / OTP_INTRO),
+ * kept here so the Option 2 move changes the transport, never what the
+ * user reads. Per-type subjects so a login code cannot be mistaken for
+ * a reset code.
+ */
+type OtpAuthMailKind = Extract<
+  AuthMailKind,
+  'otp-sign-in' | 'otp-forget-password' | 'otp-email-verification'
+>;
+
+const OTP_AUTH_MAIL_SUBJECTS: Record<OtpAuthMailKind, string> = {
+  'otp-sign-in': 'Your EcoMate login code',
+  'otp-forget-password': 'Your EcoMate password reset code',
+  'otp-email-verification': 'Your EcoMate verification code',
+};
+
+const OTP_AUTH_MAIL_INTRO: Record<OtpAuthMailKind, string> = {
+  'otp-sign-in': 'Use this code to sign in to EcoMate.',
+  'otp-forget-password':
+    'Use this code to reset your EcoMate password. If you did not request this, you can ignore this email — your password will not change.',
+  'otp-email-verification': 'Use this code to verify your EcoMate email address.',
+};
 
 const DHAKA_DATE = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Dhaka',
@@ -291,6 +320,118 @@ export class PlatformMailService {
       text: input.text || undefined,
     });
     return { delivered: true };
+  }
+
+  /**
+   * Central-auth mail (Option 2, 2026-11-27): OTP / verification / reset
+   * mail for the auth service, sent through the console-configured SMTP
+   * (SettingsService.getSmtp() — the same shared transport as the SaaS
+   * relay). The auth service has no SMTP of its own; it calls
+   * POST /internal/auth-mail/send and this method renders everything
+   * server-side from the kind — the caller supplies only `to` + the OTP
+   * or link, never a subject or body, so the endpoint cannot be used as
+   * an open relay. No tenant email-balance is consumed: platform auth
+   * mail is platform cost. Throws ServiceUnavailableException when SMTP
+   * is unconfigured (fail-closed, always — unlike deliver(), there is no
+   * dev log-fallback here: a silent {delivered:false} would look like
+   * success to the auth service, which is exactly the bug this replaces).
+   * The OTP value and the link URL are never logged.
+   *
+   * Templates carry the EXACT user-visible wording of the old
+   * auth-service mailer (apps/auth-service/src/mailer.ts before the
+   * Option 2 rewrite) — subjects, intros, expiry lines — only the HTML
+   * wrapper changed to the shared branded layout.
+   */
+  async sendAuthMail(input: {
+    to: string;
+    kind: AuthMailKind;
+    otp?: string;
+    url?: string;
+  }): Promise<{ delivered: boolean }> {
+    const transporter = this.getTransporter();
+    if (!transporter) {
+      throw new ServiceUnavailableException(
+        'Email delivery is not configured. Set SMTP settings first.',
+      );
+    }
+    const { subject, text, html } = this.renderAuthMail(input);
+    await transporter.sendMail({
+      from: this.fromAddress(),
+      replyTo: this.replyTo(),
+      to: input.to,
+      subject,
+      text,
+      html,
+    });
+    return { delivered: true };
+  }
+
+  private renderAuthMail(input: {
+    kind: AuthMailKind;
+    otp?: string;
+    url?: string;
+  }): { subject: string; text: string; html: string } {
+    const brand = this.brand();
+    if (isOtpAuthMailKind(input.kind)) {
+      const otp = input.otp ?? '';
+      const subject = OTP_AUTH_MAIL_SUBJECTS[input.kind as OtpAuthMailKind];
+      const intro = OTP_AUTH_MAIL_INTRO[input.kind as OtpAuthMailKind];
+      return {
+        subject,
+        text:
+          `${intro} Your code is ${otp}. It expires in 15 minutes. ` +
+          'If you did not request this code, you can ignore this email.',
+        html: renderEmailLayout({
+          brand,
+          heading: subject,
+          preheader: intro,
+          bodyHtml:
+            para('Hello,') +
+            para(`${escapeHtml(intro)} The code expires in 15 minutes.`) +
+            `<p style="margin:0 0 12px 0;font-size:28px;letter-spacing:6px;font-weight:bold;">${escapeHtml(otp)}</p>` +
+            para('If you did not request this code, you can ignore this email.'),
+        }),
+      };
+    }
+    if (input.kind === 'verification') {
+      const url = input.url ?? '';
+      return {
+        subject: 'Verify your EcoMate email',
+        text: `Verify your EcoMate email address (link expires in 24 hours): ${url}`,
+        html: renderEmailLayout({
+          brand,
+          heading: 'Verify your EcoMate email',
+          preheader: 'Please verify your EcoMate email address.',
+          bodyHtml:
+            para('Hello,') +
+            para(
+              'Please verify your EcoMate email address by clicking the link below. The link expires in 24 hours.',
+            ) +
+            para('If you did not create an EcoMate account, you can ignore this email.'),
+          cta: { label: 'Verify my email', url },
+        }),
+      };
+    }
+    // 'reset'
+    const url = input.url ?? '';
+    return {
+      subject: 'Reset your EcoMate password',
+      text: `Reset your EcoMate password (link expires in 15 minutes): ${url}`,
+      html: renderEmailLayout({
+        brand,
+        heading: 'Reset your EcoMate password',
+        preheader: 'We received a request to reset your EcoMate password.',
+        bodyHtml:
+          para('Hello,') +
+          para(
+            'We received a request to reset your EcoMate password. Click the link below to choose a new password. The link expires in 15 minutes.',
+          ) +
+          para(
+            'If you did not request this, you can ignore this email — your password will not change.',
+          ),
+        cta: { label: 'Reset my password', url },
+      }),
+    };
   }
 
   /**

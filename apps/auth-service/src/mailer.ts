@@ -1,13 +1,18 @@
 // Pluggable mailer for Better Auth verification + reset emails.
-// Production path is plain nodemailer SMTP, using the same env shape as the
-// backend/platform mailers (SMTP_HOST / SMTP_PORT / SMTP_SECURE / SMTP_USER /
-// SMTP_PASS / *_FROM — here prefixed AUTH_ so the service owns its values).
-// Test mode (AUTH_MAIL_MODE=test) captures the URL instead of sending, so
-// smoke tests can complete the reset/verification flows without SMTP.
-// There is deliberately NO HTTP endpoint exposing captured mail — tests read
-// the in-process capture store via the exported helpers.
-import nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
+//
+// Option 2 (2026-11-27): the service has NO SMTP of its own. OTP /
+// verification / reset mail goes through the platform's console-
+// configured SMTP via POST {AUTH_PLATFORM_API_URL}/internal/auth-mail/send
+// (platform-api renders the templates server-side from the kind — this
+// service sends only `to` + the OTP or link, never a subject or body).
+// The env SMTP this file used to read (AUTH_SMTP_*) is gone: the staging
+// stack never had SMTP_HOST, so every OTP was silently dropped while the
+// UI said "sent" (log auth.mail.not_sent reason=smtp_not_configured).
+//
+// Test mode (AUTH_MAIL_MODE=test) captures the mail instead of sending,
+// so smoke tests can complete the reset/verification flows without SMTP.
+// There is deliberately NO HTTP endpoint exposing captured mail — tests
+// read the in-process capture store via the exported helpers.
 import type { AuthServiceConfig } from './config.js';
 import { logger } from './logger.js';
 
@@ -53,72 +58,123 @@ export interface Mailer {
   sendVerificationOTP(to: string, otp: string, type: OtpType): Promise<void>;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+/** Platform auth-mail kinds (POST /internal/auth-mail/send). */
+type PlatformAuthMailKind =
+  | 'otp-sign-in'
+  | 'otp-forget-password'
+  | 'otp-email-verification'
+  | 'verification'
+  | 'reset';
+
+/** Short timeout: mail must never stall an OTP / reset request. */
+const PLATFORM_MAIL_TIMEOUT_MS = 5000;
+
+/** Reasons for auth.mail.not_sent — the auth-service side of the failure contract. */
+export type AuthMailNotSentReason =
+  | 'platform_unreachable'
+  | 'platform_smtp_unconfigured'
+  | 'send_failed'
+  | 'rate_limited'
+  | 'unsupported_otp_type';
+
+export interface MailerOptions {
+  /** Test-only fetch override (mailer.test.ts). Defaults to global fetch. */
+  fetchFn?: typeof fetch;
 }
 
-function verificationHtml(url: string): string {
-  const safe = escapeHtml(url);
-  return `<p>Hello,</p><p>Please verify your EcoMate email address by clicking the link below. The link expires in 24 hours.</p><p><a href="${safe}">Verify my email</a></p><p>If you did not create an EcoMate account, you can ignore this email.</p>`;
-}
+export function createMailer(
+  config: AuthServiceConfig,
+  opts: MailerOptions = {},
+): Mailer {
+  const fetchFn = opts.fetchFn ?? fetch;
 
-function resetHtml(url: string): string {
-  const safe = escapeHtml(url);
-  return `<p>Hello,</p><p>We received a request to reset your EcoMate password. Click the link below to choose a new password. The link expires in 15 minutes.</p><p><a href="${safe}">Reset my password</a></p><p>If you did not request this, you can ignore this email — your password will not change.</p>`;
-}
+  function notSent(
+    type: 'verification' | 'reset' | 'otp',
+    to: string,
+    reason: AuthMailNotSentReason,
+    extra: Record<string, unknown> = {},
+  ): void {
+    logger.error('auth.mail.not_sent', { type, to, reason, ...extra });
+  }
 
-const OTP_SUBJECTS: Record<OtpType, string> = {
-  'sign-in': 'Your EcoMate login code',
-  'forget-password': 'Your EcoMate password reset code',
-  'email-verification': 'Your EcoMate verification code',
-  'change-email': 'Your EcoMate email change code',
-};
-
-const OTP_INTRO: Record<OtpType, string> = {
-  'sign-in': 'Use this code to sign in to EcoMate.',
-  'forget-password':
-    'Use this code to reset your EcoMate password. If you did not request this, you can ignore this email — your password will not change.',
-  'email-verification': 'Use this code to verify your EcoMate email address.',
-  'change-email': 'Use this code to confirm your new EcoMate email address.',
-};
-
-function otpHtml(otp: string, type: OtpType): string {
-  const safe = escapeHtml(otp);
-  return `<p>Hello,</p><p>${OTP_INTRO[type]} The code expires in 15 minutes.</p><p style="font-size: 28px; letter-spacing: 6px; font-weight: bold;">${safe}</p><p>If you did not request this code, you can ignore this email.</p>`;
-}
-
-function otpText(otp: string, type: OtpType): string {
-  return `${OTP_INTRO[type]} Your code is ${otp}. It expires in 15 minutes. If you did not request this code, you can ignore this email.`;
-}
-
-export function createMailer(config: AuthServiceConfig): Mailer {
-  let transporter: Transporter | null = null;
-  let warnedUnconfigured = false;
-
-  function getTransporter(): Transporter | null {
-    if (transporter) return transporter;
-    if (!config.smtp.host) {
-      if (!warnedUnconfigured) {
-        warnedUnconfigured = true;
-        logger.warn('auth.mail.unconfigured', {
-          msg: 'AUTH_SMTP_HOST is not set — verification/reset emails cannot be sent',
-        });
-      }
-      return null;
+  /**
+   * POST one mail to platform-api. NEVER THROWS: every failure is a
+   * logged `auth.mail.not_sent` with a reason, and the OTP endpoint
+   * still answers success to the user (Better Auth's generic
+   * anti-enumeration response for resets; the OTP request likewise
+   * never reveals whether mail went out).
+   */
+  async function sendViaPlatform(input: {
+    type: 'verification' | 'reset' | 'otp';
+    otpType?: OtpType;
+    to: string;
+    kind: PlatformAuthMailKind;
+    otp?: string;
+    url?: string;
+  }): Promise<void> {
+    const { type, otpType, to, kind, otp, url } = input;
+    if (config.mailMode === 'test') {
+      captured.push({
+        type,
+        to,
+        url: url ?? '',
+        ...(otp !== undefined ? { otp } : {}),
+        ...(otpType !== undefined ? { otpType } : {}),
+        capturedAt: new Date().toISOString(),
+      });
+      logger.info('auth.mail.captured', { type, ...(otpType ? { otpType } : {}), to });
+      return;
     }
-    transporter = nodemailer.createTransport({
-      host: config.smtp.host,
-      port: config.smtp.port,
-      secure: config.smtp.secure,
-      auth: config.smtp.user
-        ? { user: config.smtp.user, pass: config.smtp.pass }
-        : undefined,
+    if (!config.platformApiUrl || !config.internalServiceSecret) {
+      // No platform-api to call — same posture as the old unconfigured
+      // SMTP: log loudly, never throw, never block the request.
+      notSent(type, to, 'platform_unreachable', {
+        ...(otpType ? { otpType } : {}),
+      });
+      return;
+    }
+    let res: Response;
+    try {
+      res = await fetchFn(
+        `${config.platformApiUrl.replace(/\/$/, '')}/internal/auth-mail/send`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-platform-service-token': config.internalServiceSecret,
+          },
+          body: JSON.stringify({ to, kind, ...(otp ? { otp } : {}), ...(url ? { url } : {}) }),
+          signal: AbortSignal.timeout(PLATFORM_MAIL_TIMEOUT_MS),
+        },
+      );
+    } catch (err) {
+      notSent(type, to, 'platform_unreachable', {
+        ...(otpType ? { otpType } : {}),
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    if (res.ok) {
+      logger.info('auth.mail.sent', {
+        type,
+        ...(otpType ? { otpType } : {}),
+        to,
+      });
+      return;
+    }
+    // The endpoint's failure contract: 429 rate-limited, 503 SMTP
+    // unconfigured, anything else a send failure. The OTP value and
+    // the link URL are never logged — only the status + reason.
+    const reason: AuthMailNotSentReason =
+      res.status === 429
+        ? 'rate_limited'
+        : res.status === 503
+          ? 'platform_smtp_unconfigured'
+          : 'send_failed';
+    notSent(type, to, reason, {
+      ...(otpType ? { otpType } : {}),
+      status: res.status,
     });
-    return transporter;
   }
 
   async function send(
@@ -126,36 +182,7 @@ export function createMailer(config: AuthServiceConfig): Mailer {
     to: string,
     url: string,
   ): Promise<void> {
-    if (config.mailMode === 'test') {
-      captured.push({ type, to, url, capturedAt: new Date().toISOString() });
-      logger.info('auth.mail.captured', { type, to });
-      return;
-    }
-    const tx = getTransporter();
-    if (!tx) {
-      // Fail loudly in the log but do not crash the request: Better Auth
-      // already returns its generic anti-enumeration response for resets.
-      // Operators must configure AUTH_SMTP_HOST before launch (see README).
-      logger.error('auth.mail.not_sent', {
-        type,
-        to,
-        reason: 'smtp_not_configured',
-      });
-      return;
-    }
-    const isVerification = type === 'verification';
-    await tx.sendMail({
-      from: config.smtp.from,
-      to,
-      subject: isVerification
-        ? 'Verify your EcoMate email'
-        : 'Reset your EcoMate password',
-      text: isVerification
-        ? `Verify your EcoMate email address (link expires in 24 hours): ${url}`
-        : `Reset your EcoMate password (link expires in 15 minutes): ${url}`,
-      html: isVerification ? verificationHtml(url) : resetHtml(url),
-    });
-    logger.info('auth.mail.sent', { type, to });
+    await sendViaPlatform({ type, to, kind: type, url });
   }
 
   async function sendOtp(
@@ -163,36 +190,23 @@ export function createMailer(config: AuthServiceConfig): Mailer {
     otp: string,
     type: OtpType,
   ): Promise<void> {
-    if (config.mailMode === 'test') {
-      captured.push({
-        type: 'otp',
-        to,
-        url: '',
-        otp,
-        otpType: type,
-        capturedAt: new Date().toISOString(),
-      });
-      logger.info('auth.mail.captured', { type: 'otp', otpType: type, to });
+    // `changeEmail` is NOT enabled in the emailOTP plugin
+    // (auth-options.ts), so no endpoint kind exists for it. If Better
+    // Auth ever calls this with 'change-email', fail closed with a log
+    // instead of inventing a kind or sending the wrong template.
+    const kind: PlatformAuthMailKind | null =
+      type === 'sign-in'
+        ? 'otp-sign-in'
+        : type === 'forget-password'
+          ? 'otp-forget-password'
+          : type === 'email-verification'
+            ? 'otp-email-verification'
+            : null;
+    if (!kind) {
+      notSent('otp', to, 'unsupported_otp_type', { otpType: type });
       return;
     }
-    const tx = getTransporter();
-    if (!tx) {
-      logger.error('auth.mail.not_sent', {
-        type: 'otp',
-        otpType: type,
-        to,
-        reason: 'smtp_not_configured',
-      });
-      return;
-    }
-    await tx.sendMail({
-      from: config.smtp.from,
-      to,
-      subject: OTP_SUBJECTS[type],
-      text: otpText(otp, type),
-      html: otpHtml(otp, type),
-    });
-    logger.info('auth.mail.sent', { type: 'otp', otpType: type, to });
+    await sendViaPlatform({ type: 'otp', otpType: type, to, kind, otp });
   }
 
   return {
