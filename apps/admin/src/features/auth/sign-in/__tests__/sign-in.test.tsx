@@ -21,6 +21,16 @@ vi.mock('../components/user-auth-form', () => ({
 
 vi.mock('@/assets/logo', () => ({ Logo: () => <span>Logo</span> }))
 
+// AuthLayout fetches the public tenant branding; the fetch itself is
+// not under test here — the header falls back to the generic mark.
+vi.mock('../../use-public-branding', () => ({
+  usePublicBranding: () => ({
+    branding: null,
+    isLoading: true,
+    isError: false,
+  }),
+}))
+
 describe('SignIn session-expired banner (G-21)', () => {
   beforeEach(() => {
     search.value = {}

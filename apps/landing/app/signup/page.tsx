@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { SignupWizard } from '@/components/signup-wizard';
 import { SiteHeader } from '@/components/site-header';
+import { fetchBranding } from '@/lib/branding';
 import { fetchLandingSettings } from '@/lib/landing-settings';
 import {
   fetchPublicPlans,
@@ -24,13 +25,35 @@ export default async function SignupPage() {
   // Server-side: the wizard needs the tenant base domain for the host
   // preview ({slug}.{tenantDomain}). Fail-soft defaults come from
   // fetchLandingSettings when the API is unreachable.
-  const { tenantDomain } = await fetchLandingSettings();
+  const [{ tenantDomain }, { platformName, logoUrl }] = await Promise.all([
+    fetchLandingSettings(),
+    fetchBranding(),
+  ]);
   return (
     <>
       <SiteHeader action="home" />
 
       <main className="auth-page">
         <div className="auth-head">
+          {/* Platform brand, same language as the tenant auth pages:
+              logo image when one is configured, else the lettermark. */}
+          <div className="auth-brand">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className="auth-brand-img"
+                src={logoUrl}
+                alt=""
+                width={40}
+                height={40}
+              />
+            ) : (
+              <span className="auth-brand-mark" aria-hidden>
+                {platformName.charAt(0).toUpperCase()}
+              </span>
+            )}
+            <span className="auth-brand-name">{platformName}</span>
+          </div>
           <p className="eyebrow">Start a trial</p>
           <h1>Reserve your store</h1>
           <p>

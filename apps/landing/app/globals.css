@@ -1859,6 +1859,43 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   font-size: 15px;
 }
 
+/* Platform brand above the auth head — same language as the tenant
+   auth pages (logo, else lettermark, then the name). */
+.auth-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.auth-brand-mark {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--mk-ac);
+  border-radius: 4px;
+  background: var(--mk-gl);
+  color: var(--mk-ac);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 20px;
+}
+
+.auth-brand-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.auth-brand-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--mk-tx);
+}
+
 /* Eyebrow used by auth + legal page heads (mk-eyebrow styling). */
 .eyebrow {
   font-family: var(--font-mono);

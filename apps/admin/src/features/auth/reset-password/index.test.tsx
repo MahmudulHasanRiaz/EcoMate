@@ -40,6 +40,16 @@ vi.mock('./components/reset-password-form', () => ({
   ),
 }))
 
+// AuthLayout fetches the public tenant branding; the fetch itself is
+// not under test here — the header falls back to the generic mark.
+vi.mock('../use-public-branding', () => ({
+  usePublicBranding: () => ({
+    branding: null,
+    isLoading: true,
+    isError: false,
+  }),
+}))
+
 describe('ResetPassword page (Phase 3)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
