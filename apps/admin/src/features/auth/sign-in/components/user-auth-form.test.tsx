@@ -19,6 +19,7 @@ const signInSocial = vi.hoisted(() => vi.fn())
 const verifyTotp = vi.hoisted(() => vi.fn())
 const verifyBackupCode = vi.hoisted(() => vi.fn())
 const signOut = vi.hoisted(() => vi.fn())
+const refetchSession = vi.hoisted(() => vi.fn())
 const getMe = vi.hoisted(() => vi.fn())
 const toastError = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
@@ -40,6 +41,13 @@ vi.mock('@/lib/better-auth-client', () => ({
     emailOtp: { sendVerificationOtp },
     twoFactor: { verifyTotp, verifyBackupCode },
     signOut,
+    useSession: () => ({
+      data: null,
+      isPending: false,
+      isRefetching: false,
+      error: null,
+      refetch: refetchSession,
+    }),
   },
 }))
 
@@ -73,6 +81,7 @@ describe('UserAuthForm (Phase 3)', () => {
     verifyTotp.mockResolvedValue({ error: null })
     verifyBackupCode.mockResolvedValue({ error: null })
     signOut.mockResolvedValue({})
+    refetchSession.mockResolvedValue(undefined)
     getMe.mockResolvedValue({ data: staffProfile })
   })
 
@@ -109,6 +118,20 @@ describe('UserAuthForm (Phase 3)', () => {
       expect.objectContaining({ id: 'u1', role: 'admin', permissions: ['view_hr'] }),
     )
     expect(useAuthStore.getState().auth.isSignedIn).toBe(true)
+    expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
+  })
+
+  it('refreshes the client session cache before navigating after sign-in', async () => {
+    // Live 2026-11-27: after a successful login the app stayed on the
+    // sign-in page because the authenticated layout saw a stale cached
+    // null session. The form refreshes the BA client's session cache
+    // (fresh server check, no cookie cache) as part of completing the
+    // sign-in, so the layout lands on a live session.
+    await fillAndSubmit('admin@example.com', 'correct horse battery')
+
+    expect(refetchSession).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { disableCookieCache: true } }),
+    )
     expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
   })
 

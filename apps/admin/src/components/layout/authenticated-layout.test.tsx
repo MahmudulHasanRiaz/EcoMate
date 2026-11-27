@@ -14,6 +14,7 @@ const reset = vi.hoisted(() => vi.fn())
 const getMe = vi.hoisted(() => vi.fn())
 const getEntitlements = vi.hoisted(() => vi.fn())
 const setActive = vi.hoisted(() => vi.fn())
+const refetchSession = vi.hoisted(() => vi.fn())
 
 /** Phase 3: the BA session is the source of truth — mock it, not tokens. */
 const sessionState = vi.hoisted(() => ({
@@ -58,7 +59,7 @@ vi.mock('@/stores/auth-store', () => ({
 
 vi.mock('@/lib/better-auth-client', () => ({
   authClient: {
-    useSession: () => ({ data: sessionState.session, isPending: sessionState.pending }),
+    useSession: () => ({ data: sessionState.session, isPending: sessionState.pending, refetch: refetchSession }),
     useListOrganizations: () => ({ data: sessionState.organizations }),
     useActiveOrganization: () => ({ data: sessionState.activeOrganization }),
     organization: { setActive },
@@ -130,6 +131,7 @@ describe('AuthenticatedLayout permission bootstrap', () => {
     sessionState.activeOrganization = null
     sessionStorage.clear()
     setActive.mockResolvedValue({})
+    refetchSession.mockResolvedValue(undefined)
     getEntitlements.mockResolvedValue({ data: { active: true, features: ['*'] } })
   })
 
@@ -181,6 +183,7 @@ describe("AuthenticatedLayout '*' wildcard handling", () => {
     sessionState.activeOrganization = null
     sessionStorage.clear()
     setActive.mockResolvedValue({})
+    refetchSession.mockResolvedValue(undefined)
     getMe.mockResolvedValue({ data: { id: 'u1', email: 'a@b.c', role: 'superadmin', permissions: ['*'] } })
   })
 
@@ -214,6 +217,7 @@ describe('AuthenticatedLayout session bridge (Phase 3)', () => {
     sessionState.activeOrganization = null
     sessionStorage.clear()
     setActive.mockResolvedValue({})
+    refetchSession.mockResolvedValue(undefined)
     getMe.mockResolvedValue({ data: { id: 'u1', email: 'a@b.c', role: 'admin', permissions: ['view_hr'] } })
     getEntitlements.mockResolvedValue({ data: { active: true, features: ['*'] } })
   })
@@ -240,6 +244,45 @@ describe('AuthenticatedLayout session bridge (Phase 3)', () => {
     sessionState.session = null
     render(<AuthenticatedLayout />)
     await waitFor(() => expect(reset).toHaveBeenCalled())
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/sign-in', replace: true }),
+    )
+  })
+
+  it('does NOT bounce on a stale null — refetches once, then signs in when the session appears', async () => {
+    // Live 2026-11-27: after a successful login the layout saw a stale
+    // cached null and bounced straight back to sign-in; only a manual
+    // reload (a fresh server fetch) reached the dashboard. The bridge
+    // must confirm a null reading with one fresh server check before
+    // bouncing — here the check finds the session, so there is no
+    // bounce and the store signs in.
+    sessionState.session = null
+    refetchSession.mockImplementation(async () => {
+      sessionState.session = {
+        user: { id: 'u1', email: 'a@b.c', name: 'Admin' },
+        session: { id: 's1', impersonatedBy: undefined, activeOrganizationId: null },
+      }
+    })
+    render(<AuthenticatedLayout />)
+    await waitFor(() => expect(setSignedIn).toHaveBeenCalledWith(true))
+    expect(refetchSession).toHaveBeenCalledTimes(1)
+    expect(refetchSession).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { disableCookieCache: true } }),
+    )
+    expect(reset).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/sign-in' }),
+    )
+  })
+
+  it('refetches exactly once before bouncing when the session is really gone', async () => {
+    sessionState.session = null
+    render(<AuthenticatedLayout />)
+    await waitFor(() => expect(reset).toHaveBeenCalled())
+    expect(refetchSession).toHaveBeenCalledTimes(1)
+    expect(refetchSession).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { disableCookieCache: true } }),
+    )
     expect(navigate).toHaveBeenCalledWith(
       expect.objectContaining({ to: '/sign-in', replace: true }),
     )

@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useAuthStore } from '@/stores/auth-store'
+import { authClient } from './better-auth-client'
 import { sessionRedirect } from './session-redirect'
 
 export { sessionRedirect } from './session-redirect'
@@ -11,9 +12,11 @@ export { sessionRedirect } from './session-redirect'
  * via the same-origin `/api/better-auth/*` proxy, sent with
  * `withCredentials`). There is NO Bearer token anymore, and NO refresh
  * machinery: the BA session refreshes server-side (`updateAge`), so a 401
- * means the session is gone and the user signs in again. The interceptor
- * therefore resets local auth state and redirects once — it never replays
- * the request.
+ * usually means the session is gone and the user signs in again. But a
+ * 401 alone does NOT prove it — the backend guard also 401s while the
+ * session is alive (transient guard failures), so the interceptor
+ * confirms the session against the central service before resetting
+ * local auth state and redirecting. It never replays the request.
  */
 
 function resolveApiUrl(): string {
@@ -100,12 +103,35 @@ apiClient.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    // If this request was already handled, give up (no replay: there is no
-    // client-side refresh under BA — a 401 means the session is gone).
+    // If this request was already handled, give up (no replay: there is
+    // no client-side refresh under BA).
     if (originalRequest._retry) {
       return Promise.reject(error)
     }
     originalRequest._retry = true
+
+    // A 401 from the backend is NOT proof the session is gone. The
+    // central guard also 401s while the BA session is alive — the
+    // permissions loader fails closed on a DB error, a profile lookup
+    // can race, and a null session is negative-cached for 5 s — and
+    // bouncing on that kicks a signed-in user to sign-in with a false
+    // "session expired" banner (reported live 2026-11-27, twice, while
+    // get-session kept returning the same valid session). Confirm
+    // against the central session first: a live session means the 401
+    // was the backend's, not the session's — leave auth state alone and
+    // reject the error so the caller (React Query retries) can recover.
+    // Only bounce when the session is proven gone (or the check itself
+    // cannot confirm it — fail closed, as before).
+    let sessionAlive = false
+    try {
+      const { data } = await authClient.getSession()
+      sessionAlive = !!data?.session
+    } catch {
+      sessionAlive = false
+    }
+    if (sessionAlive) {
+      return Promise.reject(error)
+    }
 
     // Clear auth (user + session flag) so any other in-flight request /
     // protected UI sees a logged-out state immediately.

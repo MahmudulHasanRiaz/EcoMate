@@ -114,6 +114,11 @@ export function UserAuthForm({
   const [otpError, setOtpError] = useState('')
   const navigate = useNavigate()
   const { auth } = useAuthStore()
+  // The BA client's session cache is refreshed explicitly after sign-in
+  // (see completeSignIn): the authenticated layout bounces on a stale
+  // cached null, and the cache is not guaranteed fresh right after the
+  // sign-in call returns.
+  const { refetch: refetchSession } = authClient.useSession()
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -259,6 +264,15 @@ export function UserAuthForm({
       username: me.username,
     })
     auth.setSignedIn(true)
+
+    // Refresh the BA client's session cache before navigating: the
+    // authenticated layout bounces on a stale cached null, and the cache
+    // is not guaranteed fresh right after sign-in (the signal-triggered
+    // fetch may still be in flight, or a logged-out fetch may still be
+    // inside the mount-dedupe window). Fire-and-forget — the layout's
+    // own refetch-before-bounce is the backstop, so navigation never
+    // waits on this call.
+    refetchSession({ query: { disableCookieCache: true } }).catch(() => {})
 
     const targetPath = redirectTo || '/'
     navigate({ to: targetPath, replace: true })

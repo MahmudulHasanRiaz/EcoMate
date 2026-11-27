@@ -9,6 +9,16 @@ import {
 } from './api-client'
 import { useAuthStore } from '@/stores/auth-store'
 
+// The 401 interceptor confirms the BA session before bouncing (live
+// 2026-11-27: backend 401s while the session is alive). Mock the
+// central session check; default is "no session" so the legacy
+// reset-and-redirect behaviour is what the older tests exercise.
+const getSession = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/better-auth-client', () => ({
+  authClient: { getSession },
+}))
+
 function unauthorized(config: any): never {
   throw new AxiosError('Unauthorized', 'ERR_BAD_REQUEST', config, config, {
     status: 401,
@@ -21,9 +31,17 @@ function unauthorized(config: any): never {
 
 /**
  * Phase 3: there is no refresh machinery anymore — the BA session cookie
- * is the credential and it refreshes server-side. A 401 means the session
- * is gone: the interceptor resets local auth state and redirects once to
- * sign-in. It never replays the request and never calls `/auth/refresh`.
+ * is the credential and it refreshes server-side. A 401 usually means
+ * the session is gone: the interceptor resets local auth state and
+ * redirects once to sign-in. It never replays the request and never
+ * calls `/auth/refresh`.
+ *
+ * But a 401 alone does NOT prove the session is gone (live 2026-11-27:
+ * the backend guard 401s while the BA session is alive, and the old
+ * bounce sent a signed-in user to sign-in with a false "session
+ * expired" banner). So the interceptor first confirms the session with
+ * the central service: a live session means the 401 was the backend's,
+ * and auth state is left alone.
  *
  * The `sessionRedirect.assign` spy is installed in beforeEach for EVERY
  * test in this file: the real `window.location.assign` would navigate the
@@ -36,6 +54,7 @@ describe('apiClient 401 handling (Phase 3)', () => {
   beforeEach(() => {
     useAuthStore.getState().auth.reset()
     vi.restoreAllMocks()
+    getSession.mockResolvedValue({ data: null, error: null })
     assignSpy = vi
       .spyOn(sessionRedirect, 'assign')
       .mockImplementation(() => {})
@@ -66,6 +85,56 @@ describe('apiClient 401 handling (Phase 3)', () => {
       expect(adapterCalls).toBe(1)
       expect(postSpy).not.toHaveBeenCalled()
       expect(resetSpy).toHaveBeenCalled()
+      expect(useAuthStore.getState().auth.isSignedIn).toBe(false)
+      expect(assignSpy).toHaveBeenCalledWith(
+        expect.stringContaining('expired=1'),
+      )
+    } finally {
+      window.history.pushState({}, '', originalUrl)
+    }
+  })
+
+  it('does NOT reset or redirect on a 401 when the BA session is still alive', async () => {
+    // Live 2026-11-27: the backend guard 401s while the BA session is
+    // alive, and the old bounce sent a signed-in user to sign-in with a
+    // false "session expired" banner. A live session means the 401 was
+    // the backend's, not the session's — auth state is left alone and
+    // the error just rejects so the caller can retry it.
+    getSession.mockResolvedValue({
+      data: {
+        session: { id: 's1', expiresAt: new Date(Date.now() + 3600_000).toISOString() },
+        user: { id: 'u1', email: 'a@b.c' },
+      },
+      error: null,
+    })
+    useAuthStore.getState().auth.setSignedIn(true)
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: '1', email: 'a@b.c', role: 'admin', permissions: [] })
+    const originalUrl = window.location.pathname + window.location.search
+    window.history.pushState({}, '', '/admin/op/orders')
+
+    try {
+      await expect(apiClient.get('/protected/resource')).rejects.toBeTruthy()
+      expect(getSession).toHaveBeenCalled()
+      expect(useAuthStore.getState().auth.isSignedIn).toBe(true)
+      expect(useAuthStore.getState().auth.user).not.toBeNull()
+      expect(assignSpy).not.toHaveBeenCalled()
+    } finally {
+      window.history.pushState({}, '', originalUrl)
+    }
+  })
+
+  it('still resets and redirects when the session check itself fails', async () => {
+    // The session cannot be confirmed (auth service unreachable) — fail
+    // closed, as before: the 401 stands and the user is bounced.
+    getSession.mockRejectedValue(new Error('network down'))
+    useAuthStore.getState().auth.setSignedIn(true)
+    const originalUrl = window.location.pathname + window.location.search
+    window.history.pushState({}, '', '/admin/op/orders')
+
+    try {
+      await expect(apiClient.get('/protected/resource')).rejects.toBeTruthy()
       expect(useAuthStore.getState().auth.isSignedIn).toBe(false)
       expect(assignSpy).toHaveBeenCalledWith(
         expect.stringContaining('expired=1'),

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from '@tanstack/react-router'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
@@ -42,32 +42,51 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   const location = useLocation()
   const user = useAuthStore((s) => s.auth.user)
   const isSignedIn = useAuthStore((s) => s.auth.isSignedIn)
-  const { data: session, isPending: sessionPending } = authClient.useSession()
+  const { data: session, isPending: sessionPending, refetch: refetchSession } = authClient.useSession()
   const { data: organizations } = authClient.useListOrganizations()
   const { data: activeOrganization } = authClient.useActiveOrganization()
   const defaultOrgAppliedRef = useRef(false)
+  // One fresh server check per mount (see the session bridge below).
+  const [sessionCheckDone, setSessionCheckDone] = useState(false)
 
   // Session bridge: a live BA session signs the store in; no session signs
   // it out and bounces to sign-in. The bounce marker preserves the
   // customer explanation across the redirect.
+  //
+  // A null reading is NOT proof of no session: the BA client's session
+  // atom can report a stale cached null right after sign-in (mount
+  // dedupe, or a failed first fetch — the atom keeps `data: null` with
+  // `isPending: false` and only an `error` field) while the server
+  // session is alive. Bouncing on that strands the user on the sign-in
+  // page after a successful login (reported live 2026-11-27: "success"
+  // shown, no navigation, a manual reload needed). So a null session is
+  // confirmed with ONE fresh server check (disableCookieCache) before
+  // any bounce. The flag is set when the check is *started*, so the
+  // effect never re-checks in a loop; it re-runs when the check settles
+  // (state update) or the hook updates, and only then bounces.
   useEffect(() => {
     if (sessionPending) return
-    if (!session) {
-      const { reset } = useAuthStore.getState().auth
-      reset()
-      const bounce = sessionStorage.getItem('admin_customer_bounce')
-      sessionStorage.removeItem('admin_customer_bounce')
-      navigate({
-        to: '/sign-in',
-        ...(bounce ? { search: { customer: '1' } as const } : {}),
-        replace: true,
-      })
+    if (session) {
+      const { setSignedIn, setImpersonatedBy } = useAuthStore.getState().auth
+      setSignedIn(true)
+      setImpersonatedBy(session.session.impersonatedBy ?? null)
       return
     }
-    const { setSignedIn, setImpersonatedBy } = useAuthStore.getState().auth
-    setSignedIn(true)
-    setImpersonatedBy(session.session.impersonatedBy ?? null)
-  }, [session, sessionPending, navigate])
+    if (!sessionCheckDone) {
+      setSessionCheckDone(true)
+      refetchSession({ query: { disableCookieCache: true } }).catch(() => {})
+      return
+    }
+    const { reset } = useAuthStore.getState().auth
+    reset()
+    const bounce = sessionStorage.getItem('admin_customer_bounce')
+    sessionStorage.removeItem('admin_customer_bounce')
+    navigate({
+      to: '/sign-in',
+      ...(bounce ? { search: { customer: '1' } as const } : {}),
+      replace: true,
+    })
+  }, [session, sessionPending, sessionCheckDone, navigate, refetchSession])
 
   // Default active org = the org matching the current host on sign-in.
   // BA leaves `activeOrganizationId` null after sign-in; a user with one
