@@ -18,6 +18,7 @@ describe('CentralAuthClient', () => {
     url?: string;
     host?: string;
     cookie?: string;
+    origin?: string;
     token?: string;
     body?: string;
   }>;
@@ -44,6 +45,7 @@ describe('CentralAuthClient', () => {
           url: req.url,
           host: req.headers.host,
           cookie: req.headers.cookie,
+          origin: req.headers.origin as string,
           token: req.headers['x-platform-service-token'] as string,
           body: body || undefined,
         });
@@ -161,6 +163,10 @@ describe('CentralAuthClient', () => {
     expect(requests[0]?.cookie).toContain('session_token=tok-host-1');
     expect(requests[0]?.cookie).toContain('session_data=abc');
     expect(requests[0]?.url).toContain('disableCookieCache=true');
+    // The client always sends the tenant origin when a host is set, so
+    // a non-GET call never trips BA's origin check (see the
+    // change-password regression test below).
+    expect(requests[0]?.origin).toBe('https://tenant1.faah.net');
   });
 
   it('WITHOUT the tenant Host the call 500s (unknown host fails closed) — so the guard must forward it', async () => {
@@ -327,6 +333,51 @@ describe('CentralAuthClient', () => {
     await expect(
       client.changeCentralPassword(cookie, 'tenant1.faah.net', 'old', 'new-password-1'),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('change-password sends Origin: https://<tenant-host> (BA 1.7.28 origin check)', async () => {
+    // Canary-flip regression: in-session change-password 403d twice on
+    // staging with "Central auth service error (HTTP 403)". Root cause:
+    // BA 1.7.28 validateOrigin rejects a non-GET call carrying a cookie
+    // when BOTH Origin and Referer are absent (403 MISSING_OR_NULL_ORIGIN),
+    // and the client sent Cookie + Host but no Origin. change-password is
+    // the only server-to-server BA POST with a user cookie, so it was the
+    // only one that 403d (GET getSession is exempt; browser POSTs carry
+    // Origin). The fake below mimics that rule, so this test FAILS on a
+    // client that stops sending Origin.
+    const client = new CentralAuthClient();
+    const cookie = sessionCookie('tok-origin-1');
+    handler = (req, res) => {
+      const hasCookie = Boolean(req.headers.cookie);
+      const hasOrigin = Boolean(
+        req.headers.origin || req.headers.referer,
+      );
+      if (req.method !== 'GET' && hasCookie && !hasOrigin) {
+        res.writeHead(403, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ code: 'MISSING_OR_NULL_ORIGIN' }));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({}));
+    };
+    await expect(
+      client.changeCentralPassword(cookie, 'tenant1.faah.net', 'old', 'new-password-1'),
+    ).resolves.toBeUndefined();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.origin).toBe('https://tenant1.faah.net');
+  });
+
+  it('localhost hosts get an http:// Origin (https everywhere else)', async () => {
+    const client = new CentralAuthClient();
+    const cookie = sessionCookie('tok-origin-2');
+    handler = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({}));
+    };
+    await client.changeCentralPassword(cookie, 'localhost:4000', 'old', 'new-password-1');
+    expect(requests[0]?.origin).toBe('http://localhost:4000');
+    await client.changeCentralPassword(cookie, '127.0.0.1:4000', 'old', 'new-password-1');
+    expect(requests[1]?.origin).toBe('http://127.0.0.1:4000');
   });
 
   it('internal user calls send the service secret and map 404 → null', async () => {

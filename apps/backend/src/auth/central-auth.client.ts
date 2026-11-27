@@ -166,6 +166,18 @@ export class CentralAuthClient {
     // without it the service 500s on unknown hosts (auth_handler_error).
     if (opts.host) {
       headers['Host'] = opts.host;
+      // Better Auth 1.7.28 origin check (validateOrigin): a non-GET call
+      // carrying a session cookie with neither Origin nor Referer is
+      // rejected 403 MISSING_OR_NULL_ORIGIN. Server-to-server calls have
+      // no browser Origin, so send the tenant origin explicitly — it is
+      // trusted by the auth service via the live trustedOrigins registry
+      // (tenant subdomain origins). Local hosts use http, the rest https.
+      const hostNoPort = opts.host.split(':')[0];
+      const scheme =
+        hostNoPort === 'localhost' || hostNoPort === '127.0.0.1'
+          ? 'http'
+          : 'https';
+      headers['Origin'] = `${scheme}://${opts.host}`;
     }
     if (opts.internal && this.internalSecret()) {
       headers['x-platform-service-token'] = this.internalSecret() as string;
