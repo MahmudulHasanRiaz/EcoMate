@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/card'
 import { AuthLayout } from '../auth-layout'
 import { AuthBrandHeader } from '../auth-brand-header'
+import { AuthCardFooter } from '../auth-card-footer'
 import { ResetPasswordForm } from './components/reset-password-form'
 
 /**
@@ -70,11 +71,7 @@ export function ResetPassword() {
             </>
           )}
         </CardContent>
-        <div className='border-t px-5 py-3'>
-          <p className='text-center text-xs text-muted-foreground'>
-            Secured by EcoMate
-          </p>
-        </div>
+        <AuthCardFooter />
       </Card>
     </AuthLayout>
   )

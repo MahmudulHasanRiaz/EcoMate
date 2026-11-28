@@ -32,6 +32,8 @@ import {
 } from '@/components/ui/input-otp'
 import { SocialSignIn } from './social-sign-in'
 import { useResendCooldown } from '../../use-resend-cooldown'
+import { usePublicBranding } from '../../use-public-branding'
+import { DEFAULT_LOGIN_METHODS } from '../../branding'
 
 const emailSchema = z.object({
   email: z.email({
@@ -75,19 +77,31 @@ interface UserAuthFormProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 // NOTE — no Phone tab / phone step: phone OTP does not exist (no SMS
-// provider yet). A phone option must stay out until a phone-OTP flow
-// is real; rendering one now would be a fake button (login redesign
-// Step 1).
+// provider yet). `normalizeLoginMethods` forces phoneOtp off whatever
+// is stored, so a phone option can never render until a phone-OTP
+// flow is real; rendering one now would be a fake button (login
+// redesign Step 1, login round 2).
+//
+// Sign-in methods are SETTINGS-DRIVEN (login round 2): which methods
+// show and which one opens by default come from the tenant's
+// `login_methods` setting (`GET /system-settings/branding` —
+// `usePublicBranding`), edited in Settings → Auth & Integrations.
+// While branding loads (or an old backend sends none) the defaults
+// apply: password + email OTP on, password default.
 
 /**
  * Admin sign-in — Phase 3 central Better Auth cutover, reskinned in
  * the login redesign (Step 1) as a Clerk-style compact widget and
  * polished to one-step-at-a-time: the default view shows ONLY the
  * email field + Continue (email-first, like Clerk). Continue swaps
- * in-widget to the next step — the password field (with a Forgot
- * password? link), or the 6-digit code boxes for Email code. The
- * Password / Email-code choice is a subtle switcher link on the
- * step-2 screens, not two stacked forms and not tabs.
+ * in-widget to the next step — which step that is follows the
+ * tenant's DEFAULT sign-in method (login round 2, `login_methods`
+ * setting): the password field (with a Forgot password? link) when
+ * password is default, the 6-digit code boxes (code sent first)
+ * when email OTP is default. The other enabled method is reachable
+ * via a subtle switcher link on the step-2 screens — disabled
+ * methods show no switcher at all. There are no tabs, no stacked
+ * forms, and no phone step (no SMS provider yet).
  *
  * Email sign-in goes through `authClient.signIn.email()` (same-origin
  * `/api/better-auth/*` proxy → central service). There is no access token
@@ -135,6 +149,13 @@ export function UserAuthForm({
   const resendCooldown = useResendCooldown(30)
   const navigate = useNavigate()
   const { auth } = useAuthStore()
+  // Settings-driven sign-in methods (login round 2): which methods
+  // are offered and which one opens by default. Same cached query
+  // as AuthLayout/AuthBrandHeader — no extra request. Before the
+  // fetch resolves the defaults apply (password default), so the
+  // first view never flashes a wrong method.
+  const { branding } = usePublicBranding()
+  const methods = branding?.loginMethods ?? DEFAULT_LOGIN_METHODS
   // The BA client's session cache is refreshed explicitly after sign-in
   // (see completeSignIn): the authenticated layout bounces on a stale
   // cached null, and the cache is not guaranteed fresh right after the
@@ -169,32 +190,63 @@ export function UserAuthForm({
   const challengeCode = challengeForm.watch('code')
   const otpCode = otpCodeForm.watch('code')
 
-  /** Step 1 → step 2: the email is kept, the password step shows next. */
-  function onEmailSubmit(data: z.infer<typeof emailSchema>) {
+  /**
+   * Step 1 → step 2: the email is kept, and the step that opens is
+   * the tenant's DEFAULT method (login round 2) — the password step
+   * when password is default, the code boxes (code sent first) when
+   * email OTP is default. If the code cannot be sent, fall back to
+   * the password step when it is enabled, so the user is never stuck
+   * on step 1; with password disabled too, stay on step 1 and the
+   * error toast is the whole story.
+   */
+  async function onEmailSubmit(data: z.infer<typeof emailSchema>) {
     setEmail(data.email)
     setCustomerBlocked('')
     setOtpError('')
+    if (methods.default === 'emailOtp' && methods.emailOtp) {
+      // Pass the address explicitly: `email` state has not updated
+      // yet from the setEmail above, so the sender must not read it.
+      const error = await sendSignInCode(data.email)
+      if (!error) return
+      if (methods.password) {
+        toast.error(error)
+        setStage('password')
+      }
+      return
+    }
     setStage('password')
   }
 
-  /** Step 2 (password) → email-code: send the code, show the boxes. */
-  async function sendSignInCode() {
+  /**
+   * Send the sign-in code to `targetEmail` and show the boxes.
+   * Returns null on success, the user-facing error message on
+   * failure (the message is also shown inline on the code step,
+   * where it is rendered). Used both by the step-2 switcher and by
+   * the email-OTP-default path out of step 1. The address is a
+   * parameter (not the `email` state) because the step-1 path calls
+   * this in the same tick as setEmail, before state has updated.
+   */
+  async function sendSignInCode(targetEmail: string): Promise<string | null> {
     setIsLoading(true)
     setOtpError('')
     try {
       const { error } = await authClient.emailOtp.sendVerificationOtp({
-        email,
+        email: targetEmail,
         type: 'sign-in',
       })
       if (error) throw error
       otpCodeForm.reset()
       resendCooldown.start()
       setStage('otp-code')
+      return null
     } catch (error: any) {
-      setOtpError(
-        baErrorMessage(error, 'Could not send the code. Please try again.'),
+      const message = baErrorMessage(
+        error,
+        'Could not send the code. Please try again.',
       )
+      setOtpError(message)
       setShake(true)
+      return message
     } finally {
       setIsLoading(false)
     }
@@ -634,14 +686,18 @@ export function UserAuthForm({
                 {isLoading ? <Loader2 className='animate-spin' /> : null}
                 Sign in
               </Button>
-              <button
-                type='button'
-                onClick={sendSignInCode}
-                disabled={isLoading}
-                className='auth-link min-h-0 justify-self-center text-sm font-medium underline underline-offset-4 disabled:opacity-50'
-              >
-                Email me a sign-in code instead
-              </button>
+              {methods.emailOtp ? (
+                <button
+                  type='button'
+                  onClick={() => {
+                    void sendSignInCode(email)
+                  }}
+                  disabled={isLoading}
+                  className='auth-link min-h-0 justify-self-center text-sm font-medium underline underline-offset-4 disabled:opacity-50'
+                >
+                  Email me a sign-in code instead
+                </button>
+              ) : null}
             </form>
           </Form>
         )}
@@ -712,16 +768,18 @@ export function UserAuthForm({
                 Use a different email
               </button>
             </div>
-            <button
-              type='button'
-              onClick={() => {
-                setStage('password')
-                setOtpError('')
-              }}
-              className='auth-link min-h-0 justify-self-center text-sm font-medium underline underline-offset-4'
-            >
-              Use password instead
-            </button>
+            {methods.password ? (
+              <button
+                type='button'
+                onClick={() => {
+                  setStage('password')
+                  setOtpError('')
+                }}
+                className='auth-link min-h-0 justify-self-center text-sm font-medium underline underline-offset-4'
+              >
+                Use password instead
+              </button>
+            ) : null}
           </div>
         )}
       </div>

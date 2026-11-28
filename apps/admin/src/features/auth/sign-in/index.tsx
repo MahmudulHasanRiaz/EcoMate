@@ -1,8 +1,9 @@
-import { Link, useSearch } from '@tanstack/react-router'
+import { useSearch } from '@tanstack/react-router'
 import { Card, CardContent } from '@/components/ui/card'
 import { CircleAlert } from 'lucide-react'
 import { AuthLayout } from '../auth-layout'
 import { AuthBrandHeader } from '../auth-brand-header'
+import { AuthCardFooter } from '../auth-card-footer'
 import { UserAuthForm } from './components/user-auth-form'
 
 /**
@@ -86,22 +87,7 @@ export function SignIn() {
             showCustomDomainHint={error === 'access_denied'}
           />
         </CardContent>
-        <div className='border-t px-5 py-3'>
-          <p className='text-center text-xs text-muted-foreground'>
-            Don&apos;t have an account?{' '}
-            <Link
-              to='/sign-up'
-              className='auth-link font-medium underline underline-offset-4'
-            >
-              Sign up
-            </Link>
-          </p>
-        </div>
-        <div className='border-t px-5 py-3'>
-          <p className='text-center text-xs text-muted-foreground'>
-            Secured by EcoMate
-          </p>
-        </div>
+        <AuthCardFooter showSignUp />
       </Card>
     </AuthLayout>
   )

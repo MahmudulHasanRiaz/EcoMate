@@ -14,6 +14,12 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { authSettingsApi, type AuthProviderResponse } from './api'
 import { PageInfo } from '@/components/page-info'
+import { systemSettingsApi } from '@/features/settings/storage-api'
+import {
+  normalizeLoginMethods,
+  type LoginMethods,
+} from '@/features/auth/branding'
+import { LoginMethodsCard } from './login-methods-card'
 
 const PROVIDERS = [
   { key: 'google', label: 'Google', icon: 'G' },
@@ -36,6 +42,37 @@ export default function AuthSettingsPage() {
   const { data: settings, isLoading } = useQuery({
     queryKey: ['auth-settings'],
     queryFn: () => authSettingsApi.list().then((r) => r.data),
+  })
+
+  // Sign-in methods (login round 2): the ONE `login_methods`
+  // setting (a JSON SystemSetting row), read pre-login by the admin
+  // sign-in form from GET /system-settings/branding. Same query key
+  // as the Branding page, so the two editors share one cache.
+  const { data: systemSettings } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: () => systemSettingsApi.getAll().then((r) => r.data),
+  })
+
+  const loginMethods = normalizeLoginMethods(
+    (() => {
+      try {
+        const raw = systemSettings?.['login_methods']
+        return raw ? JSON.parse(raw) : undefined
+      } catch {
+        return undefined
+      }
+    })(),
+  )
+
+  const loginMethodsMutation = useMutation({
+    mutationFn: (next: LoginMethods) =>
+      systemSettingsApi.set('login_methods', JSON.stringify(next)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-settings'] })
+      // The login form reads this from the public-branding cache.
+      queryClient.invalidateQueries({ queryKey: ['public-branding'] })
+    },
+    onError: () => toast.error('Failed to save sign-in methods'),
   })
 
   useEffect(() => {
@@ -111,6 +148,12 @@ export default function AuthSettingsPage() {
           </div>
         ) : (
           <div className='grid gap-6'>
+            {systemSettings ? (
+              <LoginMethodsCard
+                value={loginMethods}
+                onChange={(next) => loginMethodsMutation.mutate(next)}
+              />
+            ) : null}
             {PROVIDERS.map(({ key, label }) => {
               const s = getSetting(key)
               return (

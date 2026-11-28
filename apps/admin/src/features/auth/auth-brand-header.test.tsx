@@ -45,14 +45,16 @@ describe('AuthBrandHeader (in-card, storefront display mode)', () => {
     brandingState.value = null
   })
 
-  it("shows the store name + tagline in 'name' mode, with no tile", async () => {
+  it("shows the store name alone in 'name' mode, with no tile and no tagline", async () => {
     brandingState.value = makeBranding({ storeName: 'Features Test Store' })
     const screen = await render(<AuthBrandHeader />)
 
     await expect
       .element(screen.getByRole('heading', { name: 'Features Test Store' }))
       .toBeInTheDocument()
-    await expect.element(screen.getByText('Admin Dashboard')).toBeInTheDocument()
+    // Login round 2 (Boss): the "Admin Dashboard" tagline line under
+    // the name is gone — the name alone is the header, in every mode.
+    expect(screen.container.textContent).not.toContain('Admin Dashboard')
     expect(screen.container.textContent).not.toContain('FT')
   })
 

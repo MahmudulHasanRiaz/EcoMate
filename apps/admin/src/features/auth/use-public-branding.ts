@@ -3,6 +3,7 @@ import { apiClient } from '@/lib/api-client'
 import {
   normalizeBrandColors,
   normalizeBrandDisplay,
+  normalizeLoginMethods,
   type PublicBranding,
 } from './branding'
 
@@ -58,5 +59,8 @@ function normalizeBranding(data: unknown): PublicBranding {
     // backend (pre-redesign deploy) sends none — normalizeBrandColors
     // then falls back per-key to the storefront defaults.
     colors: normalizeBrandColors(record['colors']),
+    // Sign-in methods arrive as `loginMethods: {...}` (login round
+    // 2); an old backend sends none — the password default applies.
+    loginMethods: normalizeLoginMethods(record['loginMethods']),
   }
 }

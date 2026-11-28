@@ -75,6 +75,78 @@ export function normalizeBrandColors(data: unknown): BrandColors {
   }
 }
 
+/**
+ * Sign-in methods for the tenant admin login (login round 2). ONE
+ * JSON `SystemSetting` row (`login_methods`) is the single source of
+ * truth, served by `GET /system-settings/branding` as `loginMethods`
+ * — the same precedent as the `store_systems` display blob. There is
+ * no second settings system anywhere.
+ *
+ * - `password`: Email + Password sign-in.
+ * - `emailOtp`: Email OTP sign-in (6-digit code, in-widget).
+ * - `phoneOtp`: Phone-number OTP — NOT offered anywhere until an SMS
+ *   provider exists (see normalizeLoginMethods: forced off).
+ * - `default`: the method open by default on first view.
+ */
+export type LoginMethod = 'password' | 'emailOtp' | 'phoneOtp'
+
+export interface LoginMethods {
+  password: boolean
+  emailOtp: boolean
+  phoneOtp: boolean
+  default: LoginMethod
+}
+
+/** Unset tenant: password + email OTP on, phone off, password default. */
+export const DEFAULT_LOGIN_METHODS: LoginMethods = {
+  password: true,
+  emailOtp: true,
+  phoneOtp: false,
+  default: 'password',
+}
+
+/**
+ * Fail-soft normalizer for the `loginMethods` payload — same rules
+ * as the backend's `loginMethods()` in
+ * `apps/backend/src/system-settings/system-settings.controller.ts`
+ * (keep the two in sync):
+ * - Missing / malformed / non-object → DEFAULT_LOGIN_METHODS.
+ * - `phoneOtp` is ALWAYS false here: no SMS provider exists yet, so
+ *   a stored `true` must never render a dead phone option.
+ * - The default must name an enabled method, else the first enabled
+ *   method in order password → emailOtp → phoneOtp wins.
+ * - All three off → DEFAULT_LOGIN_METHODS (a tenant must never be
+ *   able to lock every staff member out of the admin).
+ */
+export function normalizeLoginMethods(data: unknown): LoginMethods {
+  if (!data || typeof data !== 'object') return { ...DEFAULT_LOGIN_METHODS }
+  const record = data as Record<string, unknown>
+  const bool = (key: string, def: boolean): boolean =>
+    typeof record[key] === 'boolean' ? (record[key] as boolean) : def
+  const password = bool('password', true)
+  const emailOtp = bool('emailOtp', true)
+  // No SMS provider — phone OTP is never offered, whatever is stored.
+  const phoneOtp = false
+  if (!password && !emailOtp && !phoneOtp) return { ...DEFAULT_LOGIN_METHODS }
+  const enabled: LoginMethod[] = []
+  if (password) enabled.push('password')
+  if (emailOtp) enabled.push('emailOtp')
+  if (phoneOtp) enabled.push('phoneOtp')
+  const requested = record['default']
+  const def: LoginMethod =
+    requested === 'password' ||
+    requested === 'emailOtp' ||
+    requested === 'phoneOtp'
+      ? requested
+      : 'password'
+  return {
+    password,
+    emailOtp,
+    phoneOtp,
+    default: enabled.includes(def) ? def : enabled[0],
+  }
+}
+
 export interface PublicBranding {
   storeName: string
   adminTitle: string
@@ -86,6 +158,8 @@ export interface PublicBranding {
   seoTitle: string
   seoDescription: string
   colors: BrandColors
+  /** Sign-in methods + default (login round 2) — see LoginMethods. */
+  loginMethods: LoginMethods
   /**
    * Login polish: the storefront header's brand display mode — the
    * FIRST brand system's `display` from the `store_systems` setting,

@@ -400,6 +400,75 @@ export class SystemSettingsController {
     return 'name';
   }
 
+  /**
+   * Login round 2: which sign-in methods the tenant admin login
+   * offers, and which one opens by default. Stored as ONE JSON
+   * `SystemSetting` row (`login_methods`, same precedent as the
+   * `store_systems` JSON blob above — no second settings system):
+   * `{ "password": true, "emailOtp": true, "phoneOtp": false,
+   * "default": "password" }`.
+   *
+   * Rules, mirrored by `normalizeLoginMethods` in the admin
+   * (`apps/admin/src/features/auth/branding.ts`) — keep the two in
+   * sync:
+   * - Missing / malformed / non-object value → all defaults
+   *   (password + email OTP on, phone off, default password).
+   * - `phoneOtp` is ALWAYS false in what this endpoint returns:
+   *   phone OTP has no SMS provider yet, so offering it would be a
+   *   dead button. The stored value is kept for the day a provider
+   *   is wired; the settings UI shows the row disabled until then.
+   * - The default must name an enabled method, else the first
+   *   enabled method in order password → emailOtp → phoneOtp wins.
+   * - All three off is impossible to sign in with, so it falls
+   *   back to the defaults instead of locking every staff member
+   *   out of the admin.
+   */
+  private loginMethods(raw: string | undefined): {
+    password: boolean;
+    emailOtp: boolean;
+    phoneOtp: boolean;
+    default: 'password' | 'emailOtp' | 'phoneOtp';
+  } {
+    const fallback = {
+      password: true,
+      emailOtp: true,
+      phoneOtp: false,
+      default: 'password' as const,
+    };
+    try {
+      const parsed: unknown = JSON.parse(raw || '');
+      if (!parsed || typeof parsed !== 'object') return fallback;
+      const rec = parsed as Record<string, unknown>;
+      const bool = (key: string, def: boolean): boolean =>
+        typeof rec[key] === 'boolean' ? (rec[key] as boolean) : def;
+      const password = bool('password', true);
+      const emailOtp = bool('emailOtp', true);
+      // No SMS provider — phone OTP is never offered, whatever is stored.
+      const phoneOtp = false;
+      if (!password && !emailOtp && !phoneOtp) return fallback;
+      const requested = rec['default'];
+      const enabled: ('password' | 'emailOtp' | 'phoneOtp')[] = [];
+      if (password) enabled.push('password');
+      if (emailOtp) enabled.push('emailOtp');
+      if (phoneOtp) enabled.push('phoneOtp');
+      const def =
+        requested === 'password' ||
+        requested === 'emailOtp' ||
+        requested === 'phoneOtp'
+          ? requested
+          : 'password';
+      return {
+        password,
+        emailOtp,
+        phoneOtp,
+        default: enabled.includes(def) ? def : enabled[0],
+      };
+    } catch {
+      // Malformed stored blob — fall through to the defaults.
+      return fallback;
+    }
+  }
+
   @Public()
   @Get('branding')
   async getPublicBranding() {
@@ -429,6 +498,9 @@ export class SystemSettingsController {
             // storefront header exactly, from this same setting. No
             // second display setting exists anywhere.
             'store_systems',
+            // Login round 2: the sign-in methods setting (one JSON
+            // row, see loginMethods above).
+            'login_methods',
           ],
         },
       },
@@ -465,6 +537,10 @@ export class SystemSettingsController {
         danger: this.brandColor(map, 'brand_danger', '#EF4444'),
         border: this.brandColor(map, 'brand_border', '#E5E7EB'),
       },
+      // Login round 2: sign-in methods + default, validated above.
+      // Served unauthenticated like the colours so the login can
+      // render only the enabled methods before sign-in.
+      loginMethods: this.loginMethods(map['login_methods']),
     };
   }
 

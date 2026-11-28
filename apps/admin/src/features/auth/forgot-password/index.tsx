@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/card'
 import { AuthLayout } from '../auth-layout'
 import { AuthBrandHeader } from '../auth-brand-header'
+import { AuthCardFooter } from '../auth-card-footer'
 import { ForgotPasswordForm } from './components/forgot-password-form'
 
 /**
@@ -36,11 +37,7 @@ export function ForgotPassword() {
             <ForgotPasswordForm />
           </div>
         </CardContent>
-        <div className='border-t px-5 py-3'>
-          <p className='text-center text-xs text-muted-foreground'>
-            Secured by EcoMate
-          </p>
-        </div>
+        <AuthCardFooter />
       </Card>
     </AuthLayout>
   )

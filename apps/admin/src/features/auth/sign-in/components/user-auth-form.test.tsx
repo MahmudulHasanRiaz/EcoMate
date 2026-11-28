@@ -3,6 +3,31 @@ import { render, type RenderResult } from 'vitest-browser-react'
 import { userEvent } from 'vitest/browser'
 import { UserAuthForm } from './user-auth-form'
 import { useAuthStore } from '@/stores/auth-store'
+import {
+  DEFAULT_LOGIN_METHODS,
+  type LoginMethods,
+  type PublicBranding,
+} from '../../branding'
+
+/**
+ * Login round 2: the sign-in methods shown (and the default that
+ * opens) come from the tenant's `login_methods` setting via
+ * usePublicBranding. The hook is mocked here with a mutable value
+ * (null = branding not loaded yet → the form's defaults apply).
+ */
+const brandingMethods = vi.hoisted(() => ({
+  value: null as LoginMethods | null,
+}))
+
+vi.mock('../../use-public-branding', () => ({
+  usePublicBranding: () => ({
+    branding: brandingMethods.value
+      ? ({ loginMethods: brandingMethods.value } as unknown as PublicBranding)
+      : null,
+    isLoading: false,
+    isError: false,
+  }),
+}))
 
 /**
  * Phase 3: sign-in goes through `authClient.signIn.email()` (BA client),
@@ -94,6 +119,7 @@ async function goToOtpCodeStep(email: string): Promise<RenderResult> {
 describe('UserAuthForm (Phase 3)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    brandingMethods.value = null
     useAuthStore.getState().auth.reset()
     signInEmail.mockResolvedValue({ error: null })
     signInEmailOtp.mockResolvedValue({ error: null })
@@ -353,5 +379,101 @@ describe('UserAuthForm (Phase 3)', () => {
     await expect.element(screen.getByLabelText('Email address')).toBeInTheDocument()
     const passwords = await screen.getByLabelText('Password').all()
     expect(passwords.length).toBe(0)
+  })
+
+  it('opens the email-OTP code step by default when emailOtp is the default method', async () => {
+    brandingMethods.value = {
+      password: true,
+      emailOtp: true,
+      phoneOtp: false,
+      default: 'emailOtp',
+    }
+    const screen = await render(<UserAuthForm />)
+    await userEvent.fill(screen.getByLabelText('Email address'), 'admin@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+
+    // The code is sent straight from step 1 — no password step first.
+    await vi.waitFor(() =>
+      expect(sendVerificationOtp).toHaveBeenCalledWith({
+        email: 'admin@example.com',
+        type: 'sign-in',
+      }),
+    )
+    const otpInput = screen.container.querySelector(
+      'input[autocomplete="one-time-code"]',
+    )
+    expect(otpInput).not.toBeNull()
+    const passwords = await screen.getByLabelText('Password').all()
+    expect(passwords.length).toBe(0)
+  })
+
+  it('hides the email-code switcher when email OTP is disabled', async () => {
+    brandingMethods.value = {
+      password: true,
+      emailOtp: false,
+      phoneOtp: false,
+      default: 'password',
+    }
+    const screen = await render(<UserAuthForm />)
+    await userEvent.fill(screen.getByLabelText('Email address'), 'admin@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+
+    await expect.element(screen.getByLabelText('Password')).toBeInTheDocument()
+    const switchers = await screen
+      .getByText('Email me a sign-in code instead')
+      .all()
+    expect(switchers.length).toBe(0)
+    expect(sendVerificationOtp).not.toHaveBeenCalled()
+  })
+
+  it('password disabled: the code step opens with no password switcher', async () => {
+    brandingMethods.value = {
+      password: false,
+      emailOtp: true,
+      phoneOtp: false,
+      default: 'emailOtp',
+    }
+    const screen = await render(<UserAuthForm />)
+    await userEvent.fill(screen.getByLabelText('Email address'), 'admin@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+
+    await vi.waitFor(() =>
+      expect(sendVerificationOtp).toHaveBeenCalledWith({
+        email: 'admin@example.com',
+        type: 'sign-in',
+      }),
+    )
+    const switchers = await screen.getByText('Use password instead').all()
+    expect(switchers.length).toBe(0)
+  })
+
+  it('falls back to the password step when the default email-OTP code cannot be sent', async () => {
+    brandingMethods.value = {
+      password: true,
+      emailOtp: true,
+      phoneOtp: false,
+      default: 'emailOtp',
+    }
+    sendVerificationOtp.mockResolvedValue({
+      error: { message: 'Mail service down' },
+    })
+    const screen = await render(<UserAuthForm />)
+    await userEvent.fill(screen.getByLabelText('Email address'), 'admin@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+
+    await expect.element(screen.getByLabelText('Password')).toBeInTheDocument()
+    expect(toastError).toHaveBeenCalledWith('Mail service down')
+  })
+
+  it('uses the password default while branding is still loading', async () => {
+    // brandingMethods.value is null in beforeEach — the form's
+    // DEFAULT_LOGIN_METHODS apply, so step 2 is the password step.
+    expect(DEFAULT_LOGIN_METHODS.default).toBe('password')
+    const screen = await render(<UserAuthForm />)
+    await userEvent.fill(screen.getByLabelText('Email address'), 'admin@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+
+    await expect.element(screen.getByLabelText('Password')).toBeInTheDocument()
+    expect(sendVerificationOtp).not.toHaveBeenCalled()
   })
 })

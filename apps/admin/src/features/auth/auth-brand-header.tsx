@@ -11,11 +11,12 @@ import { TenantBrandMark } from './tenant-brand-mark'
  * What it shows is the storefront header's own rendering for this
  * tenant (`branding.display`, systems[0].display — the single source
  * of truth): logo alone, favicon + name side by side, or name alone
- * (see TenantBrandMark). Under the mark, one short subtitle line —
- * the admin tagline ('Admin Dashboard' by default) — except in
- * 'logo' mode, where the logo already carries the brand and the
- * tagline alone would read as a stray line; the generic fallback
- * (no branding at all) shows the EcoMate mark + 'Admin'.
+ * (see TenantBrandMark). There is NO tagline line under the name:
+ * the store name alone is the header (Boss, login round 2 — the
+ * "Admin Dashboard" line under the name was just extra text, on the
+ * admin login and on the storefront alike, so it is gone here and
+ * is not replaced by any other line). The generic fallback (no
+ * branding at all) shows the EcoMate mark + 'Admin'.
  */
 export function AuthBrandHeader() {
   const { branding } = usePublicBranding()
@@ -24,9 +25,6 @@ export function AuthBrandHeader() {
   return (
     <div className='flex flex-col items-center gap-1.5 text-center'>
       <TenantBrandMark mark={mark} />
-      {mark.kind === 'logo' || mark.kind === 'generic' ? null : mark.name ? (
-        <p className='text-xs text-muted-foreground'>{mark.tagline}</p>
-      ) : null}
       {mark.kind === 'generic' ? (
         <h1 className='text-base font-medium tracking-tight'>Admin</h1>
       ) : null}

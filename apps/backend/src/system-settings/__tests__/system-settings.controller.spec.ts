@@ -211,6 +211,120 @@ describe('SystemSettingsController', () => {
     });
   });
 
+  describe('getPublicBranding loginMethods (login round 2)', () => {
+    function mockController(
+      settings: { key: string; value: string }[] = [],
+    ) {
+      const prisma = {
+        systemSetting: { findMany: jest.fn().mockResolvedValue(settings) },
+      };
+      return new SystemSettingsController(
+        prisma as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+      );
+    }
+
+    const withMethods = (value: string) =>
+      mockController([{ key: 'login_methods', value }]);
+
+    it('defaults to password + email OTP on, phone off, default password when unset', async () => {
+      const branding = await mockController().getPublicBranding();
+      expect(branding.loginMethods).toEqual({
+        password: true,
+        emailOtp: true,
+        phoneOtp: false,
+        default: 'password',
+      });
+    });
+
+    it('returns a stored email-OTP default', async () => {
+      const branding = await withMethods(
+        JSON.stringify({
+          password: true,
+          emailOtp: true,
+          phoneOtp: false,
+          default: 'emailOtp',
+        }),
+      ).getPublicBranding();
+      expect(branding.loginMethods).toEqual({
+        password: true,
+        emailOtp: true,
+        phoneOtp: false,
+        default: 'emailOtp',
+      });
+    });
+
+    it('falls back to the first enabled method when the default is disabled', async () => {
+      const branding = await withMethods(
+        JSON.stringify({
+          password: false,
+          emailOtp: true,
+          phoneOtp: false,
+          default: 'password',
+        }),
+      ).getPublicBranding();
+      expect(branding.loginMethods.default).toBe('emailOtp');
+      expect(branding.loginMethods.password).toBe(false);
+    });
+
+    it('never offers phone OTP — stored phoneOtp:true is forced off (no SMS provider)', async () => {
+      const branding = await withMethods(
+        JSON.stringify({
+          password: true,
+          emailOtp: true,
+          phoneOtp: true,
+          default: 'phoneOtp',
+        }),
+      ).getPublicBranding();
+      expect(branding.loginMethods.phoneOtp).toBe(false);
+      // The phone default cannot survive either — it falls to password.
+      expect(branding.loginMethods.default).toBe('password');
+    });
+
+    it('falls back to the defaults when everything is off or the value is malformed', async () => {
+      // All three off would lock every staff member out — reset.
+      const allOff = await withMethods(
+        JSON.stringify({
+          password: false,
+          emailOtp: false,
+          phoneOtp: false,
+          default: 'emailOtp',
+        }),
+      ).getPublicBranding();
+      expect(allOff.loginMethods).toEqual({
+        password: true,
+        emailOtp: true,
+        phoneOtp: false,
+        default: 'password',
+      });
+      // Malformed JSON resets the same way.
+      const malformed = await withMethods('not-json').getPublicBranding();
+      expect(malformed.loginMethods).toEqual({
+        password: true,
+        emailOtp: true,
+        phoneOtp: false,
+        default: 'password',
+      });
+      // A bare { default } has no method flags: per-field defaults
+      // (password + email OTP on) apply, so the stored default
+      // survives there.
+      const bareDefault = await withMethods(
+        JSON.stringify({ default: 'emailOtp' }),
+      ).getPublicBranding();
+      expect(bareDefault.loginMethods).toEqual({
+        password: true,
+        emailOtp: true,
+        phoneOtp: false,
+        default: 'emailOtp',
+      });
+    });
+  });
+
   describe('POST :key payments.* admin-only guard', () => {
     function mockSetController() {
       const prisma = {

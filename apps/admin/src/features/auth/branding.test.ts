@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   brandingInitials,
   DEFAULT_BRAND_COLORS,
+  DEFAULT_LOGIN_METHODS,
   isValidHexColor,
   normalizeBrandColors,
   normalizeBrandDisplay,
+  normalizeLoginMethods,
   resolveBrandMark,
   type PublicBranding,
 } from './branding'
@@ -22,9 +24,79 @@ function makeBranding(overrides: Partial<PublicBranding>): PublicBranding {
     seoDescription: '',
     colors: DEFAULT_BRAND_COLORS,
     display: 'name',
+    loginMethods: DEFAULT_LOGIN_METHODS,
     ...overrides,
   }
 }
+
+describe('normalizeLoginMethods (login round 2)', () => {
+  it('defaults to password + email OTP on, phone off, password default when unset', () => {
+    expect(normalizeLoginMethods(undefined)).toEqual(DEFAULT_LOGIN_METHODS)
+    expect(normalizeLoginMethods(null)).toEqual(DEFAULT_LOGIN_METHODS)
+    expect(normalizeLoginMethods('not-an-object')).toEqual(
+      DEFAULT_LOGIN_METHODS,
+    )
+    expect(normalizeLoginMethods({})).toEqual({
+      password: true,
+      emailOtp: true,
+      phoneOtp: false,
+      default: 'password',
+    })
+  })
+
+  it('keeps a stored email-OTP default', () => {
+    expect(
+      normalizeLoginMethods({
+        password: true,
+        emailOtp: true,
+        phoneOtp: false,
+        default: 'emailOtp',
+      }),
+    ).toEqual({
+      password: true,
+      emailOtp: true,
+      phoneOtp: false,
+      default: 'emailOtp',
+    })
+  })
+
+  it('falls back to the first enabled method when the default is disabled', () => {
+    expect(
+      normalizeLoginMethods({
+        password: false,
+        emailOtp: true,
+        default: 'password',
+      }).default,
+    ).toBe('emailOtp')
+  })
+
+  it('never offers phone OTP — a stored true is forced off (no SMS provider)', () => {
+    expect(
+      normalizeLoginMethods({
+        password: true,
+        emailOtp: true,
+        phoneOtp: true,
+        default: 'phoneOtp',
+      }),
+    ).toEqual({
+      password: true,
+      emailOtp: true,
+      phoneOtp: false,
+      default: 'password',
+    })
+  })
+
+  it('falls back to the defaults when everything is off', () => {
+    expect(
+      normalizeLoginMethods({
+        password: false,
+        emailOtp: false,
+        phoneOtp: false,
+        default: 'emailOtp',
+      }),
+    ).toEqual(DEFAULT_LOGIN_METHODS)
+  })
+})
 
 describe('brandingInitials', () => {
   it('takes the first letters of the first two words', () => {
