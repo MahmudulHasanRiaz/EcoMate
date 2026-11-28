@@ -8,12 +8,16 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { AuthLayout } from '../auth-layout'
+import { AuthBrandHeader } from '../auth-brand-header'
 import { SignUpForm } from './components/sign-up-form'
 
 export function SignUp() {
   return (
     <AuthLayout>
       <Card className='max-w-sm gap-4'>
+        <div className='px-6'>
+          <AuthBrandHeader />
+        </div>
         <CardHeader>
           <CardTitle className='text-lg tracking-tight'>
             Create an account

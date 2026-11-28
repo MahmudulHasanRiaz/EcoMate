@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowRight, CircleCheck, Loader2 } from 'lucide-react'
+import { ArrowRight, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/better-auth-client'
 import { baErrorMessage } from '@/lib/ba-auth-errors'
@@ -221,17 +221,10 @@ export function ForgotPasswordForm({
         className={cn('auth-step grid gap-3', className)}
         onAnimationEnd={() => setShake(false)}
       >
-        <div
-          role='status'
-          className='flex items-start gap-2 rounded-[3px] border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200'
-        >
-          <CircleCheck className='h-4 w-4 mt-0.5 shrink-0' />
-          <span>
-            If an account exists for {sentTo}, a 6-digit reset code is on
-            its way. The code expires in 15 minutes — check your inbox (and
-            spam folder).
-          </span>
-        </div>
+        <p className='text-sm text-muted-foreground'>
+          Enter the 6-digit code sent to {sentTo}. It expires in 15
+          minutes.
+        </p>
         <Form {...codeForm}>
           <form
             onSubmit={codeForm.handleSubmit(onCodeSubmit)}

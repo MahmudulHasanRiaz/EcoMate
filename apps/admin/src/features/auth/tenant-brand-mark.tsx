@@ -4,14 +4,20 @@ import { mediaUrl } from '@/lib/utils'
 import type { BrandMark } from './branding'
 
 /**
- * The tenant's brand mark on the auth pages — the store's own logo,
- * else its admin favicon in a tile, else an indigo initials tile from
- * the store name, else the generic EcoMate mark.
+ * The tenant's brand mark on the auth pages — rendered EXACTLY the way
+ * the storefront header renders the same tenant (StoreBrand), from
+ * the same display mode (`branding.display`, systems[0].display):
  *
- * A plain <img> (not SafeImage) is deliberate here: SafeImage degrades
- * to a "No Image" picture on error, while a brand mark must degrade to
- * the initials tile. A broken image URL therefore falls through to
- * initials instead of showing a placeholder.
+ * - 'logo': the store logo on its own, as-is (wide/short logos keep
+ *   their shape, `h-10 w-auto`) — no name, no tile beside it.
+ * - 'name+logo': the storefront favicon (32px) beside the store name.
+ * - 'name': the store name alone.
+ *
+ * There is no initials tile: the storefront never renders one. A
+ * plain <img> (not SafeImage) is deliberate here: SafeImage degrades
+ * to a "No Image" picture on error, while a brand mark must degrade
+ * to the name text. A broken image URL therefore falls through to
+ * the name instead of showing a placeholder.
  */
 export function TenantBrandMark({ mark }: { mark: BrandMark }) {
   const [imgFailed, setImgFailed] = useState(false)
@@ -29,27 +35,21 @@ export function TenantBrandMark({ mark }: { mark: BrandMark }) {
 
   if (mark.kind === 'favicon' && mark.src && !imgFailed) {
     return (
-      <span className='flex size-10 items-center justify-center rounded-[3px] border bg-background'>
+      <span className='flex items-center gap-2'>
         <img
           src={mediaUrl(mark.src)}
-          alt={mark.name ? `${mark.name} icon` : 'Store icon'}
-          className='size-7 object-contain'
+          alt=''
+          className='size-8 rounded-[3px] object-contain'
           onError={() => setImgFailed(true)}
         />
+        <h1 className='text-base font-medium tracking-tight'>{mark.name}</h1>
       </span>
     )
   }
 
-  if (mark.initials) {
+  if (mark.kind === 'name' && mark.name) {
     return (
-      <span
-        // Brand tile: the tenant's own colour (scoped --auth-brand from
-        // AuthLayout), not the admin's fixed --primary.
-        className='flex size-10 items-center justify-center rounded-[3px] bg-(--auth-brand) text-base font-semibold text-white'
-        aria-hidden
-      >
-        {mark.initials}
-      </span>
+      <h1 className='text-base font-medium tracking-tight'>{mark.name}</h1>
     )
   }
 

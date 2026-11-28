@@ -12,9 +12,11 @@
  *
  * Live fact (2026-11-27, staging): Features Test Store has
  * `storeName: "Features Test Store"` and EVERY image field empty, so
- * the initials mark is the real path for that tenant today. A store
- * that uploads a logo in Settings → Branding gets the logo; one that
- * sets only an admin favicon gets the favicon tile.
+ * the name alone is the real path for that tenant today. A store
+ * whose brand system says `display: 'logo'` gets its store logo; one
+ * that says `'name+logo'` gets its storefront favicon beside the name.
+ * The display mode is the storefront's own setting (`store_systems`),
+ * never a second login setting.
  */
 
 /**
@@ -84,9 +86,29 @@ export interface PublicBranding {
   seoTitle: string
   seoDescription: string
   colors: BrandColors
+  /**
+   * Login polish: the storefront header's brand display mode — the
+   * FIRST brand system's `display` from the `store_systems` setting,
+   * served by `GET /system-settings/branding` as `display`. This is
+   * the ONLY display setting: the login header renders exactly what
+   * the storefront header renders for the same tenant ('logo' =
+   * logo only, 'name+logo' = favicon + name side by side,
+   * 'name' = name only). An old backend sends none — 'name'.
+   */
+  display: BrandDisplay
 }
 
-export type BrandMarkKind = 'logo' | 'favicon' | 'initials' | 'generic'
+/** The storefront header's display modes (StoreBrand / Footer). */
+export type BrandDisplay = 'name' | 'logo' | 'name+logo'
+
+/** Fail-soft: only the three known modes pass through, else 'name'. */
+export function normalizeBrandDisplay(value: unknown): BrandDisplay {
+  return value === 'logo' || value === 'name+logo' || value === 'name'
+    ? value
+    : 'name'
+}
+
+export type BrandMarkKind = 'logo' | 'favicon' | 'name' | 'generic'
 
 export interface BrandMark {
   kind: BrandMarkKind
@@ -112,10 +134,17 @@ export function brandingInitials(name: string): string {
 }
 
 /**
- * Resolve what the auth header shows. Precedence: store logo, then
- * admin favicon, then an initials tile from the store name, then the
- * generic EcoMate mark (also the while-loading state — the header
- * never flashes a wrong brand).
+ * Resolve what the auth header shows — driven ONLY by the storefront's
+ * own display mode (`branding.display`, systems[0].display), exactly
+ * like the storefront header (StoreBrand): 'logo' shows the store
+ * logo on its own (wide/short logos render as-is; no name, no tile),
+ * 'name+logo' shows the storefront favicon beside the name, 'name'
+ * shows the name alone. The initials tile is gone: the storefront
+ * never renders one, so the login must not either. Fallbacks stay
+ * inside the mode — a missing logo in 'logo' mode falls back to the
+ * name text, a missing favicon in 'name+logo' mode to the name alone
+ * — and with no brand at all the generic EcoMate mark shows (also
+ * the while-loading state, so the header never flashes a wrong brand).
  */
 export function resolveBrandMark(
   branding: PublicBranding | null | undefined,
@@ -123,16 +152,29 @@ export function resolveBrandMark(
   const name = (branding?.adminTitle || branding?.storeName || '').trim()
   const tagline = (branding?.adminTagline || '').trim() || 'Admin Dashboard'
   const initials = brandingInitials(name)
-  const storeLogo = (branding?.storeLogo || '').trim()
-  if (storeLogo) {
-    return { kind: 'logo', src: storeLogo, name, tagline, initials }
+  const display = normalizeBrandDisplay(branding?.display)
+  if (display === 'logo') {
+    const storeLogo = (branding?.storeLogo || '').trim()
+    if (storeLogo) {
+      return { kind: 'logo', src: storeLogo, name, tagline, initials }
+    }
+    if (name) {
+      return { kind: 'name', src: '', name, tagline, initials }
+    }
+    return { kind: 'generic', src: '', name: '', tagline, initials: '' }
   }
-  const adminFavicon = (branding?.adminFavicon || '').trim()
-  if (adminFavicon) {
-    return { kind: 'favicon', src: adminFavicon, name, tagline, initials }
+  if (display === 'name+logo') {
+    const storefrontFavicon = (branding?.storefrontFavicon || '').trim()
+    if (storefrontFavicon && name) {
+      return { kind: 'favicon', src: storefrontFavicon, name, tagline, initials }
+    }
+    if (name) {
+      return { kind: 'name', src: '', name, tagline, initials }
+    }
+    return { kind: 'generic', src: '', name: '', tagline, initials: '' }
   }
   if (name) {
-    return { kind: 'initials', src: '', name, tagline, initials }
+    return { kind: 'name', src: '', name, tagline, initials }
   }
   return { kind: 'generic', src: '', name: '', tagline, initials: '' }
 }

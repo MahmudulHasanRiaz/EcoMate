@@ -1,7 +1,6 @@
 import { useEffect, type CSSProperties } from 'react'
 import { usePublicBranding } from './use-public-branding'
 import { DEFAULT_BRAND_COLORS, resolveBrandMark } from './branding'
-import { TenantBrandMark } from './tenant-brand-mark'
 import { mediaUrl } from '@/lib/utils'
 import './auth-widget.css'
 
@@ -12,13 +11,20 @@ type AuthLayoutProps = {
 /**
  * Shared shell for the public auth pages (sign-in incl. OTP/TOTP,
  * sign-up, forgot-password, reset-password). Clerk-style compact
- * widget (login redesign Step 1): one centered 400px card, a compact
- * header (tenant tile + name + ONE tagline line — no large
- * "Welcome back"), and a side gap on every screen so the card floats
- * in the middle instead of filling the page edge-to-edge.
+ * widget (login redesign Step 1, polished): one centered 400px card
+ * that floats on the page — the brand header lives INSIDE the card
+ * (AuthBrandHeader, first child of each card), and NOTHING sits above
+ * the card on the page.
  *
- * The header shows the TENANT's own brand — store logo, admin favicon,
- * or an initials tile from the store name — fetched unauthenticated
+ * The page footer sits at the very bottom of the PAGE, below the
+ * card — "© <year> <store> · Terms of Service · Privacy Policy",
+ * like Clerk's page footer. The Terms / Privacy links live here only,
+ * never inside a card (the sign-in card keeps only its "Secured by
+ * EcoMate" strip).
+ *
+ * The header shows the TENANT's own brand — rendered exactly like the
+ * storefront header for the same tenant (logo alone, favicon + name,
+ * or name alone, from `branding.display`) — fetched unauthenticated
  * from `GET /system-settings/branding`. The tenant's brand COLOURS
  * from the same endpoint are applied as scoped CSS vars
  * (`--auth-brand*`) on this wrapper only: the auth widget reads them,
@@ -76,21 +82,22 @@ export function AuthLayout({ children }: AuthLayoutProps) {
 
   return (
     <div
-      className='auth-widget mx-auto grid h-svh w-full max-w-none items-center justify-center px-4 sm:px-8'
+      className='auth-widget flex min-h-svh w-full flex-col px-4 sm:px-8'
       style={brandVars}
     >
-      <div className='mx-auto flex w-full max-w-[400px] flex-col justify-center gap-2 py-8'>
-        <div className='mb-3 flex flex-col items-center gap-1.5 text-center'>
-          <TenantBrandMark mark={mark} />
-          <h1 className='text-base font-medium tracking-tight'>
-            {mark.name || 'Admin'}
-          </h1>
-          {mark.name ? (
-            <p className='text-xs text-muted-foreground'>{mark.tagline}</p>
-          ) : null}
-        </div>
-        {children}
+      <div className='flex flex-1 items-center justify-center py-8'>
+        <div className='w-full max-w-[400px]'>{children}</div>
       </div>
+      <footer className='pb-5 pt-2 text-center text-xs text-muted-foreground'>
+        © {new Date().getFullYear()} {mark.name || 'EcoMate'} ·{' '}
+        <a href='/terms' className='underline underline-offset-4'>
+          Terms of Service
+        </a>{' '}
+        ·{' '}
+        <a href='/privacy' className='underline underline-offset-4'>
+          Privacy Policy
+        </a>
+      </footer>
     </div>
   )
 }

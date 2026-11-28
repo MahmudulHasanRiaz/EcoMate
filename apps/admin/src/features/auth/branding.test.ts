@@ -4,6 +4,7 @@ import {
   DEFAULT_BRAND_COLORS,
   isValidHexColor,
   normalizeBrandColors,
+  normalizeBrandDisplay,
   resolveBrandMark,
   type PublicBranding,
 } from './branding'
@@ -20,6 +21,7 @@ function makeBranding(overrides: Partial<PublicBranding>): PublicBranding {
     seoTitle: '',
     seoDescription: '',
     colors: DEFAULT_BRAND_COLORS,
+    display: 'name',
     ...overrides,
   }
 }
@@ -48,38 +50,76 @@ describe('brandingInitials', () => {
 })
 
 describe('resolveBrandMark', () => {
-  it('prefers the store logo when one is set', () => {
+  it("shows the store logo alone in 'logo' mode (no name tile)", () => {
     const mark = resolveBrandMark(
       makeBranding({
         storeName: 'Features Test Store',
         storeLogo: '/uploads/logo.png',
-        adminFavicon: '/uploads/favicon.png',
+        storefrontFavicon: '/uploads/favicon.png',
+        display: 'logo',
       }),
     )
     expect(mark.kind).toBe('logo')
     expect(mark.src).toBe('/uploads/logo.png')
     expect(mark.name).toBe('Features Test Store')
-    expect(mark.initials).toBe('FT')
   })
 
-  it('falls back to the admin favicon when there is no logo', () => {
+  it("falls back to the name text when 'logo' mode has no logo", () => {
+    const mark = resolveBrandMark(
+      makeBranding({ storeName: 'Features Test Store', display: 'logo' }),
+    )
+    expect(mark.kind).toBe('name')
+    expect(mark.src).toBe('')
+    expect(mark.name).toBe('Features Test Store')
+  })
+
+  it("shows the storefront favicon beside the name in 'name+logo' mode", () => {
     const mark = resolveBrandMark(
       makeBranding({
         storeName: 'Features Test Store',
-        adminFavicon: '/uploads/favicon.png',
+        storeLogo: '/uploads/logo.png',
+        storefrontFavicon: '/uploads/favicon.png',
+        display: 'name+logo',
       }),
     )
     expect(mark.kind).toBe('favicon')
     expect(mark.src).toBe('/uploads/favicon.png')
+    expect(mark.name).toBe('Features Test Store')
   })
 
-  it('falls back to an initials tile when no image is set', () => {
+  it("falls back to the name alone when 'name+logo' mode has no favicon", () => {
     const mark = resolveBrandMark(
-      makeBranding({ storeName: 'Features Test Store' }),
+      makeBranding({
+        storeName: 'Features Test Store',
+        storeLogo: '/uploads/logo.png',
+        display: 'name+logo',
+      }),
     )
-    expect(mark.kind).toBe('initials')
+    expect(mark.kind).toBe('name')
     expect(mark.src).toBe('')
-    expect(mark.initials).toBe('FT')
+  })
+
+  it("shows the name alone in 'name' mode even when images are set", () => {
+    const mark = resolveBrandMark(
+      makeBranding({
+        storeName: 'Features Test Store',
+        storeLogo: '/uploads/logo.png',
+        storefrontFavicon: '/uploads/favicon.png',
+        display: 'name',
+      }),
+    )
+    expect(mark.kind).toBe('name')
+    expect(mark.src).toBe('')
+    expect(mark.name).toBe('Features Test Store')
+  })
+
+  it('never renders an initials tile — the storefront has none', () => {
+    for (const display of ['name', 'logo', 'name+logo'] as const) {
+      const mark = resolveBrandMark(
+        makeBranding({ storeName: 'Features Test Store', display }),
+      )
+      expect(mark.kind).not.toBe('initials')
+    }
   })
 
   it('prefers the admin title over the store name', () => {
@@ -108,6 +148,21 @@ describe('resolveBrandMark', () => {
       expect(mark.name).toBe('')
       expect(mark.initials).toBe('')
     }
+  })
+})
+
+describe('normalizeBrandDisplay', () => {
+  it('passes the three storefront modes through', () => {
+    expect(normalizeBrandDisplay('name')).toBe('name')
+    expect(normalizeBrandDisplay('logo')).toBe('logo')
+    expect(normalizeBrandDisplay('name+logo')).toBe('name+logo')
+  })
+
+  it("falls back to 'name' for anything else", () => {
+    expect(normalizeBrandDisplay(undefined)).toBe('name')
+    expect(normalizeBrandDisplay(null)).toBe('name')
+    expect(normalizeBrandDisplay('banner')).toBe('name')
+    expect(normalizeBrandDisplay(42)).toBe('name')
   })
 })
 

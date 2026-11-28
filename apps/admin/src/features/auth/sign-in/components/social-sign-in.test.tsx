@@ -26,13 +26,23 @@ describe('SocialSignIn (Phase 3)', () => {
     signInSocial.mockResolvedValue({ error: null })
   })
 
-  it('renders all three provider buttons and the fixed-host caption', async () => {
+  it('renders all three provider buttons and NO custom-domain hint by default', async () => {
     const screen = await render(<SocialSignIn />)
 
     // Icon-only buttons: the provider name lives in the accessible name.
     await expect.element(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument()
     await expect.element(screen.getByRole('button', { name: 'Continue with GitHub' })).toBeInTheDocument()
     await expect.element(screen.getByRole('button', { name: 'Continue with Facebook' })).toBeInTheDocument()
+    // Login polish: the default view stays Clerk-clean — the hint
+    // shows only after a social failure (see next test).
+    const hints = await screen.getByText(/Social sign-in works on your store's main address/).all()
+    expect(hints.length).toBe(0)
+    await expect.element(screen.getByText('or')).toBeInTheDocument()
+  })
+
+  it('shows the custom-domain hint only when a social button failed', async () => {
+    const screen = await render(<SocialSignIn showCustomDomainHint />)
+
     await expect
       .element(screen.getByText(/Social sign-in works on your store's main address/))
       .toBeInTheDocument()

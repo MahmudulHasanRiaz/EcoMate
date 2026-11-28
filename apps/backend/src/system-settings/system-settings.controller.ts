@@ -372,6 +372,34 @@ export class SystemSettingsController {
       : fallback;
   }
 
+  /**
+   * Login polish: the storefront header's brand display mode is the
+   * FIRST entry of the `store_systems` JSON setting — the same value
+   * `GET /storefront` serves as `systems[0].display` and the
+   * storefront header renders. Only the three known modes pass
+   * through; anything else is the storefront's own default ('name').
+   */
+  private brandDisplay(
+    raw: string | undefined,
+  ): 'name' | 'logo' | 'name+logo' {
+    try {
+      const systems = JSON.parse(raw || '[]') as unknown;
+      const first = Array.isArray(systems) ? systems[0] : undefined;
+      const display = (first as Record<string, unknown> | undefined)
+        ?.display;
+      if (
+        display === 'name' ||
+        display === 'logo' ||
+        display === 'name+logo'
+      ) {
+        return display;
+      }
+    } catch {
+      // Malformed stored blob — fall through to the default.
+    }
+    return 'name';
+  }
+
   @Public()
   @Get('branding')
   async getPublicBranding() {
@@ -396,6 +424,11 @@ export class SystemSettingsController {
             'brand_success',
             'brand_danger',
             'brand_border',
+            // Login polish: the storefront's own brand display mode
+            // (systems[0].display) — the login header mirrors the
+            // storefront header exactly, from this same setting. No
+            // second display setting exists anywhere.
+            'store_systems',
           ],
         },
       },
@@ -412,6 +445,12 @@ export class SystemSettingsController {
       storeLogo: map['store_logo'] || '',
       seoTitle: map['seo_title'] || '',
       seoDescription: map['seo_description'] || '',
+      // Login polish: the storefront header's display mode — the
+      // FIRST brand system's `display` ('name' | 'logo' |
+      // 'name+logo'), exactly as `GET /storefront` serves it in
+      // `systems`. Anything else (missing, malformed, unknown value)
+      // is the storefront's own default: name only.
+      display: this.brandDisplay(map['store_systems']),
       // Login redesign (Step 1): the tenant's own brand colours, served
       // unauthenticated so the admin login can theme itself before
       // sign-in. Same keys + defaults as GET /storefront — one default

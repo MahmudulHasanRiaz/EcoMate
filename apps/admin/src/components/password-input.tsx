@@ -22,7 +22,10 @@ export function PasswordInput({
     <div className={cn('relative rounded-md', className)}>
       <input
         type={showPassword ? 'text' : 'password'}
-        className='flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
+        // pr-9: the show/hide toggle sits inside the field's right edge —
+        // typed text must clear it. Plain inputs (no toggle) keep px-3
+        // with no dead right padding.
+        className='flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 pr-9 text-sm shadow-xs transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
         ref={ref}
         disabled={disabled}
         {...props}

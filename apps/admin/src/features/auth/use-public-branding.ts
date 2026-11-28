@@ -1,6 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
-import { normalizeBrandColors, type PublicBranding } from './branding'
+import {
+  normalizeBrandColors,
+  normalizeBrandDisplay,
+  type PublicBranding,
+} from './branding'
 
 /**
  * Public tenant branding for the auth pages — no session needed
@@ -46,6 +50,10 @@ function normalizeBranding(data: unknown): PublicBranding {
     storeLogo: str('storeLogo'),
     seoTitle: str('seoTitle'),
     seoDescription: str('seoDescription'),
+    // Display mode arrives as `display` from the endpoint; an old
+    // backend (pre-polish deploy) sends none — 'name', the
+    // storefront's own default.
+    display: normalizeBrandDisplay(record['display']),
     // Colours arrive as `colors: {...}` from the endpoint; an old
     // backend (pre-redesign deploy) sends none — normalizeBrandColors
     // then falls back per-key to the storefront defaults.

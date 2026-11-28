@@ -4,10 +4,12 @@ import { AuthLayout } from './auth-layout'
 import { DEFAULT_BRAND_COLORS, type PublicBranding } from './branding'
 
 /**
- * AuthLayout brand header: the tenant's own brand (logo / favicon /
- * initials from the store name) when the public branding endpoint
- * returns it, the generic EcoMate mark + "Admin" otherwise. The
- * branding hook is mocked — the fetch itself is covered by the
+ * AuthLayout (login polish): renders ONLY the card + the page footer.
+ * The brand header lives inside the card now (AuthBrandHeader — its
+ * own tests); the layout keeps the scoped brand vars, the tab
+ * title/favicon effect, and the page footer ("© <year> <store> ·
+ * Terms of Service · Privacy Policy" at the very bottom of the page).
+ * The branding hook is mocked — the fetch itself is covered by the
  * endpoint's own tests and the live staging check, not by this file.
  */
 
@@ -35,71 +37,31 @@ function makeBranding(overrides: Partial<PublicBranding>): PublicBranding {
     seoTitle: '',
     seoDescription: '',
     colors: DEFAULT_BRAND_COLORS,
+    display: 'name',
     ...overrides,
   }
 }
 
-describe('AuthLayout tenant brand', () => {
+describe('AuthLayout', () => {
   beforeEach(() => {
     brandingState.value = null
   })
 
-  it('shows the store name, initials tile and tagline when only a name is set', async () => {
+  it('renders nothing above the card — no brand header outside it', async () => {
     brandingState.value = makeBranding({ storeName: 'Features Test Store' })
-    const { getByRole, getByText } = await render(
+    const screen = await render(
       <AuthLayout>
         <div>child</div>
       </AuthLayout>,
     )
 
-    await expect
-      .element(getByRole('heading', { name: 'Features Test Store' }))
-      .toBeInTheDocument()
-    await expect.element(getByText('FT')).toBeInTheDocument()
-    await expect.element(getByText('Admin Dashboard')).toBeInTheDocument()
+    // No brand heading anywhere in the layout itself — the header
+    // lives inside the card (AuthBrandHeader). The store name may
+    // still appear in the page footer, which is below the card.
+    const headings = await screen.getByRole('heading').all()
+    expect(headings.length).toBe(0)
+    await expect.element(screen.getByText('child')).toBeInTheDocument()
     expect(document.title).toBe('Features Test Store · Admin')
-  })
-
-  it('shows the store logo when one is set', async () => {
-    // /images/favicon.png is a real public asset, so the <img> actually
-    // loads in the test browser — a missing URL would (by design) degrade
-    // to the initials tile via onError.
-    brandingState.value = makeBranding({
-      storeName: 'Features Test Store',
-      storeLogo: '/images/favicon.png',
-    })
-    const { getByAltText, getByRole } = await render(
-      <AuthLayout>
-        <div>child</div>
-      </AuthLayout>,
-    )
-
-    const img = getByAltText('Features Test Store logo')
-    await expect.element(img).toBeInTheDocument()
-    await expect
-      .element(img)
-      .toHaveAttribute('src', '/images/favicon.png')
-    await expect
-      .element(getByRole('heading', { name: 'Features Test Store' }))
-      .toBeInTheDocument()
-  })
-
-  it('shows the admin favicon in a tile when there is no logo', async () => {
-    brandingState.value = makeBranding({
-      storeName: 'Features Test Store',
-      adminFavicon: '/images/favicon.png',
-    })
-    const { getByAltText } = await render(
-      <AuthLayout>
-        <div>child</div>
-      </AuthLayout>,
-    )
-
-    const img = getByAltText('Features Test Store icon')
-    await expect.element(img).toBeInTheDocument()
-    await expect
-      .element(img)
-      .toHaveAttribute('src', '/images/favicon.png')
   })
 
   it('applies the tenant brand colour as a scoped CSS var on the wrapper', async () => {
@@ -120,17 +82,36 @@ describe('AuthLayout tenant brand', () => {
     ).toBe('#123456')
   })
 
-  it('falls back to the generic mark and "Admin" when there is no branding', async () => {
-    const prevTitle = document.title
-    const { getByRole } = await render(
+  it('renders the page footer with the store name and Terms / Privacy links', async () => {
+    brandingState.value = makeBranding({ storeName: 'Features Test Store' })
+    const screen = await render(
       <AuthLayout>
         <div>child</div>
       </AuthLayout>,
     )
 
+    const footer = screen.container.querySelector('footer')
+    expect(footer).not.toBeNull()
     await expect
-      .element(getByRole('heading', { name: 'Admin' }))
+      .element(screen.getByText(/Features Test Store/))
       .toBeInTheDocument()
+    await expect
+      .element(screen.getByRole('link', { name: 'Terms of Service' }))
+      .toBeInTheDocument()
+    await expect
+      .element(screen.getByRole('link', { name: 'Privacy Policy' }))
+      .toBeInTheDocument()
+  })
+
+  it('falls back to EcoMate in the footer when there is no branding', async () => {
+    const prevTitle = document.title
+    const screen = await render(
+      <AuthLayout>
+        <div>child</div>
+      </AuthLayout>,
+    )
+
+    await expect.element(screen.getByText(/EcoMate/)).toBeInTheDocument()
     // No brand → the effect leaves the tab title alone.
     expect(document.title).toBe(prevTitle)
   })

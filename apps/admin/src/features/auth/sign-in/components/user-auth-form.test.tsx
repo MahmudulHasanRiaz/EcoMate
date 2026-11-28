@@ -9,6 +9,10 @@ import { useAuthStore } from '@/stores/auth-store'
  * the tenant profile comes from `GET /auth/me`, and there is no access
  * token to store. A TOTP-enabled user gets TWO_FACTOR_REQUIRED and sees
  * the challenge screen instead of an error.
+ *
+ * Login polish: email-first, one step at a time — step 1 is ONLY the
+ * email field + Continue; step 2 is the password field (with the
+ * Password / Email-code choice as a subtle switcher link, not tabs).
  */
 
 const navigate = vi.hoisted(() => vi.fn())
@@ -62,11 +66,28 @@ const staffProfile = {
   permissions: ['view_hr'],
 }
 
+/** Step 1 (email + Continue) then step 2 (password + Sign in). */
 async function fillAndSubmit(email: string, password: string): Promise<RenderResult> {
   const screen = await render(<UserAuthForm />)
-  await userEvent.fill(screen.getByLabelText('Email'), email)
-  await userEvent.fill(screen.getByLabelText('Password'), password)
+  await userEvent.fill(screen.getByLabelText('Email address'), email)
   await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+  await userEvent.fill(screen.getByLabelText('Password'), password)
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in', exact: true }))
+  return screen
+}
+
+/** Step 1 only, then the "Email me a sign-in code instead" switcher. */
+async function goToOtpCodeStep(email: string): Promise<RenderResult> {
+  const screen = await render(<UserAuthForm />)
+  await userEvent.fill(screen.getByLabelText('Email address'), email)
+  await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+  await userEvent.click(screen.getByText('Email me a sign-in code instead'))
+  await vi.waitFor(() =>
+    expect(sendVerificationOtp).toHaveBeenCalledWith({
+      email,
+      type: 'sign-in',
+    }),
+  )
   return screen
 }
 
@@ -85,20 +106,44 @@ describe('UserAuthForm (Phase 3)', () => {
     getMe.mockResolvedValue({ data: staffProfile })
   })
 
-  it('shows validation errors when submitting an empty form', async () => {
+  it('step 1 shows ONLY the email field + Continue (no password yet)', async () => {
+    const screen = await render(<UserAuthForm />)
+
+    await expect.element(screen.getByLabelText('Email address')).toBeInTheDocument()
+    await expect.element(screen.getByRole('button', { name: 'Continue', exact: true })).toBeInTheDocument()
+    const passwords = await screen.getByLabelText('Password').all()
+    expect(passwords.length).toBe(0)
+    // No method tabs — the choice lives on step 2 as a switcher link.
+    const tablists = await screen.getByRole('tablist').all()
+    expect(tablists.length).toBe(0)
+    const tabs = await screen.getByRole('tab').all()
+    expect(tabs.length).toBe(0)
+  })
+
+  it('shows the email validation error when submitting an empty step 1', async () => {
     const screen = await render(<UserAuthForm />)
     await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
 
     await expect.element(screen.getByText('Please enter your email.')).toBeInTheDocument()
+    expect(signInEmail).not.toHaveBeenCalled()
+  })
+
+  it('shows the password validation error on an empty step 2', async () => {
+    const screen = await render(<UserAuthForm />)
+    await userEvent.fill(screen.getByLabelText('Email address'), 'admin@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in', exact: true }))
+
     await expect.element(screen.getByText('Please enter your password.')).toBeInTheDocument()
     expect(signInEmail).not.toHaveBeenCalled()
   })
 
   it('rejects a password shorter than 6 characters', async () => {
     const screen = await render(<UserAuthForm />)
-    await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
-    await userEvent.fill(screen.getByLabelText('Password'), 'abc')
+    await userEvent.fill(screen.getByLabelText('Email address'), 'admin@example.com')
     await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+    await userEvent.fill(screen.getByLabelText('Password'), 'abc')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in', exact: true }))
 
     await expect
       .element(screen.getByText('Password must be at least 6 characters long.'))
@@ -137,9 +182,10 @@ describe('UserAuthForm (Phase 3)', () => {
 
   it('navigates to redirectTo when provided', async () => {
     const screen = await render(<UserAuthForm redirectTo='/op/orders' />)
-    await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
-    await userEvent.fill(screen.getByLabelText('Password'), 'correct horse battery')
+    await userEvent.fill(screen.getByLabelText('Email address'), 'admin@example.com')
     await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+    await userEvent.fill(screen.getByLabelText('Password'), 'correct horse battery')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in', exact: true }))
 
     expect(navigate).toHaveBeenCalledWith({ to: '/op/orders', replace: true })
   })
@@ -223,9 +269,9 @@ describe('UserAuthForm (Phase 3)', () => {
     await expect.element(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument()
     await expect.element(screen.getByRole('button', { name: 'Continue with GitHub' })).toBeInTheDocument()
     await expect.element(screen.getByRole('button', { name: 'Continue with Facebook' })).toBeInTheDocument()
-    await expect
-      .element(screen.getByText(/Social sign-in works on your store's main address/))
-      .toBeInTheDocument()
+    // Login polish: no custom-domain hint on the default view.
+    const hints = await screen.getByText(/Social sign-in works on your store's main address/).all()
+    expect(hints.length).toBe(0)
 
     await userEvent.click(screen.getByRole('button', { name: 'Continue with Google' }))
     expect(signInSocial).toHaveBeenCalledWith(
@@ -236,16 +282,16 @@ describe('UserAuthForm (Phase 3)', () => {
     expect(call.errorCallbackURL).toContain('/sign-in')
   })
 
-  it('OTP login: sends a code, verifies it, and completes sign-in', async () => {
-    const screen = await render(<UserAuthForm />)
-    await userEvent.click(screen.getByRole('tab', { name: 'Email code' }))
+  it('shows the custom-domain hint only after a social failure', async () => {
+    const screen = await render(<UserAuthForm showCustomDomainHint />)
 
-    await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
-    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
-    expect(sendVerificationOtp).toHaveBeenCalledWith({
-      email: 'admin@example.com',
-      type: 'sign-in',
-    })
+    await expect
+      .element(screen.getByText(/Social sign-in works on your store's main address/))
+      .toBeInTheDocument()
+  })
+
+  it('OTP login: sends a code, verifies it, and completes sign-in', async () => {
+    const screen = await goToOtpCodeStep('admin@example.com')
 
     const otpInput = screen.container.querySelector('input[autocomplete="one-time-code"]')
     expect(otpInput).not.toBeNull()
@@ -261,10 +307,7 @@ describe('UserAuthForm (Phase 3)', () => {
   })
 
   it('OTP login: resend starts a 30-second cooldown, then requests a fresh code', async () => {
-    const screen = await render(<UserAuthForm />)
-    await userEvent.click(screen.getByRole('tab', { name: 'Email code' }))
-    await userEvent.fill(screen.getByLabelText('Email'), 'admin@example.com')
-    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+    const screen = await goToOtpCodeStep('admin@example.com')
     await vi.waitFor(() =>
       expect(sendVerificationOtp).toHaveBeenCalledTimes(1),
     )
@@ -292,26 +335,23 @@ describe('UserAuthForm (Phase 3)', () => {
     })
   }, 45000)
 
-  it('renders Password and Email code tabs only — no Phone tab (no SMS provider)', async () => {
-    const screen = await render(<UserAuthForm />)
+  it('switches back from the code step to the password step', async () => {
+    const screen = await goToOtpCodeStep('admin@example.com')
 
-    const tabs = await screen.getByRole('tab').all()
-    expect(tabs.length).toBe(2)
-    await expect.element(screen.getByRole('tab', { name: 'Password' })).toBeInTheDocument()
-    await expect.element(screen.getByRole('tab', { name: 'Email code' })).toBeInTheDocument()
-    const phoneTabs = await screen.getByRole('tab', { name: 'Phone code' }).all()
-    expect(phoneTabs.length).toBe(0)
+    await userEvent.click(screen.getByText('Use password instead'))
+    await expect.element(screen.getByLabelText('Password')).toBeInTheDocument()
+    await expect.element(screen.getByText('Email me a sign-in code instead')).toBeInTheDocument()
   })
 
-  it('moves between method tabs with the arrow keys', async () => {
+  it('goes back to the email step from the password step', async () => {
     const screen = await render(<UserAuthForm />)
+    await userEvent.fill(screen.getByLabelText('Email address'), 'admin@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue', exact: true }))
+    await expect.element(screen.getByText(/Signing in as/)).toBeInTheDocument()
 
-    const emailTab = screen.getByRole('tab', { name: 'Email code' })
-    await userEvent.click(screen.getByRole('tab', { name: 'Password' }))
-    await userEvent.keyboard('{ArrowRight}')
-    await expect.element(emailTab).toHaveAttribute('aria-selected', 'true')
-    await expect
-      .element(screen.getByText(/We'll send a 6-digit code to your email/))
-      .toBeInTheDocument()
+    await userEvent.click(screen.getByText('Change'))
+    await expect.element(screen.getByLabelText('Email address')).toBeInTheDocument()
+    const passwords = await screen.getByLabelText('Password').all()
+    expect(passwords.length).toBe(0)
   })
 })

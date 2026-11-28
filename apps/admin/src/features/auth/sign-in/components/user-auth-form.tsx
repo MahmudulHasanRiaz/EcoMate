@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -33,10 +33,13 @@ import {
 import { SocialSignIn } from './social-sign-in'
 import { useResendCooldown } from '../../use-resend-cooldown'
 
-const formSchema = z.object({
+const emailSchema = z.object({
   email: z.email({
     error: (iss) => (iss.input === '' ? 'Please enter your email.' : undefined),
   }),
+})
+
+const passwordSchema = z.object({
   password: z
     .string()
     .min(1, 'Please enter your password.')
@@ -54,12 +57,6 @@ const backupCodeSchema = z.object({
   code: z.string().min(1, 'Please enter a recovery code.'),
 })
 
-const otpEmailSchema = z.object({
-  email: z.email({
-    error: (iss) => (iss.input === '' ? 'Please enter your email.' : undefined),
-  }),
-})
-
 const otpCodeSchema = z.object({
   code: z
     .string()
@@ -67,25 +64,30 @@ const otpCodeSchema = z.object({
     .max(6, 'Please enter the 6-digit code.'),
 })
 
-interface UserAuthFormProps extends React.HTMLAttributes<HTMLFormElement> {
+interface UserAuthFormProps extends React.HTMLAttributes<HTMLDivElement> {
   redirectTo?: string
+  /**
+   * Show the custom-domain social hint under the social row. Only
+   * true when a social button actually failed (?error=access_denied
+   * on the sign-in page) — the hint NEVER shows on the default view.
+   */
+  showCustomDomainHint?: boolean
 }
 
-type SignInMethod = 'password' | 'email-code'
-
-const METHODS: { id: SignInMethod; label: string }[] = [
-  { id: 'password', label: 'Password' },
-  { id: 'email-code', label: 'Email code' },
-]
-// NOTE — no Phone tab: phone OTP does not exist (no SMS provider yet).
-// A Phone tab must stay out of this list until a phone-OTP flow is real;
-// rendering one now would be a fake button (login redesign Step 1).
+// NOTE — no Phone tab / phone step: phone OTP does not exist (no SMS
+// provider yet). A phone option must stay out until a phone-OTP flow
+// is real; rendering one now would be a fake button (login redesign
+// Step 1).
 
 /**
- * Admin sign-in — Phase 3 central Better Auth cutover, reskinned in the
- * login redesign (Step 1) as a Clerk-style compact widget: icon-only
- * social row, Password / Email code method tabs, and the OTP code step
- * inside the same card (email → Continue → 6-digit code boxes).
+ * Admin sign-in — Phase 3 central Better Auth cutover, reskinned in
+ * the login redesign (Step 1) as a Clerk-style compact widget and
+ * polished to one-step-at-a-time: the default view shows ONLY the
+ * email field + Continue (email-first, like Clerk). Continue swaps
+ * in-widget to the next step — the password field (with a Forgot
+ * password? link), or the 6-digit code boxes for Email code. The
+ * Password / Email-code choice is a subtle switcher link on the
+ * step-2 screens, not two stacked forms and not tabs.
  *
  * Email sign-in goes through `authClient.signIn.email()` (same-origin
  * `/api/better-auth/*` proxy → central service). There is no access token
@@ -93,8 +95,8 @@ const METHODS: { id: SignInMethod; label: string }[] = [
  *
  * After sign-in the tenant profile (role + permissions) is read from the
  * backend `GET /auth/me` — the central session user carries no tenant
- * role/permissions — and a `customer` is signed straight back out with the
- * same inline banner the old 403 produced (the customer bounce out of
+ * role/permissions — and a `customer` is signed straight back out with
+ * the same inline banner the old 403 produced (the customer bounce out of
  * admin is unchanged behaviour; the layout enforces it again as a second
  * layer).
  *
@@ -102,36 +104,35 @@ const METHODS: { id: SignInMethod; label: string }[] = [
  * no session (Phase 1 Q11) — the form switches to the challenge screen
  * instead of erroring out.
  *
- * OTP login (D7 flip, 2026-11-26): "Email code" sends a 6-digit code
- * to the email (`emailOtp.sendVerificationOtp`, type `sign-in`) and signs
- * in with it (`signIn.emailOtp`) — no password needed. The code is valid
- * 15 minutes; 5 wrong tries lock that code (TOO_MANY_ATTEMPTS). Note:
- * OTP sign-in does NOT trigger a TOTP challenge — BA's twoFactor plugin
- * only gates `/sign-in/email|username|phone-number`, and the mailbox OTP
- * is itself the possession proof (the same mailbox already resets the
+ * OTP login (D7 flip, 2026-11-26): "Email me a sign-in code instead"
+ * sends a 6-digit code to the email (`emailOtp.sendVerificationOtp`,
+ * type `sign-in`) and signs in with it (`signIn.emailOtp`) — no
+ * password needed. The code is valid 15 minutes; 5 wrong tries lock
+ * that code (TOO_MANY_ATTEMPTS). Note: OTP sign-in does NOT trigger
+ * a TOTP challenge — BA's twoFactor plugin only gates
+ * `/sign-in/email|username|phone-number`, and the mailbox OTP is
+ * itself the possession proof (the same mailbox already resets the
  * password without TOTP, so OTP login adds no new mailbox-compromise
  * path). The password path stays exactly as before.
  */
 export function UserAuthForm({
   className,
   redirectTo,
+  showCustomDomainHint = false,
   ...props
 }: UserAuthFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [customerBlocked, setCustomerBlocked] = useState('')
   const [stage, setStage] = useState<
-    'password' | 'challenge' | 'otp-email' | 'otp-code'
-  >('password')
-  const [method, setMethod] = useState<SignInMethod>('password')
+    'email' | 'password' | 'otp-code' | 'challenge'
+  >('email')
   const [useBackupCode, setUseBackupCode] = useState(false)
-  const [otpEmail, setOtpEmail] = useState('')
-  const [otpSentTo, setOtpSentTo] = useState('')
+  const [email, setEmail] = useState('')
   const [otpError, setOtpError] = useState('')
   // Submit-error shake (300ms, one 4px shake — see auth-widget.css).
   // Set on submit failure, cleared when the animation ends.
   const [shake, setShake] = useState(false)
   const resendCooldown = useResendCooldown(30)
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   const navigate = useNavigate()
   const { auth } = useAuthStore()
   // The BA client's session cache is refreshed explicitly after sign-in
@@ -140,12 +141,14 @@ export function UserAuthForm({
   // sign-in call returns.
   const { refetch: refetchSession } = authClient.useSession()
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      email: '',
-      password: '',
-    },
+  const emailForm = useForm<z.infer<typeof emailSchema>>({
+    resolver: zodResolver(emailSchema),
+    defaultValues: { email: '' },
+  })
+
+  const passwordForm = useForm<z.infer<typeof passwordSchema>>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: { password: '' },
   })
 
   const challengeForm = useForm<z.infer<typeof challengeSchema>>({
@@ -158,11 +161,6 @@ export function UserAuthForm({
     defaultValues: { code: '' },
   })
 
-  const otpEmailForm = useForm<z.infer<typeof otpEmailSchema>>({
-    resolver: zodResolver(otpEmailSchema),
-    defaultValues: { email: '' },
-  })
-
   const otpCodeForm = useForm<z.infer<typeof otpCodeSchema>>({
     resolver: zodResolver(otpCodeSchema),
     defaultValues: { code: '' },
@@ -171,37 +169,24 @@ export function UserAuthForm({
   const challengeCode = challengeForm.watch('code')
   const otpCode = otpCodeForm.watch('code')
 
-  function selectMethod(next: SignInMethod) {
-    setMethod(next)
+  /** Step 1 → step 2: the email is kept, the password step shows next. */
+  function onEmailSubmit(data: z.infer<typeof emailSchema>) {
+    setEmail(data.email)
     setCustomerBlocked('')
     setOtpError('')
-    setStage(next === 'email-code' ? 'otp-email' : 'password')
+    setStage('password')
   }
 
-  function onTabKeyDown(event: React.KeyboardEvent) {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
-    event.preventDefault()
-    const current = METHODS.findIndex((m) => m.id === method)
-    const next =
-      METHODS[
-        (current + (event.key === 'ArrowRight' ? 1 : METHODS.length - 1)) %
-          METHODS.length
-      ]
-    selectMethod(next.id)
-    tabRefs.current[METHODS.findIndex((m) => m.id === next.id)]?.focus()
-  }
-
-  async function onOtpEmailSubmit(data: z.infer<typeof otpEmailSchema>) {
+  /** Step 2 (password) → email-code: send the code, show the boxes. */
+  async function sendSignInCode() {
     setIsLoading(true)
     setOtpError('')
     try {
       const { error } = await authClient.emailOtp.sendVerificationOtp({
-        email: data.email,
+        email,
         type: 'sign-in',
       })
       if (error) throw error
-      setOtpEmail(data.email)
-      setOtpSentTo(data.email)
       otpCodeForm.reset()
       resendCooldown.start()
       setStage('otp-code')
@@ -220,7 +205,7 @@ export function UserAuthForm({
     setOtpError('')
     try {
       const { error } = await authClient.signIn.emailOtp({
-        email: otpEmail,
+        email,
         otp: data.code,
       })
       if (error) throw error
@@ -245,7 +230,7 @@ export function UserAuthForm({
       // Resend rotates: a fresh code is issued and the previous one stops
       // working (resendStrategy "rotate", service-side).
       const { error } = await authClient.emailOtp.sendVerificationOtp({
-        email: otpEmail,
+        email,
         type: 'sign-in',
       })
       if (error) throw error
@@ -295,7 +280,6 @@ export function UserAuthForm({
         'You are signed in with a customer account. Customer accounts cannot access the admin application.',
       )
       setStage('password')
-      setMethod('password')
       return
     }
 
@@ -324,7 +308,7 @@ export function UserAuthForm({
     toast.success(`Welcome back!`)
   }
 
-  async function onSubmit(data: z.infer<typeof formSchema>) {
+  async function onPasswordSubmit(data: z.infer<typeof passwordSchema>) {
     setIsLoading(true)
     setCustomerBlocked('')
 
@@ -333,7 +317,7 @@ export function UserAuthForm({
       for (let attempt = 0; attempt <= 3; attempt++) {
         try {
           const { error } = await authClient.signIn.email({
-            email: data.email,
+            email,
             password: data.password,
           })
           if (error) {
@@ -439,6 +423,7 @@ export function UserAuthForm({
       <div
         className={cn('auth-step grid gap-3', shake && 'auth-shake', className)}
         onAnimationEnd={() => setShake(false)}
+        {...props}
       >
         <p className='text-sm text-muted-foreground'>
           Two-factor authentication is on for this account. Enter the 6-digit
@@ -523,7 +508,6 @@ export function UserAuthForm({
             type='button'
             onClick={() => {
               setStage('password')
-              setMethod('password')
               setUseBackupCode(false)
             }}
             className='auth-link min-h-0 font-medium underline underline-offset-4'
@@ -539,85 +523,133 @@ export function UserAuthForm({
     <div
       className={cn('grid gap-4', shake && 'auth-shake', className)}
       onAnimationEnd={() => setShake(false)}
+      {...props}
     >
-      <SocialSignIn redirectTo={redirectTo} />
+      <SocialSignIn
+        redirectTo={redirectTo}
+        showCustomDomainHint={showCustomDomainHint}
+      />
 
-      <div
-        role='tablist'
-        aria-label='Sign-in method'
-        onKeyDown={onTabKeyDown}
-        className='flex gap-0.5 rounded-[3px] bg-muted p-0.5'
-      >
-        {METHODS.map((m, i) => (
-          <button
-            key={m.id}
-            ref={(el) => {
-              tabRefs.current[i] = el
-            }}
-            type='button'
-            role='tab'
-            aria-selected={method === m.id}
-            tabIndex={method === m.id ? 0 : -1}
-            onClick={() => selectMethod(m.id)}
-            className='auth-tab flex-1'
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
+      {customerBlocked && (
+        <div
+          role='alert'
+          className='flex items-start gap-2 rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+        >
+          <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
+          <span>{customerBlocked}</span>
+        </div>
+      )}
 
       <div key={stage} className='auth-step'>
-        {stage === 'otp-email' && (
-          <div className='grid gap-3'>
-            <p className='text-sm text-muted-foreground'>
-              We&apos;ll send a 6-digit code to your email. No password
-              needed.
-            </p>
-            {otpError && (
-              <p role='alert' className='text-sm text-destructive'>
-                {otpError}
-              </p>
-            )}
-            <Form {...otpEmailForm}>
-              <form
-                onSubmit={otpEmailForm.handleSubmit(onOtpEmailSubmit)}
-                className='grid gap-2'
+        {stage === 'email' && (
+          <Form {...emailForm}>
+            <form
+              onSubmit={emailForm.handleSubmit(onEmailSubmit)}
+              className='grid gap-3'
+            >
+              {/*
+                R-BITWARDEN: explicit autocomplete tokens on the login fields.
+                Without them, password managers (Bitwarden) cannot identify the
+                form and warn that the page is "interfering" — the console had
+                the same gap until fix round #1. username + current-password
+                is the standard login pairing.
+              */}
+              <FormField
+                control={emailForm.control}
+                name='email'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email address</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='email'
+                        autoComplete='username'
+                        placeholder='name@example.com'
+                        className='auth-field'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button
+                className='auth-btn auth-btn-primary mt-2'
+                disabled={isLoading}
               >
-                <FormField
-                  control={otpEmailForm.control}
-                  name='email'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          type='email'
-                          autoComplete='email'
-                          placeholder='name@example.com'
-                          className='auth-field'
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button
-                  className='auth-btn auth-btn-primary mt-2'
-                  disabled={isLoading}
+                {isLoading ? <Loader2 className='animate-spin' /> : null}
+                Continue
+              </Button>
+            </form>
+          </Form>
+        )}
+
+        {stage === 'password' && (
+          <Form {...passwordForm}>
+            <form
+              onSubmit={passwordForm.handleSubmit(onPasswordSubmit)}
+              className='grid gap-3'
+            >
+              <p className='text-sm text-muted-foreground'>
+                Signing in as <span className='font-medium text-foreground'>{email}</span>{' '}
+                <button
+                  type='button'
+                  onClick={() => {
+                    setStage('email')
+                    setCustomerBlocked('')
+                  }}
+                  className='auth-link font-medium underline underline-offset-4'
                 >
-                  {isLoading ? <Loader2 className='animate-spin' /> : null}
-                  Continue
-                </Button>
-              </form>
-            </Form>
-          </div>
+                  Change
+                </button>
+              </p>
+              <FormField
+                control={passwordForm.control}
+                name='password'
+                render={({ field }) => (
+                  <FormItem className='relative'>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <PasswordInput
+                        autoComplete='current-password'
+                        placeholder='********'
+                        className='auth-field'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    <Link
+                      to='/forgot-password'
+                      className='auth-link absolute inset-e-0 -top-0.5 text-sm font-medium'
+                    >
+                      Forgot password?
+                    </Link>
+                  </FormItem>
+                )}
+              />
+              <Button
+                className='auth-btn auth-btn-primary mt-2'
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className='animate-spin' /> : null}
+                Sign in
+              </Button>
+              <button
+                type='button'
+                onClick={sendSignInCode}
+                disabled={isLoading}
+                className='auth-link min-h-0 justify-self-center text-sm font-medium underline underline-offset-4 disabled:opacity-50'
+              >
+                Email me a sign-in code instead
+              </button>
+            </form>
+          </Form>
         )}
 
         {stage === 'otp-code' && (
           <div className='grid gap-3'>
             <p className='text-sm text-muted-foreground'>
-              {otpSentTo} — a 6-digit code was sent to this email. It expires
+              {email} — a 6-digit code was sent to this email. It expires
               in 15 minutes.
             </p>
             {otpError && (
@@ -672,7 +704,7 @@ export function UserAuthForm({
               <button
                 type='button'
                 onClick={() => {
-                  setStage('otp-email')
+                  setStage('email')
                   setOtpError('')
                 }}
                 className='auth-link min-h-0 font-medium underline underline-offset-4'
@@ -680,84 +712,17 @@ export function UserAuthForm({
                 Use a different email
               </button>
             </div>
-          </div>
-        )}
-
-        {stage === 'password' && (
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(onSubmit)}
-              className='grid gap-3'
-              {...props}
+            <button
+              type='button'
+              onClick={() => {
+                setStage('password')
+                setOtpError('')
+              }}
+              className='auth-link min-h-0 justify-self-center text-sm font-medium underline underline-offset-4'
             >
-              {customerBlocked && (
-                <div
-                  role='alert'
-                  className='flex items-start gap-2 rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
-                >
-                  <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
-                  <span>{customerBlocked}</span>
-                </div>
-              )}
-              {/*
-                R-BITWARDEN: explicit autocomplete tokens on the login fields.
-                Without them, password managers (Bitwarden) cannot identify the
-                form and warn that the page is "interfering" — the console had
-                the same gap until fix round #1. username + current-password
-                is the standard login pairing.
-              */}
-              <FormField
-                control={form.control}
-                name='email'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input
-                        type='email'
-                        autoComplete='username'
-                        placeholder='name@example.com'
-                        className='auth-field'
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name='password'
-                render={({ field }) => (
-                  <FormItem className='relative'>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <PasswordInput
-                        autoComplete='current-password'
-                        placeholder='********'
-                        className='auth-field'
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                    <Link
-                      to='/forgot-password'
-                      className='auth-link absolute inset-e-0 -top-0.5 text-sm font-medium'
-                    >
-                      Forgot password?
-                    </Link>
-                  </FormItem>
-                )}
-              />
-              <Button
-                className='auth-btn auth-btn-primary mt-2'
-                disabled={isLoading}
-              >
-                {isLoading ? <Loader2 className='animate-spin' /> : null}
-                Continue
-              </Button>
-            </form>
-          </Form>
+              Use password instead
+            </button>
+          </div>
         )}
       </div>
     </div>

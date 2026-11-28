@@ -10,17 +10,20 @@ import {
 import { Button } from '@/components/ui/button'
 
 /**
- * Social sign-in (login redesign Step 1): icon-only row, rendered ONLY
- * from the configured providers (`SOCIAL_PROVIDERS` — Google / GitHub /
- * Facebook today). Unconfigured providers (Apple, X in the preview) are
- * never rendered as clickable buttons — a fake button would be worse
- * than no button.
+ * Social sign-in (login redesign Step 1, polished): icon-only row,
+ * rendered ONLY from the configured providers (`SOCIAL_PROVIDERS` —
+ * Google / GitHub / Facebook today). Unconfigured providers (Apple,
+ * X in the preview) are never rendered as clickable buttons — a fake
+ * button would be worse than no button.
  *
  * Fixed-host-set constraint: providers forbid wildcard redirect URIs, so
  * social works only on the fixed host set the service was configured with.
  * Per-tenant-subdomain callbacks are not registerable — on a custom domain
- * the provider refuses and the user signs in with email instead (the
- * caption below says so plainly).
+ * the provider refuses and the user signs in with email instead. That
+ * hint shows ONLY when a social button actually failed
+ * (`showCustomDomainHint`, set by the sign-in page on
+ * `?error=access_denied`) — never on the default view, where the card
+ * stays as clean as Clerk's.
  */
 
 function GoogleMark() {
@@ -71,7 +74,14 @@ const PROVIDER_MARKS: Record<SocialProviderId, () => React.ReactNode> = {
   facebook: () => <FacebookMark />,
 }
 
-export function SocialSignIn({ redirectTo }: { redirectTo?: string }) {
+export function SocialSignIn({
+  redirectTo,
+  showCustomDomainHint = false,
+}: {
+  redirectTo?: string
+  /** Show the custom-domain hint — only after a social failure. */
+  showCustomDomainHint?: boolean
+}) {
   const [pendingProvider, setPendingProvider] = useState<SocialProviderId | null>(null)
 
   async function handleSocial(provider: SocialProviderId) {
@@ -127,13 +137,15 @@ export function SocialSignIn({ redirectTo }: { redirectTo?: string }) {
       </div>
       <div className='flex items-center gap-3 text-xs text-muted-foreground'>
         <span className='h-px flex-1 bg-border' aria-hidden />
-        <span>or continue with</span>
+        <span>or</span>
         <span className='h-px flex-1 bg-border' aria-hidden />
       </div>
-      <p className='text-center text-xs text-muted-foreground'>
-        Social sign-in works on your store&apos;s main address. On a custom
-        domain, use email sign-in instead.
-      </p>
+      {showCustomDomainHint && (
+        <p className='text-center text-xs text-muted-foreground'>
+          Social sign-in works on your store&apos;s main address. On a
+          custom domain, use email sign-in instead.
+        </p>
+      )}
     </div>
   )
 }

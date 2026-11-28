@@ -70,7 +70,7 @@ describe('ForgotPasswordForm (D7 flip — OTP)', () => {
     )
     await expect
       .element(
-        screen.getByText(/If an account exists for a@b\.com, a 6-digit reset code is on its way/i),
+        screen.getByText(/Enter the 6-digit code sent to a@b\.com/i),
       )
       .toBeInTheDocument()
     await expect.element(screen.getByText(/^Reset code$/i)).toBeInTheDocument()
@@ -90,7 +90,7 @@ describe('ForgotPasswordForm (D7 flip — OTP)', () => {
 
     await expect
       .element(
-        screen.getByText(/If an account exists for a@b\.com, a 6-digit reset code is on its way/i),
+        screen.getByText(/Enter the 6-digit code sent to a@b\.com/i),
       )
       .toBeInTheDocument()
     expect(toastSuccess).toHaveBeenCalledWith(
@@ -140,7 +140,7 @@ describe('ForgotPasswordForm (D7 flip — OTP)', () => {
     await userEvent.fill(emailInput, 'a@b.com')
     await userEvent.click(sendButton)
     await expect
-      .element(screen.getByText(/If an account exists for a@b\.com/i))
+      .element(screen.getByText(/Enter the 6-digit code sent to a@b\.com/i))
       .toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: /Send to a different email/i }))

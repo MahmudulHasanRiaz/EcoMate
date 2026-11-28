@@ -1,23 +1,26 @@
 import { Link, useSearch } from '@tanstack/react-router'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { CircleAlert } from 'lucide-react'
 import { AuthLayout } from '../auth-layout'
+import { AuthBrandHeader } from '../auth-brand-header'
 import { UserAuthForm } from './components/user-auth-form'
 
 /**
- * Tenant admin sign-in (login redesign Step 1): Clerk-style compact
- * widget — one 400px card, a single-line title, minimal copy. The
- * tenant brand header lives in AuthLayout; this card only carries the
- * form. All banners from the old card are kept (?error= social
- * failure, ?expired=1 session expiry, ?customer=1 customer bounce,
- * ?registered=1 new customer account).
+ * Tenant admin sign-in (login redesign Step 1, polished to
+ * Clerk-clean): ONE compact 400px card, and nothing else on the
+ * page. The brand header (AuthBrandHeader — the store's own mark,
+ * exactly as the storefront header renders it) is the FIRST thing
+ * inside the card, like Clerk's logo + "Sign in to Clerk"; there is
+ * no "Sign in" heading block and no sign-up line in the header.
+ * "Don't have an account? Sign up" lives ONLY in the footer strip
+ * above "Secured by EcoMate". The Terms / Privacy links live in the
+ * PAGE footer (AuthLayout), never in this card.
+ *
+ * All banners from the old card are kept (?error= social failure,
+ * ?expired=1 session expiry, ?customer=1 customer bounce,
+ * ?registered=1 new customer account). On ?error=access_denied the
+ * custom-domain social hint also shows under the social row — that
+ * hint never shows on the default view.
  */
 export function SignIn() {
   const { redirect, expired, customer, registered, error } = useSearch({
@@ -27,19 +30,10 @@ export function SignIn() {
   return (
     <AuthLayout>
       <Card className='w-full max-w-[400px] gap-4 rounded-[3px]'>
-        <CardHeader className='px-5 pb-0'>
-          <CardTitle className='text-base tracking-tight'>Sign in</CardTitle>
-          <CardDescription>
-            Sign in to your account. Don&apos;t have an account?{' '}
-            <Link
-              to='/sign-up'
-              className='auth-link text-nowrap underline underline-offset-4'
-            >
-              Sign Up
-            </Link>
-          </CardDescription>
-        </CardHeader>
         <CardContent className='px-5'>
+          <div className='mb-4'>
+            <AuthBrandHeader />
+          </div>
           {error && (
             <div
               role='alert'
@@ -87,26 +81,27 @@ export function SignIn() {
               </span>
             </div>
           )}
-          <UserAuthForm redirectTo={redirect} />
+          <UserAuthForm
+            redirectTo={redirect}
+            showCustomDomainHint={error === 'access_denied'}
+          />
         </CardContent>
-        <CardFooter className='border-t px-5 pt-3'>
-          <p className='mx-auto text-center text-xs text-muted-foreground'>
-            Secured by EcoMate ·{' '}
-            <a
-              href='/terms'
-              className='underline underline-offset-4 hover:text-primary'
+        <div className='border-t px-5 py-3'>
+          <p className='text-center text-xs text-muted-foreground'>
+            Don&apos;t have an account?{' '}
+            <Link
+              to='/sign-up'
+              className='auth-link font-medium underline underline-offset-4'
             >
-              Terms of Service
-            </a>{' '}
-            ·{' '}
-            <a
-              href='/privacy'
-              className='underline underline-offset-4 hover:text-primary'
-            >
-              Privacy Policy
-            </a>
+              Sign up
+            </Link>
           </p>
-        </CardFooter>
+        </div>
+        <div className='border-t px-5 py-3'>
+          <p className='text-center text-xs text-muted-foreground'>
+            Secured by EcoMate
+          </p>
+        </div>
       </Card>
     </AuthLayout>
   )

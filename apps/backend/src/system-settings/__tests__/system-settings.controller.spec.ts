@@ -178,6 +178,37 @@ describe('SystemSettingsController', () => {
       expect(branding.storeName).toBe('My Shop');
       expect(branding.adminTagline).toBe('Back office');
     });
+
+    it('defaults the brand display mode to name when no systems are set', async () => {
+      const branding = await mockController().getPublicBranding();
+      expect(branding.display).toBe('name');
+    });
+
+    it('returns the first brand system display mode, mirroring the storefront header', async () => {
+      const branding = await mockController([
+        {
+          key: 'store_systems',
+          value: JSON.stringify([
+            { id: 's1', name: 'My Shop', logo: '/logo.png', display: 'logo' },
+          ]),
+        },
+      ]).getPublicBranding();
+      expect(branding.display).toBe('logo');
+    });
+
+    it('falls back to name on malformed or unknown display modes', async () => {
+      for (const value of [
+        'not-json',
+        JSON.stringify([{ display: 'banner' }]),
+        JSON.stringify([]),
+        JSON.stringify({ display: 'logo' }),
+      ]) {
+        const branding = await mockController([
+          { key: 'store_systems', value },
+        ]).getPublicBranding();
+        expect(branding.display).toBe('name');
+      }
+    });
   });
 
   describe('POST :key payments.* admin-only guard', () => {

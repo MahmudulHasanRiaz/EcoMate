@@ -49,8 +49,11 @@
   outline-color: var(--auth-brand);
 }
 
-/* ---- Brand-tinted focus rings on auth fields ---- */
-.auth-widget .auth-field:focus-visible {
+/* ---- Brand-tinted focus rings on auth fields (incl. the <input>
+   nested inside PasswordInput, which carries the .auth-field class
+   on its wrapper) ---- */
+.auth-widget .auth-field:focus-visible,
+.auth-widget .auth-field input:focus-visible {
   --tw-ring-color: color-mix(in oklab, var(--auth-brand) 50%, transparent);
   outline-color: var(--auth-brand);
 }
@@ -65,29 +68,6 @@
 }
 .auth-widget .auth-link:hover {
   color: var(--auth-brand-dark);
-}
-
-/* ---- Method tabs: Password / Email code (no phone tab — phone OTP
-   does not exist yet; see user-auth-form.tsx) ---- */
-.auth-widget .auth-tab {
-  height: 28px;
-  border-radius: 3px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-muted-foreground);
-  transition: background-color 150ms ease, color 150ms ease;
-}
-.auth-widget .auth-tab:hover {
-  color: var(--color-foreground);
-  background-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-}
-.auth-widget .auth-tab[aria-selected='true'] {
-  background-color: var(--color-card);
-  color: var(--color-foreground);
-  box-shadow: 0 1px 2px rgb(15 22 48 / 0.08);
-}
-.auth-widget .auth-tab:focus-visible {
-  outline-color: var(--auth-brand);
 }
 
 /* ---- Icon-only social buttons: 36px squares, brand hover ---- */
@@ -117,9 +97,32 @@
   border-color: var(--auth-brand);
 }
 
-/* ---- Auth card: low radius like the rest of the widget ---- */
+/* ---- Floating card: the widget reads as a separate floating card
+   on a clearly different page background, in BOTH themes. Light:
+   white card on a deeper grey-blue page; dark: raised card on a
+   near-black page. Border + layered soft shadow do the floating —
+   the dark theme's --shadow-card is `none`, so the shadow is set
+   here explicitly per theme. ---- */
+.auth-widget {
+  background-color: #e9edf5;
+}
+.dark .auth-widget {
+  background-color: #04060f;
+}
 .auth-widget [data-slot='card'] {
   border-radius: 3px;
+  border-color: #d3d9e6;
+  box-shadow:
+    0 1px 2px rgb(15 22 48 / 0.06),
+    0 8px 24px -8px rgb(15 22 48 / 0.14),
+    0 24px 48px -16px rgb(15 22 48 / 0.12);
+}
+.dark .auth-widget [data-slot='card'] {
+  border-color: #2b3559;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.5),
+    0 8px 24px -8px rgb(0 0 0 / 0.6),
+    0 24px 48px -16px rgb(0 0 0 / 0.5);
 }
 
 /* ---- Submit-error shake: 300ms, one 4px shake, submit errors only ---- */
